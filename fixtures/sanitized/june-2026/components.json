@@ -1,0 +1,114 @@
+{
+  "period": "2026-06",
+  "classifications_summed": [
+    "earning",
+    "employer_contribution",
+    "AG_deduction",
+    "treasury_deduction",
+    "gross_adjustment",
+    "external_recovery",
+    "accommodation_charge"
+  ],
+  "notes": {
+    "accommodation_charge": "Calculator kind per ADR 0007; treated as a deduction classification for actual license-fee recovery in this fixture (not gross_adjustment).",
+    "informational": "Components with informational=true / excluded_from_totals=true are outside gross-to-net identities.",
+    "nps_employer_asymmetry": "NPS_EMPLOYER_TRANSFER is an employer-transfer deduction with NO matching employer_contribution addition in gross_bill. EPF_EMPLOYER (employer_contribution) pairs 1:1 with EPF_EMPLOYER_TRANSFER.",
+    "money": "All amounts are whole INR rupees as integer strings. No paise/fractional amounts in this fixture."
+  },
+  "components": [
+    {
+      "code": "BASIC",
+      "name": "Basic Pay",
+      "classification": "earning"
+    },
+    {
+      "code": "DA",
+      "name": "Dearness Allowance",
+      "classification": "earning"
+    },
+    {
+      "code": "HRA",
+      "name": "House Rent Allowance",
+      "classification": "earning"
+    },
+    {
+      "code": "TRANSPORT",
+      "name": "Transport Allowance",
+      "classification": "earning"
+    },
+    {
+      "code": "OTHER_ALLOWANCE",
+      "name": "Other Allowance",
+      "classification": "earning"
+    },
+    {
+      "code": "FOREGONE_HRA",
+      "name": "Informational Foregone HRA",
+      "classification": "informational",
+      "informational": true,
+      "excluded_from_totals": true
+    },
+    {
+      "code": "GPF_SUBSCRIPTION",
+      "name": "GPF Subscription",
+      "classification": "AG_deduction",
+      "jurisdiction_tag_required": true
+    },
+    {
+      "code": "NPS_EMPLOYEE",
+      "name": "NPS Employee Contribution",
+      "classification": "AG_deduction"
+    },
+    {
+      "code": "NPS_EMPLOYER_TRANSFER",
+      "name": "NPS Employer Transfer (off-bill)",
+      "classification": "AG_deduction",
+      "employer_transfer": true,
+      "has_gross_bill_addition": false
+    },
+    {
+      "code": "EPF_EMPLOYEE",
+      "name": "EPF Employee Contribution",
+      "classification": "AG_deduction"
+    },
+    {
+      "code": "EPF_EMPLOYER",
+      "name": "EPF Employer Contribution",
+      "classification": "employer_contribution",
+      "has_gross_bill_addition": true
+    },
+    {
+      "code": "EPF_EMPLOYER_TRANSFER",
+      "name": "EPF Employer Transfer",
+      "classification": "AG_deduction",
+      "employer_transfer": true,
+      "pairs_with": "EPF_EMPLOYER"
+    },
+    {
+      "code": "INCOME_TAX",
+      "name": "Income Tax (TDS)",
+      "classification": "treasury_deduction"
+    },
+    {
+      "code": "PROFESSIONAL_TAX",
+      "name": "Professional Tax",
+      "classification": "treasury_deduction"
+    },
+    {
+      "code": "GIS",
+      "name": "Group Insurance Scheme",
+      "classification": "treasury_deduction"
+    },
+    {
+      "code": "HBA_INSTALLMENT",
+      "name": "House Building Advance Installment",
+      "classification": "external_recovery"
+    },
+    {
+      "code": "ACCOMMODATION_LICENSE_FEE",
+      "name": "Accommodation License Fee Recovery",
+      "classification": "external_recovery",
+      "notes": "Accommodation license-fee recovery; reported separately on accommodation schedules."
+    }
+  ]
+}

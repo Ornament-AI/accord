@@ -1,0 +1,88 @@
+{
+  "organization_id": "ORG_SYNTH_001",
+  "name": "Synthetic Public Works Division A",
+  "period": "2026-06",
+  "offices": [
+    {
+      "office_id": "OFF_MUM_HQ",
+      "name": "Synthetic Office Mumbai HQ",
+      "city": "Mumbai",
+      "supports": [
+        "gpf_mumbai",
+        "accommodation_mumbai",
+        "nps",
+        "epf"
+      ],
+      "signatories": {
+        "maker": {
+          "name": "Employee S-01",
+          "role": "maker"
+        },
+        "checker": {
+          "name": "Employee S-02",
+          "role": "checker"
+        },
+        "approving_officer": {
+          "name": "Employee S-03",
+          "role": "approving_officer"
+        }
+      }
+    },
+    {
+      "office_id": "OFF_NGP_HQ",
+      "name": "Synthetic Office Nagpur HQ",
+      "city": "Nagpur",
+      "supports": [
+        "gpf_nagpur"
+      ],
+      "signatories": {
+        "maker": {
+          "name": "Employee S-04",
+          "role": "maker"
+        },
+        "checker": {
+          "name": "Employee S-05",
+          "role": "checker"
+        },
+        "approving_officer": {
+          "name": "Employee S-06",
+          "role": "approving_officer"
+        }
+      }
+    },
+    {
+      "office_id": "OFF_WORLI",
+      "name": "Synthetic Office Worli",
+      "city": "Worli",
+      "supports": [
+        "accommodation_worli",
+        "nps"
+      ],
+      "signatories": {
+        "maker": {
+          "name": "Employee S-07",
+          "role": "maker"
+        },
+        "checker": {
+          "name": "Employee S-08",
+          "role": "checker"
+        },
+        "approving_officer": {
+          "name": "Employee S-09",
+          "role": "approving_officer"
+        }
+      }
+    }
+  ],
+  "pay_units": [
+    {
+      "pay_unit_id": "PU_SYNTH_001",
+      "name": "Synthetic Pay Unit A",
+      "office_ids": [
+        "OFF_MUM_HQ",
+        "OFF_NGP_HQ",
+        "OFF_WORLI"
+      ]
+    }
+  ]
+}

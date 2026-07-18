@@ -1,0 +1,81 @@
+{
+  "period": "2026-06",
+  "currency": "INR",
+  "amount_unit": "whole_rupee",
+  "aggregates": {
+    "salary_earnings": "5073200",
+    "employer_share": "29785",
+    "gross_bill": "5102985",
+    "total_deductions": "1264890",
+    "net_payable": "3838095",
+    "gpf_total": "280000",
+    "gpf_mumbai": "165000",
+    "gpf_nagpur": "115000",
+    "income_tax": "550700",
+    "gis": "22440",
+    "hba": "72723",
+    "professional_tax": "5600",
+    "professional_tax_liable_count": 28,
+    "professional_tax_rate": "200",
+    "accommodation_total": "11669",
+    "accommodation_mumbai": "10419",
+    "accommodation_worli": "1250",
+    "nps_employee": "109245",
+    "nps_employer": "152943",
+    "epf_employee": "29785",
+    "epf_employer": "29785",
+    "employer_transfer": "182728",
+    "employee_contribution": "139030"
+  },
+  "asymmetry": {
+    "epf_employer_contribution_in_gross_bill": "29785",
+    "epf_employer_transfer": "29785",
+    "epf_pairing_holds": true,
+    "nps_employer_transfer": "152943",
+    "nps_employer_contribution_in_gross_bill": "0",
+    "nps_gross_bill_addition_absent": true,
+    "note": "Intentional open-question asymmetry per docs/payroll-domain.md: EPF employer is inside gross bill; NPS employer is transfer-only and not added to gross bill."
+  },
+  "headcount": {
+    "total": 32,
+    "gpf_mumbai": 9,
+    "gpf_nagpur": 7,
+    "nps": 12,
+    "epf": 4,
+    "professional_tax_liable": 28,
+    "accommodation_mumbai": 3,
+    "accommodation_worli": 1
+  },
+  "report_reconciliation": {
+    "pay_bill": {
+      "salary_earnings": "5073200",
+      "employer_share": "29785",
+      "gross_bill": "5102985",
+      "total_deductions": "1264890",
+      "net_payable": "3838095"
+    },
+    "treasury_face": {
+      "salary_earnings": "5073200",
+      "employer_share": "29785",
+      "gross_bill": "5102985",
+      "total_deductions": "1264890",
+      "net_payable": "3838095",
+      "equals_pay_bill": true
+    },
+    "bank_rtgs_advice_sum": "3838095",
+    "gpf_mumbai_schedule": "165000",
+    "gpf_nagpur_schedule": "115000",
+    "nps_contribution_schedule": {
+      "employee": "109245",
+      "employer": "152943",
+      "excludes_epf": true
+    },
+    "income_tax_schedule": "550700",
+    "professional_tax_schedule": "5600",
+    "gis_schedule": "22440",
+    "hba_schedule": "72723",
+    "accommodation_mumbai_actual": "10419",
+    "accommodation_worli_actual": "1250",
+    "payslip_nets_sum": "3838095"
+  }
+}

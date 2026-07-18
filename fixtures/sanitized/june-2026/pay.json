@@ -1,0 +1,2045 @@
+{
+  "period": "2026-06",
+  "currency": "INR",
+  "amount_unit": "whole_rupee",
+  "employees": [
+    {
+      "employee_id": "E001",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "82000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "41000"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "FOREGONE_HRA",
+          "classification": "informational",
+          "amount": "12000",
+          "informational": true,
+          "excluded_from_totals": true
+        },
+        {
+          "component_code": "ACCOMMODATION_LICENSE_FEE",
+          "classification": "accommodation_charge",
+          "amount": "4500",
+          "accommodation_location": "Mumbai"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "20000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0001"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "30000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "174979",
+        "employer_contribution": "0",
+        "gross": "174979",
+        "deductions": "55660",
+        "net_payable": "119319"
+      }
+    },
+    {
+      "employee_id": "E002",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "76000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "38000"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "FOREGONE_HRA",
+          "classification": "informational",
+          "amount": "10000",
+          "informational": true,
+          "excluded_from_totals": true
+        },
+        {
+          "component_code": "ACCOMMODATION_LICENSE_FEE",
+          "classification": "accommodation_charge",
+          "amount": "3500",
+          "accommodation_location": "Mumbai"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "20000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0002"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "22000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "165979",
+        "employer_contribution": "0",
+        "gross": "165979",
+        "deductions": "46660",
+        "net_payable": "119319"
+      }
+    },
+    {
+      "employee_id": "E003",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "70000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "35000"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "FOREGONE_HRA",
+          "classification": "informational",
+          "amount": "8500",
+          "informational": true,
+          "excluded_from_totals": true
+        },
+        {
+          "component_code": "ACCOMMODATION_LICENSE_FEE",
+          "classification": "accommodation_charge",
+          "amount": "2419",
+          "accommodation_location": "Mumbai"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "20000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0003"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "16000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "156979",
+        "employer_contribution": "0",
+        "gross": "156979",
+        "deductions": "39579",
+        "net_payable": "117400"
+      }
+    },
+    {
+      "employee_id": "E004",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "68000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "34000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "18360"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "18000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0004"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "28000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        },
+        {
+          "component_code": "HBA_INSTALLMENT",
+          "classification": "external_recovery",
+          "amount": "30000"
+        }
+      ],
+      "totals": {
+        "earnings": "172339",
+        "employer_contribution": "0",
+        "gross": "172339",
+        "deductions": "77160",
+        "net_payable": "95179"
+      }
+    },
+    {
+      "employee_id": "E005",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "64000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "32000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "17280"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "18000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0005"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "20000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "165259",
+        "employer_contribution": "0",
+        "gross": "165259",
+        "deductions": "39160",
+        "net_payable": "126099"
+      }
+    },
+    {
+      "employee_id": "E006",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "60000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "30000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "16200"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "18000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0006"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "18000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "158179",
+        "employer_contribution": "0",
+        "gross": "158179",
+        "deductions": "37160",
+        "net_payable": "121019"
+      }
+    },
+    {
+      "employee_id": "E007",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "56000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "28000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "15120"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "17000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0007"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "14000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "151099",
+        "employer_contribution": "0",
+        "gross": "151099",
+        "deductions": "32160",
+        "net_payable": "118939"
+      }
+    },
+    {
+      "employee_id": "E008",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "52000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "26000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "14040"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "17000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0008"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "4700"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "144019",
+        "employer_contribution": "0",
+        "gross": "144019",
+        "deductions": "22860",
+        "net_payable": "121159"
+      }
+    },
+    {
+      "employee_id": "E009",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "48000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "24000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "12960"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "17000",
+          "gpf_jurisdiction": "Mumbai",
+          "gpf_account": "SYNGPF/MUM/0009"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "136939",
+        "employer_contribution": "0",
+        "gross": "136939",
+        "deductions": "18160",
+        "net_payable": "118779"
+      }
+    },
+    {
+      "employee_id": "E010",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "78000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "39000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "21060"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "20000",
+          "gpf_jurisdiction": "Nagpur",
+          "gpf_account": "SYNGPF/NGP/0001"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "42000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "190039",
+        "employer_contribution": "0",
+        "gross": "190039",
+        "deductions": "63160",
+        "net_payable": "126879"
+      }
+    },
+    {
+      "employee_id": "E011",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "72000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "36000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "19440"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "18000",
+          "gpf_jurisdiction": "Nagpur",
+          "gpf_account": "SYNGPF/NGP/0002"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "34000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "179419",
+        "employer_contribution": "0",
+        "gross": "179419",
+        "deductions": "53160",
+        "net_payable": "126259"
+      }
+    },
+    {
+      "employee_id": "E012",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "66000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "33000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "17820"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "17000",
+          "gpf_jurisdiction": "Nagpur",
+          "gpf_account": "SYNGPF/NGP/0003"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "26000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "168799",
+        "employer_contribution": "0",
+        "gross": "168799",
+        "deductions": "44160",
+        "net_payable": "124639"
+      }
+    },
+    {
+      "employee_id": "E013",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "60000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "30000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "16200"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "16000",
+          "gpf_jurisdiction": "Nagpur",
+          "gpf_account": "SYNGPF/NGP/0004"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "17000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "158179",
+        "employer_contribution": "0",
+        "gross": "158179",
+        "deductions": "34160",
+        "net_payable": "124019"
+      }
+    },
+    {
+      "employee_id": "E014",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "56000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "28000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "15120"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48379"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "15000",
+          "gpf_jurisdiction": "Nagpur",
+          "gpf_account": "SYNGPF/NGP/0005"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "12000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "960"
+        }
+      ],
+      "totals": {
+        "earnings": "151099",
+        "employer_contribution": "0",
+        "gross": "151099",
+        "deductions": "28160",
+        "net_payable": "122939"
+      }
+    },
+    {
+      "employee_id": "E015",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "52000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "26000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "14040"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "15000",
+          "gpf_jurisdiction": "Nagpur",
+          "gpf_account": "SYNGPF/NGP/0006"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "144018",
+        "employer_contribution": "0",
+        "gross": "144018",
+        "deductions": "15680",
+        "net_payable": "128338"
+      }
+    },
+    {
+      "employee_id": "E016",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "48000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "24000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "12960"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "GPF_SUBSCRIPTION",
+          "classification": "AG_deduction",
+          "amount": "14000",
+          "gpf_jurisdiction": "Nagpur",
+          "gpf_account": "SYNGPF/NGP/0007"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "136938",
+        "employer_contribution": "0",
+        "gross": "136938",
+        "deductions": "14680",
+        "net_payable": "122258"
+      }
+    },
+    {
+      "employee_id": "E017",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "90000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "45000"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "FOREGONE_HRA",
+          "classification": "informational",
+          "amount": "9000",
+          "informational": true,
+          "excluded_from_totals": true
+        },
+        {
+          "component_code": "ACCOMMODATION_LICENSE_FEE",
+          "classification": "accommodation_charge",
+          "amount": "1250",
+          "accommodation_location": "Worli"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "15000",
+          "pran": "900000000001"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "21000",
+          "pran": "900000000001",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "38000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "186978",
+        "employer_contribution": "0",
+        "gross": "186978",
+        "deductions": "75930",
+        "net_payable": "111048"
+      }
+    },
+    {
+      "employee_id": "E018",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "84000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "42000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "22680"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "12000",
+          "pran": "900000000002"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "16800",
+          "pran": "900000000002",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "45000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        },
+        {
+          "component_code": "HBA_INSTALLMENT",
+          "classification": "external_recovery",
+          "amount": "25000"
+        }
+      ],
+      "totals": {
+        "earnings": "200658",
+        "employer_contribution": "0",
+        "gross": "200658",
+        "deductions": "99480",
+        "net_payable": "101178"
+      }
+    },
+    {
+      "employee_id": "E019",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "78000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "39000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "21060"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "11000",
+          "pran": "900000000003"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "15400",
+          "pran": "900000000003",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "40000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "190038",
+        "employer_contribution": "0",
+        "gross": "190038",
+        "deductions": "67080",
+        "net_payable": "122958"
+      }
+    },
+    {
+      "employee_id": "E020",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "74000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "37000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "19980"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "10000",
+          "pran": "900000000004"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "14000",
+          "pran": "900000000004",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "36000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "182958",
+        "employer_contribution": "0",
+        "gross": "182958",
+        "deductions": "60680",
+        "net_payable": "122278"
+      }
+    },
+    {
+      "employee_id": "E021",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "70000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "35000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "18900"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "9500",
+          "pran": "900000000005"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "13300",
+          "pran": "900000000005",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "32000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "175878",
+        "employer_contribution": "0",
+        "gross": "175878",
+        "deductions": "55480",
+        "net_payable": "120398"
+      }
+    },
+    {
+      "employee_id": "E022",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "66000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "33000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "17820"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "9000",
+          "pran": "900000000006"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "12600",
+          "pran": "900000000006",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "24000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "168798",
+        "employer_contribution": "0",
+        "gross": "168798",
+        "deductions": "46280",
+        "net_payable": "122518"
+      }
+    },
+    {
+      "employee_id": "E023",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "62000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "31000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "16740"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "8500",
+          "pran": "900000000007"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "11900",
+          "pran": "900000000007",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "19000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "161718",
+        "employer_contribution": "0",
+        "gross": "161718",
+        "deductions": "40080",
+        "net_payable": "121638"
+      }
+    },
+    {
+      "employee_id": "E024",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "58000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "29000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "15660"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "8000",
+          "pran": "900000000008"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "11200",
+          "pran": "900000000008",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "15000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "480"
+        }
+      ],
+      "totals": {
+        "earnings": "154638",
+        "employer_contribution": "0",
+        "gross": "154638",
+        "deductions": "34880",
+        "net_payable": "119758"
+      }
+    },
+    {
+      "employee_id": "E025",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "54000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "27000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "14580"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "7500",
+          "pran": "900000000009"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "10500",
+          "pran": "900000000009",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "8000"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "240"
+        }
+      ],
+      "totals": {
+        "earnings": "147558",
+        "employer_contribution": "0",
+        "gross": "147558",
+        "deductions": "26440",
+        "net_payable": "121118"
+      }
+    },
+    {
+      "employee_id": "E026",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "50000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "25000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "13500"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "7000",
+          "pran": "900000000010"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "9800",
+          "pran": "900000000010",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "240"
+        }
+      ],
+      "totals": {
+        "earnings": "140478",
+        "employer_contribution": "0",
+        "gross": "140478",
+        "deductions": "17240",
+        "net_payable": "123238"
+      }
+    },
+    {
+      "employee_id": "E027",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "46000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "23000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "12420"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "6500",
+          "pran": "900000000011"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "9100",
+          "pran": "900000000011",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "240"
+        }
+      ],
+      "totals": {
+        "earnings": "133398",
+        "employer_contribution": "0",
+        "gross": "133398",
+        "deductions": "16040",
+        "net_payable": "117358"
+      }
+    },
+    {
+      "employee_id": "E028",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "42000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "21000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "11340"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "NPS_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "5245",
+          "pran": "900000000012"
+        },
+        {
+          "component_code": "NPS_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "7343",
+          "pran": "900000000012",
+          "employer_transfer": true,
+          "transfer_of": "NPS_EMPLOYER"
+        },
+        {
+          "component_code": "PROFESSIONAL_TAX",
+          "classification": "treasury_deduction",
+          "amount": "200"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "240"
+        }
+      ],
+      "totals": {
+        "earnings": "126318",
+        "employer_contribution": "0",
+        "gross": "126318",
+        "deductions": "13028",
+        "net_payable": "113290"
+      }
+    },
+    {
+      "employee_id": "E029",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "55000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "27500"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "14850"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "EPF_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "8000",
+          "epf_number": "SYNTEPF/000001/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER",
+          "classification": "employer_contribution",
+          "amount": "8000",
+          "epf_number": "SYNTEPF/000001/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "8000",
+          "epf_number": "SYNTEPF/000001/UAN",
+          "employer_transfer": true,
+          "transfer_of": "EPF_EMPLOYER"
+        },
+        {
+          "component_code": "INCOME_TAX",
+          "classification": "treasury_deduction",
+          "amount": "10000"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "720"
+        },
+        {
+          "component_code": "HBA_INSTALLMENT",
+          "classification": "external_recovery",
+          "amount": "17723"
+        }
+      ],
+      "totals": {
+        "earnings": "149328",
+        "employer_contribution": "8000",
+        "gross": "157328",
+        "deductions": "44443",
+        "net_payable": "112885"
+      }
+    },
+    {
+      "employee_id": "E030",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "50000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "25000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "13500"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "EPF_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "7500",
+          "epf_number": "SYNTEPF/000002/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER",
+          "classification": "employer_contribution",
+          "amount": "7500",
+          "epf_number": "SYNTEPF/000002/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "7500",
+          "epf_number": "SYNTEPF/000002/UAN",
+          "employer_transfer": true,
+          "transfer_of": "EPF_EMPLOYER"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "720"
+        }
+      ],
+      "totals": {
+        "earnings": "140478",
+        "employer_contribution": "7500",
+        "gross": "147978",
+        "deductions": "15720",
+        "net_payable": "132258"
+      }
+    },
+    {
+      "employee_id": "E031",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "46000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "23000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "12420"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "EPF_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "7250",
+          "epf_number": "SYNTEPF/000003/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER",
+          "classification": "employer_contribution",
+          "amount": "7250",
+          "epf_number": "SYNTEPF/000003/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "7250",
+          "epf_number": "SYNTEPF/000003/UAN",
+          "employer_transfer": true,
+          "transfer_of": "EPF_EMPLOYER"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "800"
+        }
+      ],
+      "totals": {
+        "earnings": "133398",
+        "employer_contribution": "7250",
+        "gross": "140648",
+        "deductions": "15300",
+        "net_payable": "125348"
+      }
+    },
+    {
+      "employee_id": "E032",
+      "period": "2026-06",
+      "lines": [
+        {
+          "component_code": "BASIC",
+          "classification": "earning",
+          "amount": "42000"
+        },
+        {
+          "component_code": "DA",
+          "classification": "earning",
+          "amount": "21000"
+        },
+        {
+          "component_code": "HRA",
+          "classification": "earning",
+          "amount": "11340"
+        },
+        {
+          "component_code": "TRANSPORT",
+          "classification": "earning",
+          "amount": "3600"
+        },
+        {
+          "component_code": "OTHER_ALLOWANCE",
+          "classification": "earning",
+          "amount": "48378"
+        },
+        {
+          "component_code": "EPF_EMPLOYEE",
+          "classification": "AG_deduction",
+          "amount": "7035",
+          "epf_number": "SYNTEPF/000004/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER",
+          "classification": "employer_contribution",
+          "amount": "7035",
+          "epf_number": "SYNTEPF/000004/UAN"
+        },
+        {
+          "component_code": "EPF_EMPLOYER_TRANSFER",
+          "classification": "AG_deduction",
+          "amount": "7035",
+          "epf_number": "SYNTEPF/000004/UAN",
+          "employer_transfer": true,
+          "transfer_of": "EPF_EMPLOYER"
+        },
+        {
+          "component_code": "GIS",
+          "classification": "treasury_deduction",
+          "amount": "1000"
+        }
+      ],
+      "totals": {
+        "earnings": "126318",
+        "employer_contribution": "7035",
+        "gross": "133353",
+        "deductions": "15070",
+        "net_payable": "118283"
+      }
+    }
+  ]
+}
