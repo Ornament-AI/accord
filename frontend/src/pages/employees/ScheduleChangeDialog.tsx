@@ -148,6 +148,7 @@ export function ScheduleChangeDialog({
 	useEffect(() => {
 		if (!open) return;
 		setEffectiveFrom(todayApiDate());
+		setChangeReason("");
 		setOverlapError(null);
 		setFormError(null);
 		setGpfJurisdictionError(null);
