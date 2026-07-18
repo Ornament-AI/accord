@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+import { clickUntilDialog } from "./ui";
+
 /**
  * Dev auth bypass (backend DevAuthAdapter): GET /api/auth/login establishes a
  * session immediately and redirects — there is no WorkOS round-trip. Identity
@@ -57,7 +59,12 @@ export async function ensureDashboard(page: Page): Promise<void> {
 		await page.goto("/");
 	}
 
-	if (!(await page.getByTestId("dashboard-page").isVisible().catch(() => false))) {
+	if (
+		!(await page
+			.getByTestId("dashboard-page")
+			.isVisible()
+			.catch(() => false))
+	) {
 		await page.goto("/");
 	}
 
@@ -81,8 +88,7 @@ export async function createOrganization(
 	opts: { name: string; slug: string },
 ): Promise<void> {
 	const createButton = page.getByRole("button", { name: "Create organization" });
-	await expect(createButton).toBeVisible({ timeout: 30_000 });
-	await createButton.click();
+	await clickUntilDialog(page, createButton);
 	await fillCreateOrganizationDialog(page, opts);
 }
 
@@ -92,7 +98,14 @@ export async function ensureUniqueOrganization(
 	opts: { name: string; slug: string },
 ): Promise<void> {
 	const noOrgTitle = page.getByText("Create your first organization");
-	if (await noOrgTitle.isVisible().catch(() => false)) {
+	const dashboard = page.getByTestId("dashboard-page");
+
+	// Wait for /me + React to settle before branching — a non-waiting isVisible()
+	// right after login redirect races the no-org page and wrongly takes the
+	// "already has org" path.
+	await expect(noOrgTitle.or(dashboard)).toBeVisible({ timeout: 30_000 });
+
+	if (await noOrgTitle.isVisible()) {
 		await createOrganization(page, opts);
 		await ensureDashboard(page);
 		return;
@@ -102,7 +115,8 @@ export async function ensureUniqueOrganization(
 	await ensureDashboard(page);
 	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();
 	await switcher.click();
-	await page.getByRole("menuitem", { name: "Create organization" }).click();
+	const createMenuItem = page.getByRole("menuitem", { name: "Create organization" });
+	await clickUntilDialog(page, createMenuItem);
 	await fillCreateOrganizationDialog(page, opts);
 	await ensureDashboard(page);
 }

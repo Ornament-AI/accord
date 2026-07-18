@@ -1,5 +1,27 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+/**
+ * Click a trigger until a Base UI dialog portal is visible.
+ * Retries briefly — the first click can land before React handlers attach.
+ */
+export async function clickUntilDialog(page: Page, trigger: Locator): Promise<Locator> {
+	const dialog = page.getByRole("dialog");
+	await expect(trigger).toBeVisible({ timeout: 30_000 });
+
+	for (let attempt = 0; attempt < 3; attempt++) {
+		await trigger.click();
+		try {
+			await expect(dialog).toBeVisible({ timeout: 2_000 });
+			return dialog;
+		} catch {
+			// retry
+		}
+	}
+
+	await expect(dialog).toBeVisible({ timeout: 5_000 });
+	return dialog;
+}
+
 /** Base UI select: open trigger, pick option by accessible name. */
 export async function selectByLabel(
 	page: Page,

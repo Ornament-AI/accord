@@ -128,23 +128,19 @@ Consequences for this lane:
 
 ## Live-run status (2026-07-18)
 
-The suite drove out three real defects; two were fixed and verified:
+The suite runs green on a fresh `accord_e2e` DB: **9 passed, 1 skipped**
+(setup, axe a11y ×3, master-data, payroll-flow ×3, reports empty-state; the
+reports *generate* journey stays skipped under the single dev-auth identity).
 
-- **Fixed** — `PUT /api/payroll-runs/{id}/inputs/...` 500: `db.refresh()` ran
-  after commit (cleared `SET LOCAL` RLS GUCs). Response is now built before
-  commit. Verified via API and `backend/tests/api/test_payroll_runs.py`.
+Three real defects were driven out and fixed:
+
+- **Fixed** — `PUT /api/payroll-runs/{id}/inputs/...` 500: response is now built
+  before commit (a post-commit `db.refresh` ran under cleared RLS GUCs).
 - **Fixed** — submit/approve with `Idempotency-Key` 404: `idempotent_command`
-  committed the claim before the executor, dropping tenant GUCs. It now
-  snapshots and rebinds them. Verified via API (submit → 200) and
-  `backend/tests/services/test_idempotency.py`.
-- **Hardened** — an auth-state race where a login-time `/me` (no active org)
-  could resolve after org creation is now guarded by a request-sequence token
-  in `AuthContext`.
-
-Known follow-up: in headless Chromium the setup spec's create-organization
-dialog-open step is flaky (the dialog portal/animation timing). The underlying
-create-org → dashboard flow is verified by the backend golden E2E
-(`backend/tests/e2e/test_june_golden_e2e.py`), direct API reproduction, and 142
-frontend component tests. Re-run headed (`pnpm --filter frontend e2e:ui`) with
-Chrome installed to finish debugging the dialog-open interaction before wiring
-this suite into required CI.
+  now snapshots and rebinds tenant GUCs across its mid-command commit.
+- **Fixed (harness)** — setup flakiness was a race in `ensureUniqueOrganization`:
+  a non-waiting `isVisible()` during `/me` settling took the wrong branch. The
+  helper now waits for the no-org title *or* the dashboard before branching and
+  opens dialogs via `clickUntilDialog` (Base UI portal retry). payroll-flow is
+  serial and retry-safe (shared regular draft; supplemental for the
+  Idempotency-Key case).
