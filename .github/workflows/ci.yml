@@ -144,6 +144,15 @@ jobs:
           pip install -r backend/requirements.txt -r backend/requirements-dev.txt
       - name: Confirm migrations directory exists
         run: test -d backend/migrations/versions || { echo "::error::backend/migrations/versions is missing — this job expects it to exist (Phase 1 DB lane landed)."; exit 1; }
+      - name: Bootstrap ADR-0001 database roles (accord_migrator / accord_app / accord_worker)
+        # Cluster roles are created out-of-band (never by Alembic), so the RLS
+        # policy DDL (CREATE POLICY ... TO accord_app / accord_worker) and the
+        # immutable-table REVOKEs in the migrations have their target roles.
+        # Mirrors backend/tests/migrations/conftest.py::ensure_accord_roles and
+        # deploy/object-storage/postgres-init-roles.sh.
+        env:
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -h localhost -p 5432 -U postgres -d accord_migrations_ci -f backend/scripts/create_roles.sql
       - name: alembic upgrade head
         working-directory: backend
         run: python -m alembic upgrade head
