@@ -179,7 +179,12 @@ async def test_readyz(client):
     resp = await client.get("/api/readyz")
     assert resp.status_code == 200
     data = resp.json()
-    assert data == {"status": "ok", "database": "ok", "auth": "ok"}
+    assert data["status"] == "ok"
+    assert data["database"] == "ok"
+    assert data["auth"] == "ok"
+    assert data["jobs"] == "ok"
+    assert data["storage"] == "unconfigured"
+    assert data["reports"] == "ok"
 
 
 @pytest.mark.asyncio

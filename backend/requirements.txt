@@ -26,3 +26,6 @@ boto3==1.43.51
 # Report export (Excel / PDF) — pins match Atlas for convention parity
 openpyxl==3.1.5
 fpdf2==2.8.7
+
+# Observability
+prometheus-client==0.25.0
