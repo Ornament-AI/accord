@@ -75,7 +75,7 @@ Summed classifications used on pay lines:
 - `AG_deduction` (GPF, NPS employee, EPF employee, employer-transfer lines)
 - `treasury_deduction` (income tax, professional tax, GIS)
 - `external_recovery` (HBA)
-- `accommodation_charge` (actual license-fee recovery; ADR 0007 calculator kind, used here as the deduction classification for actual recovery — **not** `gross_adjustment`)
+- accommodation license-fee recovery is classified `external_recovery` (its ADR 0007 *calculator kind* remains `accommodation_charge`; classification and calculator kind are distinct axes)
 
 Non-summed:
 

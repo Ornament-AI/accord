@@ -6,11 +6,9 @@
     "AG_deduction",
     "treasury_deduction",
     "gross_adjustment",
-    "external_recovery",
-    "accommodation_charge"
+    "external_recovery"
   ],
   "notes": {
-    "accommodation_charge": "Calculator kind per ADR 0007; treated as a deduction classification for actual license-fee recovery in this fixture (not gross_adjustment).",
     "informational": "Components with informational=true / excluded_from_totals=true are outside gross-to-net identities.",
     "nps_employer_asymmetry": "NPS_EMPLOYER_TRANSFER is an employer-transfer deduction with NO matching employer_contribution addition in gross_bill. EPF_EMPLOYER (employer_contribution) pairs 1:1 with EPF_EMPLOYER_TRANSFER.",
     "money": "All amounts are whole INR rupees as integer strings. No paise/fractional amounts in this fixture."

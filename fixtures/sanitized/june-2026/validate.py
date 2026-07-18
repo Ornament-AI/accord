@@ -61,8 +61,7 @@ DEDUCTION_CLASSIFICATIONS = {
     "AG_deduction",
     "treasury_deduction",
     "external_recovery",
-    "accommodation_charge",
-}
+    }
 
 FAILURES: list[str] = []
 PASSES: list[str] = []
