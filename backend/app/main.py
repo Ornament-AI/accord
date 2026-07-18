@@ -24,6 +24,7 @@ from app.api.routes import (
     organizations,
     pay_setup,
     payroll_runs,
+    run_commands,
 )
 from app.config import Settings, get_settings
 from app.db import dispose_engine, session_context
@@ -292,6 +293,7 @@ def create_app() -> FastAPI:
     app.include_router(org_structure.router, prefix="/api")
     app.include_router(pay_setup.router, prefix="/api")
     app.include_router(payroll_runs.router, prefix="/api")
+    app.include_router(run_commands.router, prefix="/api")
     return app
 
 
