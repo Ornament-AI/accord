@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import Session, TenantCtx, require_capability
 from app.auth.principal import AuthPrincipal
+from app.schemas.run_results import CalculateResponse
 from app.services import run_calculation as run_calculation_service
 
 router = APIRouter(tags=["payroll-run-commands"])
@@ -25,7 +26,10 @@ def _user_id(tenant: TenantCtx) -> UUID:
     return UUID(tenant.user_id)
 
 
-@router.post("/payroll-runs/{run_id}/calculate")
+@router.post(
+    "/payroll-runs/{run_id}/calculate",
+    response_model=CalculateResponse,
+)
 async def calculate_payroll_run(
     run_id: UUID,
     tenant: TenantCtx,

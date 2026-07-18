@@ -22,6 +22,7 @@ from app.schemas.payroll_runs import (
     _serialize_money,
     _serialize_rate,
 )
+from app.services import run_results as run_results_service
 
 
 def _serialize_optional_money(value: Decimal | None) -> str | None:
@@ -258,7 +259,13 @@ async def get_run(
 ) -> dict[str, Any]:
     run = await _get_run(db, organization_id=organization_id, run_id=run_id)
     period = await _get_period(db, organization_id=organization_id, period_id=run.period_id)
-    return _run_detail(run, period)
+    detail = _run_detail(run, period)
+    detail["current_version"] = await run_results_service.get_current_version_for_run(
+        db,
+        organization_id=organization_id,
+        run=run,
+    )
+    return detail
 
 
 async def upsert_run_input(

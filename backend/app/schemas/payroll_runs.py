@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import (
@@ -17,8 +17,10 @@ from pydantic import (
     field_validator,
 )
 
+from app.schemas.run_results import CurrentVersion
 
-def _require_decimal_string(value: Any) -> Decimal:
+
+def _require_decimal_string(value: object) -> Decimal:
     if isinstance(value, bool) or not isinstance(value, str):
         raise ValueError("Must be a decimal string")
     try:
@@ -107,7 +109,7 @@ class PayrollRunDetail(BaseModel):
     period_status: str
     run_type: str
     status: str
-    current_version: dict[str, Any] | None = None
+    current_version: CurrentVersion | None = None
     lock_version: int
     created_at: datetime
     updated_at: datetime
