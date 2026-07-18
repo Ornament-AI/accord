@@ -5,8 +5,10 @@ and tenancy tables (users, organizations, memberships, settings, idempotency
 keys, sessions). Phase 3 adds org-structure, employee master data (header +
 version tables), pay components, recurring instructions, advances,
 accommodation, and report configurations. Phase 4 adds payroll run persistence
-(periods, runs, draft inputs, and immutable calculation snapshots). Importing
-this package populates ``SQLModel.metadata`` for Alembic.
+(periods, runs, draft inputs, and immutable calculation snapshots). Phase 5
+adds platform tables (audit, outbox, approvals, jobs, export artifacts,
+webhook dedup). Importing this package populates ``SQLModel.metadata`` for
+Alembic.
 """
 
 from app.models.accommodation import (
@@ -47,6 +49,14 @@ from app.models.payroll_runs import (
     payroll_result_lines,
     payroll_run_versions,
 )
+from app.models.platform import (
+    AuditEvent,
+    ExportArtifact,
+    Job,
+    OutboxEvent,
+    PayrollApproval,
+    WebhookEvent,
+)
 from app.models.recurring_instructions import (
     RecurringInstruction,
     recurring_instruction_versions,
@@ -56,15 +66,20 @@ from app.models.reports import ReportConfiguration
 __all__ = [
     "AccommodationAssignment",
     "AdvanceAccount",
+    "AuditEvent",
     "Employee",
     "EmployeeGroup",
+    "ExportArtifact",
     "IdempotencyKey",
+    "Job",
     "Office",
     "Organization",
     "OrganizationMembership",
     "OrganizationOwnedMixin",
     "OrganizationSettings",
+    "OutboxEvent",
     "PayComponent",
+    "PayrollApproval",
     "PayrollPeriod",
     "PayrollRun",
     "PayrollRunInput",
@@ -76,6 +91,7 @@ __all__ = [
     "TimestampMixin",
     "User",
     "UUIDPrimaryKeyMixin",
+    "WebhookEvent",
     "accommodation_charge_versions",
     "advance_installment_versions",
     "component_rate_versions",
