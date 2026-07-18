@@ -338,5 +338,5 @@ async def workos_webhook(request: Request, db: Session) -> Response:
             error="WebhookUnauthorized",
         )
 
-    await handle_workos_event(db, event)
+    await handle_workos_event(db, event, raw_body=body)
     return Response(status_code=status.HTTP_200_OK)
