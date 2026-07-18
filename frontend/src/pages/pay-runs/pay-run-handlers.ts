@@ -1,5 +1,4 @@
 import { HttpResponse, http } from "msw";
-
 import type {
 	PayrollPeriodCreate,
 	PayrollPeriodResponse,
@@ -11,6 +10,7 @@ import type {
 	PayrollRunListItem,
 	PayrollRunTotals,
 } from "@/lib/api/payroll-runs";
+import type { components } from "@/types/api.generated";
 
 export type PayRunHandlersOptions = {
 	periods?: PayrollPeriodResponse[];
@@ -143,14 +143,14 @@ export function buildRunInput(
 
 export function buildCurrentVersion(
 	overrides: Partial<PayrollRunCalculateResult> = {},
-): Record<string, unknown> {
+): components["schemas"]["CurrentVersion"] {
 	return {
-		run_id: overrides.run_id ?? "run-1",
-		version_id: overrides.version_id ?? "ver-1",
+		id: overrides.version_id ?? "ver-1",
 		version_number: overrides.version_number ?? 1,
 		content_hash: overrides.content_hash ?? "hash-abc123",
 		engine_version: overrides.engine_version ?? "engine-1.0.0",
-		totals: overrides.totals ?? DEFAULT_TOTALS,
+		calculated_at: "2026-07-18T12:00:00Z",
+		totals: { ...DEFAULT_TOTALS, ...(overrides.totals ?? {}) } as { [key: string]: string },
 	};
 }
 
