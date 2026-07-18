@@ -34,9 +34,36 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
 from app.exceptions import ConflictError
 from app.models.base import utcnow
 from app.models.identity import IdempotencyKey
+from app.tenancy import set_config_local
+
+_TENANT_GUCS = ("app.organization_id", "app.user_id", "app.request_id")
+
+
+async def _snapshot_tenant_gucs(db: AsyncSession) -> dict[str, str]:
+    """Capture transaction-local tenant context before a mid-command commit.
+
+    ``SET LOCAL`` state dies with the transaction; commands that commit their
+    idempotency claim before executing must restore it or every subsequent
+    tenant-scoped statement runs blind under forced RLS (observed as 404s).
+    """
+    values: dict[str, str] = {}
+    for guc in _TENANT_GUCS:
+        result = await db.execute(text("SELECT current_setting(:name, true)"), {"name": guc})
+        value = result.scalar_one_or_none()
+        if value:
+            values[guc] = value
+    return values
+
+
+async def _rebind_tenant_gucs(db: AsyncSession, values: dict[str, str]) -> None:
+    for guc, value in values.items():
+        await set_config_local(db, guc, value)
+
 
 Executor = Callable[[], Awaitable[dict[str, Any]]]
 
@@ -95,7 +122,9 @@ async def idempotent_command(
         expires_at=expires_at,
     )
     if claimed_id is not None:
+        gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
+        await _rebind_tenant_gucs(db, gucs)
         return await _execute_claimed(db, row_id=claimed_id, executor=executor)
 
     row = await _load_row(db, organization_id=organization_id, key=key, for_update=True)
@@ -111,7 +140,9 @@ async def idempotent_command(
         if claimed_id is None:
             await db.rollback()
             raise ConflictError("command in progress")
+        gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
+        await _rebind_tenant_gucs(db, gucs)
         return await _execute_claimed(db, row_id=claimed_id, executor=executor)
 
     now = utcnow()
@@ -122,7 +153,9 @@ async def idempotent_command(
             request_hash=request_hash,
             expires_at=expires_at,
         )
+        gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
+        await _rebind_tenant_gucs(db, gucs)
         return await _execute_claimed(db, row_id=row.id, executor=executor)
 
     if row.request_hash != request_hash:
@@ -147,7 +180,9 @@ async def idempotent_command(
             request_hash=request_hash,
             expires_at=expires_at,
         )
+        gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
+        await _rebind_tenant_gucs(db, gucs)
         return await _execute_claimed(db, row_id=row.id, executor=executor)
 
     await db.rollback()

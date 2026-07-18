@@ -328,12 +328,15 @@ async def upsert_run_input(
 
     try:
         await db.flush()
+        # Build the response BEFORE commit: the commit ends the transaction and
+        # clears SET LOCAL tenant GUCs, so a post-commit refresh SELECT runs
+        # blind under forced RLS and raises InvalidRequestError.
+        response = _input_response(row)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         _raise_integrity_error(exc)
-    await db.refresh(row)
-    return _input_response(row)
+    return response
 
 
 async def list_run_inputs(

@@ -19,5 +19,9 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
 
 export function RunStatusBadge({ status }: { status: string }) {
 	const variant = STATUS_VARIANTS[status] ?? "muted";
-	return <Badge variant={variant}>{statusLabel(status)}</Badge>;
+	return (
+		<Badge variant={variant} data-testid="run-status-badge" data-status={status}>
+			{statusLabel(status)}
+		</Badge>
+	);
 }

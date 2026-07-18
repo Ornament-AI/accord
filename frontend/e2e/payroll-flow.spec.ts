@@ -51,36 +51,11 @@ test("period + run → calculate → validate → submit; self-approve blocked",
 	await runRow.click();
 	await expect(page.getByTestId("pay-run-detail-page")).toBeVisible({ timeout: 30_000 });
 
-	// Attempt add-input for diagnostics; tolerate the known upsert bug and continue.
-	await page.getByRole("button", { name: "Add input" }).click();
-	const inputDialog = page.getByRole("dialog");
-	await expect(inputDialog.getByRole("heading", { name: "Add run input" })).toBeVisible();
-	await inputDialog.getByLabel("Search employees").fill(ctx.employeeNumber!);
-	await page.waitForTimeout(500);
-	await selectWithin(inputDialog, "Employee", new RegExp(ctx.employeeNumber!));
-	await inputDialog.getByLabel("Component code").fill(ctx.componentCode ?? "OT");
-	await selectWithin(inputDialog, "Input kind", "One Time");
-	await inputDialog.getByLabel("Amount").fill("1500.00");
-	await inputDialog.getByLabel("Reason").fill("E2E one-time adjustment");
-	await inputDialog.getByRole("button", { name: "Add input" }).click();
-
-	// Wait for either success (dialog closes) or the known upsert failure alert.
-	const upsertError = inputDialog.getByRole("alert");
-	await Promise.race([
-		inputDialog.waitFor({ state: "hidden", timeout: 15_000 }),
-		upsertError.waitFor({ state: "visible", timeout: 15_000 }),
-	]).catch(() => undefined);
-
-	if (await inputDialog.isVisible().catch(() => false)) {
-		console.warn(
-			"[e2e] Known bug: payroll run input upsert fails (db.refresh after commit). Continuing without draft input; Calculate uses employee basic_pay.",
-		);
-		await inputDialog.getByRole("button", { name: "Cancel" }).click();
-		await expect(inputDialog).toBeHidden({ timeout: 10_000 });
-	} else if (ctx.componentCode) {
-		await expect(page.getByTestId("pay-run-detail-page")).toContainText(ctx.componentCode);
-	}
-
+	// This test covers the calculate → validate → submit → maker/checker critical
+	// path; it deliberately does NOT add a draft input. Draft-input entry has its
+	// own dedicated test below. (Adding a one_time input whose component_code
+	// matches an already-resolved component would raise a duplicate_component_code
+	// validation error and block submit — a test artifact, not a product defect.)
 	await page.getByRole("button", { name: "Calculate pay run" }).click();
 	await expect(page.getByTestId("pay-run-totals")).toBeVisible({ timeout: 60_000 });
 	await expect(page.getByTestId("pay-run-totals")).toContainText(/Gross|Earnings|Net payable/i);
@@ -88,35 +63,25 @@ test("period + run → calculate → validate → submit; self-approve blocked",
 	await page.getByTestId("workflow-action-validate").click();
 	await expect(page.getByTestId("validation-findings-panel")).toBeVisible({ timeout: 30_000 });
 
-	/**
-	 * WORKAROUND + APP BUG:
-	 * Workflow confirm always sends Idempotency-Key. `idempotent_command` commits
-	 * the in_progress lease before running submit/approve, which drops the
-	 * request-scoped RLS GUC (`SET LOCAL`). `_lock_run` then returns 404
-	 * "Payroll run not found." even though calculate/validate (no idempotency)
-	 * succeeded on the same id.
-	 * Suspect: backend/app/services/idempotency.py commit-before-executor +
-	 * tenancy bind as SET LOCAL.
-	 * Strip Idempotency-Key so the optional header is omitted and submit/approve
-	 * run without the broken lease path. See fixme test below for the failing case.
-	 */
-	await page.route("**/api/payroll-runs/*/submit", async (route) => {
-		const headers = { ...route.request().headers() };
-		delete headers["idempotency-key"];
-		await route.continue({ headers });
-	});
-	await page.route("**/api/payroll-runs/*/approve", async (route) => {
-		const headers = { ...route.request().headers() };
-		delete headers["idempotency-key"];
-		await route.continue({ headers });
-	});
+	// Idempotency-Key is sent as normal: the lease-commit RLS bug is fixed
+	// (idempotent_command snapshots and rebinds SET LOCAL tenant GUCs).
 
 	await page.getByTestId("workflow-action-submit").click();
 	const confirm = page.getByTestId("workflow-confirm-dialog");
 	await expect(confirm).toBeVisible();
 	await confirm.getByTestId("workflow-confirm-submit").click();
 	await expect(confirm).toBeHidden({ timeout: 30_000 });
-	await expect(page.getByText("Submitted", { exact: true })).toBeVisible({ timeout: 30_000 });
+	// Assert the run reached "submitted". Reload once if the post-mutation refetch
+	// hasn't settled — this asserts the persisted status (what a user sees on
+	// refresh), keeping the check about correctness rather than refetch timing.
+	const statusBadge = page.getByTestId("run-status-badge");
+	try {
+		await expect(statusBadge).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
+	} catch {
+		await page.reload();
+		await expect(page.getByTestId("pay-run-detail-page")).toBeVisible({ timeout: 30_000 });
+		await expect(statusBadge).toHaveAttribute("data-status", "submitted", { timeout: 30_000 });
+	}
 
 	await page.getByTestId("workflow-action-approve").click();
 	const approveConfirm = page.getByTestId("workflow-confirm-dialog");
@@ -126,54 +91,48 @@ test("period + run → calculate → validate → submit; self-approve blocked",
 	await expect(page.getByTestId("maker-checker-alert")).toContainText(/Maker\/checker/i);
 });
 
-test.fixme(
-	"add direct run input lists component after save",
-	async ({ page }) => {
-		/**
-		 * BUG: PUT /api/payroll-runs/{id}/inputs/{employeeId}/{code} → 500.
-		 * Backend: sqlalchemy.exc.InvalidRequestError: Could not refresh instance
-		 * '<PayrollRunInput>' after commit in
-		 * backend/app/services/payroll_runs.py upsert_run_input (~line 335).
-		 * UI: "An unexpected error occurred." in Add run input dialog.
-		 * Repro: open draft run → Add input → employee + component + amount + reason → Add input.
-		 */
-		const ctx = readRunContext();
-		await page.goto("/pay-runs");
-		await page.locator("table tbody tr").first().click();
-		await page.getByRole("button", { name: "Add input" }).click();
-		const inputDialog = page.getByRole("dialog");
-		await inputDialog.getByLabel("Search employees").fill(ctx.employeeNumber!);
-		await page.waitForTimeout(500);
-		await selectWithin(inputDialog, "Employee", new RegExp(ctx.employeeNumber!));
-		await inputDialog.getByLabel("Component code").fill(ctx.componentCode!);
-		await selectWithin(inputDialog, "Input kind", "One Time");
-		await inputDialog.getByLabel("Amount").fill("1500.00");
-		await inputDialog.getByLabel("Reason").fill("E2E one-time adjustment");
-		await inputDialog.getByRole("button", { name: "Add input" }).click();
-		await expect(inputDialog).toBeHidden({ timeout: 30_000 });
-		await expect(page.getByTestId("pay-run-detail-page")).toContainText(ctx.componentCode!);
-	},
-);
+test("add direct run input lists component after save", async ({ page }) => {
+	/**
+	 * FIXED: PUT input upsert previously 500'd (post-commit refresh under cleared RLS GUCs).
+	 * Backend: sqlalchemy.exc.InvalidRequestError: Could not refresh instance
+	 * '<PayrollRunInput>' after commit in
+	 * backend/app/services/payroll_runs.py upsert_run_input (~line 335).
+	 * UI: "An unexpected error occurred." in Add run input dialog.
+	 * Repro: open draft run → Add input → employee + component + amount + reason → Add input.
+	 */
+	const ctx = readRunContext();
+	await page.goto("/pay-runs");
+	await page.locator("table tbody tr").first().click();
+	await page.getByRole("button", { name: "Add input" }).click();
+	const inputDialog = page.getByRole("dialog");
+	await inputDialog.getByLabel("Search employees").fill(ctx.employeeNumber!);
+	await page.waitForTimeout(500);
+	await selectWithin(inputDialog, "Employee", new RegExp(ctx.employeeNumber!));
+	await inputDialog.getByLabel("Component code").fill(ctx.componentCode!);
+	await selectWithin(inputDialog, "Input kind", "One Time");
+	await inputDialog.getByLabel("Amount").fill("1500.00");
+	await inputDialog.getByLabel("Reason").fill("E2E one-time adjustment");
+	await inputDialog.getByRole("button", { name: "Add input" }).click();
+	await expect(inputDialog).toBeHidden({ timeout: 30_000 });
+	await expect(page.getByTestId("pay-run-detail-page")).toContainText(ctx.componentCode!);
+});
 
-test.fixme(
-	"submit with Idempotency-Key does not 404 after calculate",
-	async ({ page }) => {
-		/**
-		 * BUG: POST /api/payroll-runs/{id}/submit with Idempotency-Key → 404
-		 * "Payroll run not found." after a successful calculate+validate on the
-		 * same run. Cause: idempotent_command commits the lease before executor,
-		 * clearing SET LOCAL tenant GUCs so FOR UPDATE in _lock_run sees no row.
-		 * Suspect: backend/app/services/idempotency.py + tenancy bind.
-		 * Repro: calculated run → Submit (UI always sends Idempotency-Key) → error
-		 * in confirm dialog.
-		 */
-		await page.goto("/pay-runs");
-		await page.locator("table tbody tr").first().click();
-		await expect(page.getByText("Calculated", { exact: true })).toBeVisible({ timeout: 30_000 });
-		await page.getByTestId("workflow-action-submit").click();
-		const confirm = page.getByTestId("workflow-confirm-dialog");
-		await confirm.getByTestId("workflow-confirm-submit").click();
-		await expect(confirm).toBeHidden({ timeout: 30_000 });
-		await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
-	},
-);
+test("submit with Idempotency-Key does not 404 after calculate", async ({ page }) => {
+	/**
+	 * FIXED: submit with Idempotency-Key previously 404'd
+	 * "Payroll run not found." after a successful calculate+validate on the
+	 * same run. Cause: idempotent_command commits the lease before executor,
+	 * clearing SET LOCAL tenant GUCs so FOR UPDATE in _lock_run sees no row.
+	 * Suspect: backend/app/services/idempotency.py + tenancy bind.
+	 * Repro: calculated run → Submit (UI always sends Idempotency-Key) → error
+	 * in confirm dialog.
+	 */
+	await page.goto("/pay-runs");
+	await page.locator("table tbody tr").first().click();
+	await expect(page.getByText("Calculated", { exact: true })).toBeVisible({ timeout: 30_000 });
+	await page.getByTestId("workflow-action-submit").click();
+	const confirm = page.getByTestId("workflow-confirm-dialog");
+	await confirm.getByTestId("workflow-confirm-submit").click();
+	await expect(confirm).toBeHidden({ timeout: 30_000 });
+	await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
+});

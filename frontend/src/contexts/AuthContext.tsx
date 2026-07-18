@@ -5,6 +5,7 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 } from "react";
 import { fetchJson, fetchVoid } from "@/lib/api/http";
@@ -123,21 +124,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [isLoading, setIsLoading] = useState(true);
 	const [shellEpoch, setShellEpoch] = useState(0);
 
+	// Monotonic token: any explicit state mutation (create/switch/logout via
+	// applyMeResponse/clearAuthState) bumps it so a slower in-flight loadUser
+	// cannot overwrite newer state with a stale /me response. Session rotation
+	// on org create means a login-time /me (no active org) can resolve after the
+	// create response — without this guard it would revert the UI to no-org.
+	const authSeq = useRef(0);
+
 	const applyMeResponse = useCallback((me: AuthMeResponse) => {
+		authSeq.current += 1;
 		setUser(toAuthUser(me));
 		setActiveOrganization(me.active_organization);
 		setOrganizations(me.organizations);
 	}, []);
 
 	const clearAuthState = useCallback(() => {
+		authSeq.current += 1;
 		setUser(null);
 		setActiveOrganization(null);
 		setOrganizations([]);
 	}, []);
 
 	const loadUser = useCallback(async () => {
+		const seq = authSeq.current;
 		setIsLoading(true);
 		const me = await fetchCurrentUser();
+		// Drop the result if a newer explicit mutation happened while in flight.
+		if (authSeq.current !== seq) {
+			setIsLoading(false);
+			return;
+		}
 		if (me) {
 			applyMeResponse(me);
 		} else {
