@@ -27,6 +27,7 @@ from app.api.routes import (
     payroll_runs,
     run_commands,
     run_posting,
+    run_results,
     run_workflow,
 )
 from app.config import Settings, get_settings
@@ -299,6 +300,7 @@ def create_app() -> FastAPI:
     app.include_router(run_commands.router, prefix="/api")
     app.include_router(run_workflow.router, prefix="/api")
     app.include_router(run_posting.router, prefix="/api")
+    app.include_router(run_results.router, prefix="/api")
     app.include_router(audit.router, prefix="/api")
     return app
 
