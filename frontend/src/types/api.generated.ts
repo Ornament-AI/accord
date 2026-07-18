@@ -243,6 +243,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard */
+        get: operations["get_dashboard_api_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/employee-groups": {
         parameters: {
             query?: never;
@@ -1528,6 +1545,26 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /** CurrentPeriodRun */
+        CurrentPeriodRun: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /** Version Number */
+            version_number: number | null;
+        };
+        /** CurrentPeriodSummary */
+        CurrentPeriodSummary: {
+            /** Month */
+            month: number;
+            run: components["schemas"]["CurrentPeriodRun"] | null;
+            /** Year */
+            year: number;
+        };
         /**
          * CurrentVersion
          * @description Immutable calculated version summary (run detail + results list).
@@ -1553,6 +1590,17 @@ export interface components {
             };
             /** Version Number */
             version_number: number;
+        };
+        /** DashboardResponse */
+        DashboardResponse: {
+            current_period: components["schemas"]["CurrentPeriodSummary"] | null;
+            headcount: components["schemas"]["HeadcountSummary"];
+            latest_posted: components["schemas"]["PostedRunSummary"] | null;
+            pipeline: components["schemas"]["PipelineSummary"];
+            previous_posted: components["schemas"]["PostedRunSummary"] | null;
+            /** Recent Artifacts */
+            recent_artifacts: components["schemas"]["RecentArtifactSummary"][];
+            variance: components["schemas"]["VarianceSummary"] | null;
         };
         /** EmployeeDetail */
         EmployeeDetail: {
@@ -1718,6 +1766,12 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HeadcountSummary */
+        HeadcountSummary: {
+            /** Active Employees */
+            active_employees: number;
+            by_regime: components["schemas"]["RegimeBreakdown"];
         };
         /**
          * InputKind
@@ -2137,6 +2191,36 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** PeriodYearMonth */
+        PeriodYearMonth: {
+            /** Month */
+            month: number;
+            /** Year */
+            year: number;
+        };
+        /**
+         * PipelineSummary
+         * @description Counts of ``PayrollRun`` rows by status.
+         *
+         *     ``calculating`` runs are omitted from this map (not rolled into another
+         *     bucket).
+         */
+        PipelineSummary: {
+            /** Approved */
+            approved: number;
+            /** Calculated */
+            calculated: number;
+            /** Draft */
+            draft: number;
+            /** Posted */
+            posted: number;
+            /** Rejected */
+            rejected: number;
+            /** Reversed */
+            reversed: number;
+            /** Submitted */
+            submitted: number;
+        };
         /** PostCreate */
         PostCreate: {
             /** Class Name */
@@ -2172,6 +2256,34 @@ export interface components {
             class_name?: string | null;
             /** Designation */
             designation?: string | null;
+        };
+        /** PostedRunSummary */
+        PostedRunSummary: {
+            period: components["schemas"]["PeriodYearMonth"];
+            /**
+             * Posted At
+             * Format: date-time
+             */
+            posted_at: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            totals: components["schemas"]["PostedTotals"];
+        };
+        /** PostedTotals */
+        PostedTotals: {
+            /** Deductions */
+            deductions: string;
+            /** Earnings */
+            earnings: string;
+            /** Employer Contribution */
+            employer_contribution: string;
+            /** Gross */
+            gross: string;
+            /** Net */
+            net: string;
         };
         /** PostingInput */
         PostingInput: {
@@ -2331,6 +2443,21 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** RecentArtifactSummary */
+        RecentArtifactSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Report Type */
+            report_type: string;
+        };
         /** RecurringInstructionCreate */
         RecurringInstructionCreate: {
             /** Amount */
@@ -2437,6 +2564,15 @@ export interface components {
             rate?: string | null;
             /** Reason */
             reason?: string | null;
+        };
+        /** RegimeBreakdown */
+        RegimeBreakdown: {
+            /** Epf */
+            epf: number;
+            /** Gpf */
+            gpf: number;
+            /** Nps */
+            nps: number;
         };
         /** ReportConfigurationResponse */
         ReportConfigurationResponse: {
@@ -2551,6 +2687,13 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VarianceSummary */
+        VarianceSummary: {
+            /** Gross Delta */
+            gross_delta: string;
+            /** Net Delta */
+            net_delta: string;
         };
     };
     responses: never;
@@ -2949,6 +3092,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_dashboard_api_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardResponse"];
                 };
             };
         };
@@ -4671,9 +4834,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": unknown;
                 };
             };
         };
