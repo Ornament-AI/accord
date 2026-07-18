@@ -65,6 +65,13 @@ pnpm install
 ./scripts/start.sh
 ```
 
+Local scripts auto-detect free listen ports and cache them under `.accord-dev/`:
+- Postgres: `5432`, Homebrew `postgresql.conf`, then `5433` (`pg.port`)
+- Frontend: `5173`, then `5174`… (`frontend.port`) — skips ports already taken (e.g. Atlas)
+- Backend: `8000`, then `8002`… (`backend.port`)
+
+Set `PGPORT`, `FRONTEND_PORT`, or `BACKEND_PORT` to force a specific port.
+
 `./scripts/dev-setup.sh` creates the simple `ACCORD_DB_USER` / `ACCORD_DB_NAME`
 role and databases that `start.sh` expects, and also applies
 `backend/scripts/create_roles.sql` so ADR DSNs in `backend/.env.example`

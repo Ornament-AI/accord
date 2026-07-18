@@ -1,24 +1,33 @@
 #!/usr/bin/env bash
 # Show local Accord dev process and port status.
 # Adapted from Atlas scripts/status.sh (v1.1.0): state dir renamed .atlas-dev
-# -> .accord-dev, PGPORT default changed to Accord's native 5432 (see
-# scripts/start.sh).
+# -> .accord-dev; Postgres / app ports are auto-resolved via scripts/lib.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ACCORD_ROOT="$ROOT"
 STATE_DIR="$ROOT/.accord-dev"
-
-BACKEND_PORT="${BACKEND_PORT:-8000}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-PGPORT="${PGPORT:-5432}"
 
 DEV_UI_APP_ID="accord"
 DEV_UI_APP_NAME="Accord"
 DEV_UI_COLOR="35"
 # shellcheck source=scripts/lib/dev-ui.sh
 source "$SCRIPT_DIR/lib/dev-ui.sh"
+# shellcheck source=scripts/lib/postgres.sh
+source "$SCRIPT_DIR/lib/postgres.sh"
+# shellcheck source=scripts/lib/ports.sh
+source "$SCRIPT_DIR/lib/ports.sh"
+
+# Quiet resolve for status (no step spam); still honors overrides / cache.
+# App ports are load-only so status never steals a new free port / rewrites cache.
+info() { :; }
+warn() { :; }
+resolve_pg_port
+load_backend_port
+load_frontend_port
+PGHOST="${PGHOST:-127.0.0.1}"
 
 is_running() {
 	local pid="$1"
@@ -47,7 +56,7 @@ print_port_status() {
 	local port="$2"
 	if ! command -v lsof >/dev/null 2>&1; then
 		ui_kv "$name port" "unknown (lsof missing)"
-	elif lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+	elif port_is_listening "$port"; then
 		ui_kv "$name port" "listening on $port"
 	else
 		ui_kv "$name port" "not listening on $port"
@@ -60,3 +69,8 @@ print_pidfile_status frontend
 print_port_status backend "$BACKEND_PORT"
 print_port_status frontend "$FRONTEND_PORT"
 print_port_status postgres "$PGPORT"
+if pg_is_ready_on "$PGPORT"; then
+	ui_kv "postgres" "ready at $PGHOST:$PGPORT"
+else
+	ui_kv "postgres" "not ready at $PGHOST:$PGPORT"
+fi

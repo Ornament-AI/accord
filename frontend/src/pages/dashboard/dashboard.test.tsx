@@ -145,7 +145,7 @@ describe("Dashboard page", () => {
 			renderApp({ initialEntries: ["/"] });
 
 			expect(
-				await screen.findByTestId("dashboard-welcome", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByTestId("dashboard-limited", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(screen.getByText("Limited dashboard access")).toBeInTheDocument();
 			expect(screen.queryByTestId("dashboard-content")).not.toBeInTheDocument();

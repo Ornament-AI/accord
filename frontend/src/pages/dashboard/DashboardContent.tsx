@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/AuthContext";
 import { useDashboard } from "@/lib/api/dashboard";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -14,12 +13,10 @@ import { PipelineStrip } from "./PipelineStrip";
 import { PostedComparisonChart } from "./PostedComparisonChart";
 import { RecentArtifactsList } from "./RecentArtifactsList";
 import { StatCards } from "./StatCards";
-import { WelcomeCard } from "./WelcomeCard";
 
 function DashboardSkeleton() {
 	return (
 		<div className="flex flex-col gap-6" data-testid="dashboard-loading">
-			<Skeleton className="h-28 w-full" />
 			<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 				<Skeleton className="h-28 w-full" />
 				<Skeleton className="h-28 w-full" />
@@ -33,7 +30,6 @@ function DashboardSkeleton() {
 }
 
 export function DashboardContent() {
-	const { user, activeOrganization } = useAuth();
 	const dashboardQuery = useDashboard();
 
 	if (dashboardQuery.isLoading) {
@@ -59,8 +55,6 @@ export function DashboardContent() {
 
 	return (
 		<div className="flex flex-col gap-6" data-testid="dashboard-content">
-			<WelcomeCard userName={user?.name} organizationName={activeOrganization?.name} />
-
 			{!hasEmployees ? (
 				<Card data-testid="empty-employees">
 					<CardContent className="pt-6">

@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Stop Accord dev backend and frontend processes. Postgres is left running.
 # Adapted from Atlas scripts/stop.sh (v1.1.0): state dir renamed .atlas-dev ->
-# .accord-dev; no other behavior change.
+# .accord-dev; listen ports come from cache / env (see scripts/lib/ports.sh).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ACCORD_ROOT="$ROOT"
 STATE_DIR="$ROOT/.accord-dev"
-
-BACKEND_PORT="${BACKEND_PORT:-8000}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 DEV_UI_APP_ID="accord"
 DEV_UI_APP_NAME="Accord"
@@ -20,6 +18,12 @@ source "$SCRIPT_DIR/lib/dev-ui.sh"
 info() { ui_step "$1"; }
 warn() { ui_warn "$1"; }
 die() { ui_die "$1"; }
+# shellcheck source=scripts/lib/ports.sh
+source "$SCRIPT_DIR/lib/ports.sh"
+
+# Prefer explicit env, then cache, then defaults — never allocate a new free port.
+load_backend_port
+load_frontend_port
 
 ui_header "Stop Local Dev"
 
@@ -76,6 +80,10 @@ stop_pidfile() {
 stop_port() {
 	local port="$1" name="$2" pid
 	local pids
+	# Only free a port when it still matches our (now-removed) pidfile ownership
+	# pattern, or when the caller passed an explicit override. Default stop path
+	# relies on pidfiles; this is a safety net for orphan listeners on the
+	# *cached* Accord port only.
 	pids="$(lsof -ti:"$port" 2>/dev/null || true)"
 	if [[ -z "$pids" ]]; then
 		return 0
@@ -91,8 +99,14 @@ stop_port() {
 
 stop_pidfile backend
 stop_pidfile frontend
-stop_port "$BACKEND_PORT"  "backend"
-stop_port "$FRONTEND_PORT" "frontend (vite)"
+# Only reclaim cached Accord ports — never the hard-coded defaults when cache
+# pointed elsewhere (avoids killing Atlas on 5173/8000).
+if cached="$(read_cached_port backend)" && [[ "$BACKEND_PORT" == "$cached" ]]; then
+	stop_port "$BACKEND_PORT" "backend"
+fi
+if cached="$(read_cached_port frontend)" && [[ "$FRONTEND_PORT" == "$cached" ]]; then
+	stop_port "$FRONTEND_PORT" "frontend (vite)"
+fi
 
 if [[ "$stopped" -eq 1 ]]; then
 	info "Accord app processes stopped"

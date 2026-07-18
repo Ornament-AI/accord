@@ -13,6 +13,8 @@
 # vars renamed ATLAS_DB_* -> ACCORD_DB_*, state dir renamed .atlas-dev ->
 # .accord-dev. Dev-auth users are created lazily by the backend login route;
 # the launcher only needs to forward the configured local identity.
+# Listen ports are auto-resolved when FRONTEND_PORT / BACKEND_PORT / PGPORT
+# are unset (see scripts/lib/ports.sh and scripts/lib/postgres.sh).
 
 set -euo pipefail
 
@@ -32,30 +34,22 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ACCORD_ROOT="$ROOT"
 BACKEND="$ROOT/backend"
 FRONTEND="$ROOT/frontend"
 STATE_DIR="$ROOT/.accord-dev"
 LOG_DIR="$STATE_DIR/logs"
 
-BACKEND_PORT="${BACKEND_PORT:-8000}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 READY_PATH=/api/readyz
 
 PGHOST="${PGHOST:-127.0.0.1}"
-PGPORT="${PGPORT:-5432}"
 APP_USER="${ACCORD_DB_USER:-accord}"
 APP_PASSWORD="${ACCORD_DB_PASSWORD:-accord}"
 APP_DB="${ACCORD_DB_NAME:-accord}"
-DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://$APP_USER:$APP_PASSWORD@$PGHOST:$PGPORT/$APP_DB}"
-MIGRATIONS_DATABASE_URL="${MIGRATIONS_DATABASE_URL:-$DATABASE_URL}"
-CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT}"
 DEV_AUTH_BYPASS="${DEV_AUTH_BYPASS:-true}"
 DEV_AUTH_EMAIL="${DEV_AUTH_EMAIL:-dev@accord.local}"
 DEV_AUTH_NAME="${DEV_AUTH_NAME:-Dev Test User}"
 SESSION_SECRET_KEY="${SESSION_SECRET_KEY:-dev-only-local-session-secret}"
-BASE_URL="${BASE_URL:-http://127.0.0.1:$FRONTEND_PORT}"
-PUBLIC_APP_URL="${PUBLIC_APP_URL:-$BASE_URL}"
-API_PROXY_TARGET="${API_PROXY_TARGET:-http://127.0.0.1:$BACKEND_PORT}"
 
 mkdir -p "$LOG_DIR"
 
@@ -69,27 +63,49 @@ warn() { ui_warn "$1"; }
 die() { ui_die "$1"; }
 # shellcheck source=scripts/lib/package-manager.sh
 source "$SCRIPT_DIR/lib/package-manager.sh"
+# shellcheck source=scripts/lib/postgres.sh
+source "$SCRIPT_DIR/lib/postgres.sh"
+# shellcheck source=scripts/lib/ports.sh
+source "$SCRIPT_DIR/lib/ports.sh"
 
 ui_header "Start Local Dev"
 
-free_port() {
-	local port="$1" name="$2" pid
-	local pids
-	pids="$(lsof -ti:"$port" 2>/dev/null || true)"
-	if [[ -z "$pids" ]]; then
-		return 0
+# Resolve listen ports before building URL defaults (explicit env / DATABASE_URL win).
+# Backend needs a frontend origin for CORS; frontend needs a backend proxy target.
+if (( START_BACKEND )); then
+	resolve_pg_port
+	resolve_backend_port
+fi
+resolve_frontend_port
+if (( !START_BACKEND )); then
+	if [[ -z "${BACKEND_PORT:-}" ]]; then
+		if cached="$(read_cached_port backend)"; then
+			BACKEND_PORT="$cached"
+		else
+			BACKEND_PORT="$ACCORD_BACKEND_DEFAULT_PORT"
+		fi
+		export BACKEND_PORT
 	fi
+fi
 
-	warn "freeing $name on port $port (pids: $pids)"
-	for pid in $pids; do
+DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://$APP_USER:$APP_PASSWORD@$PGHOST:${PGPORT:-5432}/$APP_DB}"
+MIGRATIONS_DATABASE_URL="${MIGRATIONS_DATABASE_URL:-$DATABASE_URL}"
+CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:$FRONTEND_PORT}"
+PUBLIC_APP_URL="${PUBLIC_APP_URL:-$BASE_URL}"
+API_PROXY_TARGET="${API_PROXY_TARGET:-http://127.0.0.1:$BACKEND_PORT}"
+
+stop_stale_pidfile() {
+	local name="$1" pidfile="$STATE_DIR/$name.pid" pid
+	[[ -f "$pidfile" ]] || return 0
+	pid="$(tr -d '[:space:]' <"$pidfile" 2>/dev/null || true)"
+	if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+		warn "stopping stale $name (pid $pid)"
 		kill "$pid" 2>/dev/null || true
-	done
-	sleep 0.5
-
-	pids="$(lsof -ti:"$port" 2>/dev/null || true)"
-	for pid in $pids; do
+		sleep 0.3
 		kill -9 "$pid" 2>/dev/null || true
-	done
+	fi
+	rm -f "$pidfile"
 }
 
 http_status() {
@@ -105,26 +121,6 @@ frontend_ready() {
 	status="$(http_status "http://127.0.0.1:$FRONTEND_PORT/")"
 	[[ "$status" == "200" || "$status" == "304" ]] || return 1
 	[[ "$(http_status "http://127.0.0.1:$FRONTEND_PORT$READY_PATH")" == "200" ]]
-}
-
-find_postgres_tool() {
-	local tool="$1" prefix formula
-	if command -v "$tool" >/dev/null 2>&1; then
-		command -v "$tool"
-		return 0
-	fi
-
-	if command -v brew >/dev/null 2>&1; then
-		for formula in postgresql@18 postgresql; do
-			prefix="$(brew --prefix "$formula" 2>/dev/null || true)"
-			if [[ -n "$prefix" && -x "$prefix/bin/$tool" ]]; then
-				printf '%s\n' "$prefix/bin/$tool"
-				return 0
-			fi
-		done
-	fi
-
-	return 1
 }
 
 if (( START_BACKEND )); then
@@ -145,7 +141,7 @@ if (( START_BACKEND )); then
 	fi
 
 	if ! PGPASSWORD="$APP_PASSWORD" "$PSQL" -h "$PGHOST" -p "$PGPORT" -U "$APP_USER" -d "$APP_DB" -Atqc "SELECT 1" >/dev/null 2>&1; then
-		die "Postgres not ready for $APP_DB at $PGHOST:$PGPORT as $APP_USER. Run: ./scripts/dev-setup.sh"
+		die "Postgres not ready for $APP_DB at $PGHOST:$PGPORT as $APP_USER. Run: ./scripts/dev-setup.sh (or ./scripts/dev-setup.sh --start)"
 	fi
 	info "Postgres $APP_DB at $PGHOST:$PGPORT"
 fi
@@ -159,8 +155,8 @@ fi
 
 backend_up=0
 frontend_up=0
-backend_ready && backend_up=1
-frontend_ready && frontend_up=1
+(( START_BACKEND )) && backend_ready && backend_up=1
+(( START_FRONTEND )) && frontend_ready && frontend_up=1
 
 if (( (!START_BACKEND || backend_up) && (!START_FRONTEND || frontend_up) )); then
 	(( START_BACKEND )) && info "backend already running on http://127.0.0.1:$BACKEND_PORT"
@@ -169,10 +165,13 @@ if (( (!START_BACKEND || backend_up) && (!START_FRONTEND || frontend_up) )); the
 fi
 
 if (( START_BACKEND && !backend_up )); then
-	if lsof -ti:"$BACKEND_PORT" >/dev/null 2>&1; then
-		warn "backend port $BACKEND_PORT is in use, but $READY_PATH is not healthy"
+	if port_is_listening "$BACKEND_PORT"; then
+		if port_matches_pidfile "$BACKEND_PORT" "$STATE_DIR/backend.pid"; then
+			stop_stale_pidfile backend
+		else
+			die "Backend port $BACKEND_PORT is in use by another process. Set BACKEND_PORT to a free port and retry."
+		fi
 	fi
-	free_port "$BACKEND_PORT" "backend"
 	(
 		cd "$BACKEND"
 		if [[ -d migrations/versions ]]; then
@@ -218,10 +217,13 @@ fi
 
 if (( START_FRONTEND && !frontend_up )); then
 	resolve_pnpm
-	if lsof -ti:"$FRONTEND_PORT" >/dev/null 2>&1; then
-		warn "frontend port $FRONTEND_PORT is in use, but the app/proxy check failed"
+	if port_is_listening "$FRONTEND_PORT"; then
+		if port_matches_pidfile "$FRONTEND_PORT" "$STATE_DIR/frontend.pid"; then
+			stop_stale_pidfile frontend
+		else
+			die "Frontend port $FRONTEND_PORT is in use by another process. Set FRONTEND_PORT to a free port and retry."
+		fi
 	fi
-	free_port "$FRONTEND_PORT" "frontend"
 	(
 		cd "$FRONTEND"
 		info "starting frontend on http://127.0.0.1:$FRONTEND_PORT"

@@ -25,7 +25,7 @@ test("dev-bypass login, create org, land on dashboard with switcher", async ({ p
 	await ensureUniqueOrganization(page, { name: orgName });
 	await ensureDashboard(page);
 
-	await expect(page.getByTestId("dashboard-welcome")).toContainText(orgName);
+	await expect(page.getByTestId("dashboard-page")).toBeVisible();
 
 	// Org switcher trigger shows the active organization name.
 	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();

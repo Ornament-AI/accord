@@ -21,14 +21,18 @@ import { cn } from "@/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH_STORAGE_KEY = "accord:sidebar:width:px";
-const LEGACY_SIDEBAR_WIDTH_STORAGE_KEY = "ornament:sidebar:width:px";
-const SIDEBAR_WIDTH = "18.5rem";
+const SIDEBAR_WIDTH_STORAGE_KEY = "accord:sidebar:width:v2:px";
+const LEGACY_SIDEBAR_WIDTH_STORAGE_KEYS = [
+	"accord:sidebar:width:px",
+	"ornament:sidebar:width:px",
+] as const;
+// Short nav labels (Dashboard, Employees, …) don't need the shadcn-default ~296px rail.
+const SIDEBAR_WIDTH = "14rem";
 const SIDEBAR_WIDTH_MOBILE = SIDEBAR_WIDTH;
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
-const SIDEBAR_ABSOLUTE_MIN_WIDTH_PX = 240;
-const SIDEBAR_MAX_WIDTH_PX = 520;
+const SIDEBAR_ABSOLUTE_MIN_WIDTH_PX = 200;
+const SIDEBAR_MAX_WIDTH_PX = 360;
 
 type SidebarContextProps = {
 	state: "expanded" | "collapsed";
@@ -70,15 +74,18 @@ function readPersistedSidebarOpen(defaultOpen: boolean) {
 function readPersistedSidebarWidthPx(): number | null {
 	if (typeof window === "undefined") return null;
 	try {
-		const rawWidth =
-			window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ??
-			window.localStorage.getItem(LEGACY_SIDEBAR_WIDTH_STORAGE_KEY);
-		if (!rawWidth) return null;
+		// v2 ignores legacy persisted widths so the narrower default takes effect once.
+		const rawWidth = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+		if (!rawWidth) {
+			for (const key of LEGACY_SIDEBAR_WIDTH_STORAGE_KEYS) {
+				window.localStorage.removeItem(key);
+			}
+			return null;
+		}
 		const parsedWidth = Number.parseFloat(rawWidth);
 		if (!Number.isFinite(parsedWidth)) return null;
 		const clamped = clampSidebarWidth(parsedWidth);
 		window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped));
-		window.localStorage.removeItem(LEGACY_SIDEBAR_WIDTH_STORAGE_KEY);
 		return clamped;
 	} catch {
 		return null;

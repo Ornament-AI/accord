@@ -10,8 +10,8 @@
 # accord_migrator / accord_worker) against the app database when
 # backend/scripts/create_roles.sql is present.
 #
-# Adapted from Atlas scripts/dev-setup.sh (v1.1.0): ATLAS_* -> ACCORD_*, default
-# port 5432 (shared Homebrew cluster) instead of a dedicated launchd service.
+# Adapted from Atlas scripts/dev-setup.sh (v1.1.0): ATLAS_* -> ACCORD_*, shared
+# Homebrew cluster with auto-detected local port (see scripts/lib/postgres.sh).
 
 set -euo pipefail
 
@@ -26,6 +26,9 @@ Environment overrides:
   ACCORD_DB_USER, ACCORD_DB_PASSWORD   local app role credentials
   ACCORD_DB_NAME, ACCORD_TEST_DB_NAME  app/test database names
   ACCORD_ROLE_PASSWORD                 password for ADR roles (default: ACCORD_DB_PASSWORD)
+
+When PGPORT is unset, the local Postgres port is auto-detected (and cached in
+.accord-dev/pg.port). Set PGPORT to force a specific port.
 EOF
 }
 
@@ -50,6 +53,7 @@ esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+ACCORD_ROOT="$ROOT"
 
 DEV_UI_APP_ID="accord"
 DEV_UI_APP_NAME="Accord"
@@ -59,11 +63,12 @@ source "$ROOT/scripts/lib/dev-ui.sh"
 info() { ui_step "$1"; }
 warn() { ui_warn "$1"; }
 die()  { ui_die "$1"; }
+# shellcheck source=scripts/lib/postgres.sh
+source "$ROOT/scripts/lib/postgres.sh"
 
 ui_header "Dev Setup"
 
 PGHOST="${PGHOST:-127.0.0.1}"
-PGPORT="${PGPORT:-5432}"
 ADMIN_USER="${PGUSER:-}"
 ADMIN_DB="${PGDATABASE:-postgres}"
 APP_USER="${ACCORD_DB_USER:-accord}"
@@ -72,26 +77,6 @@ APP_DB="${ACCORD_DB_NAME:-accord}"
 TEST_DB="${ACCORD_TEST_DB_NAME:-accord_test}"
 ROLE_PASSWORD="${ACCORD_ROLE_PASSWORD:-$APP_PASSWORD}"
 ROLES_SQL="$ROOT/backend/scripts/create_roles.sql"
-
-find_postgres_tool() {
-	local tool="$1" prefix formula
-	if command -v "$tool" >/dev/null 2>&1; then
-		command -v "$tool"
-		return 0
-	fi
-
-	if command -v brew >/dev/null 2>&1; then
-		for formula in postgresql@18 postgresql; do
-			prefix="$(brew --prefix "$formula" 2>/dev/null || true)"
-			if [[ -n "$prefix" && -x "$prefix/bin/$tool" ]]; then
-				printf '%s\n' "$prefix/bin/$tool"
-				return 0
-			fi
-		done
-	fi
-
-	return 1
-}
 
 PSQL="$(find_postgres_tool psql || true)"
 CREATEDB="$(find_postgres_tool createdb || true)"
@@ -103,12 +88,13 @@ ensure_homebrew_postgres() {
 	local formula="" prefix=""
 	[[ -n "$PG_ISREADY" ]] || die "Missing pg_isready. Install PostgreSQL locally (for macOS: brew install postgresql@18)."
 
-	if "$PG_ISREADY" -h "$PGHOST" -p "$PGPORT" -q; then
+	resolve_pg_port
+	if pg_is_ready_on "$PGPORT"; then
 		info "PostgreSQL already ready at $PGHOST:$PGPORT"
 		return 0
 	fi
 
-	command -v brew >/dev/null 2>&1 || die "Postgres not reachable at $PGHOST:$PGPORT and Homebrew is missing. Start PostgreSQL manually and retry."
+	command -v brew >/dev/null 2>&1 || die "Postgres not reachable at $PGHOST (tried: $(_accord_pg_candidates_csv)) and Homebrew is missing. Start PostgreSQL manually and retry."
 
 	for formula in postgresql@18 postgresql; do
 		prefix="$(brew --prefix "$formula" 2>/dev/null || true)"
@@ -120,19 +106,13 @@ ensure_homebrew_postgres() {
 	done
 	[[ -n "$prefix" ]] || die "No Homebrew postgresql@18/postgresql formula found. Install with: brew install postgresql@18"
 
-	for _attempt in {1..30}; do
-		if "$PG_ISREADY" -h "$PGHOST" -p "$PGPORT" -q; then
-			info "PostgreSQL ready at $PGHOST:$PGPORT"
-			return 0
-		fi
-		sleep 0.5
-	done
-
-	die "PostgreSQL did not become ready at $PGHOST:$PGPORT after brew services start"
+	wait_for_postgres_port 30
 }
 
 if [[ "$START_DB" == "true" ]]; then
 	ensure_homebrew_postgres
+else
+	resolve_pg_port
 fi
 
 PSQL_ADMIN=("$PSQL" -v ON_ERROR_STOP=1 -h "$PGHOST" -p "$PGPORT" -d "$ADMIN_DB")
@@ -144,7 +124,7 @@ fi
 
 info "Checking native Postgres at $PGHOST:$PGPORT"
 if ! "${PSQL_ADMIN[@]}" -Atqc "SELECT 1" >/dev/null 2>&1; then
-	die "Cannot connect to local Postgres as admin. Start it (e.g. brew services start postgresql@18) or run: ./scripts/dev-setup.sh --start"
+	die "Cannot connect to local Postgres as admin at $PGHOST:$PGPORT (tried: $(_accord_pg_candidates_csv)). Start it (e.g. brew services start postgresql@18) or run: ./scripts/dev-setup.sh --start"
 fi
 
 # Quote role/db identifiers safely for dynamic SQL (local identifiers only).

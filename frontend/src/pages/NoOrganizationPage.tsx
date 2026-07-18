@@ -9,14 +9,12 @@ import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { useAuth } from "@/contexts/AuthContext";
 import { APP_NAME } from "@/lib/branding";
 import { createOrganizationFromName } from "@/lib/create-organization";
-import { cn } from "@/lib/utils";
 
 export default function NoOrganizationPage() {
 	const { user, logout, createOrganization } = useAuth();
 	const [name, setName] = useState("");
 	const [formError, setFormError] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [signOutHovered, setSignOutHovered] = useState(false);
 
 	const handleSignOut = async () => {
 		try {
@@ -59,18 +57,15 @@ export default function NoOrganizationPage() {
 				>
 					{user?.email}
 				</span>
-				<button
+				<Button
 					type="button"
-					className={cn(
-						"inline-flex h-8 cursor-pointer items-center justify-center rounded-full px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/35",
-						signOutHovered ? "text-destructive" : "text-foreground",
-					)}
-					onMouseEnter={() => setSignOutHovered(true)}
-					onMouseLeave={() => setSignOutHovered(false)}
+					variant="outline"
+					size="sm"
+					className="h-8 rounded-full border app-border-level-1 bg-card/90 px-3 text-sm font-normal leading-none text-muted-foreground shadow-sm backdrop-blur-sm hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive dark:bg-card/90 dark:hover:bg-destructive/15 dark:hover:text-destructive"
 					onClick={() => void handleSignOut()}
 				>
 					Sign Out
-				</button>
+				</Button>
 			</div>
 			<div className="absolute top-6 right-6 z-20">
 				<ThemeSwitcher />
