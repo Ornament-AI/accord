@@ -16,3 +16,6 @@ ruff==0.15.20
 
 # Property-based testing for domain money/rate primitives.
 hypothesis==6.156.6
+
+# PDF text extraction for report formatter tests only.
+pypdf==6.14.2
