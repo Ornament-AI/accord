@@ -3,8 +3,10 @@
 import os
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Override env before any app imports — use TEST_DATABASE_URL or default to accord_test
@@ -32,6 +34,7 @@ os.environ.setdefault("MIGRATIONS_DATABASE_URL", _test_db_url)
 from app.db import configure_engine, dispose_engine, get_session_factory  # noqa: E402
 from app.main import app  # noqa: E402
 from app.middleware.rate_limit import limiter  # noqa: E402
+from tests.migrations.conftest import diag, ensure_accord_roles, run_alembic  # noqa: E402
 
 # Force NullPool for tests
 configure_engine(os.environ["DATABASE_URL"])
@@ -39,6 +42,19 @@ configure_engine(os.environ["DATABASE_URL"])
 # Infrastructure skeleton has no domain schema to create; mark auth ready for
 # readiness checks when lifespan has not yet run for a given client.
 app.state.auth_ready = True
+
+_IDENTITY_TRUNCATE_SQL = text(
+    "TRUNCATE TABLE sessions, organization_memberships, organization_settings, "
+    "organizations, users, idempotency_keys RESTART IDENTITY CASCADE"
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _alembic_upgrade_shared_test_db() -> None:
+    """Apply migrations once to the shared TEST_DATABASE_URL (accord_test)."""
+    ensure_accord_roles(database_url=_test_db_url)
+    result = run_alembic(_test_db_url, "upgrade", "head")
+    assert result.returncode == 0, diag("alembic upgrade head", result)
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -52,6 +68,16 @@ async def _engine_lifecycle():
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_rate_limits():
     limiter.reset()
+
+
+@pytest_asyncio.fixture
+async def clean_identity_tables() -> AsyncGenerator[None, None]:
+    """TRUNCATE identity/tenancy tables so each DB-backed identity test starts clean."""
+    factory = get_session_factory()
+    async with factory() as session:
+        await session.execute(_IDENTITY_TRUNCATE_SQL)
+        await session.commit()
+    yield
 
 
 @pytest_asyncio.fixture

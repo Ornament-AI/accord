@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # Session cookie seam (wired by a later lane).
     session_secret_key: str = Field(default="", alias="SESSION_SECRET_KEY")
     session_cookie_name: str = Field(default="accord_session", alias="SESSION_COOKIE_NAME")
+    session_idle_timeout_seconds: int = Field(default=7200, alias="SESSION_IDLE_TIMEOUT_SECONDS")
+    workos_webhook_tolerance_seconds: int = Field(
+        default=300,
+        alias="WORKOS_WEBHOOK_TOLERANCE_SECONDS",
+    )
 
     # Dev-only test-identity bypass (fails closed in production).
     dev_auth_bypass: bool = Field(default=False, alias="DEV_AUTH_BYPASS")

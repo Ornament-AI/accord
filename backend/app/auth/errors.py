@@ -24,3 +24,27 @@ class AuthExchangeError(AccordError):
 
     status_code = 502
     error_code = "AuthExchangeFailed"
+
+
+class OrganizationContextRequiredError(AccordError):
+    """Authenticated but no active organization is selected for the request."""
+
+    status_code = 409
+    error_code = "OrganizationContextRequired"
+
+
+class CapabilityDeniedError(AccordError):
+    """Caller lacks a required capability in the active organization."""
+
+    status_code = 403
+
+    def __init__(self, capability: str, message: str | None = None):
+        super().__init__(message or f"Missing required capability: {capability}")
+        self.error_code = f"urn:accord:capability:{capability}"
+
+
+class MembershipForbiddenError(AccordError):
+    """Switch-org / inactive membership denied."""
+
+    status_code = 403
+    error_code = "MembershipForbidden"

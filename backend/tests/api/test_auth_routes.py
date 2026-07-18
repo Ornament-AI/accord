@@ -1,93 +1,56 @@
-"""Integration tests for /api/auth/* routes."""
+"""Integration tests for /api/auth/* routes (Phase-2 DB sessions)."""
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
+from sqlalchemy import select
 
 from app.auth.adapters import AuthenticatedIdentity, DevAuthAdapter
 from app.auth.errors import AuthMisconfiguredError
-from app.auth.session import sign_oauth_state
-from app.config import Settings, get_settings
-
-
-def _settings(**overrides) -> Settings:
-    base = dict(
-        database_url="postgresql+asyncpg://accord@localhost/accord_test",
-        migrations_database_url="postgresql+asyncpg://accord@localhost/accord_test",
-        environment="development",
-        workos_client_id="",
-        workos_api_key="",
-        workos_redirect_uri="http://localhost:8000/api/auth/callback",
-        workos_webhook_secret="",
-        session_secret_key="test-session-secret-key",
-        session_cookie_name="accord_session",
-        dev_auth_bypass=True,
-        dev_auth_email="dev@accord.local",
-        dev_auth_name="Dev Test User",
-        accord_allow_weak_secrets=True,
-        base_url="http://localhost:5173",
-        public_app_url="http://localhost:5173",
-    )
-    base.update(overrides)
-    return Settings.model_construct(**base)
-
-
-@pytest.fixture
-def dev_settings(monkeypatch):
-    settings = _settings(dev_auth_bypass=True)
-    monkeypatch.setattr("app.api.routes.auth.get_settings", lambda: settings)
-    monkeypatch.setattr("app.auth.session.get_settings", lambda: settings)
-    monkeypatch.setattr("app.config.get_settings", lambda: settings)
-    yield settings
-    get_settings.cache_clear()
-
-
-@pytest.fixture
-def production_missing_workos(monkeypatch):
-    settings = _settings(
-        environment="production",
-        dev_auth_bypass=False,
-        workos_client_id="",
-        workos_api_key="",
-        workos_redirect_uri="",
-        session_secret_key="test-session-secret-key-prod",
-    )
-    monkeypatch.setattr("app.api.routes.auth.get_settings", lambda: settings)
-    monkeypatch.setattr("app.auth.session.get_settings", lambda: settings)
-    monkeypatch.setattr("app.config.get_settings", lambda: settings)
-    yield settings
-    get_settings.cache_clear()
-
-
-def _session_cookie_from_response(response) -> str | None:
-    # httpx exposes Set-Cookie via response.cookies
-    if "accord_session" in response.cookies:
-        return response.cookies["accord_session"]
-    set_cookie = response.headers.get("set-cookie", "")
-    if "accord_session=" not in set_cookie:
-        return None
-    part = set_cookie.split("accord_session=", 1)[1]
-    return part.split(";", 1)[0]
+from app.auth.session import DatabaseSessionStore, sign_oauth_state
+from app.models.base import utcnow
+from app.models.identity import Session as SessionRow
+from app.models.identity import User
+from tests.identity_helpers import (
+    DEV_SUBJECT,
+    clear_settings_cache,
+    login_dev,
+    patch_get_settings,
+    seed_membership,
+    seed_organization,
+    session_cookie_from_response,
+    settings,
+    user_by_workos_id,
+)
 
 
 @pytest.mark.asyncio
-async def test_login_establishes_dev_session_and_me_happy_path(client, dev_settings):
-    login_resp = await client.get("/api/auth/login", follow_redirects=False)
+async def test_login_establishes_dev_session_and_me_happy_path(client, dev_settings, session):
+    login_resp, cookie = await login_dev(client)
     assert login_resp.status_code == 302
     assert login_resp.headers["location"] == "http://localhost:5173"
-
-    cookie = _session_cookie_from_response(login_resp)
     assert cookie
-    client.cookies.set("accord_session", cookie)
 
     me_resp = await client.get("/api/auth/me")
     assert me_resp.status_code == 200
     body = me_resp.json()
-    assert body["id"] == DevAuthAdapter.DEV_SUBJECT_ID
+    # Local users.id UUID — not the WorkOS / Dev subject string.
+    UUID(body["id"])
+    assert body["id"] != DevAuthAdapter.DEV_SUBJECT_ID
     assert body["email"] == "dev@accord.local"
     assert body["name"] == "Dev Test User"
+    assert body["is_platform_admin"] is False
+    assert body["active_organization"] is None
+    assert body["organizations"] == []
+
+    user = await user_by_workos_id(session, DEV_SUBJECT)
+    assert user is not None
+    assert user.workos_user_id == DEV_SUBJECT
+    assert str(user.id) == body["id"]
 
 
 @pytest.mark.asyncio
@@ -110,19 +73,28 @@ async def test_me_with_tampered_cookie_returns_401_not_500(client, dev_settings)
 
 
 @pytest.mark.asyncio
-async def test_logout_clears_cookie_and_me_becomes_401(client, dev_settings):
-    login_resp = await client.get("/api/auth/login", follow_redirects=False)
-    cookie = _session_cookie_from_response(login_resp)
+async def test_logout_clears_cookie_revokes_session_and_me_401(client, dev_settings, session):
+    _, cookie = await login_dev(client)
     assert cookie
-    client.cookies.set("accord_session", cookie)
-
     assert (await client.get("/api/auth/me")).status_code == 200
+
+    store = DatabaseSessionStore(dev_settings, session)
+    session_id = store.parse_session_id(cookie)
+    assert session_id is not None
 
     logout_resp = await client.post("/api/auth/logout")
     assert logout_resp.status_code == 204
+    set_cookie = logout_resp.headers.get("set-cookie", "")
+    assert "accord_session=" in set_cookie
 
-    # Drop jar cookie and ensure cleared Set-Cookie does not keep us authed.
+    session.expire_all()
+    row = await session.get(SessionRow, session_id)
+    assert row is not None
+    assert row.revoked_at is not None
+
+    # Old cookie must not authenticate after revoke.
     client.cookies.clear()
+    client.cookies.set("accord_session", cookie)
     me_resp = await client.get("/api/auth/me")
     assert me_resp.status_code == 401
 
@@ -137,24 +109,25 @@ async def test_callback_happy_path_with_dev_adapter(client, dev_settings):
     )
     assert resp.status_code == 302
     assert resp.headers["location"] == "http://localhost:5173"
-    cookie = _session_cookie_from_response(resp)
+    cookie = session_cookie_from_response(resp)
     assert cookie
     client.cookies.set("accord_session", cookie)
     me = await client.get("/api/auth/me")
     assert me.status_code == 200
-    assert me.json()["email"] == "dev@accord.local"
+    body = me.json()
+    UUID(body["id"])
+    assert body["email"] == "dev@accord.local"
 
 
 @pytest.mark.asyncio
-async def test_callback_happy_path_with_mocked_workos_exchange(client, monkeypatch):
-    settings = _settings(
+async def test_callback_happy_path_with_mocked_workos_exchange(client, monkeypatch, session):
+    value = settings(
         dev_auth_bypass=False,
         workos_client_id="client_test",
         workos_api_key="key_test",
         workos_redirect_uri="http://test/api/auth/callback",
     )
-    monkeypatch.setattr("app.api.routes.auth.get_settings", lambda: settings)
-    monkeypatch.setattr("app.auth.session.get_settings", lambda: settings)
+    patch_get_settings(monkeypatch, value)
 
     mock_adapter = MagicMock()
     mock_adapter.exchange_code = AsyncMock(
@@ -166,50 +139,65 @@ async def test_callback_happy_path_with_mocked_workos_exchange(client, monkeypat
     )
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
-    state = sign_oauth_state(settings)
+    state = sign_oauth_state(value)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "auth-code", "state": state},
         follow_redirects=False,
     )
     assert resp.status_code == 302
-    cookie = _session_cookie_from_response(resp)
+    cookie = session_cookie_from_response(resp)
     assert cookie
     client.cookies.set("accord_session", cookie)
     me = await client.get("/api/auth/me")
     assert me.status_code == 200
-    assert me.json() == {
-        "id": "user_workos_1",
-        "email": "worker@example.com",
-        "name": "Worker One",
-    }
+    body = me.json()
+    UUID(body["id"])
+    assert body["email"] == "worker@example.com"
+    assert body["name"] == "Worker One"
+    assert body["is_platform_admin"] is False
+    assert body["organizations"] == []
     mock_adapter.exchange_code.assert_awaited_once_with(code="auth-code")
-    get_settings.cache_clear()
+
+    user = await user_by_workos_id(session, "user_workos_1")
+    assert user is not None
+    assert str(user.id) == body["id"]
+    clear_settings_cache()
 
 
 @pytest.mark.asyncio
-async def test_callback_rejects_tampered_state(client, dev_settings):
+async def test_callback_invalid_state_redirects_with_error(client, dev_settings):
     state = sign_oauth_state(dev_settings)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "dev-login", "state": state + "tampered"},
         follow_redirects=False,
     )
-    assert resp.status_code == 401
-    body = resp.json()
-    assert body["status"] == 401
-    assert body["error"] == "InvalidOAuthState"
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "http://localhost:5173/login?error=invalid_state"
 
 
 @pytest.mark.asyncio
-async def test_callback_rejects_missing_state(client, dev_settings):
+async def test_callback_missing_state_redirects_with_error(client, dev_settings):
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "dev-login"},
         follow_redirects=False,
     )
-    assert resp.status_code == 401
-    assert resp.json()["error"] == "InvalidOAuthState"
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "http://localhost:5173/login?error=invalid_state"
+
+
+@pytest.mark.asyncio
+async def test_callback_missing_code_redirects_auth_failed(client, dev_settings):
+    state = sign_oauth_state(dev_settings)
+    resp = await client.get(
+        "/api/auth/callback",
+        params={"state": state},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "http://localhost:5173/login?error=auth_failed"
 
 
 @pytest.mark.asyncio
@@ -231,8 +219,7 @@ async def test_login_and_me_return_503_when_production_workos_missing(
 
 
 def test_get_auth_adapter_production_fail_closed_unit():
-    """Companion unit assertion used by route fail-closed coverage."""
-    settings = _settings(
+    value = settings(
         environment="production",
         workos_client_id="",
         workos_api_key="",
@@ -242,4 +229,494 @@ def test_get_auth_adapter_production_fail_closed_unit():
     from app.auth.adapters import get_auth_adapter
 
     with pytest.raises(AuthMisconfiguredError):
-        get_auth_adapter(settings)
+        get_auth_adapter(value)
+
+
+# --- /me membership shapes -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_me_zero_memberships(client, dev_settings):
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["organizations"] == []
+    assert body["active_organization"] is None
+
+
+@pytest.mark.asyncio
+async def test_me_one_membership_auto_activates_on_login(client, dev_settings, session):
+    user = User(
+        workos_user_id=DEV_SUBJECT,
+        email="dev@accord.local",
+        name="Dev Test User",
+    )
+    session.add(user)
+    await session.flush()
+    org = await seed_organization(session, name="Solo Org", slug="solo-org")
+    await seed_membership(session, organization_id=org.id, user_id=user.id)
+    await session.commit()
+
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert len(body["organizations"]) == 1
+    assert body["organizations"][0]["slug"] == "solo-org"
+    assert body["active_organization"] is not None
+    assert body["active_organization"]["id"] == str(org.id)
+    assert body["active_organization"]["role"] == "organization_administrator"
+    assert "manage_organization" in body["active_organization"]["capabilities"]
+
+
+@pytest.mark.asyncio
+async def test_me_two_memberships_lists_both_active_null_until_switch(
+    client, dev_settings, session
+):
+    user = User(
+        workos_user_id=DEV_SUBJECT,
+        email="dev@accord.local",
+        name="Dev Test User",
+    )
+    session.add(user)
+    await session.flush()
+    org_a = await seed_organization(session, name="Alpha", slug="alpha-co")
+    org_b = await seed_organization(session, name="Beta", slug="beta-co")
+    await seed_membership(session, organization_id=org_a.id, user_id=user.id)
+    await seed_membership(
+        session,
+        organization_id=org_b.id,
+        user_id=user.id,
+        role="payroll_preparer",
+    )
+    await session.commit()
+
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    slugs = {o["slug"] for o in body["organizations"]}
+    assert slugs == {"alpha-co", "beta-co"}
+    assert body["active_organization"] is None
+
+    switch = await client.post(
+        "/api/auth/switch-organization",
+        json={"organization_id": str(org_b.id)},
+    )
+    assert switch.status_code == 200
+    switched = switch.json()
+    assert switched["active_organization"]["id"] == str(org_b.id)
+    assert switched["active_organization"]["role"] == "payroll_preparer"
+    # Cookie rotated — jar updated from Set-Cookie.
+    new_cookie = session_cookie_from_response(switch)
+    if new_cookie:
+        client.cookies.set("accord_session", new_cookie)
+    me = (await client.get("/api/auth/me")).json()
+    assert me["active_organization"]["id"] == str(org_b.id)
+
+
+# --- return_to validation --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "//evil.com",
+        "https://evil.com",
+        "http://evil.com",
+        "/\\evil.com",
+        "\\\\evil.com",
+        "not-a-path",
+    ],
+)
+def test_validate_return_to_rejects_unsafe(value):
+    from app.api.routes.auth import validate_return_to
+
+    assert validate_return_to(value) is None
+
+
+def test_validate_return_to_accepts_relative_path():
+    from app.api.routes.auth import validate_return_to
+
+    assert validate_return_to("/dashboard") == "/dashboard"
+    assert validate_return_to("/settings/org") == "/settings/org"
+    assert validate_return_to(None) is None
+    assert validate_return_to("") is None
+
+
+@pytest.mark.asyncio
+async def test_return_to_round_trip_via_callback_state(client, monkeypatch):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+        workos_redirect_uri="http://test/api/auth/callback",
+    )
+    patch_get_settings(monkeypatch, value)
+    mock_adapter = MagicMock()
+    mock_adapter.exchange_code = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="user_rt_1",
+            email="rt@example.com",
+            name="Return To",
+        )
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    state = sign_oauth_state(value, redirect_to="/dashboard")
+    resp = await client.get(
+        "/api/auth/callback",
+        params={"code": "c", "state": state},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "http://localhost:5173/dashboard"
+    clear_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_callback_drops_evil_return_to_in_state(client, monkeypatch):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+        workos_redirect_uri="http://test/api/auth/callback",
+    )
+    patch_get_settings(monkeypatch, value)
+    mock_adapter = MagicMock()
+    mock_adapter.exchange_code = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="user_evil_rt",
+            email="evil@example.com",
+            name="Evil",
+        )
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    # Bypass sign_oauth_state validation by embedding evil r in signed payload.
+    from itsdangerous import URLSafeTimedSerializer
+
+    serializer = URLSafeTimedSerializer(
+        secret_key=value.session_secret_key,
+        salt="accord-oauth-state-v1",
+    )
+    state = serializer.dumps({"n": "nonce", "r": "https://evil.com"})
+    resp = await client.get(
+        "/api/auth/callback",
+        params={"code": "c", "state": state},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert "evil.com" not in resp.headers["location"]
+    assert resp.headers["location"] == "http://localhost:5173"
+    clear_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_login_dev_return_to_valid_redirects(client, dev_settings):
+    resp = await client.get(
+        "/api/auth/login",
+        params={"return_to": "/dashboard"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "http://localhost:5173/dashboard"
+
+
+@pytest.mark.asyncio
+async def test_login_dev_return_to_invalid_dropped(client, dev_settings):
+    resp = await client.get(
+        "/api/auth/login",
+        params={"return_to": "https://evil.com"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "http://localhost:5173"
+
+
+# --- callback upsert / auto-activate --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_callback_upsert_creates_user_and_updates_existing(client, monkeypatch, session):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+        workos_redirect_uri="http://test/api/auth/callback",
+    )
+    patch_get_settings(monkeypatch, value)
+
+    mock_adapter = MagicMock()
+    mock_adapter.exchange_code = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="upsert_user_1",
+            email="first@example.com",
+            name="First Name",
+        )
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    state = sign_oauth_state(value)
+    await client.get(
+        "/api/auth/callback",
+        params={"code": "c1", "state": state},
+        follow_redirects=False,
+    )
+    users = (await session.execute(select(User))).scalars().all()
+    assert len(users) == 1
+    assert users[0].email == "first@example.com"
+
+    mock_adapter.exchange_code = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="upsert_user_1",
+            email="updated@example.com",
+            name="Updated Name",
+        )
+    )
+    state2 = sign_oauth_state(value)
+    await client.get(
+        "/api/auth/callback",
+        params={"code": "c2", "state": state2},
+        follow_redirects=False,
+    )
+    session.expire_all()
+    users = (await session.execute(select(User))).scalars().all()
+    assert len(users) == 1
+    assert users[0].email == "updated@example.com"
+    assert users[0].name == "Updated Name"
+    clear_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_callback_sole_membership_auto_activates(client, monkeypatch, session):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+        workos_redirect_uri="http://test/api/auth/callback",
+    )
+    patch_get_settings(monkeypatch, value)
+
+    user = User(
+        workos_user_id="auto_act_1",
+        email="auto@example.com",
+        name="Auto",
+    )
+    session.add(user)
+    await session.flush()
+    org = await seed_organization(session, slug="auto-org")
+    await seed_membership(session, organization_id=org.id, user_id=user.id)
+    await session.commit()
+
+    mock_adapter = MagicMock()
+    mock_adapter.exchange_code = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="auto_act_1",
+            email="auto@example.com",
+            name="Auto",
+        )
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    state = sign_oauth_state(value)
+    resp = await client.get(
+        "/api/auth/callback",
+        params={"code": "c", "state": state},
+        follow_redirects=False,
+    )
+    cookie = session_cookie_from_response(resp)
+    client.cookies.set("accord_session", cookie)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["active_organization"]["id"] == str(org.id)
+    clear_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_callback_multiple_memberships_active_null(client, monkeypatch, session):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+        workos_redirect_uri="http://test/api/auth/callback",
+    )
+    patch_get_settings(monkeypatch, value)
+
+    user = User(
+        workos_user_id="multi_act_1",
+        email="multi@example.com",
+        name="Multi",
+    )
+    session.add(user)
+    await session.flush()
+    org_a = await seed_organization(session, slug="multi-a")
+    org_b = await seed_organization(session, slug="multi-b")
+    await seed_membership(session, organization_id=org_a.id, user_id=user.id)
+    await seed_membership(session, organization_id=org_b.id, user_id=user.id)
+    await session.commit()
+
+    mock_adapter = MagicMock()
+    mock_adapter.exchange_code = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="multi_act_1",
+            email="multi@example.com",
+            name="Multi",
+        )
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    state = sign_oauth_state(value)
+    resp = await client.get(
+        "/api/auth/callback",
+        params={"code": "c", "state": state},
+        follow_redirects=False,
+    )
+    cookie = session_cookie_from_response(resp)
+    client.cookies.set("accord_session", cookie)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["active_organization"] is None
+    assert len(body["organizations"]) == 2
+    clear_settings_cache()
+
+
+# --- switch-organization ---------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_switch_organization_happy_rotates_session(client, dev_settings, session):
+    user = User(
+        workos_user_id=DEV_SUBJECT,
+        email="dev@accord.local",
+        name="Dev Test User",
+    )
+    session.add(user)
+    await session.flush()
+    org_a = await seed_organization(session, slug="switch-a")
+    org_b = await seed_organization(session, slug="switch-b")
+    await seed_membership(session, organization_id=org_a.id, user_id=user.id)
+    await seed_membership(session, organization_id=org_b.id, user_id=user.id)
+    await session.commit()
+
+    _, old_cookie = await login_dev(client)
+    assert old_cookie
+    store = DatabaseSessionStore(dev_settings, session)
+    old_sid = store.parse_session_id(old_cookie)
+
+    resp = await client.post(
+        "/api/auth/switch-organization",
+        json={"organization_id": str(org_a.id)},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active_organization"]["id"] == str(org_a.id)
+    new_cookie = session_cookie_from_response(resp)
+    assert new_cookie
+    assert new_cookie != old_cookie
+
+    session.expire_all()
+    old_row = await session.get(SessionRow, old_sid)
+    assert old_row is not None
+    assert old_row.revoked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_switch_organization_403_no_membership(client, dev_settings, session):
+    await login_dev(client)
+    foreign = await seed_organization(session, slug="foreign-org")
+    await session.commit()
+
+    resp = await client.post(
+        "/api/auth/switch-organization",
+        json={"organization_id": str(foreign.id)},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "MembershipForbidden"
+
+
+@pytest.mark.asyncio
+async def test_switch_organization_403_inactive_membership(client, dev_settings, session):
+    user = User(
+        workos_user_id=DEV_SUBJECT,
+        email="dev@accord.local",
+        name="Dev Test User",
+    )
+    session.add(user)
+    await session.flush()
+    org = await seed_organization(session, slug="inactive-mem")
+    await seed_membership(
+        session,
+        organization_id=org.id,
+        user_id=user.id,
+        is_active=False,
+    )
+    await session.commit()
+
+    await login_dev(client)
+    resp = await client.post(
+        "/api/auth/switch-organization",
+        json={"organization_id": str(org.id)},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "MembershipForbidden"
+
+
+@pytest.mark.asyncio
+async def test_switch_organization_403_inactive_org(client, dev_settings, session):
+    user = User(
+        workos_user_id=DEV_SUBJECT,
+        email="dev@accord.local",
+        name="Dev Test User",
+    )
+    session.add(user)
+    await session.flush()
+    org = await seed_organization(session, slug="inactive-org", is_active=False)
+    await seed_membership(session, organization_id=org.id, user_id=user.id)
+    await session.commit()
+
+    await login_dev(client)
+    resp = await client.post(
+        "/api/auth/switch-organization",
+        json={"organization_id": str(org.id)},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "MembershipForbidden"
+
+
+# --- session expiry / idle / revoked --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_me_401_when_session_expired(client, dev_settings, session):
+    _, cookie = await login_dev(client)
+    store = DatabaseSessionStore(dev_settings, session)
+    sid = store.parse_session_id(cookie)
+    row = await session.get(SessionRow, sid)
+    assert row is not None
+    row.expires_at = utcnow() - timedelta(seconds=1)
+    await session.commit()
+
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_401_when_session_idle_stale(client, dev_settings, session):
+    _, cookie = await login_dev(client)
+    store = DatabaseSessionStore(dev_settings, session)
+    sid = store.parse_session_id(cookie)
+    row = await session.get(SessionRow, sid)
+    assert row is not None
+    row.last_seen_at = utcnow() - timedelta(seconds=dev_settings.session_idle_timeout_seconds + 10)
+    await session.commit()
+
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_401_when_session_revoked(client, dev_settings, session):
+    _, cookie = await login_dev(client)
+    store = DatabaseSessionStore(dev_settings, session)
+    sid = store.parse_session_id(cookie)
+    row = await session.get(SessionRow, sid)
+    assert row is not None
+    row.revoked_at = utcnow()
+    await session.commit()
+
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 401
