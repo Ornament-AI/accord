@@ -1,0 +1,77 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
+	"vcs": { "enabled": true, "clientKind": "git" },
+	"files": {
+		"includes": ["**", "!!**/dist", "!!src/types/openapi-spec.json", "!!src/types/api.generated.ts"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineEnding": "lf",
+		"lineWidth": 100
+	},
+	"linter": {
+		"enabled": true,
+		"domains": {
+			"react": "recommended"
+		},
+		"rules": {
+			"recommended": true,
+			"a11y": {
+				"useSemanticElements": "warn",
+				"useKeyWithClickEvents": "warn",
+				"useButtonType": "warn",
+				"useAriaPropsSupportedByRole": "warn",
+				"noLabelWithoutControl": "warn"
+			},
+			"correctness": {
+				"noUnusedVariables": "error",
+				"noUnusedImports": "error",
+				"useExhaustiveDependencies": "warn",
+				"useHookAtTopLevel": "error"
+			},
+			"style": {
+				"useConst": "error",
+				"noNonNullAssertion": "off"
+			},
+			"suspicious": {
+				"noExplicitAny": "error",
+				"noVar": "error",
+				"noConsole": {
+					"level": "warn",
+					"options": { "allow": ["warn", "error"] }
+				},
+				"noImportCycles": "warn"
+			},
+			"nursery": {
+				"noFloatingPromises": "warn"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"trailingCommas": "all",
+			"semicolons": "always",
+			"arrowParentheses": "always"
+		}
+	},
+	"css": {
+		"parser": {
+			"cssModules": true,
+			"tailwindDirectives": true
+		},
+		"linter": {
+			"enabled": false
+		},
+		"formatter": {
+			"enabled": false
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": { "organizeImports": "on" }
+		}
+	}
+}
