@@ -624,38 +624,8 @@ def recovery_to_excel(dto: ReportDTO) -> bytes:
     return base_to_excel(dto)
 
 
-def _dto_with_totals_folded_into_rows(dto: ReportDTO) -> ReportDTO:
-    """Work around ``app.reports.pdf`` omitting ``widths`` when drawing totals.
-
-    The generic PDF writer currently crashes on ``section.totals``; fold the
-    totals tuple into the body rows so recovery PDFs still render. JSON/Excel
-    continue to use the original DTO with a proper totals row.
-    """
-    sections: list[TableSection] = []
-    for section in dto.sections:
-        if section.totals is None:
-            sections.append(section)
-            continue
-        sections.append(
-            TableSection(
-                title=section.title,
-                columns=section.columns,
-                rows=(*section.rows, section.totals),
-                totals=None,
-            )
-        )
-    return ReportDTO(
-        report_type=dto.report_type,
-        template_version=dto.template_version,
-        title=dto.title,
-        organization_name=dto.organization_name,
-        subtitle=dto.subtitle,
-        sections=tuple(sections),
-    )
-
-
 def recovery_to_pdf(dto: ReportDTO) -> bytes:
-    return base_to_pdf(_dto_with_totals_folded_into_rows(dto))
+    return base_to_pdf(dto)
 
 
 def register_recovery_reports(registry: ReportRegistry) -> None:

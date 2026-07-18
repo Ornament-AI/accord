@@ -7,10 +7,8 @@ title, and period/subtitle; footer uses fpdf2 ``alias_nb_pages`` mechanics for
 
 NotoSans embedding is parameterized by ``font_path`` (default:
 ``backend/app/assets/fonts/NotoSans-Regular.ttf``). If the font file is absent,
-``add_font`` is skipped and fpdf2 built-in Helvetica is used.
-
-Follow-up: copy ``NotoSans-Regular.ttf`` (+ OFL license) from Atlas into
-``backend/app/assets/fonts/`` so Unicode/INR labels render with the branded face.
+``add_font`` is skipped and fpdf2 built-in Helvetica is used. When present,
+NotoSansDevanagari is registered as a fallback so Devanagari text renders.
 """
 
 from __future__ import annotations
@@ -23,10 +21,11 @@ from fpdf import FPDF
 from app.reports.base import CellValue, ColumnKind, ReportDTO, TableSection
 from app.reports.formatting import format_inr
 
-DEFAULT_FONT_PATH = (
-    Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoSans-Regular.ttf"
-)
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+DEFAULT_FONT_PATH = _FONTS_DIR / "NotoSans-Regular.ttf"
+DEVANAGARI_FONT_PATH = _FONTS_DIR / "NotoSansDevanagari-Regular.ttf"
 UNICODE_FONT_FAMILY = "NotoSans"
+UNICODE_FALLBACK_FONT_FAMILY = "NotoSansDevanagari"
 FALLBACK_FONT_FAMILY = "Helvetica"
 
 MARGIN_MM = 12.0
@@ -37,11 +36,7 @@ TABLE_HEADER_FONT_PT = 7.5
 
 
 def _resolve_font_path(font_path: Path | None) -> tuple[str, Path | None]:
-    """Return ``(font_family, path_to_add_or_None)``.
-
-    Copying NotoSans-Regular.ttf (+ OFL license) from Atlas into
-    ``app/assets/fonts/`` is a follow-up task — until then Helvetica is used.
-    """
+    """Return ``(font_family, path_to_add_or_None)``."""
     path = DEFAULT_FONT_PATH if font_path is None else Path(font_path)
     if path.is_file():
         return UNICODE_FONT_FAMILY, path
@@ -68,6 +63,19 @@ def _format_cell(value: CellValue, kind: ColumnKind, *, unicode_font: bool) -> s
         raw = value.isoformat() if hasattr(value, "isoformat") else str(value)
         return _pdf_text(raw, unicode_font=unicode_font)
     return _pdf_text(str(value), unicode_font=unicode_font)
+
+
+def _align_row_to_columns(
+    row: tuple[CellValue, ...],
+    column_count: int,
+) -> tuple[CellValue, ...]:
+    """Pad with ``None`` or truncate so ``row`` matches ``column_count``."""
+    length = len(row)
+    if length == column_count:
+        return row
+    if length < column_count:
+        return row + (None,) * (column_count - length)
+    return row[:column_count]
 
 
 class _TabularReportPDF(FPDF):
@@ -194,7 +202,8 @@ def _render_section(pdf: _TabularReportPDF, section: TableSection) -> None:
         if pdf.get_y() + ROW_H_MM > bottom_limit:
             pdf.add_page()
             _draw_table_header(pdf, section, widths)
-        _draw_row(pdf, section, section.totals, bold=True)
+        totals = _align_row_to_columns(section.totals, len(section.columns))
+        _draw_row(pdf, section, totals, widths, bold=True)
 
 
 def to_pdf(dto: ReportDTO, *, font_path: Path | None = None) -> bytes:
@@ -207,7 +216,20 @@ def to_pdf(dto: ReportDTO, *, font_path: Path | None = None) -> bytes:
         font_family=font_family,
     )
     if resolved_path is not None:
+        # Same Regular.ttf for "" and "B" — fpdf2 does not synthesize bold for TTF.
         doc.add_font(family=UNICODE_FONT_FAMILY, fname=str(resolved_path))
+        doc.add_font(family=UNICODE_FONT_FAMILY, style="B", fname=str(resolved_path))
+        if DEVANAGARI_FONT_PATH.is_file():
+            doc.add_font(
+                family=UNICODE_FALLBACK_FONT_FAMILY,
+                fname=str(DEVANAGARI_FONT_PATH),
+            )
+            doc.add_font(
+                family=UNICODE_FALLBACK_FONT_FAMILY,
+                style="B",
+                fname=str(DEVANAGARI_FONT_PATH),
+            )
+            doc.set_fallback_fonts([UNICODE_FALLBACK_FONT_FAMILY], exact_match=False)
 
     doc.set_creator("accord-backend")
     doc.set_producer("accord-fpdf2/1.0")

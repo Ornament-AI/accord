@@ -508,36 +508,6 @@ pay_bill_builder = PayBillBuilder()
 treasury_face_builder = TreasuryFaceBuilder()
 
 
-def _dto_for_pdf(dto: ReportDTO) -> ReportDTO:
-    """Fold ``section.totals`` into rows for PDF rendering.
-
-    The generic ``pdf.to_pdf`` path currently omits ``widths`` when drawing the
-    totals row (TypeError). Until that writer is fixed, PDF formatters append
-    the totals tuple as a final body row so Pay Bill footers still print.
-    """
-    sections: list[TableSection] = []
-    for section in dto.sections:
-        if section.totals is None:
-            sections.append(section)
-            continue
-        sections.append(
-            TableSection(
-                title=section.title,
-                columns=section.columns,
-                rows=(*section.rows, section.totals),
-                totals=None,
-            )
-        )
-    return ReportDTO(
-        report_type=dto.report_type,
-        template_version=dto.template_version,
-        title=dto.title,
-        organization_name=dto.organization_name,
-        subtitle=dto.subtitle,
-        sections=tuple(sections),
-    )
-
-
 def pay_bill_to_json(dto: ReportDTO) -> dict[str, Any]:
     return base_to_json(dto)
 
@@ -547,7 +517,7 @@ def pay_bill_to_excel(dto: ReportDTO) -> bytes:
 
 
 def pay_bill_to_pdf(dto: ReportDTO) -> bytes:
-    return base_to_pdf(_dto_for_pdf(dto))
+    return base_to_pdf(dto)
 
 
 def treasury_face_to_json(dto: ReportDTO) -> dict[str, Any]:
@@ -559,4 +529,4 @@ def treasury_face_to_excel(dto: ReportDTO) -> bytes:
 
 
 def treasury_face_to_pdf(dto: ReportDTO) -> bytes:
-    return base_to_pdf(_dto_for_pdf(dto))
+    return base_to_pdf(dto)
