@@ -4,8 +4,9 @@ Phase 1 exports shared mixins and the RLS policy helper. Phase 2 adds identity
 and tenancy tables (users, organizations, memberships, settings, idempotency
 keys, sessions). Phase 3 adds org-structure, employee master data (header +
 version tables), pay components, recurring instructions, advances,
-accommodation, and report configurations. Importing this package populates
-``SQLModel.metadata`` for Alembic.
+accommodation, and report configurations. Phase 4 adds payroll run persistence
+(periods, runs, draft inputs, and immutable calculation snapshots). Importing
+this package populates ``SQLModel.metadata`` for Alembic.
 """
 
 from app.models.accommodation import (
@@ -38,6 +39,14 @@ from app.models.identity import (
 )
 from app.models.org_structure import EmployeeGroup, Office, PayrollUnit, Post
 from app.models.pay_components import PayComponent, component_rate_versions
+from app.models.payroll_runs import (
+    PayrollPeriod,
+    PayrollRun,
+    PayrollRunInput,
+    payroll_employee_results,
+    payroll_result_lines,
+    payroll_run_versions,
+)
 from app.models.recurring_instructions import (
     RecurringInstruction,
     recurring_instruction_versions,
@@ -56,6 +65,9 @@ __all__ = [
     "OrganizationOwnedMixin",
     "OrganizationSettings",
     "PayComponent",
+    "PayrollPeriod",
+    "PayrollRun",
+    "PayrollRunInput",
     "PayrollUnit",
     "Post",
     "RecurringInstruction",
@@ -72,6 +84,9 @@ __all__ = [
     "employee_pay_versions",
     "employee_posting_versions",
     "employee_profile_versions",
+    "payroll_employee_results",
+    "payroll_result_lines",
+    "payroll_run_versions",
     "recurring_instruction_versions",
     "rls_policy_sql",
     "select_active_version",

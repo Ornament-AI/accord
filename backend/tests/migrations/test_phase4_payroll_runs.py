@@ -1,4 +1,4 @@
-"""Phase 3 master-data migration upgrade and downgrade coverage."""
+"""Phase 4 payroll run persistence migration upgrade and downgrade coverage."""
 
 from __future__ import annotations
 
@@ -6,33 +6,22 @@ import psycopg
 
 from .conftest import as_psycopg_url, diag, run_alembic
 
-INITIAL_REVISION = "c8d4e2f1a9b7"
+INITIAL_REVISION = "2f397740f38a"
 HEAD_REVISION = "021faa7dd776"
 
-PHASE3_TABLES = (
-    "offices",
-    "payroll_units",
-    "posts",
-    "employee_groups",
-    "employees",
-    "employee_profile_versions",
-    "employee_posting_versions",
-    "employee_pay_versions",
-    "employee_bank_account_versions",
-    "pay_components",
-    "component_rate_versions",
-    "recurring_instructions",
-    "recurring_instruction_versions",
-    "advance_accounts",
-    "advance_installment_versions",
-    "accommodation_assignments",
-    "accommodation_charge_versions",
-    "report_configurations",
+PHASE4_TABLES = (
+    "payroll_periods",
+    "payroll_runs",
+    "payroll_run_inputs",
+    "payroll_run_versions",
+    "payroll_employee_results",
+    "payroll_result_lines",
 )
 
-SELF_MEMBERSHIP_POLICIES = (
-    "self_membership_read",
-    "self_membership_read_worker",
+IMMUTABLE_TRIGGERS = (
+    "trg_payroll_run_versions_forbid_update_delete",
+    "trg_payroll_employee_results_forbid_update_delete",
+    "trg_payroll_result_lines_forbid_update_delete",
 )
 
 
@@ -77,22 +66,30 @@ def _rls_flags(database_url: str, table_name: str) -> tuple[bool, bool]:
     return bool(row[0]), bool(row[1])
 
 
-def _policy_exists(database_url: str, table_name: str, policy_name: str) -> bool:
+def _function_exists(database_url: str, function_name: str) -> bool:
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         return (
             conn.execute(
-                "SELECT EXISTS ("
-                "SELECT 1 FROM pg_policies "
-                "WHERE schemaname = 'public' AND tablename = %s AND policyname = %s"
-                ")",
-                (table_name, policy_name),
+                "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = %s)",
+                (function_name,),
             ).fetchone()[0]
             is True
         )
 
 
-def test_phase3_master_data_upgrade_downgrade(scratch_db: str) -> None:
-    assert len(PHASE3_TABLES) == 18
+def _trigger_exists(database_url: str, trigger_name: str) -> bool:
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        return (
+            conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = %s AND NOT tgisinternal)",
+                (trigger_name,),
+            ).fetchone()[0]
+            is True
+        )
+
+
+def test_phase4_payroll_runs_upgrade_downgrade(scratch_db: str) -> None:
+    assert len(PHASE4_TABLES) == 6
 
     up = run_alembic(scratch_db, "upgrade", "head")
     assert up.returncode == 0, diag("alembic upgrade head", up)
@@ -101,32 +98,37 @@ def test_phase3_master_data_upgrade_downgrade(scratch_db: str) -> None:
     assert check.returncode == 0, diag("alembic check after upgrade head", check)
 
     assert _alembic_version(scratch_db) == HEAD_REVISION
-    for table in PHASE3_TABLES:
+    for table in PHASE4_TABLES:
         assert _table_exists(scratch_db, table), f"expected table {table}"
         enabled, forced = _rls_flags(scratch_db, table)
         assert enabled is True, f"{table}: expected relrowsecurity"
         assert forced is True, f"{table}: expected relforcerowsecurity"
 
-    for policy_name in SELF_MEMBERSHIP_POLICIES:
-        assert _policy_exists(scratch_db, "organization_memberships", policy_name), (
-            f"expected policy {policy_name}"
-        )
+    assert _function_exists(scratch_db, "accord_forbid_update_delete")
+    for trigger_name in IMMUTABLE_TRIGGERS:
+        assert _trigger_exists(scratch_db, trigger_name), f"expected trigger {trigger_name}"
 
     down = run_alembic(scratch_db, "downgrade", INITIAL_REVISION)
     assert down.returncode == 0, diag(f"alembic downgrade {INITIAL_REVISION}", down)
 
     assert _alembic_version(scratch_db) == INITIAL_REVISION
-    for table in PHASE3_TABLES:
+    for table in PHASE4_TABLES:
         assert not _table_exists(scratch_db, table), f"table {table} should be gone"
-    for policy_name in SELF_MEMBERSHIP_POLICIES:
-        assert not _policy_exists(scratch_db, "organization_memberships", policy_name), (
-            f"policy {policy_name} should be gone"
+    assert not _function_exists(scratch_db, "accord_forbid_update_delete")
+    for trigger_name in IMMUTABLE_TRIGGERS:
+        assert not _trigger_exists(scratch_db, trigger_name), (
+            f"trigger {trigger_name} should be gone"
         )
 
-    # Phase 2 identity tables must still exist after downgrade to INITIAL.
+    # Phase 3 tables must still exist after downgrade to INITIAL.
     assert _table_exists(scratch_db, "organizations")
-    assert _table_exists(scratch_db, "organization_memberships")
+    assert _table_exists(scratch_db, "employees")
 
-    down_base = run_alembic(scratch_db, "downgrade", "base")
-    assert down_base.returncode == 0, diag("alembic downgrade base", down_base)
-    assert _alembic_version(scratch_db) is None
+    up2 = run_alembic(scratch_db, "upgrade", "head")
+    assert up2.returncode == 0, diag("alembic re-upgrade head", up2)
+    assert _alembic_version(scratch_db) == HEAD_REVISION
+    for table in PHASE4_TABLES:
+        assert _table_exists(scratch_db, table), f"expected table {table} after round-trip"
+
+    check2 = run_alembic(scratch_db, "check")
+    assert check2.returncode == 0, diag("alembic check after round-trip", check2)
