@@ -1,0 +1,13 @@
+[tool.ruff]
+# CI and backend images run Python 3.14, but formatting targets 3.13 so Ruff
+# does not emit optional 3.14-only syntax that looks like older invalid Python.
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:'asyncio\\.iscoroutinefunction' is deprecated and slated for removal in Python 3\\.16; use inspect\\.iscoroutinefunction\\(\\) instead:DeprecationWarning:slowapi\\.extension",
+]
