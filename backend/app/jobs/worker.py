@@ -16,9 +16,12 @@ The handler transaction is committed (or rolled back on error) **before**
 Outbox
 ------
 Each cycle also pumps the transactional outbox via ``dispatch_pending`` with a
-log-and-mark handler. Concrete delivery sinks (webhooks, etc.) are TBD; this
-phase records structured logs and marks rows processed so the dispatcher does
-not stall.
+log-and-mark handler. ``outbox_events`` has forced RLS keyed on
+``app.organization_id``, so the pump runs **per active org** with that org's
+tenant context bound (the deployed worker uses ``accord_worker``, which does not
+bypass RLS); otherwise the claim query would see no rows. Concrete delivery
+sinks (webhooks, etc.) are TBD; this phase records structured logs and marks
+rows processed so the dispatcher does not stall.
 """
 
 from __future__ import annotations
@@ -148,14 +151,19 @@ class WorkerLoop:
         Returns ``True`` when at least one job was claimed (idle backoff resets).
         Designed for tests and as the body of :meth:`run`.
         """
-        outbox_counts = await self._pump_outbox()
         org_ids = await self._list_active_org_ids()
         claimed_any = False
         claimed_count = 0
+        outbox_processed = 0
+        outbox_failed = 0
 
         for org_id in org_ids:
             if self._shutdown.is_set():
                 break
+            outbox_counts = await self._pump_outbox(org_id)
+            outbox_processed += outbox_counts.get("processed", 0)
+            outbox_failed += outbox_counts.get("failed", 0)
+
             queue = self._base_queue.for_organization(org_id)
             try:
                 job = await queue.claim(
@@ -181,8 +189,8 @@ class WorkerLoop:
             org_count=len(org_ids),
             claimed_count=claimed_count,
             claimed_any=claimed_any,
-            outbox_processed=outbox_counts.get("processed", 0),
-            outbox_failed=outbox_counts.get("failed", 0),
+            outbox_processed=outbox_processed,
+            outbox_failed=outbox_failed,
             shutdown=self._shutdown.is_set(),
         )
         return claimed_any
@@ -203,19 +211,28 @@ class WorkerLoop:
             )
             return list(result.scalars().all())
 
-    async def _pump_outbox(self) -> dict[str, int]:
+    async def _pump_outbox(self, organization_id: UUID) -> dict[str, int]:
+        # ``outbox_events`` has forced RLS keyed on ``app.organization_id`` and
+        # the deployed worker runs as ``accord_worker`` (NOBYPASSRLS), so the
+        # claim query only sees rows once tenant context is bound. Pump per
+        # active org, binding that org's GUCs first (mirrors per-org job claim).
         try:
             async with self._session_factory() as session:
-                counts = await dispatch_pending(
-                    session,
-                    dispatcher_id=self.worker_id,
-                    handler=_log_outbox_event,
-                    batch_size=self._outbox_batch_size,
-                )
-                await session.commit()
+                async with session.begin():
+                    await bind_tenant_context(session, organization_id=organization_id)
+                    counts = await dispatch_pending(
+                        session,
+                        dispatcher_id=self.worker_id,
+                        handler=_log_outbox_event,
+                        batch_size=self._outbox_batch_size,
+                    )
                 return dict(counts)
         except Exception:
-            logger.exception("outbox_pump_failed", worker_id=self.worker_id)
+            logger.exception(
+                "outbox_pump_failed",
+                worker_id=self.worker_id,
+                organization_id=str(organization_id),
+            )
             return {"processed": 0, "failed": 0}
 
     async def _execute_claimed_job(
@@ -287,14 +304,31 @@ class WorkerLoop:
         job: Job,
         handler: JobHandler,
     ) -> dict | None:
+        # Do NOT wrap the handler in ``async with session.begin()``. Handlers
+        # such as ``generate_report`` (via ``create_artifact``) intentionally
+        # commit mid-flight and re-open a transaction to finalize the artifact
+        # after the object upload; an enclosing ``begin()`` block would treat
+        # that first commit as the end of its context, so the later finalize
+        # would run outside a transaction and the job would fail after upload.
+        # Instead open a transaction, bind tenant GUCs, and commit whatever
+        # transaction the handler leaves open (self-committing handlers leave
+        # none). This preserves the commit-before-complete ordering.
         async with self._session_factory() as session:
-            async with session.begin():
-                await bind_tenant_context(
-                    session,
-                    organization_id=job.organization_id,
-                )
+            await session.begin()
+            await bind_tenant_context(
+                session,
+                organization_id=job.organization_id,
+            )
+            try:
                 with bind_job_session(session):
-                    return await handler(job)
+                    result = await handler(job)
+            except BaseException:
+                if session.in_transaction():
+                    await session.rollback()
+                raise
+            if session.in_transaction():
+                await session.commit()
+            return result
 
     async def _heartbeat_loop(
         self,

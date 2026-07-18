@@ -91,6 +91,28 @@ def require_capability(capability: str):
     return _dep
 
 
+def require_any_capability(*capabilities: str):
+    """Dependency factory: require active org + *any one* of ``capabilities``.
+
+    Use for reads that several roles legitimately need through different
+    capabilities (e.g. run list/detail must be visible to ``view_master_data``
+    holders as well as the ``approve_run`` / ``post_run`` maker-checker roles).
+    """
+    if not capabilities:
+        raise ValueError("require_any_capability requires at least one capability")
+
+    async def _dep(
+        principal: Annotated[AuthPrincipal, Depends(get_current_user)],
+    ) -> AuthPrincipal:
+        if principal.organization_id is None:
+            raise OrganizationContextRequiredError("An active organization context is required.")
+        if principal.capabilities.isdisjoint(capabilities):
+            raise CapabilityDeniedError(capabilities[0])
+        return principal
+
+    return _dep
+
+
 @dataclass(frozen=True, slots=True)
 class TenantContext:
     organization_id: str

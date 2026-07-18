@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_any_capability, require_capability
 from app.auth.principal import AuthPrincipal
 from app.schemas.payroll_runs import (
     PayrollPeriodCreate,
@@ -90,7 +90,17 @@ async def list_payroll_runs(
     db: Session,
     period_id: UUID | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
-    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+    # Readable by every run-lifecycle participant, incl. approver/releaser who
+    # lack view_master_data but must load runs they approve/post (maker-checker).
+    _: AuthPrincipal = Depends(
+        require_any_capability(
+            "view_master_data",
+            "create_run",
+            "submit_run",
+            "approve_run",
+            "post_run",
+        )
+    ),
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.list_runs(
         db,
@@ -105,7 +115,17 @@ async def get_payroll_run(
     run_id: UUID,
     tenant: TenantCtx,
     db: Session,
-    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+    # Readable by every run-lifecycle participant, incl. approver/releaser who
+    # lack view_master_data but must load runs they approve/post (maker-checker).
+    _: AuthPrincipal = Depends(
+        require_any_capability(
+            "view_master_data",
+            "create_run",
+            "submit_run",
+            "approve_run",
+            "post_run",
+        )
+    ),
 ) -> dict[str, Any]:
     return await payroll_runs_service.get_run(
         db,
