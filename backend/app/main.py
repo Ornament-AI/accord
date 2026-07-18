@@ -16,6 +16,8 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
 from app.api.responses import problem_content, problem_response
+from app.jobs.postgres import PostgresJobQueue
+from app.platform_setup import wire_report_platform
 from app.api.routes import (
     artifacts,
     audit,
@@ -26,6 +28,7 @@ from app.api.routes import (
     organizations,
     pay_setup,
     payroll_runs,
+    reports,
     run_commands,
     run_posting,
     run_results,
@@ -63,10 +66,24 @@ async def lifespan(app: FastAPI):
     """Fail loudly if the database is unreachable; dispose the engine on shutdown."""
     startup_settings = get_settings()
     app.state.auth_ready = _auth_provider_ready(startup_settings)
+    registry, storage = wire_report_platform(startup_settings)
+    app.state.report_registry = registry
+    if storage is not None:
+        app.state.object_storage = storage
     try:
         async with session_context() as session:
             await session.execute(text("SELECT 1"))
-        logger.info("startup_complete", database="ok", auth=app.state.auth_ready)
+        from app.db import get_session_factory
+
+        app.state.job_queue = PostgresJobQueue(get_session_factory())
+        logger.info(
+            "startup_complete",
+            database="ok",
+            auth=app.state.auth_ready,
+            report_types=len(registry.report_types())
+            if hasattr(registry, "report_types")
+            else None,
+        )
     except Exception:
         logger.error("startup_database_unavailable")
         raise
@@ -304,6 +321,7 @@ def create_app() -> FastAPI:
     app.include_router(run_results.router, prefix="/api")
     app.include_router(audit.router, prefix="/api")
     app.include_router(artifacts.router, prefix="/api")
+    app.include_router(reports.router, prefix="/api")
     return app
 
 

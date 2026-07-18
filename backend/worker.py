@@ -19,6 +19,7 @@ from app.db import configure_engine, dispose_engine, get_session_factory
 from app.jobs.handlers import registry
 from app.jobs.worker import WorkerLoop
 from app.logging_config import configure_logging
+from app.platform_setup import wire_report_platform
 
 logger = structlog.get_logger(__name__)
 
@@ -27,6 +28,7 @@ async def _run() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
     configure_engine()
+    wire_report_platform(settings)
 
     worker = WorkerLoop(get_session_factory(), registry)
     loop = asyncio.get_running_loop()
