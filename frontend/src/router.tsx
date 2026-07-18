@@ -3,7 +3,8 @@ import { createBrowserRouter, type RouteObject } from "react-router";
 import {
 	AuditPage,
 	DashboardPage,
-	EmployeesPage,
+	EmployeeDetailPage,
+	EmployeeListPage,
 	LoginPage,
 	NotFoundPage,
 	OrganizationSetupPage,
@@ -25,7 +26,8 @@ export const routes: RouteObject[] = [
 		errorElement: <RouteErrorFallback />,
 		children: [
 			{ index: true, element: <DashboardPage /> },
-			{ path: "employees", element: <EmployeesPage /> },
+			{ path: "employees", element: <EmployeeListPage /> },
+			{ path: "employees/:employeeId", element: <EmployeeDetailPage /> },
 			{ path: "organization", element: <OrganizationSetupPage /> },
 			{ path: "pay-runs", element: <PayRunsPage /> },
 			{ path: "reports", element: <ReportsPage /> },

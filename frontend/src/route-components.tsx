@@ -5,6 +5,8 @@ import { LoadingState } from "@/components/loading-state";
 import { AppShellProvider } from "@/contexts/AppShellContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
+import NoOrganizationPage from "@/pages/NoOrganizationPage";
+import OrganizationSetupPage from "@/pages/OrganizationSetupPage";
 
 const ProtectedShell = lazy(() =>
 	import("@/components/protected-shell").then((mod) => ({ default: mod.ProtectedShell })),
@@ -69,10 +71,11 @@ export function RouteErrorFallback() {
 
 export const LoginPage = lazy(() => import("@/pages/LoginPage"));
 export const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
-export const EmployeesPage = lazy(() => import("@/pages/EmployeesPage"));
-export const OrganizationSetupPage = lazy(() => import("@/pages/OrganizationSetupPage"));
+export const EmployeeListPage = lazy(() => import("@/pages/employees/EmployeeListPage"));
+export const EmployeeDetailPage = lazy(() => import("@/pages/employees/EmployeeDetailPage"));
+export { OrganizationSetupPage };
 export const PayRunsPage = lazy(() => import("@/pages/PayRunsPage"));
 export const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
 export const AuditPage = lazy(() => import("@/pages/AuditPage"));
-export const NoOrganizationPage = lazy(() => import("@/pages/NoOrganizationPage"));
+export { NoOrganizationPage };
 export const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
