@@ -201,11 +201,7 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    # TODO(backend-worker-lane): backend does not yet implement a worker entrypoint
-    # (see ADR 0010 §3, "accord-worker" vs "accord-api"). This command is a
-    # placeholder and will fail until that lane lands. Update the command here
-    # once it exists.
-    command: ["python", "-m", "app.worker"]
+    command: ["python", "worker.py"]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${ACCORD_DB_USER:-accord}:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
       MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://${ACCORD_DB_USER:-accord}:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
