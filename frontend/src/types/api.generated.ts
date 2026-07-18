@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Callback
-         * @description Complete OAuth: verify state, exchange code, mint session, redirect to app.
+         * @description Complete OAuth: verify state, exchange code, mint DB session, redirect.
          */
         get: operations["callback_api_auth_callback_get"];
         put?: never;
@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * Login
-         * @description Start login: WorkOS redirect, or establish a dev session when bypass is on.
+         * @description Start login: WorkOS redirect, or establish a DB session when bypass is on.
          */
         get: operations["login_api_auth_login_get"];
         put?: never;
@@ -55,7 +55,7 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Clear the session cookie. Idempotent when no session is present.
+         * @description Revoke DB session if present and clear cookie. Idempotent.
          */
         post: operations["logout_api_auth_logout_post"];
         delete?: never;
@@ -73,11 +73,51 @@ export interface paths {
         };
         /**
          * Me
-         * @description Return the current identity from the signed session cookie.
+         * @description Return the current identity, memberships, active org, and capabilities.
          */
         get: operations["me_api_auth_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/switch-organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Organization
+         * @description Set active org after membership re-validation; rotate session; return /me.
+         */
+        post: operations["switch_organization_api_auth_switch_organization_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/webhooks/workos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workos Webhook
+         * @description Ingest WorkOS events verified by signature (no session cookie).
+         */
+        post: operations["workos_webhook_api_auth_webhooks_workos_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -95,6 +135,46 @@ export interface paths {
         get: operations["healthcheck_api_healthz_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Organization Route
+         * @description Create an organization; creator becomes administrator; return /me shape.
+         */
+        post: operations["create_organization_route_api_organizations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/organizations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Organization Route
+         * @description Create an organization; creator becomes administrator; return /me shape.
+         */
+        post: operations["create_organization_route_api_organizations__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -122,10 +202,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** CreateOrganizationRequest */
+        CreateOrganizationRequest: {
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** SwitchOrganizationRequest */
+        SwitchOrganizationRequest: {
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -183,7 +278,9 @@ export interface operations {
     };
     login_api_auth_login_get: {
         parameters: {
-            query?: never;
+            query?: {
+                return_to?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -197,6 +294,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -241,6 +347,59 @@ export interface operations {
             };
         };
     };
+    switch_organization_api_auth_switch_organization_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchOrganizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workos_webhook_api_auth_webhooks_workos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     healthcheck_api_healthz_get: {
         parameters: {
             query?: never;
@@ -259,6 +418,72 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    create_organization_route_api_organizations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrganizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_organization_route_api_organizations__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrganizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
