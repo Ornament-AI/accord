@@ -22,6 +22,7 @@ from app.api.routes import (
     artifacts,
     audit,
     auth,
+    dashboard,
     employees,
     health,
     org_structure,
@@ -40,6 +41,8 @@ from app.exceptions import AccordError
 from app.logging_config import configure_logging
 from app.middleware.rate_limit import limiter
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.observability import setup_observability
+from app.reports.registry_setup import build_report_registry
 
 logger = structlog.get_logger()
 
@@ -322,6 +325,14 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix="/api")
     app.include_router(artifacts.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
+    app.include_router(dashboard.router, prefix="/api")
+
+    # Seed registry so readiness works when ASGI test clients skip lifespan.
+    # Lifespan re-wires via wire_report_platform() on real process start.
+    if not getattr(app.state, "report_registry", None):
+        app.state.report_registry = build_report_registry()
+
+    setup_observability(app)
     return app
 
 
