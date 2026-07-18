@@ -78,7 +78,8 @@ export const PayComponentDetailPage = lazy(
 	() => import("@/pages/pay-components/PayComponentDetailPage"),
 );
 export { OrganizationSetupPage };
-export const PayRunsPage = lazy(() => import("@/pages/PayRunsPage"));
+export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
+export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
 export const AuditPage = lazy(() => import("@/pages/AuditPage"));
 export { NoOrganizationPage };
