@@ -28,6 +28,7 @@ import {
 	useUpsertPayrollRunInput,
 } from "@/lib/api/payroll-runs";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
+import { employeeEntityLabel } from "@/lib/entity-labels";
 
 type UpsertInputDialogProps = {
 	open: boolean;
@@ -144,7 +145,7 @@ export function UpsertInputDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>{isEdit ? "Edit run input" : "Add run input"}</DialogTitle>
+					<DialogTitle>{isEdit ? "Edit Run Input" : "Add Run Input"}</DialogTitle>
 					<DialogDescription>
 						{isEdit
 							? "Update this draft input. Reason is required."
@@ -160,7 +161,7 @@ export function UpsertInputDialog({
 						{!isEdit ? (
 							<>
 								<div className="grid gap-2">
-									<Label htmlFor="upsert-input-employee-search">Search employees</Label>
+									<Label htmlFor="upsert-input-employee-search">Search Employees</Label>
 									<Input
 										id="upsert-input-employee-search"
 										value={form.employee_search}
@@ -183,7 +184,7 @@ export function UpsertInputDialog({
 												{(value: string | null) => {
 													const employee = employees.find((item) => item.id === value);
 													return employee
-														? `${employee.employee_number}${employee.name ? ` — ${employee.name}` : ""}`
+														? employeeEntityLabel(employee, "Select employee")
 														: "Select employee";
 												}}
 											</SelectValue>
@@ -191,8 +192,7 @@ export function UpsertInputDialog({
 										<SelectContent>
 											{employees.map((employee) => (
 												<SelectItem key={employee.id} value={employee.id}>
-													{employee.employee_number}
-													{employee.name ? ` — ${employee.name}` : ""}
+													{employeeEntityLabel(employee)}
 												</SelectItem>
 											))}
 										</SelectContent>
@@ -200,7 +200,7 @@ export function UpsertInputDialog({
 								</div>
 
 								<div className="grid gap-2">
-									<Label htmlFor="upsert-input-component">Component code</Label>
+									<Label htmlFor="upsert-input-component">Component Code</Label>
 									<Input
 										id="upsert-input-component"
 										value={form.component_code}
@@ -223,7 +223,7 @@ export function UpsertInputDialog({
 						)}
 
 						<div className="grid gap-2">
-							<Label htmlFor="upsert-input-kind">Input kind</Label>
+							<Label htmlFor="upsert-input-kind">Input Kind</Label>
 							<Select
 								value={form.input_kind}
 								onValueChange={(value) => setField("input_kind", value as InputKind)}

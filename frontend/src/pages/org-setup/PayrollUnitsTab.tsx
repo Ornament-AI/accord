@@ -27,8 +27,8 @@ import { ApiError } from "@/lib/errors";
 import { CatalogTab } from "./CatalogTab";
 
 const columns: ColumnDef<PayrollUnitResponse>[] = [
-	{ accessorKey: "code", header: "Code" },
 	{ accessorKey: "name", header: "Name" },
+	{ accessorKey: "code", header: "Code" },
 ];
 
 type FormState = { code: string; name: string };
@@ -51,7 +51,7 @@ export function PayrollUnitsTab({
 	return (
 		<>
 			<CatalogTab
-				title="Payroll units"
+				title="Payroll Units"
 				emptyDescription="Add a payroll unit to get started."
 				icon={Landmark}
 				columns={columns}
@@ -161,7 +161,7 @@ function PayrollUnitFormDialog({ mode, open, onOpenChange, item }: FormDialogPro
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>{mode === "create" ? "Add payroll unit" : "Edit payroll unit"}</DialogTitle>
+					<DialogTitle>{mode === "create" ? "Add Payroll Unit" : "Edit Payroll Unit"}</DialogTitle>
 					<DialogDescription>
 						{mode === "create"
 							? "Create a payroll unit for this organization."

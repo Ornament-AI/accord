@@ -18,6 +18,7 @@ describe("Tabs", () => {
 		expect(screen.getByRole("tab", { name: "Details" })).toHaveClass(
 			"data-active:bg-primary",
 			"data-active:text-primary-foreground",
+			"data-active:hover:text-primary-foreground",
 		);
 	});
 });

@@ -61,7 +61,7 @@ export function StatCards({ data }: StatCardsProps) {
 						className="text-sm font-medium text-muted-foreground"
 						info="Headcount active as of today, split by retirement regime."
 					>
-						Active employees
+						Active Employees
 					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">
@@ -76,7 +76,7 @@ export function StatCards({ data }: StatCardsProps) {
 						className="text-sm font-medium text-muted-foreground"
 						info="Gross pay from the most recently posted payroll run."
 					>
-						Latest posted gross
+						Latest Posted Gross
 					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">
@@ -95,7 +95,7 @@ export function StatCards({ data }: StatCardsProps) {
 						className="text-sm font-medium text-muted-foreground"
 						info="Net payable from the most recently posted payroll run."
 					>
-						Net payable
+						Net Payable
 					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">
@@ -112,7 +112,7 @@ export function StatCards({ data }: StatCardsProps) {
 						className="text-sm font-medium text-muted-foreground"
 						info="Employer contribution total from the most recently posted payroll run."
 					>
-						Employer cost
+						Employer Cost
 					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">

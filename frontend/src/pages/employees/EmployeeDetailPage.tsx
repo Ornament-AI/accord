@@ -3,9 +3,10 @@ import { Link, useParams } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
+import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { FieldsValueTable } from "@/components/fields-value-table";
 import { PageSection, PageShell } from "@/components/page-shell";
-import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
@@ -31,8 +32,13 @@ import {
 	toApiDate,
 	todayApiDate,
 	useEmployeeDetail,
-	useEmployeeVersions,
 } from "@/lib/api/employees";
+import {
+	useEmployeeGroupsList,
+	useOfficesList,
+	usePayrollUnitsList,
+	usePostsList,
+} from "@/lib/api/org-structure";
 import { getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/utils";
 
@@ -54,6 +60,27 @@ function regimeLabel(regime: string | null | undefined): string {
 	return regime.toUpperCase();
 }
 
+function displayValue(value: string | number | boolean | null | undefined): string {
+	if (value === null || value === undefined || value === "") return "—";
+	if (typeof value === "boolean") return value ? "Yes" : "No";
+	return String(value);
+}
+
+function labeledRef(id: string | null | undefined, lookup: Map<string, { name: string }>): string {
+	if (!id) return "—";
+	const item = lookup.get(id);
+	return item?.name?.trim() || "—";
+}
+
+function labeledPostRef(
+	id: string | null | undefined,
+	lookup: Map<string, { designation: string }>,
+): string {
+	if (!id) return "—";
+	const item = lookup.get(id);
+	return item?.designation?.trim() || "—";
+}
+
 function EmployeeBreadcrumb({ label }: { label: string }) {
 	return (
 		<Breadcrumb>
@@ -70,52 +97,117 @@ function EmployeeBreadcrumb({ label }: { label: string }) {
 	);
 }
 
-function FieldRow({ label, value }: { label: string; value: ReactNode }) {
+function SnapshotFieldsTable({
+	emptyMessage,
+	rows,
+}: {
+	emptyMessage: string;
+	rows: Array<{ label: string; value: ReactNode }> | null;
+}) {
+	if (!rows) {
+		return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
+	}
+
 	return (
-		<div className="grid grid-cols-[10rem_1fr] gap-2 text-sm">
-			<dt className="text-muted-foreground">{label}</dt>
-			<dd className="min-w-0 break-words text-foreground">{value ?? "—"}</dd>
+		<div className="app-table-surface overflow-hidden rounded-lg">
+			<FieldsValueTable rows={rows} />
 		</div>
 	);
 }
 
-function VersionHistoryList({
-	versions,
-	isLoading,
-}: {
-	versions: Array<{
-		id: string;
-		effective_from: string;
-		effective_to?: string | null;
-		change_reason?: string | null;
-	}>;
-	isLoading: boolean;
-}) {
-	if (isLoading) {
-		return (
-			<div className="grid gap-2">
-				<Skeleton className="h-10 w-full" />
-				<Skeleton className="h-10 w-full" />
-			</div>
-		);
+function ProfileFieldsTable({ profile }: { profile: ProfileVersionResponse | null }) {
+	if (!profile) {
+		return <SnapshotFieldsTable emptyMessage="No active profile version." rows={null} />;
 	}
-	if (versions.length === 0) {
-		return <p className="text-sm text-muted-foreground">No version history.</p>;
-	}
+
 	return (
-		<ul className="grid gap-2">
-			{versions.map((version) => (
-				<li key={version.id} className="rounded-md border app-border-level-1 px-3 py-2 text-sm">
-					<div className="font-medium">
-						{formatDate(version.effective_from)}
-						{version.effective_to ? ` → ${formatDate(version.effective_to)}` : " → present"}
-					</div>
-					{version.change_reason ? (
-						<p className="mt-1 text-muted-foreground">{version.change_reason}</p>
-					) : null}
-				</li>
-			))}
-		</ul>
+		<SnapshotFieldsTable
+			emptyMessage="No active profile version."
+			rows={[
+				{ label: "Name", value: displayValue(profile.name) },
+				{ label: "Sevarth ID", value: displayValue(profile.sevarth_id) },
+				{
+					label: "Regime",
+					value: <Badge variant="secondary">{regimeLabel(profile.retirement_regime)}</Badge>,
+				},
+				{ label: "GPF Jurisdiction", value: displayValue(profile.gpf_jurisdiction) },
+				{ label: "PAN", value: displayValue(profile.pan) },
+				{ label: "PRAN", value: displayValue(profile.pran) },
+				{ label: "GPF Account", value: displayValue(profile.gpf_account_number) },
+				{ label: "EPF Number", value: displayValue(profile.epf_number) },
+				{ label: "Date of Birth", value: formatDate(profile.date_of_birth) },
+				{ label: "Date of Joining", value: formatDate(profile.date_of_joining) },
+				{ label: "Effective From", value: formatDate(profile.effective_from) },
+			]}
+		/>
+	);
+}
+
+function PostingFieldsTable({
+	posting,
+	officeLabel,
+	payrollUnitLabel,
+	postLabel,
+	employeeGroupLabel,
+}: {
+	posting: PostingVersionResponse | null;
+	officeLabel: string;
+	payrollUnitLabel: string;
+	postLabel: string;
+	employeeGroupLabel: string;
+}) {
+	if (!posting) {
+		return <SnapshotFieldsTable emptyMessage="No active posting version." rows={null} />;
+	}
+
+	return (
+		<SnapshotFieldsTable
+			emptyMessage="No active posting version."
+			rows={[
+				{ label: "Office", value: officeLabel },
+				{ label: "Payroll Unit", value: payrollUnitLabel },
+				{ label: "Post", value: postLabel },
+				{ label: "Employee Group", value: employeeGroupLabel },
+				{ label: "Effective From", value: formatDate(posting.effective_from) },
+			]}
+		/>
+	);
+}
+
+function PayFieldsTable({ pay }: { pay: PayVersionResponse | null }) {
+	if (!pay) {
+		return <SnapshotFieldsTable emptyMessage="No active pay version." rows={null} />;
+	}
+
+	return (
+		<SnapshotFieldsTable
+			emptyMessage="No active pay version."
+			rows={[
+				{ label: "Pay Matrix Level", value: displayValue(pay.pay_matrix_level) },
+				{ label: "Basic Pay", value: displayValue(pay.basic_pay) },
+				{ label: "Effective From", value: formatDate(pay.effective_from) },
+			]}
+		/>
+	);
+}
+
+function BankFieldsTable({ bank }: { bank: BankVersionResponse | null }) {
+	if (!bank) {
+		return <SnapshotFieldsTable emptyMessage="No active bank version." rows={null} />;
+	}
+
+	return (
+		<SnapshotFieldsTable
+			emptyMessage="No active bank version."
+			rows={[
+				{ label: "Account Number", value: displayValue(bank.account_number) },
+				{ label: "IFSC", value: displayValue(bank.ifsc) },
+				{ label: "Bank Name", value: displayValue(bank.bank_name) },
+				{ label: "Branch", value: displayValue(bank.branch) },
+				{ label: "Primary Salary", value: displayValue(bank.is_primary_salary) },
+				{ label: "Effective From", value: formatDate(bank.effective_from) },
+			]}
+		/>
 	);
 }
 
@@ -129,17 +221,20 @@ export default function EmployeeDetailPage() {
 	const [reveal, setReveal] = useState(false);
 	const [scheduleKind, setScheduleKind] = useState<EmployeeVersionKind | null>(null);
 	const [activeTab, setActiveTab] = useState<EmployeeDetailTab>("profile");
+	const [createOpen, setCreateOpen] = useState(false);
+
+	const isPayrollSetupTab =
+		activeTab === "recurring" || activeTab === "advances" || activeTab === "accommodation";
 
 	const detailQuery = useEmployeeDetail(employeeId, {
 		as_of: asOf,
 		reveal: reveal && canReveal,
 	});
-	const versionKind = isVersionKind(activeTab) ? activeTab : "profile";
-	const versionsQuery = useEmployeeVersions(
-		isVersionKind(activeTab) ? employeeId : undefined,
-		versionKind,
-		reveal && canReveal,
-	);
+
+	const officesQuery = useOfficesList();
+	const payrollUnitsQuery = usePayrollUnitsList();
+	const postsQuery = usePostsList();
+	const employeeGroupsQuery = useEmployeeGroupsList();
 
 	const asOfDate = useMemo(() => parseApiDate(asOf), [asOf]);
 	const employee = detailQuery.data;
@@ -148,12 +243,25 @@ export default function EmployeeDetailPage() {
 	const pay = employee?.pay ?? null;
 	const bank = employee?.bank ?? null;
 
-	const versions = (versionsQuery.data ?? []) as Array<{
-		id: string;
-		effective_from: string;
-		effective_to?: string | null;
-		change_reason?: string | null;
-	}>;
+	const postingLabels = useMemo(() => {
+		const offices = new Map((officesQuery.data ?? []).map((item) => [item.id, item]));
+		const units = new Map((payrollUnitsQuery.data ?? []).map((item) => [item.id, item]));
+		const posts = new Map((postsQuery.data ?? []).map((item) => [item.id, item]));
+		const groups = new Map((employeeGroupsQuery.data ?? []).map((item) => [item.id, item]));
+
+		return {
+			officeLabel: labeledRef(posting?.office_id, offices),
+			payrollUnitLabel: labeledRef(posting?.payroll_unit_id, units),
+			postLabel: labeledPostRef(posting?.post_id, posts),
+			employeeGroupLabel: labeledRef(posting?.employee_group_id, groups),
+		};
+	}, [
+		posting,
+		officesQuery.data,
+		payrollUnitsQuery.data,
+		postsQuery.data,
+		employeeGroupsQuery.data,
+	]);
 
 	if (!employeeId) {
 		return (
@@ -178,31 +286,30 @@ export default function EmployeeDetailPage() {
 								size="xs"
 								variant="outline"
 								aria-pressed={reveal}
-								aria-label={reveal ? "Hide sensitive fields" : "Reveal sensitive fields"}
+								aria-label={reveal ? "Hide Sensitive Fields" : "Reveal Sensitive Fields"}
 								onClick={() => setReveal((prev) => !prev)}
 							>
 								{reveal ? "Hide" : "Reveal"}
+							</Button>
+						) : null}
+						{canManage && isVersionKind(activeTab) ? (
+							<Button size="xs" onClick={() => setScheduleKind(activeTab)}>
+								Edit
+							</Button>
+						) : null}
+						{canManage && isPayrollSetupTab ? (
+							<Button size="xs" onClick={() => setCreateOpen(true)}>
+								Add
 							</Button>
 						) : null}
 					</div>
 				}
 			>
 				<PageShell data-testid="employee-detail-page">
-					<PageToolbar>
-						<DatePicker
-							value={asOfDate}
-							onValueChange={(date) => {
-								if (date) setAsOf(toApiDate(date));
-							}}
-							aria-label="As of date"
-							placeholder="As of"
-						/>
-					</PageToolbar>
-
 					{detailQuery.isLoading ? (
 						<div className="grid gap-4">
-							<Skeleton className="h-28 w-full" />
-							<Skeleton className="h-64 w-full" />
+							<Skeleton className="h-20 w-full" />
+							<DataTableSkeleton />
 						</div>
 					) : null}
 
@@ -217,26 +324,26 @@ export default function EmployeeDetailPage() {
 						<>
 							<PageSection>
 								<div className="flex flex-wrap items-center gap-3">
-									<h2 className="text-xl font-semibold tracking-tight">
-										{employee.employee_number}
-									</h2>
-									<span className="text-muted-foreground">{profile?.name ?? "—"}</span>
+									<span className="text-xl font-semibold tracking-tight">
+										{profile?.name ?? "—"}
+									</span>
 									{profile?.retirement_regime ? (
 										<Badge variant="secondary">{regimeLabel(profile.retirement_regime)}</Badge>
 									) : null}
 								</div>
-								<p className="mt-1 text-sm text-muted-foreground">
-									As of {formatDate(employee.as_of)}
-								</p>
 							</PageSection>
 
 							<PageSection>
 								<Tabs
 									value={activeTab}
-									onValueChange={(value) => setActiveTab(value as EmployeeDetailTab)}
+									onValueChange={(value) => {
+										setActiveTab(value as EmployeeDetailTab);
+										setCreateOpen(false);
+									}}
+									className="gap-0"
 								>
 									<div className="flex flex-wrap items-center justify-between gap-2">
-										<TabsList>
+										<TabsList className="h-9 group-data-horizontal/tabs:h-9">
 											<TabsTrigger value="profile">Profile</TabsTrigger>
 											<TabsTrigger value="posting">Posting</TabsTrigger>
 											<TabsTrigger value="pay">Pay</TabsTrigger>
@@ -245,55 +352,66 @@ export default function EmployeeDetailPage() {
 											<TabsTrigger value="advances">Advances</TabsTrigger>
 											<TabsTrigger value="accommodation">Accommodation</TabsTrigger>
 										</TabsList>
-										{canManage && isVersionKind(activeTab) ? (
-											<Button size="xs" onClick={() => setScheduleKind(activeTab)}>
-												Schedule change
-											</Button>
-										) : null}
+										<DatePicker
+											value={asOfDate}
+											onValueChange={(date) => {
+												if (date) setAsOf(toApiDate(date));
+											}}
+											aria-label="As of Date"
+											placeholder="As of"
+										/>
 									</div>
 
-									<TabsContent value="profile" className="mt-4 grid gap-6">
-										<ProfileFields profile={profile} />
-										<div className="grid gap-2">
-											<h3 className="text-sm font-medium">Version history</h3>
-											<VersionHistoryList versions={versions} isLoading={versionsQuery.isLoading} />
-										</div>
+									<TabsContent value="profile" className="mt-2">
+										<ProfileFieldsTable profile={profile} />
 									</TabsContent>
 
-									<TabsContent value="posting" className="mt-4 grid gap-6">
-										<PostingFields posting={posting} />
-										<div className="grid gap-2">
-											<h3 className="text-sm font-medium">Version history</h3>
-											<VersionHistoryList versions={versions} isLoading={versionsQuery.isLoading} />
-										</div>
+									<TabsContent value="posting" className="mt-2">
+										<PostingFieldsTable
+											posting={posting}
+											officeLabel={postingLabels.officeLabel}
+											payrollUnitLabel={postingLabels.payrollUnitLabel}
+											postLabel={postingLabels.postLabel}
+											employeeGroupLabel={postingLabels.employeeGroupLabel}
+										/>
 									</TabsContent>
 
-									<TabsContent value="pay" className="mt-4 grid gap-6">
-										<PayFields pay={pay} />
-										<div className="grid gap-2">
-											<h3 className="text-sm font-medium">Version history</h3>
-											<VersionHistoryList versions={versions} isLoading={versionsQuery.isLoading} />
-										</div>
+									<TabsContent value="pay" className="mt-2">
+										<PayFieldsTable pay={pay} />
 									</TabsContent>
 
-									<TabsContent value="bank" className="mt-4 grid gap-6">
-										<BankFields bank={bank} />
-										<div className="grid gap-2">
-											<h3 className="text-sm font-medium">Version history</h3>
-											<VersionHistoryList versions={versions} isLoading={versionsQuery.isLoading} />
-										</div>
+									<TabsContent value="bank" className="mt-2">
+										<BankFieldsTable bank={bank} />
 									</TabsContent>
 
-									<TabsContent value="recurring" className="mt-4">
-										<RecurringItemsTab employeeId={employeeId} asOf={asOf} canManage={canManage} />
+									<TabsContent value="recurring" className="mt-2">
+										<RecurringItemsTab
+											employeeId={employeeId}
+											asOf={asOf}
+											canManage={canManage}
+											createOpen={createOpen && activeTab === "recurring"}
+											onCreateOpenChange={setCreateOpen}
+										/>
 									</TabsContent>
 
-									<TabsContent value="advances" className="mt-4">
-										<AdvancesTab employeeId={employeeId} asOf={asOf} canManage={canManage} />
+									<TabsContent value="advances" className="mt-2">
+										<AdvancesTab
+											employeeId={employeeId}
+											asOf={asOf}
+											canManage={canManage}
+											createOpen={createOpen && activeTab === "advances"}
+											onCreateOpenChange={setCreateOpen}
+										/>
 									</TabsContent>
 
-									<TabsContent value="accommodation" className="mt-4">
-										<AccommodationTab employeeId={employeeId} asOf={asOf} canManage={canManage} />
+									<TabsContent value="accommodation" className="mt-2">
+										<AccommodationTab
+											employeeId={employeeId}
+											asOf={asOf}
+											canManage={canManage}
+											createOpen={createOpen && activeTab === "accommodation"}
+											onCreateOpenChange={setCreateOpen}
+										/>
 									</TabsContent>
 								</Tabs>
 							</PageSection>
@@ -317,70 +435,5 @@ export default function EmployeeDetailPage() {
 				) : null}
 			</AppLayout>
 		</CapabilityGate>
-	);
-}
-
-function ProfileFields({ profile }: { profile: ProfileVersionResponse | null }) {
-	if (!profile) {
-		return <p className="text-sm text-muted-foreground">No active profile version.</p>;
-	}
-	return (
-		<dl className="grid gap-3">
-			<FieldRow label="Name" value={profile.name} />
-			<FieldRow label="Sevarth ID" value={profile.sevarth_id} />
-			<FieldRow label="Regime" value={regimeLabel(profile.retirement_regime)} />
-			<FieldRow label="GPF jurisdiction" value={profile.gpf_jurisdiction} />
-			<FieldRow label="PAN" value={profile.pan} />
-			<FieldRow label="PRAN" value={profile.pran} />
-			<FieldRow label="GPF account" value={profile.gpf_account_number} />
-			<FieldRow label="EPF number" value={profile.epf_number} />
-			<FieldRow label="Date of birth" value={formatDate(profile.date_of_birth)} />
-			<FieldRow label="Date of joining" value={formatDate(profile.date_of_joining)} />
-			<FieldRow label="Effective from" value={formatDate(profile.effective_from)} />
-		</dl>
-	);
-}
-
-function PostingFields({ posting }: { posting: PostingVersionResponse | null }) {
-	if (!posting) {
-		return <p className="text-sm text-muted-foreground">No active posting version.</p>;
-	}
-	return (
-		<dl className="grid gap-3">
-			<FieldRow label="Office ID" value={posting.office_id} />
-			<FieldRow label="Payroll unit ID" value={posting.payroll_unit_id} />
-			<FieldRow label="Post ID" value={posting.post_id} />
-			<FieldRow label="Employee group ID" value={posting.employee_group_id} />
-			<FieldRow label="Effective from" value={formatDate(posting.effective_from)} />
-		</dl>
-	);
-}
-
-function PayFields({ pay }: { pay: PayVersionResponse | null }) {
-	if (!pay) {
-		return <p className="text-sm text-muted-foreground">No active pay version.</p>;
-	}
-	return (
-		<dl className="grid gap-3">
-			<FieldRow label="Pay matrix level" value={pay.pay_matrix_level} />
-			<FieldRow label="Basic pay" value={pay.basic_pay} />
-			<FieldRow label="Effective from" value={formatDate(pay.effective_from)} />
-		</dl>
-	);
-}
-
-function BankFields({ bank }: { bank: BankVersionResponse | null }) {
-	if (!bank) {
-		return <p className="text-sm text-muted-foreground">No active bank version.</p>;
-	}
-	return (
-		<dl className="grid gap-3">
-			<FieldRow label="Account number" value={bank.account_number} />
-			<FieldRow label="IFSC" value={bank.ifsc} />
-			<FieldRow label="Bank name" value={bank.bank_name} />
-			<FieldRow label="Branch" value={bank.branch} />
-			<FieldRow label="Primary salary" value={bank.is_primary_salary ? "Yes" : "No"} />
-			<FieldRow label="Effective from" value={formatDate(bank.effective_from)} />
-		</dl>
 	);
 }

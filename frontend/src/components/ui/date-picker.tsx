@@ -80,7 +80,7 @@ function DatePicker({
 						aria-invalid={ariaInvalid}
 						aria-describedby={ariaDescribedBy}
 						className={cn(
-							"h-9 w-[200px] min-w-0 justify-start text-left font-normal",
+							"h-9 w-auto min-w-0 justify-start text-left font-normal",
 							toolbarOutlineClassName,
 							!value && "text-muted-foreground hover:text-muted-foreground",
 							className,

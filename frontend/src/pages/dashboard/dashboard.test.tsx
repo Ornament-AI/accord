@@ -85,13 +85,13 @@ describe("Dashboard page", () => {
 			expect(
 				await screen.findByTestId("empty-employees", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(screen.getByRole("link", { name: /Go to employees/i })).toHaveAttribute(
+			expect(screen.getByRole("link", { name: /Go to Employees/i })).toHaveAttribute(
 				"href",
 				"/employees",
 			);
 
 			expect(screen.getByTestId("empty-posted-runs")).toBeInTheDocument();
-			expect(screen.getByRole("link", { name: /Go to pay runs/i })).toHaveAttribute(
+			expect(screen.getByRole("link", { name: /Go to Pay Runs/i })).toHaveAttribute(
 				"href",
 				"/pay-runs",
 			);

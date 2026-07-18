@@ -10,7 +10,7 @@ import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
-import { openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
+import { openBaseUiSelect, pickBaseUiOption, pickDateByLabel } from "@/test/helpers";
 import { server } from "@/test/msw-server";
 
 import { CreatePayComponentDialog } from "./CreatePayComponentDialog";
@@ -57,7 +57,7 @@ function renderDialog(ui: ReactElement) {
 	);
 }
 
-describe("Pay components list page", () => {
+describe("Pay Components list page", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});
@@ -102,15 +102,15 @@ describe("Pay components list page", () => {
 			).toBeInTheDocument();
 			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
 
-			expect(await screen.findByRole("heading", { name: "New pay component" })).toBeInTheDocument();
+			expect(await screen.findByRole("heading", { name: "New Pay Component" })).toBeInTheDocument();
 			fireEvent.change(screen.getByLabelText("Code"), { target: { value: "DA" } });
 			fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Dearness Allowance" } });
-			fireEvent.change(screen.getByLabelText("Display order"), { target: { value: "3" } });
+			fireEvent.change(screen.getByLabelText("Display Order"), { target: { value: "3" } });
 			fireEvent.click(screen.getByRole("button", { name: "Create component" }));
 
 			await waitFor(() => {
 				expect(
-					screen.queryByRole("heading", { name: "New pay component" }),
+					screen.queryByRole("heading", { name: "New Pay Component" }),
 				).not.toBeInTheDocument();
 			});
 			expect(await screen.findByText("Dearness Allowance")).toBeInTheDocument();
@@ -132,7 +132,7 @@ describe("Pay components list page", () => {
 
 		renderDialog(<CreatePayComponentDialog open onOpenChange={vi.fn()} />);
 
-		expect(await screen.findByRole("heading", { name: "New pay component" })).toBeInTheDocument();
+		expect(await screen.findByRole("heading", { name: "New Pay Component" })).toBeInTheDocument();
 		fireEvent.change(screen.getByLabelText("Code"), { target: { value: "BASIC" } });
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Dup" } });
 		fireEvent.click(screen.getByRole("button", { name: "Create component" }));
@@ -158,7 +158,7 @@ describe("Pay components list page", () => {
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 			expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
 			fireEvent.click(screen.getByText("Basic Pay"));
-			expect(screen.queryByRole("heading", { name: "Edit pay component" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("heading", { name: "Edit Pay Component" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -180,13 +180,15 @@ describe("Pay components list page", () => {
 			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
 			expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
 			fireEvent.click(screen.getByText("Basic Pay"));
-			expect(await screen.findByRole("heading", { name: "Edit pay component" })).toBeInTheDocument();
+			expect(
+				await screen.findByRole("heading", { name: "Edit Pay Component" }),
+			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
 });
 
-describe("Edit pay component dialog", () => {
+describe("Edit Pay Component dialog", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});
@@ -214,7 +216,7 @@ describe("Edit pay component dialog", () => {
 
 		renderDialog(<EditPayComponentDialog open onOpenChange={vi.fn()} component={component} />);
 
-		expect(await screen.findByRole("heading", { name: "Edit pay component" })).toBeInTheDocument();
+		expect(await screen.findByRole("heading", { name: "Edit Pay Component" })).toBeInTheDocument();
 
 		const codeInput = screen.getByLabelText("Code");
 		const classificationInput = screen.getByLabelText("Classification");
@@ -224,7 +226,7 @@ describe("Edit pay component dialog", () => {
 		expect(classificationInput).toHaveAttribute("readonly");
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Basic Pay Revised" } });
-		fireEvent.change(screen.getByLabelText("Display order"), { target: { value: "5" } });
+		fireEvent.change(screen.getByLabelText("Display Order"), { target: { value: "5" } });
 		fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
 		await waitFor(() => {
@@ -282,8 +284,7 @@ describe("Pay component detail page", () => {
 				{ timeout: PAGE_TIMEOUT },
 			);
 			expect(page).toBeInTheDocument();
-			expect(within(page).getByRole("heading", { name: "BASIC" })).toBeInTheDocument();
-			expect(within(page).getByText("Basic Pay")).toBeInTheDocument();
+			expect(within(page).getByRole("heading", { name: "Basic Pay" })).toBeInTheDocument();
 			expect(within(page).getByText("50000.00")).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 		},
@@ -341,30 +342,28 @@ describe("Create rate version dialog", () => {
 			/>,
 		);
 
-		expect(await screen.findByRole("heading", { name: "New rate version" })).toBeInTheDocument();
-		expect(screen.getByLabelText("Calculation kind")).toHaveTextContent("Fixed Recurring Amount");
-		expect(screen.getByLabelText("Rounding rule")).toHaveTextContent("Round half up (rupee)");
+		expect(await screen.findByRole("heading", { name: "New Rate Version" })).toBeInTheDocument();
+		expect(screen.getByLabelText("Calculation Kind")).toHaveTextContent("Fixed Recurring Amount");
+		expect(screen.getByLabelText("Rounding Rule")).toHaveTextContent("Round half up (rupee)");
 
 		// Default fixed_recurring_amount → amount visible, rate/basis hidden
 		expect(screen.getByLabelText("Amount")).toBeInTheDocument();
 		expect(screen.queryByLabelText("Rate")).not.toBeInTheDocument();
-		expect(screen.queryByText("Basis components")).not.toBeInTheDocument();
+		expect(screen.queryByText("Basis Components")).not.toBeInTheDocument();
 
-		openBaseUiSelect(screen.getByLabelText("Calculation kind"));
+		openBaseUiSelect(screen.getByLabelText("Calculation Kind"));
 		pickBaseUiOption("Percentage Of Component Bases");
 
 		await waitFor(() => {
 			expect(screen.queryByLabelText("Amount")).not.toBeInTheDocument();
 			expect(screen.getByLabelText("Rate")).toBeInTheDocument();
-			expect(screen.getByText("Basis components")).toBeInTheDocument();
+			expect(screen.getByText("Basis Components")).toBeInTheDocument();
 		});
 
-		fireEvent.change(screen.getByLabelText("Effective from"), {
-			target: { value: "2026-04-01" },
-		});
+		pickDateByLabel("Effective From", "2026-04-01");
 		fireEvent.change(screen.getByLabelText("Rate"), { target: { value: "0.1000" } });
 
-		const basisGroup = screen.getByRole("group", { name: "Basis components" });
+		const basisGroup = screen.getByRole("group", { name: "Basis Components" });
 		fireEvent.click(within(basisGroup).getByRole("checkbox", { name: /BASIC/i }));
 
 		fireEvent.click(screen.getByRole("button", { name: "Create rate version" }));
@@ -398,9 +397,9 @@ describe("Create rate version dialog", () => {
 			/>,
 		);
 
-		expect(await screen.findByRole("heading", { name: "New rate version" })).toBeInTheDocument();
+		expect(await screen.findByRole("heading", { name: "New Rate Version" })).toBeInTheDocument();
 
-		openBaseUiSelect(screen.getByLabelText("Calculation kind"));
+		openBaseUiSelect(screen.getByLabelText("Calculation Kind"));
 		pickBaseUiOption("Accommodation Charge");
 
 		await waitFor(() => {
@@ -408,13 +407,13 @@ describe("Create rate version dialog", () => {
 			expect(screen.queryByLabelText("Rate")).not.toBeInTheDocument();
 		});
 
-		openBaseUiSelect(screen.getByLabelText("Calculation kind"));
+		openBaseUiSelect(screen.getByLabelText("Calculation Kind"));
 		pickBaseUiOption("Employer Employee Contribution");
 
 		await waitFor(() => {
 			expect(screen.queryByLabelText("Amount")).not.toBeInTheDocument();
 			expect(screen.getByLabelText("Rate")).toBeInTheDocument();
-			expect(screen.getByText("Basis components")).toBeInTheDocument();
+			expect(screen.getByText("Basis Components")).toBeInTheDocument();
 		});
 	});
 
@@ -434,10 +433,8 @@ describe("Create rate version dialog", () => {
 			<CreateRateVersionDialog open onOpenChange={vi.fn()} componentId="pc-1" basisOptions={[]} />,
 		);
 
-		expect(await screen.findByRole("heading", { name: "New rate version" })).toBeInTheDocument();
-		fireEvent.change(screen.getByLabelText("Effective from"), {
-			target: { value: "2026-01-01" },
-		});
+		expect(await screen.findByRole("heading", { name: "New Rate Version" })).toBeInTheDocument();
+		pickDateByLabel("Effective From", "2026-01-01");
 		fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "100.00" } });
 		fireEvent.click(screen.getByRole("button", { name: "Create rate version" }));
 
@@ -445,7 +442,7 @@ describe("Create rate version dialog", () => {
 	});
 });
 
-describe("Pay components capability gate", () => {
+describe("Pay Components capability gate", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});

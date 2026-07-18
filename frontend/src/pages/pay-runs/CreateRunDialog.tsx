@@ -96,7 +96,7 @@ export function CreateRunDialog({ open, onOpenChange }: CreateRunDialogProps) {
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New pay run</DialogTitle>
+					<DialogTitle>New Pay Run</DialogTitle>
 					<DialogDescription>
 						Create a payroll run for an existing period. Regular runs are unique per period.
 					</DialogDescription>
@@ -130,7 +130,7 @@ export function CreateRunDialog({ open, onOpenChange }: CreateRunDialogProps) {
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="create-run-type">Run type</Label>
+							<Label htmlFor="create-run-type">Run Type</Label>
 							<Select
 								value={form.run_type}
 								onValueChange={(value) =>

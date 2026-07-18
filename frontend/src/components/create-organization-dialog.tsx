@@ -55,7 +55,7 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>Create organization</DialogTitle>
+					<DialogTitle>Create Organization</DialogTitle>
 					<DialogDescription>
 						Set up a new organization. You will be signed into it after creation.
 					</DialogDescription>
@@ -88,7 +88,7 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Create organization"}
+							{isSubmitting ? "Creating…" : "Create Organization"}
 						</Button>
 					</DialogFooter>
 				</form>

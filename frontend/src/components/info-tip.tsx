@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { Info, type LucideIcon } from "lucide-react";
 import type * as React from "react";
 import type { ReactNode } from "react";
 
@@ -12,6 +12,8 @@ type InfoTipProps = {
 	className?: string;
 	contentClassName?: string;
 	side?: React.ComponentProps<typeof TooltipContent>["side"];
+	icon?: LucideIcon;
+	"data-testid"?: string;
 };
 
 export function InfoTip({
@@ -20,17 +22,20 @@ export function InfoTip({
 	className,
 	contentClassName,
 	side = "top",
+	icon: Icon = Info,
+	"data-testid": dataTestId,
 }: InfoTipProps) {
 	const trigger = (
 		<button
 			type="button"
 			aria-label={ariaLabel}
+			data-testid={dataTestId}
 			className={cn(
 				"-my-1 inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/35",
 				className,
 			)}
 		>
-			<Info className="size-3.5" aria-hidden="true" />
+			<Icon className="size-3.5" aria-hidden="true" />
 		</button>
 	);
 

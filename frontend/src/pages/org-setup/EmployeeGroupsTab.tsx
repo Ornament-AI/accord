@@ -27,8 +27,8 @@ import { ApiError } from "@/lib/errors";
 import { CatalogTab } from "./CatalogTab";
 
 const columns: ColumnDef<EmployeeGroupResponse>[] = [
-	{ accessorKey: "code", header: "Code" },
 	{ accessorKey: "name", header: "Name" },
+	{ accessorKey: "code", header: "Code" },
 ];
 
 type FormState = { code: string; name: string };
@@ -51,7 +51,7 @@ export function EmployeeGroupsTab({
 	return (
 		<>
 			<CatalogTab
-				title="Employee groups"
+				title="Employee Groups"
 				emptyDescription="Add an employee group to get started."
 				icon={UsersRound}
 				columns={columns}
@@ -162,7 +162,7 @@ function EmployeeGroupFormDialog({ mode, open, onOpenChange, item }: FormDialogP
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>
-						{mode === "create" ? "Add employee group" : "Edit employee group"}
+						{mode === "create" ? "Add Employee Group" : "Edit Employee Group"}
 					</DialogTitle>
 					<DialogDescription>
 						{mode === "create"

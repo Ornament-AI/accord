@@ -65,3 +65,31 @@ export function isoDate(offsetDays = 0): string {
 	const dd = String(d.getDate()).padStart(2, "0");
 	return `${yyyy}-${mm}-${dd}`;
 }
+
+/** Open a DatePicker by label and select an API calendar date (`YYYY-MM-DD`). */
+export async function pickDateWithin(
+	scope: Locator,
+	label: string | RegExp,
+	iso: string,
+): Promise<void> {
+	const page = scope.page();
+	const [year, month, day] = iso.split("-").map(Number);
+	const target = new Date(year, month - 1, day);
+	const dataDay = target.toLocaleDateString();
+	await scope.getByLabel(label).click();
+
+	const targetIndex = year * 12 + (month - 1);
+	const now = new Date();
+	let cursorIndex = now.getFullYear() * 12 + now.getMonth();
+	while (cursorIndex !== targetIndex) {
+		if (cursorIndex > targetIndex) {
+			await page.getByRole("button", { name: "Go to the Previous Month" }).click();
+			cursorIndex -= 1;
+		} else {
+			await page.getByRole("button", { name: "Go to the Next Month" }).click();
+			cursorIndex += 1;
+		}
+	}
+
+	await page.locator(`[data-day="${dataDay}"]`).click();
+}

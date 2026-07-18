@@ -18,7 +18,7 @@ export function RecentArtifactsList({ artifacts }: RecentArtifactsListProps) {
 	return (
 		<Card data-testid="dashboard-recent-artifacts">
 			<CardHeader className="border-b">
-				<CardTitle className="text-sm font-medium">Recent artifacts</CardTitle>
+				<CardTitle className="text-sm font-medium">Recent Artifacts</CardTitle>
 			</CardHeader>
 			<CardContent>
 				{items.length === 0 ? (

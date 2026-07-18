@@ -11,7 +11,6 @@ import { EmployeeGroupsTab } from "./EmployeeGroupsTab";
 import { OfficesTab } from "./OfficesTab";
 import { PayrollUnitsTab } from "./PayrollUnitsTab";
 import { PostsTab } from "./PostsTab";
-import { SettingsTab } from "./SettingsTab";
 
 /** Redirect `/organization` → `/organization/offices`. */
 export function OrgSetupIndexRedirect() {
@@ -48,9 +47,7 @@ function OrgCatalogPage({
 				title={title}
 				actions={canManage ? <CatalogAddButton onClick={() => setCreateOpen(true)} /> : undefined}
 			>
-				<PageShell data-testid={testId}>
-					{children({ createOpen, setCreateOpen })}
-				</PageShell>
+				<PageShell data-testid={testId}>{children({ createOpen, setCreateOpen })}</PageShell>
 			</AppLayout>
 		</CapabilityGate>
 	);
@@ -117,18 +114,6 @@ export function EmployeeGroupsPage() {
 				/>
 			)}
 		</OrgCatalogPage>
-	);
-}
-
-export function OrgSettingsPage() {
-	return (
-		<CapabilityGate capability="manage_organization" title="Settings">
-			<AppLayout title="Settings">
-				<PageShell data-testid="settings-page">
-					<SettingsTab />
-				</PageShell>
-			</AppLayout>
-		</CapabilityGate>
 	);
 }
 

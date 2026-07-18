@@ -9,7 +9,6 @@ import NoOrganizationPage from "@/pages/NoOrganizationPage";
 import {
 	EmployeeGroupsPage,
 	OfficesPage,
-	OrgSettingsPage,
 	OrgSetupIndexRedirect,
 	PayrollUnitsPage,
 	PostsPage,
@@ -84,14 +83,7 @@ export const PayComponentsPage = lazy(() => import("@/pages/pay-components/PayCo
 export const PayComponentDetailPage = lazy(
 	() => import("@/pages/pay-components/PayComponentDetailPage"),
 );
-export {
-	EmployeeGroupsPage,
-	OfficesPage,
-	OrgSettingsPage,
-	OrgSetupIndexRedirect,
-	PayrollUnitsPage,
-	PostsPage,
-};
+export { EmployeeGroupsPage, OfficesPage, OrgSetupIndexRedirect, PayrollUnitsPage, PostsPage };
 export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsPage = lazy(() => import("@/pages/reports/ReportsPage"));

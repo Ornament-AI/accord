@@ -79,7 +79,7 @@ export function NavUser({
 			{user.isPlatformAdmin ? (
 				<div className="grid gap-0.5">
 					<span className="text-[length:var(--text-caption)] text-muted-foreground">Access</span>
-					<span className="truncate text-sm">Platform admin</span>
+					<span className="truncate text-sm">Platform Admin</span>
 				</div>
 			) : null}
 		</div>

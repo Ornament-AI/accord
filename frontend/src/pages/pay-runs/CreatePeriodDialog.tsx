@@ -83,7 +83,7 @@ export function CreatePeriodDialog({ open, onOpenChange }: CreatePeriodDialogPro
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New payroll period</DialogTitle>
+					<DialogTitle>New Payroll Period</DialogTitle>
 					<DialogDescription>
 						Create a payroll period for a calendar month. Duplicate year/month combinations are
 						rejected.

@@ -80,7 +80,7 @@ export function ValidationFindingsPanel({ result }: ValidationFindingsPanelProps
 	return (
 		<section className="grid gap-3" data-testid="validation-findings-panel">
 			<div className="flex flex-wrap items-center gap-2">
-				<h3 className="text-sm font-medium">Validation findings</h3>
+				<h3 className="text-sm font-medium">Validation Findings</h3>
 				{result.findings.length === 0 ? (
 					<Badge variant="success">No issues</Badge>
 				) : (

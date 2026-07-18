@@ -153,8 +153,8 @@ export default function AuditPage() {
 		const last30 = new Date(today);
 		last30.setDate(last30.getDate() - 29);
 		return [
-			{ label: "Last 7 days", value: { from: last7, to: today } },
-			{ label: "Last 30 days", value: { from: last30, to: today } },
+			{ label: "Last 7 Days", value: { from: last7, to: today } },
+			{ label: "Last 30 Days", value: { from: last30, to: today } },
 		];
 	}, []);
 
@@ -171,7 +171,7 @@ export default function AuditPage() {
 									setPage(1);
 								}}
 								placeholder="Command…"
-								aria-label="Filter by command"
+								aria-label="Filter by Command"
 								style={filterWidthStyle([], "Command…")}
 							/>
 							<Input
@@ -181,7 +181,7 @@ export default function AuditPage() {
 									setPage(1);
 								}}
 								placeholder="Entity type…"
-								aria-label="Filter by entity type"
+								aria-label="Filter by Entity Type"
 								style={filterWidthStyle([], "Entity type…")}
 							/>
 							<Input
@@ -191,7 +191,7 @@ export default function AuditPage() {
 									setPage(1);
 								}}
 								placeholder="Entity ID…"
-								aria-label="Search by entity ID"
+								aria-label="Search by Entity ID"
 								style={filterWidthStyle([], "Entity ID…", { maxCh: 20 })}
 							/>
 							<DateRangePicker
@@ -200,7 +200,7 @@ export default function AuditPage() {
 									setDateRange(range);
 									setPage(1);
 								}}
-								aria-label="Filter by date range"
+								aria-label="Filter by Date Range"
 								placeholder="Date range"
 								numberOfMonths={isMobile ? 1 : 2}
 								presets={datePresets}
@@ -263,7 +263,7 @@ export default function AuditPage() {
 				>
 					<SheetContent side="right" className="w-full sm:max-w-md">
 						<SheetHeader>
-							<SheetTitle>Audit event</SheetTitle>
+							<SheetTitle>Audit Event</SheetTitle>
 							<SheetDescription>Details for the selected audit event.</SheetDescription>
 						</SheetHeader>
 						<div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">

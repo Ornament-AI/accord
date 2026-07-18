@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -20,7 +21,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	CALC_KINDS,
 	type CalcKind,
@@ -53,7 +54,6 @@ type FormState = {
 	amount: string;
 	rate: string;
 	basis: string[];
-	change_reason: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -63,7 +63,6 @@ const emptyForm = (): FormState => ({
 	amount: "",
 	rate: "",
 	basis: [],
-	change_reason: "",
 });
 
 export function CreateRateVersionDialog({
@@ -114,7 +113,7 @@ export function CreateRateVersionDialog({
 			effective_from: form.effective_from,
 			calc_kind: form.calc_kind,
 			rounding_rule: form.rounding_rule,
-			change_reason: form.change_reason.trim() || null,
+			change_reason: null,
 		};
 
 		if (showAmount) {
@@ -161,7 +160,7 @@ export function CreateRateVersionDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New rate version</DialogTitle>
+					<DialogTitle>New Rate Version</DialogTitle>
 					<DialogDescription>
 						Add an effective rate version for this pay component.
 					</DialogDescription>
@@ -173,20 +172,24 @@ export function CreateRateVersionDialog({
 				>
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="create-rv-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="create-rv-effective-from">Effective From</Label>
+							<DatePicker
 								id="create-rv-effective-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({
+										...prev,
+										effective_from: date ? toApiDate(date) : "",
+									}))
 								}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="create-rv-calc-kind">Calculation kind</Label>
+							<Label htmlFor="create-rv-calc-kind">Calculation Kind</Label>
 							<Select
 								value={form.calc_kind}
 								onValueChange={(value) =>
@@ -247,7 +250,7 @@ export function CreateRateVersionDialog({
 
 						{showBasis ? (
 							<fieldset className="grid gap-2">
-								<legend className="text-sm font-medium">Basis components</legend>
+								<legend className="text-sm font-medium">Basis Components</legend>
 								<div className="grid max-h-40 gap-2 overflow-y-auto rounded-md border p-3">
 									{basisOptions.length === 0 ? (
 										<p className="text-sm text-muted-foreground">
@@ -267,8 +270,7 @@ export function CreateRateVersionDialog({
 														disabled={isSubmitting}
 													/>
 													<Label htmlFor={checkboxId} className="font-normal">
-														{option.code}
-														<span className="text-muted-foreground"> — {option.name}</span>
+														{option.name}
 													</Label>
 												</div>
 											);
@@ -279,7 +281,7 @@ export function CreateRateVersionDialog({
 						) : null}
 
 						<div className="grid gap-2">
-							<Label htmlFor="create-rv-rounding">Rounding rule</Label>
+							<Label htmlFor="create-rv-rounding">Rounding Rule</Label>
 							<Select
 								value={form.rounding_rule}
 								onValueChange={(value) =>
@@ -305,19 +307,6 @@ export function CreateRateVersionDialog({
 									))}
 								</SelectContent>
 							</Select>
-						</div>
-
-						<div className="grid gap-2">
-							<Label htmlFor="create-rv-change-reason">Change reason (optional)</Label>
-							<Textarea
-								id="create-rv-change-reason"
-								value={form.change_reason}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
-								}
-								disabled={isSubmitting}
-								rows={2}
-							/>
 						</div>
 
 						{overlapError ? (

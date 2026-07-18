@@ -157,7 +157,7 @@ function PostFormDialog({ mode, open, onOpenChange, item }: FormDialogProps) {
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>{mode === "create" ? "Add post" : "Edit post"}</DialogTitle>
+					<DialogTitle>{mode === "create" ? "Add Post" : "Edit Post"}</DialogTitle>
 					<DialogDescription>
 						{mode === "create"
 							? "Create a post for this organization."

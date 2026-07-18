@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
+import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -30,6 +32,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	type RecurringInstructionResponse,
 	useCreateRecurringInstruction,
@@ -38,8 +41,8 @@ import {
 	useRecurringInstructions,
 } from "@/lib/api/pay-setup";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
+import { payComponentEntityLabel } from "@/lib/entity-labels";
 import { ApiError, getErrorMessage } from "@/lib/errors";
-import { formatDate } from "@/lib/utils";
 
 import { validateNonNegativeMoney, validatePositiveMoney } from "./money";
 
@@ -47,16 +50,9 @@ type RecurringItemsTabProps = {
 	employeeId: string;
 	asOf: string;
 	canManage: boolean;
+	createOpen: boolean;
+	onCreateOpenChange: (open: boolean) => void;
 };
-
-function formatEffectiveRange(
-	from: string | null | undefined,
-	to: string | null | undefined,
-): string {
-	const start = from ? formatDate(from) : "—";
-	const end = to ? formatDate(to) : "present";
-	return `${start} → ${end}`;
-}
 
 function formatAmountOrRate(row: RecurringInstructionResponse): string {
 	if (row.amount != null && row.amount !== "") return row.amount;
@@ -64,17 +60,22 @@ function formatAmountOrRate(row: RecurringInstructionResponse): string {
 	return "—";
 }
 
-export function RecurringItemsTab({ employeeId, asOf, canManage }: RecurringItemsTabProps) {
+export function RecurringItemsTab({
+	employeeId,
+	asOf,
+	canManage,
+	createOpen,
+	onCreateOpenChange,
+}: RecurringItemsTabProps) {
 	const instructionsQuery = useRecurringInstructions(employeeId, asOf);
 	const componentsQuery = usePayComponentsList();
-	const [addOpen, setAddOpen] = useState(false);
 	const [versionTarget, setVersionTarget] = useState<RecurringInstructionResponse | null>(null);
 	const [endTarget, setEndTarget] = useState<RecurringInstructionResponse | null>(null);
 
-	const componentById = useMemo(() => {
-		const map = new Map<string, { code: string; name: string }>();
+	const componentLabelById = useMemo(() => {
+		const map = new Map<string, string>();
 		for (const component of componentsQuery.data ?? []) {
-			map.set(component.id, { code: component.code, name: component.name });
+			map.set(component.id, payComponentEntityLabel(component));
 		}
 		return map;
 	}, [componentsQuery.data]);
@@ -83,15 +84,6 @@ export function RecurringItemsTab({ employeeId, asOf, canManage }: RecurringItem
 
 	return (
 		<div className="grid gap-4" data-testid="recurring-items-tab">
-			<div className="flex flex-wrap items-center justify-between gap-2">
-				<h3 className="text-sm font-medium">Recurring items</h3>
-				{canManage ? (
-					<Button size="xs" onClick={() => setAddOpen(true)}>
-						Add
-					</Button>
-				) : null}
-			</div>
-
 			{instructionsQuery.isLoading ? (
 				<div className="grid gap-2">
 					<Skeleton className="h-10 w-full" />
@@ -116,36 +108,36 @@ export function RecurringItemsTab({ employeeId, asOf, canManage }: RecurringItem
 						<TableHeader>
 							<TableRow>
 								<TableHead>Component</TableHead>
-								<TableHead>Amount / rate</TableHead>
-								<TableHead>Effective range</TableHead>
-								{canManage ? <TableHead className="text-right">Actions</TableHead> : null}
+								<TableHead className="text-right">Amount / Rate</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{rows.map((row) => {
-								const component = componentById.get(row.component_id);
-								const label = component
-									? `${component.code} — ${component.name}`
-									: row.component_id;
+								const label = componentLabelById.get(row.component_id) ?? row.component_id;
 								return (
-									<TableRow key={row.id}>
-										<TableCell>{label}</TableCell>
-										<TableCell>{formatAmountOrRate(row)}</TableCell>
+									<TableRow
+										key={row.id}
+										className={canManage ? "cursor-pointer" : undefined}
+										onClick={(event) => {
+											if (!canManage || isInteractiveRowTarget(event.target, event.currentTarget)) {
+												return;
+											}
+											setVersionTarget(row);
+										}}
+									>
 										<TableCell>
-											{formatEffectiveRange(row.effective_from, row.effective_to)}
+											{canManage ? (
+												<button
+													type="button"
+													className="sr-only focus:not-sr-only focus:mb-1 focus:inline-flex focus:rounded-md focus:bg-background focus:px-2 focus:py-1 focus:ring-2 focus:ring-ring/35"
+													onClick={() => setVersionTarget(row)}
+												>
+													New Version
+												</button>
+											) : null}
+											{label}
 										</TableCell>
-										{canManage ? (
-											<TableCell className="text-right">
-												<div className="flex justify-end gap-2">
-													<Button size="xs" variant="outline" onClick={() => setVersionTarget(row)}>
-														Add
-													</Button>
-													<Button size="xs" variant="outline" onClick={() => setEndTarget(row)}>
-														End
-													</Button>
-												</div>
-											</TableCell>
-										) : null}
+										<TableCell className="text-right">{formatAmountOrRate(row)}</TableCell>
 									</TableRow>
 								);
 							})}
@@ -156,11 +148,19 @@ export function RecurringItemsTab({ employeeId, asOf, canManage }: RecurringItem
 
 			{canManage ? (
 				<>
-					<AddInstructionDialog open={addOpen} onOpenChange={setAddOpen} employeeId={employeeId} />
+					<AddInstructionDialog
+						open={createOpen}
+						onOpenChange={onCreateOpenChange}
+						employeeId={employeeId}
+					/>
 					<NewVersionDialog
 						open={Boolean(versionTarget)}
 						onOpenChange={(open) => {
 							if (!open) setVersionTarget(null);
+						}}
+						onRequestEnd={() => {
+							setEndTarget(versionTarget);
+							setVersionTarget(null);
 						}}
 						employeeId={employeeId}
 						instruction={versionTarget}
@@ -279,7 +279,7 @@ function AddInstructionDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>Add instruction</DialogTitle>
+					<DialogTitle>Add Instruction</DialogTitle>
 					<DialogDescription>
 						Create a recurring payroll instruction for this employee.
 					</DialogDescription>
@@ -304,7 +304,7 @@ function AddInstructionDialog({
 										{(value: string | null) => {
 											const component = components.find((item) => item.id === value);
 											return component
-												? `${component.code} — ${component.name}`
+												? payComponentEntityLabel(component, "Select component")
 												: "Select component";
 										}}
 									</SelectValue>
@@ -312,7 +312,7 @@ function AddInstructionDialog({
 								<SelectContent>
 									{components.map((component) => (
 										<SelectItem key={component.id} value={component.id}>
-											{component.code} — {component.name}
+											{payComponentEntityLabel(component)}
 										</SelectItem>
 									))}
 								</SelectContent>
@@ -320,15 +320,19 @@ function AddInstructionDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-ri-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="add-ri-effective-from">Effective From</Label>
+							<DatePicker
 								id="add-ri-effective-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({
+										...prev,
+										effective_from: date ? toApiDate(date) : "",
+									}))
 								}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
@@ -361,7 +365,7 @@ function AddInstructionDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-ri-reason">Reason (optional)</Label>
+							<Label htmlFor="add-ri-reason">Reason (Optional)</Label>
 							<Textarea
 								id="add-ri-reason"
 								value={form.reason}
@@ -407,24 +411,24 @@ type VersionForm = {
 	effective_from: string;
 	amount: string;
 	rate: string;
-	change_reason: string;
 };
 
 const emptyVersionForm = (): VersionForm => ({
 	effective_from: "",
 	amount: "",
 	rate: "",
-	change_reason: "",
 });
 
 function NewVersionDialog({
 	open,
 	onOpenChange,
+	onRequestEnd,
 	employeeId,
 	instruction,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	onRequestEnd: () => void;
 	employeeId: string;
 	instruction: RecurringInstructionResponse | null;
 }) {
@@ -481,7 +485,7 @@ function NewVersionDialog({
 					effective_from: form.effective_from,
 					amount: hasAmount ? form.amount.trim() : null,
 					rate: hasRate ? form.rate.trim() : null,
-					change_reason: form.change_reason.trim() || null,
+					change_reason: null,
 				},
 			});
 			onOpenChange(false);
@@ -500,7 +504,7 @@ function NewVersionDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New version</DialogTitle>
+					<DialogTitle>New Version</DialogTitle>
 					<DialogDescription>
 						Create a new effective version for this recurring instruction.
 					</DialogDescription>
@@ -512,15 +516,19 @@ function NewVersionDialog({
 				>
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="nv-ri-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="nv-ri-effective-from">Effective From</Label>
+							<DatePicker
 								id="nv-ri-effective-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({
+										...prev,
+										effective_from: date ? toApiDate(date) : "",
+									}))
 								}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
@@ -552,19 +560,6 @@ function NewVersionDialog({
 							/>
 						</div>
 
-						<div className="grid gap-2">
-							<Label htmlFor="nv-ri-change-reason">Change reason (optional)</Label>
-							<Textarea
-								id="nv-ri-change-reason"
-								value={form.change_reason}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
-								}
-								disabled={isSubmitting}
-								rows={2}
-							/>
-						</div>
-
 						{overlapError ? (
 							<p className="text-sm text-destructive" role="alert">
 								{overlapError}
@@ -578,18 +573,31 @@ function NewVersionDialog({
 						) : null}
 					</DialogBody>
 
-					<DialogFooter className="border-t px-6 py-4">
+					<DialogFooter className="border-t px-6 py-4 sm:justify-between">
 						<Button
 							type="button"
 							variant="outline"
-							onClick={() => onOpenChange(false)}
+							onClick={() => {
+								onOpenChange(false);
+								onRequestEnd();
+							}}
 							disabled={isSubmitting}
 						>
-							Cancel
+							End
 						</Button>
-						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : "Create version"}
-						</Button>
+						<div className="flex flex-wrap gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => onOpenChange(false)}
+								disabled={isSubmitting}
+							>
+								Cancel
+							</Button>
+							<Button type="submit" disabled={isSubmitting}>
+								{isSubmitting ? "Saving…" : "Create version"}
+							</Button>
+						</div>
 					</DialogFooter>
 				</form>
 			</DialogContent>
@@ -599,12 +607,10 @@ function NewVersionDialog({
 
 type EndForm = {
 	end_on: string;
-	change_reason: string;
 };
 
 const emptyEndForm = (): EndForm => ({
 	end_on: "",
-	change_reason: "",
 });
 
 function EndInstructionDialog({
@@ -647,7 +653,7 @@ function EndInstructionDialog({
 				instructionId: instruction.id,
 				body: {
 					end_on: form.end_on,
-					change_reason: form.change_reason.trim() || null,
+					change_reason: null,
 				},
 			});
 			onOpenChange(false);
@@ -666,7 +672,7 @@ function EndInstructionDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>End instruction</DialogTitle>
+					<DialogTitle>End Instruction</DialogTitle>
 					<DialogDescription>
 						Terminate this recurring instruction on the selected date.
 					</DialogDescription>
@@ -679,26 +685,16 @@ function EndInstructionDialog({
 				>
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="end-ri-end-on">End on</Label>
-							<Input
+							<Label htmlFor="end-ri-end-on">End On</Label>
+							<DatePicker
 								id="end-ri-end-on"
-								type="date"
-								value={form.end_on}
-								onChange={(event) => setForm((prev) => ({ ...prev, end_on: event.target.value }))}
-								disabled={isSubmitting}
-							/>
-						</div>
-
-						<div className="grid gap-2">
-							<Label htmlFor="end-ri-change-reason">Change reason (optional)</Label>
-							<Textarea
-								id="end-ri-change-reason"
-								value={form.change_reason}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								value={form.end_on ? parseApiDate(form.end_on) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({ ...prev, end_on: date ? toApiDate(date) : "" }))
 								}
 								disabled={isSubmitting}
-								rows={2}
+								className="w-full"
+								placeholder="End On"
 							/>
 						</div>
 
@@ -725,7 +721,7 @@ function EndInstructionDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Ending…" : "End instruction"}
+							{isSubmitting ? "Ending…" : "End Instruction"}
 						</Button>
 					</DialogFooter>
 				</form>

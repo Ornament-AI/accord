@@ -5,7 +5,7 @@ import type { RecurringInstructionVersionCreate } from "@/lib/api/pay-setup";
 import { queryClient } from "@/lib/query-client";
 import { buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
-import { openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
+import { openBaseUiSelect, pickBaseUiOption, pickDateByLabel } from "@/test/helpers";
 import { server } from "@/test/msw-server";
 import { renderApp } from "@/test/render-app";
 
@@ -105,8 +105,11 @@ describe("Employee payroll-setup tabs", () => {
 			expect(
 				await screen.findByTestId("recurring-items-tab", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText(/HRA — House Rent Allowance/)).toBeInTheDocument();
+			expect(await screen.findByText("House Rent Allowance (HRA)")).toBeInTheDocument();
 			expect(screen.getByText("2500.00")).toBeInTheDocument();
+			expect(
+				screen.queryByRole("columnheader", { name: /Effective Range/i }),
+			).not.toBeInTheDocument();
 
 			fireEvent.click(screen.getByRole("tab", { name: "Advances" }));
 			expect(
@@ -125,7 +128,7 @@ describe("Employee payroll-setup tabs", () => {
 			expect(screen.getByTestId("accommodation-license-fee")).toHaveTextContent("1200.00");
 			expect(screen.getByTestId("accommodation-foregone-hra")).toHaveTextContent("8500.00");
 			expect(screen.getByTestId("accommodation-foregone-caption")).toHaveTextContent(
-				/Informational only/,
+				"Foregone HRA",
 			);
 		},
 		PAGE_TIMEOUT,
@@ -143,19 +146,20 @@ describe("Employee payroll-setup tabs", () => {
 				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
 			);
 
-			expect(await screen.findByRole("heading", { name: "Add instruction" })).toBeInTheDocument();
-			openBaseUiSelect(screen.getByLabelText("Component"));
-			pickBaseUiOption(/CCA — City Compensatory Allowance/);
-			fireEvent.change(screen.getByLabelText("Effective from"), {
-				target: { value: "2026-03-01" },
+			expect(await screen.findByRole("heading", { name: "Add Instruction" })).toBeInTheDocument();
+			const instructionDialog = screen.getByRole("dialog");
+			openBaseUiSelect(within(instructionDialog).getByLabelText("Component"));
+			pickBaseUiOption(/City Compensatory Allowance/);
+			pickDateByLabel("Effective From", "2026-03-01");
+			fireEvent.change(within(instructionDialog).getByLabelText("Amount"), {
+				target: { value: "1500.00" },
 			});
-			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1500.00" } });
-			fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+			fireEvent.click(within(instructionDialog).getByRole("button", { name: /^Add$/ }));
 
 			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "Add instruction" })).not.toBeInTheDocument();
+				expect(screen.queryByRole("heading", { name: "Add Instruction" })).not.toBeInTheDocument();
 			});
-			expect(await screen.findByText(/CCA — City Compensatory Allowance/)).toBeInTheDocument();
+			expect(await screen.findByText("City Compensatory Allowance (CCA)")).toBeInTheDocument();
 			expect(screen.getByText("1500.00")).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
@@ -176,19 +180,20 @@ describe("Employee payroll-setup tabs", () => {
 			fireEvent.click(
 				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
 			);
-			expect(await screen.findByRole("heading", { name: "Add instruction" })).toBeInTheDocument();
-			openBaseUiSelect(screen.getByLabelText("Component"));
-			pickBaseUiOption(/HRA — House Rent Allowance/);
-			fireEvent.change(screen.getByLabelText("Effective from"), {
-				target: { value: "2026-04-01" },
+			expect(await screen.findByRole("heading", { name: "Add Instruction" })).toBeInTheDocument();
+			const instructionDialog = screen.getByRole("dialog");
+			openBaseUiSelect(within(instructionDialog).getByLabelText("Component"));
+			pickBaseUiOption(/House Rent Allowance/);
+			pickDateByLabel("Effective From", "2026-04-01");
+			fireEvent.change(within(instructionDialog).getByLabelText("Amount"), {
+				target: { value: "2000.00" },
 			});
-			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2000.00" } });
-			fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+			fireEvent.click(within(instructionDialog).getByRole("button", { name: /^Add$/ }));
 
 			expect(
 				await screen.findByTestId("ri-overlap-error", {}, { timeout: PAGE_TIMEOUT }),
 			).toHaveTextContent("Recurring instruction periods overlap.");
-			expect(screen.getByRole("heading", { name: "Add instruction" })).toBeInTheDocument();
+			expect(screen.getByRole("heading", { name: "Add Instruction" })).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -205,21 +210,20 @@ describe("Employee payroll-setup tabs", () => {
 
 			await openEmployeeTab("Recurring Items");
 			fireEvent.click(
-				await screen.findByRole("button", { name: "End" }, { timeout: PAGE_TIMEOUT }),
+				await screen.findByRole("button", { name: "New Version" }, { timeout: PAGE_TIMEOUT }),
 			);
-			expect(await screen.findByRole("heading", { name: "End instruction" })).toBeInTheDocument();
-			fireEvent.change(screen.getByLabelText("End on"), { target: { value: "2026-06-30" } });
-			fireEvent.change(screen.getByLabelText("Change reason (optional)"), {
-				target: { value: "Left quarters" },
-			});
-			fireEvent.click(screen.getByRole("button", { name: "End instruction" }));
+			expect(await screen.findByRole("heading", { name: "New Version" })).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "End" }));
+			expect(await screen.findByRole("heading", { name: "End Instruction" })).toBeInTheDocument();
+			pickDateByLabel("End On", "2026-06-30");
+			fireEvent.click(screen.getByRole("button", { name: "End Instruction" }));
 
 			await waitFor(() => {
 				expect(captured.body).toBeDefined();
 			});
 			expect(captured.body).toMatchObject({
 				end_on: "2026-06-30",
-				change_reason: "Left quarters",
+				change_reason: null,
 			});
 			expect(captured.body).not.toHaveProperty("effective_from");
 			expect(captured.body?.amount).toBeUndefined();
@@ -239,22 +243,18 @@ describe("Employee payroll-setup tabs", () => {
 			fireEvent.click(
 				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
 			);
-			expect(await screen.findByRole("heading", { name: "Add advance" })).toBeInTheDocument();
+			expect(await screen.findByRole("heading", { name: "Add Advance" })).toBeInTheDocument();
 
 			const form = screen.getByTestId("add-advance-form");
 			fireEvent.change(within(form).getByLabelText("Principal"), {
 				target: { value: "50000.00" },
 			});
-			fireEvent.change(within(form).getByLabelText("Sanctioned on"), {
-				target: { value: "2026-05-01" },
-			});
-			fireEvent.change(within(form).getByLabelText("Effective from"), {
-				target: { value: "2026-05-01" },
-			});
-			fireEvent.change(within(form).getByLabelText("Installment amount"), {
+			pickDateByLabel("Sanctioned On", "2026-05-01");
+			pickDateByLabel("Effective From", "2026-05-01");
+			fireEvent.change(within(form).getByLabelText("Installment Amount"), {
 				target: { value: "60000.00" },
 			});
-			fireEvent.change(within(form).getByLabelText("Installments total"), {
+			fireEvent.change(within(form).getByLabelText("Installments Total"), {
 				target: { value: "10" },
 			});
 			fireEvent.click(within(form).getByRole("button", { name: /^Add$/ }));
@@ -263,13 +263,13 @@ describe("Employee payroll-setup tabs", () => {
 				/Installment amount must be less than or equal to principal/,
 			);
 
-			fireEvent.change(within(form).getByLabelText("Installment amount"), {
+			fireEvent.change(within(form).getByLabelText("Installment Amount"), {
 				target: { value: "5000.00" },
 			});
 			fireEvent.click(within(form).getByRole("button", { name: /^Add$/ }));
 
 			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "Add advance" })).not.toBeInTheDocument();
+				expect(screen.queryByRole("heading", { name: "Add Advance" })).not.toBeInTheDocument();
 			});
 			expect(await screen.findByText("50000.00")).toBeInTheDocument();
 			expect(screen.getByText("5000.00")).toBeInTheDocument();
@@ -294,18 +294,23 @@ describe("Employee payroll-setup tabs", () => {
 
 			await openEmployeeTab("Accommodation");
 
-			const card = await screen.findByTestId(
-				"accommodation-card-acc-1",
+			const row = await screen.findByTestId(
+				"accommodation-row-acc-1",
 				{},
 				{ timeout: PAGE_TIMEOUT },
 			);
-			expect(within(card).getByTestId("accommodation-license-fee")).toHaveTextContent("1200.00");
-			expect(within(card).getByTestId("accommodation-foregone-hra")).toHaveTextContent("8500.00");
-			expect(within(card).getByTestId("accommodation-foregone-caption")).toHaveTextContent(
-				/not a payroll charge/i,
+			expect(within(row).getByTestId("accommodation-license-fee")).toHaveTextContent("1200.00");
+			expect(within(row).getByTestId("accommodation-foregone-hra")).toHaveTextContent("8500.00");
+			expect(screen.getByTestId("accommodation-foregone-caption")).toHaveTextContent(
+				"Foregone HRA",
 			);
-			expect(within(card).getByText("License fee")).toBeInTheDocument();
-			expect(within(card).getByText("Foregone HRA")).toBeInTheDocument();
+			expect(screen.getByRole("columnheader", { name: /License Fee/i })).toBeInTheDocument();
+			expect(screen.getByRole("columnheader", { name: /Foregone HRA/i })).toBeInTheDocument();
+			expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
+			fireEvent.click(within(row).getByRole("button", { name: "Update Fee" }));
+			expect(
+				await screen.findByRole("heading", { name: "New Charge Version" }),
+			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -320,20 +325,18 @@ describe("Employee payroll-setup tabs", () => {
 				await screen.findByTestId("recurring-items-tab", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/ })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "New Version" })).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: "End" })).not.toBeInTheDocument();
 
 			fireEvent.click(screen.getByRole("tab", { name: "Advances" }));
 			expect(await screen.findByTestId("advances-tab")).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/ })).not.toBeInTheDocument();
-			expect(
-				screen.queryByRole("button", { name: "Add" }),
-			).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Update Installment" })).not.toBeInTheDocument();
 
 			fireEvent.click(screen.getByRole("tab", { name: "Accommodation" }));
 			expect(await screen.findByTestId("accommodation-tab")).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/ })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Update Fee" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);

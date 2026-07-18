@@ -1,8 +1,5 @@
 import { ApiError } from "@/lib/errors";
-import {
-	organizationSlugCandidate,
-	randomSlugDisambiguator,
-} from "@/lib/organization-slug";
+import { organizationSlugCandidate, randomSlugDisambiguator } from "@/lib/organization-slug";
 
 const SLUG_CONFLICT_ATTEMPTS = 5;
 

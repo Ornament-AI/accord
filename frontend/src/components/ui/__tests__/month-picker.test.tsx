@@ -53,14 +53,14 @@ describe("MonthPicker", () => {
 
 		expect(picker.getByRole("button", { name: "May 2026" })).toBeEnabled();
 		expect(picker.getByRole("button", { name: "Apr 2026" })).toBeDisabled();
-		expect(picker.getByRole("button", { name: "Previous year" })).toBeEnabled();
-		expect(picker.getByRole("button", { name: "Next year" })).toBeDisabled();
+		expect(picker.getByRole("button", { name: "Previous Year" })).toBeEnabled();
+		expect(picker.getByRole("button", { name: "Next Year" })).toBeDisabled();
 
-		fireEvent.click(picker.getByRole("button", { name: "Previous year" }));
+		fireEvent.click(picker.getByRole("button", { name: "Previous Year" }));
 		expect(picker.getByText("2025")).toBeInTheDocument();
 		expect(picker.getByRole("button", { name: "Dec 2025" })).toBeEnabled();
 		expect(picker.getByRole("button", { name: "Jan 2025" })).toBeDisabled();
-		expect(picker.getByRole("button", { name: "Previous year" })).toBeDisabled();
+		expect(picker.getByRole("button", { name: "Previous Year" })).toBeDisabled();
 	});
 
 	it("treats an empty availableMonths list as no selectable months", () => {
@@ -72,7 +72,7 @@ describe("MonthPicker", () => {
 		const picker = within(content as HTMLElement);
 
 		expect(picker.getByRole("button", { name: "Jan 2026" })).toBeDisabled();
-		expect(picker.getByRole("button", { name: "Previous year" })).toBeDisabled();
-		expect(picker.getByRole("button", { name: "Next year" })).toBeDisabled();
+		expect(picker.getByRole("button", { name: "Previous Year" })).toBeDisabled();
+		expect(picker.getByRole("button", { name: "Next Year" })).toBeDisabled();
 	});
 });

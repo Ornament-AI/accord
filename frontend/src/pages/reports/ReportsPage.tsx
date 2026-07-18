@@ -91,7 +91,7 @@ export default function ReportsPage() {
 							<PageSection className="flex flex-col gap-3">
 								<PageToolbar>
 									<div className="flex min-w-[16rem] flex-col gap-2">
-										<Label htmlFor="reports-posted-run">Posted run</Label>
+										<Label htmlFor="reports-posted-run">Posted Run</Label>
 										<Select
 											value={selectedRunId}
 											onValueChange={(value) => {
@@ -102,7 +102,7 @@ export default function ReportsPage() {
 											<SelectTrigger
 												id="reports-posted-run"
 												className="w-full max-w-md"
-												aria-label="Select posted run"
+												aria-label="Select Posted Run"
 											>
 												<SelectValue placeholder="Select a posted run">
 													{(value: string | null) => {
@@ -130,7 +130,7 @@ export default function ReportsPage() {
 
 							<PageSection className="flex flex-col gap-3">
 								<div>
-									<h2 className="text-base font-semibold tracking-tight">Report types</h2>
+									<h2 className="text-base font-semibold tracking-tight">Report Types</h2>
 									<p className="text-muted-foreground text-sm">
 										Generate Excel or PDF exports for the selected posted run.
 									</p>

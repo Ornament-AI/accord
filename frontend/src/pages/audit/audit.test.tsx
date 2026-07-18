@@ -74,16 +74,16 @@ describe("Audit history page", () => {
 
 			renderAuditPage();
 
-			await screen.findByLabelText("Filter by command", {}, { timeout: PAGE_TIMEOUT });
+			await screen.findByLabelText("Filter by Command", {}, { timeout: PAGE_TIMEOUT });
 
-			fireEvent.change(screen.getByLabelText("Filter by command"), {
+			fireEvent.change(screen.getByLabelText("Filter by Command"), {
 				target: { value: "submit" },
 			});
 			await waitFor(() => {
 				expect(capturedListRequests.some((params) => params.command === "submit")).toBe(true);
 			});
 
-			fireEvent.change(screen.getByLabelText("Filter by entity type"), {
+			fireEvent.change(screen.getByLabelText("Filter by Entity Type"), {
 				target: { value: "payroll_run" },
 			});
 			await waitFor(() => {
@@ -95,15 +95,15 @@ describe("Audit history page", () => {
 			});
 
 			const entityId = "22222222-2222-2222-2222-000000000001";
-			fireEvent.change(screen.getByLabelText("Search by entity ID"), {
+			fireEvent.change(screen.getByLabelText("Search by Entity ID"), {
 				target: { value: entityId },
 			});
 			await waitFor(() => {
 				expect(capturedListRequests.some((params) => params.entity_id === entityId)).toBe(true);
 			});
 
-			fireEvent.click(screen.getByLabelText("Filter by date range"));
-			fireEvent.click(await screen.findByRole("button", { name: "Last 7 days" }));
+			fireEvent.click(screen.getByLabelText("Filter by Date Range"));
+			fireEvent.click(await screen.findByRole("button", { name: "Last 7 Days" }));
 
 			await waitFor(() => {
 				const withDates = capturedListRequests.filter(

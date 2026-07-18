@@ -64,7 +64,7 @@ function seedPostedRuns() {
 }
 
 async function selectPostedRun(label: RegExp | string) {
-	openBaseUiSelect(screen.getByLabelText("Select posted run"));
+	openBaseUiSelect(screen.getByLabelText("Select Posted Run"));
 	pickBaseUiOption(label);
 }
 

@@ -70,7 +70,7 @@ const CONFIRM_LABELS: Record<WorkflowConfirmCommand, string> = {
 const TOTAL_KEYS: Array<{ key: keyof PayrollRunTotals; label: string }> = [
 	{ key: "gross_total", label: "Gross" },
 	{ key: "deductions_total", label: "Deductions" },
-	{ key: "net_payable", label: "Net payable" },
+	{ key: "net_payable", label: "Net Payable" },
 ];
 
 function newIdempotencyKey(): string {
@@ -161,7 +161,7 @@ export function WorkflowConfirmDialog({
 										<dd className="font-medium text-foreground">v{postSummary.version_number}</dd>
 									</div>
 									<div className="flex justify-between gap-4">
-										<dt>Content hash</dt>
+										<dt>Content Hash</dt>
 										<dd
 											className="truncate font-mono text-xs text-foreground"
 											title={postSummary.content_hash}
@@ -184,7 +184,7 @@ export function WorkflowConfirmDialog({
 						{showReasonField ? (
 							<div className="grid gap-2">
 								<Label htmlFor="workflow-reason">
-									Reason{reasonRequired ? " (required)" : " (optional)"}
+									Reason{reasonRequired ? " (Required)" : " (Optional)"}
 								</Label>
 								<Textarea
 									id="workflow-reason"
