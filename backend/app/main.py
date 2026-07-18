@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from app.api.responses import problem_content, problem_response
 from app.api.routes import (
+    artifacts,
     audit,
     auth,
     employees,
@@ -302,6 +303,7 @@ def create_app() -> FastAPI:
     app.include_router(run_posting.router, prefix="/api")
     app.include_router(run_results.router, prefix="/api")
     app.include_router(audit.router, prefix="/api")
+    app.include_router(artifacts.router, prefix="/api")
     return app
 
 

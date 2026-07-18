@@ -38,6 +38,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Artifacts */
+        get: operations["list_artifacts_api_artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifacts/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Artifact */
+        get: operations["get_artifact_api_artifacts__artifact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/artifacts/{artifact_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Artifact */
+        get: operations["download_artifact_api_artifacts__artifact_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit-events": {
         parameters: {
             query?: never;
@@ -690,6 +741,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll-runs/{run_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Payroll Run Results */
+        get: operations["get_payroll_run_results_api_payroll_runs__run_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll-runs/{run_id}/results/{employee_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Payroll Run Employee Result */
+        get: operations["get_payroll_run_employee_result_api_payroll_runs__run_id__results__employee_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll-runs/{run_id}/reverse": {
         parameters: {
             query?: never;
@@ -1131,6 +1216,57 @@ export interface components {
          */
         AdvanceType: "hba" | "gpf_advance" | "festival" | "motor_car" | "motorcycle" | "other";
         /**
+         * ArtifactResponse
+         * @description Public metadata for an export artifact (object key is storage-internal).
+         */
+        ArtifactResponse: {
+            /** Checksum Sha256 */
+            checksum_sha256: string;
+            /** Content Type */
+            content_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Engine Version */
+            engine_version?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Object Version */
+            object_version?: string | null;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Posted Run Id */
+            posted_run_id?: string | null;
+            /** Report Type */
+            report_type: string;
+            /**
+             * Requested By
+             * Format: uuid
+             */
+            requested_by: string;
+            /** Retention Expires At */
+            retention_expires_at?: string | null;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Status */
+            status: string;
+            /** Template Version */
+            template_version: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
          * AuditActor
          * @description User attribution for an audit event; omitted for system-originated rows.
          */
@@ -1233,6 +1369,32 @@ export interface components {
          */
         CalcKind: "fixed_recurring_amount" | "direct_monthly_amount" | "percentage_of_component_bases" | "employer_employee_contribution" | "loan_installment_recovery" | "accommodation_charge" | "one_time_adjustment";
         /**
+         * CalculateResponse
+         * @description Response body for POST /payroll-runs/{run_id}/calculate.
+         */
+        CalculateResponse: {
+            /** Content Hash */
+            content_hash: string;
+            /** Engine Version */
+            engine_version: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Totals */
+            totals: {
+                [key: string]: string;
+            };
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Version Number */
+            version_number: number;
+        };
+        /**
          * Classification
          * @enum {string}
          */
@@ -1315,6 +1477,32 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /**
+         * CurrentVersion
+         * @description Immutable calculated version summary (run detail + results list).
+         */
+        CurrentVersion: {
+            /**
+             * Calculated At
+             * Format: date-time
+             */
+            calculated_at: string;
+            /** Content Hash */
+            content_hash: string;
+            /** Engine Version */
+            engine_version: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Totals */
+            totals: {
+                [key: string]: string;
+            };
+            /** Version Number */
+            version_number: number;
+        };
         /** EmployeeDetail */
         EmployeeDetail: {
             /**
@@ -1384,6 +1572,48 @@ export interface components {
             code?: string | null;
             /** Name */
             name?: string | null;
+        };
+        /** EmployeeResultDetail */
+        EmployeeResultDetail: {
+            /** Deductions Total */
+            deductions_total: string;
+            /** Earnings Total */
+            earnings_total: string;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Number */
+            employee_number: string;
+            /** Employer Contribution Total */
+            employer_contribution_total: string;
+            /** Gross Total */
+            gross_total: string;
+            /** Lines */
+            lines: components["schemas"]["ResultLine"][];
+            /** Net Payable */
+            net_payable: string;
+        };
+        /** EmployeeResultSummary */
+        EmployeeResultSummary: {
+            /** Deductions Total */
+            deductions_total: string;
+            /** Earnings Total */
+            earnings_total: string;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Number */
+            employee_number: string;
+            /** Employer Contribution Total */
+            employer_contribution_total: string;
+            /** Gross Total */
+            gross_total: string;
+            /** Net Payable */
+            net_payable: string;
         };
         /** EmployeeSummary */
         EmployeeSummary: {
@@ -1497,6 +1727,19 @@ export interface components {
             locale?: string | null;
             /** Timezone */
             timezone?: string | null;
+        };
+        /** PaginatedArtifactResponse */
+        PaginatedResponse_ArtifactResponse_: {
+            /** Items */
+            items: components["schemas"]["ArtifactResponse"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            /** Total Pages */
+            total_pages: number;
         };
         /** PaginatedAuditEventResponse */
         PaginatedResponse_AuditEventResponse_: {
@@ -1651,10 +1894,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /** Current Version */
-            current_version?: {
-                [key: string]: unknown;
-            } | null;
+            current_version?: components["schemas"]["CurrentVersion"] | null;
             /**
              * Id
              * Format: uuid
@@ -2137,6 +2377,21 @@ export interface components {
             /** Value */
             value: unknown;
         };
+        /** ResultLine */
+        ResultLine: {
+            /** Amount */
+            amount: string;
+            /** Calc Kind */
+            calc_kind: string;
+            /** Classification */
+            classification: string;
+            /** Component Code */
+            component_code: string;
+            /** Trace */
+            trace: {
+                [key: string]: unknown;
+            };
+        };
         /**
          * RetirementRegime
          * @enum {string}
@@ -2152,6 +2407,16 @@ export interface components {
          * @enum {string}
          */
         RoundingRule: "ROUND_HALF_UP_RUPEE" | "ROUND_HALF_UP_PAISE" | "ROUND_DOWN_RUPEE";
+        /** RunResultsResponse */
+        RunResultsResponse: {
+            /** Employees */
+            employees: components["schemas"]["EmployeeResultSummary"][];
+            /** Totals */
+            totals: {
+                [key: string]: string;
+            };
+            version: components["schemas"]["CurrentVersion"];
+        };
         /**
          * RunType
          * @enum {string}
@@ -2244,6 +2509,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdvanceInstallmentVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_artifacts_api_artifacts_get: {
+        parameters: {
+            query?: {
+                report_type?: string | null;
+                posted_run_id?: string | null;
+                status?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_ArtifactResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_artifact_api_artifacts__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_artifact_api_artifacts__artifact_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -3606,9 +3968,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CalculateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3781,6 +4141,73 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payroll_run_results_api_payroll_runs__run_id__results_get: {
+        parameters: {
+            query?: {
+                version_number?: number | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunResultsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payroll_run_employee_result_api_payroll_runs__run_id__results__employee_id__get: {
+        parameters: {
+            query?: {
+                version_number?: number | null;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeResultDetail"];
                 };
             };
             /** @description Validation Error */
