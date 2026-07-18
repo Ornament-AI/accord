@@ -18,22 +18,45 @@ handler needs a database session under the claimed job's tenant GUC, call
 :func:`current_job_session` — :class:`~app.jobs.worker.WorkerLoop` binds an
 org-scoped ``AsyncSession`` into a contextvar for the duration of the
 invocation (see that class for the commit-before-complete ordering).
+
+``generate_report`` DI seam
+---------------------------
+:func:`handle_generate_report` needs object storage + a :class:`ReportRegistry`
+that the worker process does not open itself. Call
+:func:`configure_generate_report` at process startup (orchestrator / worker
+entrypoint / tests) before claiming ``generate_report`` jobs::
+
+    from app.jobs.handlers import configure_generate_report, register_handlers
+
+    configure_generate_report(storage=object_storage, registry=report_registry)
+    register_handlers(handler_registry)
+
+``current_job_session`` / :func:`bind_job_session` remain the only session
+wiring; do not edit ``worker.py`` for this lane.
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.jobs.protocol import Job, JobHandlerRegistry
 
+if TYPE_CHECKING:
+    from app.reports.base import ReportRegistry
+    from app.storage.protocol import ObjectStorage
+
 _job_session: ContextVar[AsyncSession | None] = ContextVar(
     "accord_job_session",
     default=None,
 )
+
+_generate_report_storage: ObjectStorage | None = None
+_generate_report_registry: ReportRegistry | None = None
+_generate_report_engine_version: str | None = None
 
 registry = JobHandlerRegistry()
 
@@ -68,9 +91,57 @@ def bind_job_session(session: AsyncSession) -> Iterator[AsyncSession]:
         _reset_job_session(token)
 
 
+def configure_generate_report(
+    *,
+    storage: ObjectStorage,
+    registry: ReportRegistry,
+    engine_version: str | None = None,
+) -> None:
+    """Configure storage + report registry for :func:`handle_generate_report`.
+
+    Call once at worker/API process startup (or in tests). Raises are deferred
+    until a ``generate_report`` job is handled so noop workers stay lightweight.
+    """
+    global _generate_report_storage, _generate_report_registry, _generate_report_engine_version
+    _generate_report_storage = storage
+    _generate_report_registry = registry
+    _generate_report_engine_version = engine_version
+
+
+def _require_generate_report_deps() -> tuple[ObjectStorage, ReportRegistry, str | None]:
+    if _generate_report_storage is None or _generate_report_registry is None:
+        raise RuntimeError(
+            "generate_report handler is not configured; call "
+            "configure_generate_report(storage=..., registry=...) at startup"
+        )
+    return (
+        _generate_report_storage,
+        _generate_report_registry,
+        _generate_report_engine_version,
+    )
+
+
 async def handle_noop(job: Job) -> dict | None:
     """Demo no-op handler — acknowledges the job with a small result payload."""
     return {"ok": True, "job_type": job.job_type, "job_id": str(job.id)}
+
+
+async def handle_generate_report(job: Job) -> dict[str, Any] | None:
+    """Build and persist a report artifact for a ``generate_report`` job."""
+    from app.services.report_generation import (
+        DEFAULT_ENGINE_VERSION,
+        execute_generate_report,
+    )
+
+    session = current_job_session()
+    storage, report_registry, engine_version = _require_generate_report_deps()
+    return await execute_generate_report(
+        session,
+        storage,
+        job,
+        registry=report_registry,
+        engine_version=engine_version or DEFAULT_ENGINE_VERSION,
+    )
 
 
 def register_handlers(target: JobHandlerRegistry) -> JobHandlerRegistry:
@@ -81,6 +152,7 @@ def register_handlers(target: JobHandlerRegistry) -> JobHandlerRegistry:
     then register their own ``job_type`` handlers on the same instance.
     """
     target.register("noop")(handle_noop)
+    target.register("generate_report")(handle_generate_report)
     return target
 
 
