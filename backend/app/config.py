@@ -40,6 +40,12 @@ class Settings(BaseSettings):
 
     # Dev-only test-identity bypass (fails closed in production).
     dev_auth_bypass: bool = Field(default=False, alias="DEV_AUTH_BYPASS")
+    # Optional overrides for DevAuthAdapter identity (non-production only).
+    dev_auth_email: str = Field(default="dev@accord.local", alias="DEV_AUTH_EMAIL")
+    dev_auth_name: str = Field(default="Dev Test User", alias="DEV_AUTH_NAME")
+
+    # Allow short SESSION_SECRET_KEY in local/test (checked lazily by session signer).
+    accord_allow_weak_secrets: bool = Field(default=False, alias="ACCORD_ALLOW_WEAK_SECRETS")
 
     # Object storage seam (wired when storage is adopted).
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")

@@ -16,7 +16,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
 from app.api.responses import problem_content, problem_response
-from app.api.routes import health
+from app.api.routes import auth, health
 from app.config import Settings, get_settings
 from app.db import dispose_engine, session_context
 from app.exceptions import AccordError
@@ -278,6 +278,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, handle_unhandled)
 
     app.include_router(health.router, prefix="/api")
+    app.include_router(auth.router, prefix="/api")
     return app
 
 

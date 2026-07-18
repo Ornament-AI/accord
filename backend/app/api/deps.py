@@ -13,6 +13,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.principal import AuthPrincipal
+from app.auth.session import resolve_principal_from_session
 from app.config import get_settings
 from app.db import get_session
 
@@ -23,7 +24,14 @@ async def _resolve_current_user(request: Request) -> AuthPrincipal | None:
     principal: AuthPrincipal | None = getattr(request.state, "user", None)
     if principal is not None:
         return principal
-    if get_settings().dev_auth_bypass:
+    principal = await resolve_principal_from_session(request)
+    if principal is not None:
+        request.state.user = principal
+        return principal
+    settings = get_settings()
+    # Belt-and-suspenders: DevTest bypass is structurally unreachable in production
+    # (Settings also rejects DEV_AUTH_BYPASS=true at load time).
+    if settings.dev_auth_bypass and not settings.is_production:
         principal = AuthPrincipal.dev_test()
         request.state.user = principal
         return principal
