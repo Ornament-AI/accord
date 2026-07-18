@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/accommodation/{assignment_id}/charge-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Accommodation Charge Version */
+        post: operations["create_accommodation_charge_version_api_accommodation__assignment_id__charge_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/advances/{advance_id}/installment-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Advance Installment Version */
+        post: operations["create_advance_installment_version_api_advances__advance_id__installment_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/callback": {
         parameters: {
             query?: never;
@@ -124,6 +158,169 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/employee-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Employee Groups Route */
+        get: operations["list_employee_groups_route_api_employee_groups_get"];
+        put?: never;
+        /** Create Employee Group Route */
+        post: operations["create_employee_group_route_api_employee_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/employee-groups/{employee_group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Employee Group Route */
+        patch: operations["update_employee_group_route_api_employee_groups__employee_group_id__patch"];
+        trace?: never;
+    };
+    "/api/employees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Employees */
+        get: operations["list_employees_api_employees_get"];
+        put?: never;
+        /** Create Employee */
+        post: operations["create_employee_api_employees_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/employees/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Employees */
+        get: operations["list_employees_api_employees__get"];
+        put?: never;
+        /** Create Employee */
+        post: operations["create_employee_api_employees__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/employees/{employee_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Employee */
+        get: operations["get_employee_api_employees__employee_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/employees/{employee_id}/accommodation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Accommodation */
+        get: operations["list_accommodation_api_employees__employee_id__accommodation_get"];
+        put?: never;
+        /** Create Accommodation */
+        post: operations["create_accommodation_api_employees__employee_id__accommodation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/employees/{employee_id}/advances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Advances */
+        get: operations["list_advances_api_employees__employee_id__advances_get"];
+        put?: never;
+        /** Create Advance */
+        post: operations["create_advance_api_employees__employee_id__advances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/employees/{employee_id}/recurring-instructions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recurring Instructions */
+        get: operations["list_recurring_instructions_api_employees__employee_id__recurring_instructions_get"];
+        put?: never;
+        /** Create Recurring Instruction */
+        post: operations["create_recurring_instruction_api_employees__employee_id__recurring_instructions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/employees/{employee_id}/versions/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Employee Versions */
+        get: operations["list_employee_versions_api_employees__employee_id__versions__kind__get"];
+        put?: never;
+        /**
+         * Create Employee Version
+         * @description Append a new version for ``kind`` ∈ profile|posting|pay|bank.
+         */
+        post: operations["create_employee_version_api_employees__employee_id__versions__kind__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/healthz": {
         parameters: {
             query?: never;
@@ -139,6 +336,59 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/offices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Offices Route */
+        get: operations["list_offices_route_api_offices_get"];
+        put?: never;
+        /** Create Office Route */
+        post: operations["create_office_route_api_offices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/offices/{office_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Office Route */
+        patch: operations["update_office_route_api_offices__office_id__patch"];
+        trace?: never;
+    };
+    "/api/organization-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Organization Settings Route */
+        get: operations["get_organization_settings_route_api_organization_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Organization Settings Route */
+        patch: operations["update_organization_settings_route_api_organization_settings_patch"];
         trace?: never;
     };
     "/api/organizations": {
@@ -181,6 +431,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pay-components": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pay Components */
+        get: operations["list_pay_components_api_pay_components_get"];
+        put?: never;
+        /** Create Pay Component */
+        post: operations["create_pay_component_api_pay_components_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pay-components/{component_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Pay Component */
+        patch: operations["update_pay_component_api_pay_components__component_id__patch"];
+        trace?: never;
+    };
+    "/api/pay-components/{component_id}/rate-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Component Rate Versions */
+        get: operations["list_component_rate_versions_api_pay_components__component_id__rate_versions_get"];
+        put?: never;
+        /** Create Component Rate Version */
+        post: operations["create_component_rate_version_api_pay_components__component_id__rate_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll-units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Payroll Units Route */
+        get: operations["list_payroll_units_route_api_payroll_units_get"];
+        put?: never;
+        /** Create Payroll Unit Route */
+        post: operations["create_payroll_unit_route_api_payroll_units_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll-units/{payroll_unit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Payroll Unit Route */
+        patch: operations["update_payroll_unit_route_api_payroll_units__payroll_unit_id__patch"];
+        trace?: never;
+    };
+    "/api/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Posts Route */
+        get: operations["list_posts_route_api_posts_get"];
+        put?: never;
+        /** Create Post Route */
+        post: operations["create_post_route_api_posts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/posts/{post_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Post Route */
+        patch: operations["update_post_route_api_posts__post_id__patch"];
+        trace?: never;
+    };
     "/api/readyz": {
         parameters: {
             query?: never;
@@ -198,10 +571,425 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recurring-instructions/{instruction_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recurring Instruction Versions */
+        get: operations["list_recurring_instruction_versions_api_recurring_instructions__instruction_id__versions_get"];
+        put?: never;
+        /** Create Recurring Instruction Version */
+        post: operations["create_recurring_instruction_version_api_recurring_instructions__instruction_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report-configurations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Report Configurations */
+        get: operations["list_report_configurations_api_report_configurations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report-configurations/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert Report Configuration */
+        put: operations["upsert_report_configuration_api_report_configurations__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccommodationChargeInput */
+        AccommodationChargeInput: {
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Informational Hra Foregone */
+            informational_hra_foregone?: number | string | null;
+            /** License Fee */
+            license_fee: number | string;
+        };
+        /** AccommodationChargeVersionCreate */
+        AccommodationChargeVersionCreate: {
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Informational Hra Foregone */
+            informational_hra_foregone?: number | string | null;
+            /** License Fee */
+            license_fee: number | string;
+        };
+        /** AccommodationChargeVersionResponse */
+        AccommodationChargeVersionResponse: {
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Informational Hra Foregone */
+            informational_hra_foregone?: string | null;
+            /** License Fee */
+            license_fee: string;
+        };
+        /** AccommodationCreate */
+        AccommodationCreate: {
+            charge: components["schemas"]["AccommodationChargeInput"];
+            /** Quarters Identifier */
+            quarters_identifier: string;
+            quarters_location: components["schemas"]["QuartersLocation"];
+        };
+        /** AccommodationResponse */
+        AccommodationResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Effective From */
+            effective_from?: string | null;
+            /** Effective To */
+            effective_to?: string | null;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Informational Hra Foregone */
+            informational_hra_foregone?: string | null;
+            /** License Fee */
+            license_fee?: string | null;
+            /** Quarters Identifier */
+            quarters_identifier: string;
+            /** Quarters Location */
+            quarters_location: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version Id */
+            version_id?: string | null;
+        };
+        /** AdvanceCreate */
+        AdvanceCreate: {
+            advance_type: components["schemas"]["AdvanceType"];
+            installment: components["schemas"]["AdvanceInstallmentInput"];
+            /** Principal */
+            principal: number | string;
+            /** Reference */
+            reference?: string | null;
+            /**
+             * Sanctioned On
+             * Format: date
+             */
+            sanctioned_on: string;
+        };
+        /** AdvanceInstallmentInput */
+        AdvanceInstallmentInput: {
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Installment Amount */
+            installment_amount: number | string;
+            /** Installments Recovered Opening */
+            installments_recovered_opening: number;
+            /** Installments Total */
+            installments_total: number;
+        };
+        /** AdvanceInstallmentVersionCreate */
+        AdvanceInstallmentVersionCreate: {
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Installment Amount */
+            installment_amount: number | string;
+            /** Installments Recovered Opening */
+            installments_recovered_opening: number;
+            /** Installments Total */
+            installments_total: number;
+        };
+        /** AdvanceInstallmentVersionResponse */
+        AdvanceInstallmentVersionResponse: {
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Installment Amount */
+            installment_amount: string;
+            /** Installments Recovered Opening */
+            installments_recovered_opening: number;
+            /** Installments Total */
+            installments_total: number;
+        };
+        /** AdvanceResponse */
+        AdvanceResponse: {
+            /** Advance Type */
+            advance_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Effective From */
+            effective_from?: string | null;
+            /** Effective To */
+            effective_to?: string | null;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Installment Amount */
+            installment_amount?: string | null;
+            /** Installments Recovered Opening */
+            installments_recovered_opening?: number | null;
+            /** Installments Total */
+            installments_total?: number | null;
+            /** Principal */
+            principal: string;
+            /** Reference */
+            reference: string | null;
+            /**
+             * Sanctioned On
+             * Format: date
+             */
+            sanctioned_on: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version Id */
+            version_id?: string | null;
+        };
+        /**
+         * AdvanceType
+         * @enum {string}
+         */
+        AdvanceType: "hba" | "gpf_advance" | "festival" | "motor_car" | "motorcycle" | "other";
+        /** BankInput */
+        BankInput: {
+            /** Account Number */
+            account_number: string;
+            /** Bank Name */
+            bank_name: string;
+            /** Branch */
+            branch: string;
+            /** Ifsc */
+            ifsc: string;
+            /**
+             * Is Primary Salary
+             * @default true
+             */
+            is_primary_salary: boolean;
+        };
+        /** BankVersionResponse */
+        BankVersionResponse: {
+            /** Account Number */
+            account_number: string;
+            /** Bank Name */
+            bank_name: string;
+            /** Branch */
+            branch: string;
+            /** Change Reason */
+            change_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ifsc */
+            ifsc: string;
+            /** Is Primary Salary */
+            is_primary_salary: boolean;
+        };
+        /**
+         * CalcKind
+         * @enum {string}
+         */
+        CalcKind: "fixed_recurring_amount" | "direct_monthly_amount" | "percentage_of_component_bases" | "employer_employee_contribution" | "loan_installment_recovery" | "accommodation_charge" | "one_time_adjustment";
+        /**
+         * Classification
+         * @enum {string}
+         */
+        Classification: "earning" | "employer_contribution" | "ag_deduction" | "treasury_deduction" | "gross_adjustment" | "external_recovery";
+        /** ComponentRateVersionCreate */
+        ComponentRateVersionCreate: {
+            /** Amount */
+            amount?: number | string | null;
+            /** Basis */
+            basis?: string[] | null;
+            calc_kind: components["schemas"]["CalcKind"];
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Rate */
+            rate?: number | string | null;
+            rounding_rule: components["schemas"]["RoundingRule"];
+        };
+        /** ComponentRateVersionResponse */
+        ComponentRateVersionResponse: {
+            /** Amount */
+            amount?: string | null;
+            /** Basis */
+            basis?: string[] | null;
+            /** Calc Kind */
+            calc_kind: string;
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rate */
+            rate?: string | null;
+            /** Rounding Rule */
+            rounding_rule: string;
+        };
+        /** CreateEmployeeRequest */
+        CreateEmployeeRequest: {
+            bank?: components["schemas"]["BankInput"] | null;
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Employee Number */
+            employee_number: string;
+            pay?: components["schemas"]["PayInput"] | null;
+            posting?: components["schemas"]["PostingInput"] | null;
+            profile: components["schemas"]["ProfileInput"];
+        };
         /** CreateOrganizationRequest */
         CreateOrganizationRequest: {
             /** Name */
@@ -209,11 +997,635 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /** EmployeeDetail */
+        EmployeeDetail: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            bank?: components["schemas"]["BankVersionResponse"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Employee Number */
+            employee_number: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            pay?: components["schemas"]["PayVersionResponse"] | null;
+            posting?: components["schemas"]["PostingVersionResponse"] | null;
+            profile?: components["schemas"]["ProfileVersionResponse"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** EmployeeGroupCreate */
+        EmployeeGroupCreate: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /** EmployeeGroupResponse */
+        EmployeeGroupResponse: {
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** EmployeeGroupUpdate */
+        EmployeeGroupUpdate: {
+            /** Code */
+            code?: string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** EmployeeSummary */
+        EmployeeSummary: {
+            /** Employee Number */
+            employee_number: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Retirement Regime */
+            retirement_regime?: string | null;
+            /** Sevarth Id */
+            sevarth_id?: string | null;
+        };
+        /**
+         * GpfJurisdiction
+         * @enum {string}
+         */
+        GpfJurisdiction: "mumbai" | "nagpur";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** OfficeCreate */
+        OfficeCreate: {
+            /** Code */
+            code: string;
+            /**
+             * Jurisdiction
+             * @enum {string}
+             */
+            jurisdiction: "mumbai" | "nagpur" | "worli" | "other";
+            /** Name */
+            name: string;
+        };
+        /** OfficeResponse */
+        OfficeResponse: {
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Jurisdiction */
+            jurisdiction: string;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** OfficeUpdate */
+        OfficeUpdate: {
+            /** Code */
+            code?: string | null;
+            /** Jurisdiction */
+            jurisdiction?: ("mumbai" | "nagpur" | "worli" | "other") | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** OrganizationSettingsResponse */
+        OrganizationSettingsResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Currency */
+            currency: string;
+            /** Financial Year Start Month */
+            financial_year_start_month: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Locale */
+            locale: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** OrganizationSettingsUpdate */
+        OrganizationSettingsUpdate: {
+            /** Currency */
+            currency?: string | null;
+            /** Financial Year Start Month */
+            financial_year_start_month?: number | null;
+            /** Locale */
+            locale?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+        };
+        /** PaginatedEmployeeSummary */
+        PaginatedResponse_EmployeeSummary_: {
+            /** Items */
+            items: components["schemas"]["EmployeeSummary"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            /** Total Pages */
+            total_pages: number;
+        };
+        /** PayComponentCreate */
+        PayComponentCreate: {
+            classification: components["schemas"]["Classification"];
+            /** Code */
+            code: string;
+            /**
+             * Display Order
+             * @default 0
+             */
+            display_order: number;
+            /** Name */
+            name: string;
+        };
+        /** PayComponentResponse */
+        PayComponentResponse: {
+            /** Classification */
+            classification: string;
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Display Order */
+            display_order: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PayInput */
+        PayInput: {
+            /** Basic Pay */
+            basic_pay: number | string;
+            /** Pay Matrix Level */
+            pay_matrix_level: string;
+        };
+        /** PayVersionResponse */
+        PayVersionResponse: {
+            /** Basic Pay */
+            basic_pay: string;
+            /** Change Reason */
+            change_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Pay Matrix Level */
+            pay_matrix_level: string;
+        };
+        /** PayrollUnitCreate */
+        PayrollUnitCreate: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /** PayrollUnitResponse */
+        PayrollUnitResponse: {
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PayrollUnitUpdate */
+        PayrollUnitUpdate: {
+            /** Code */
+            code?: string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** PostCreate */
+        PostCreate: {
+            /** Class Name */
+            class_name: string;
+            /** Designation */
+            designation: string;
+        };
+        /** PostResponse */
+        PostResponse: {
+            /** Class Name */
+            class_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Designation */
+            designation: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PostUpdate */
+        PostUpdate: {
+            /** Class Name */
+            class_name?: string | null;
+            /** Designation */
+            designation?: string | null;
+        };
+        /** PostingInput */
+        PostingInput: {
+            /** Employee Group Id */
+            employee_group_id?: string | null;
+            /**
+             * Office Id
+             * Format: uuid
+             */
+            office_id: string;
+            /**
+             * Payroll Unit Id
+             * Format: uuid
+             */
+            payroll_unit_id: string;
+            /**
+             * Post Id
+             * Format: uuid
+             */
+            post_id: string;
+        };
+        /** PostingVersionResponse */
+        PostingVersionResponse: {
+            /** Change Reason */
+            change_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /** Employee Group Id */
+            employee_group_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Office Id
+             * Format: uuid
+             */
+            office_id: string;
+            /**
+             * Payroll Unit Id
+             * Format: uuid
+             */
+            payroll_unit_id: string;
+            /**
+             * Post Id
+             * Format: uuid
+             */
+            post_id: string;
+        };
+        /** ProfileInput */
+        ProfileInput: {
+            /**
+             * Date Of Birth
+             * Format: date
+             */
+            date_of_birth: string;
+            /**
+             * Date Of Joining
+             * Format: date
+             */
+            date_of_joining: string;
+            /** Epf Number */
+            epf_number?: string | null;
+            /** Gpf Account Number */
+            gpf_account_number?: string | null;
+            gpf_jurisdiction?: components["schemas"]["GpfJurisdiction"] | null;
+            /** Name */
+            name: string;
+            /** Pan */
+            pan?: string | null;
+            /** Pension Account */
+            pension_account?: string | null;
+            /** Pran */
+            pran?: string | null;
+            retirement_regime: components["schemas"]["RetirementRegime"];
+            /** Sevarth Id */
+            sevarth_id: string;
+        };
+        /** ProfileVersionResponse */
+        ProfileVersionResponse: {
+            /** Change Reason */
+            change_reason: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Date Of Birth
+             * Format: date
+             */
+            date_of_birth: string;
+            /**
+             * Date Of Joining
+             * Format: date
+             */
+            date_of_joining: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /** Epf Number */
+            epf_number: string | null;
+            /** Gpf Account Number */
+            gpf_account_number: string | null;
+            /** Gpf Jurisdiction */
+            gpf_jurisdiction: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Pan */
+            pan: string | null;
+            /** Pension Account */
+            pension_account: string | null;
+            /** Pran */
+            pran: string | null;
+            /** Retirement Regime */
+            retirement_regime: string;
+            /** Sevarth Id */
+            sevarth_id: string;
+        };
+        /**
+         * QuartersLocation
+         * @enum {string}
+         */
+        QuartersLocation: "mumbai" | "worli" | "other";
+        /** RecurringInstructionCreate */
+        RecurringInstructionCreate: {
+            /** Amount */
+            amount?: number | string | null;
+            /**
+             * Component Id
+             * Format: uuid
+             */
+            component_id: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Rate */
+            rate?: number | string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** RecurringInstructionResponse */
+        RecurringInstructionResponse: {
+            /** Amount */
+            amount?: string | null;
+            /**
+             * Component Id
+             * Format: uuid
+             */
+            component_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Effective From */
+            effective_from?: string | null;
+            /** Effective To */
+            effective_to?: string | null;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rate */
+            rate?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version Id */
+            version_id?: string | null;
+        };
+        /** RecurringInstructionVersionCreate */
+        RecurringInstructionVersionCreate: {
+            /** Amount */
+            amount?: number | string | null;
+            /** Change Reason */
+            change_reason?: string | null;
+            /** Effective From */
+            effective_from?: string | null;
+            /** End On */
+            end_on?: string | null;
+            /** Rate */
+            rate?: number | string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** RecurringInstructionVersionResponse */
+        RecurringInstructionVersionResponse: {
+            /** Amount */
+            amount?: string | null;
+            /** Change Reason */
+            change_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Effective From
+             * Format: date
+             */
+            effective_from: string;
+            /** Effective To */
+            effective_to: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rate */
+            rate?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** ReportConfigurationResponse */
+        ReportConfigurationResponse: {
+            /** Key */
+            key: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Value */
+            value: unknown;
+        };
+        /** ReportConfigurationUpsert */
+        ReportConfigurationUpsert: {
+            /** Value */
+            value: unknown;
+        };
+        /**
+         * RetirementRegime
+         * @enum {string}
+         */
+        RetirementRegime: "gpf" | "nps" | "epf";
+        /**
+         * RoundingRule
+         * @enum {string}
+         */
+        RoundingRule: "ROUND_HALF_UP_RUPEE" | "ROUND_HALF_UP_PAISE" | "ROUND_DOWN_RUPEE";
         /** SwitchOrganizationRequest */
         SwitchOrganizationRequest: {
             /**
@@ -244,6 +1656,76 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_accommodation_charge_version_api_accommodation__assignment_id__charge_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccommodationChargeVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccommodationChargeVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_advance_installment_version_api_advances__advance_id__installment_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                advance_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvanceInstallmentVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdvanceInstallmentVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     callback_api_auth_callback_get: {
         parameters: {
             query?: {
@@ -400,6 +1882,540 @@ export interface operations {
             };
         };
     };
+    list_employee_groups_route_api_employee_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeGroupResponse"][];
+                };
+            };
+        };
+    };
+    create_employee_group_route_api_employee_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeGroupCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeGroupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_employee_group_route_api_employee_groups__employee_group_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeGroupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeGroupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_employees_api_employees_get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+                search?: string | null;
+                page?: number;
+                size?: number;
+                reveal?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_EmployeeSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_employee_api_employees_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmployeeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_employees_api_employees__get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+                search?: string | null;
+                page?: number;
+                size?: number;
+                reveal?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResponse_EmployeeSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_employee_api_employees__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmployeeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_employee_api_employees__employee_id__get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+                reveal?: boolean;
+            };
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_accommodation_api_employees__employee_id__accommodation_get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+            };
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccommodationResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_accommodation_api_employees__employee_id__accommodation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccommodationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccommodationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_advances_api_employees__employee_id__advances_get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+            };
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdvanceResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_advance_api_employees__employee_id__advances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvanceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdvanceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recurring_instructions_api_employees__employee_id__recurring_instructions_get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+            };
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringInstructionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_recurring_instruction_api_employees__employee_id__recurring_instructions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringInstructionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringInstructionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_employee_versions_api_employees__employee_id__versions__kind__get: {
+        parameters: {
+            query?: {
+                reveal?: boolean;
+            };
+            header?: never;
+            path: {
+                employee_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_employee_version_api_employees__employee_id__versions__kind__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     healthcheck_api_healthz_get: {
         parameters: {
             query?: never;
@@ -418,6 +2434,147 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    list_offices_route_api_offices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeResponse"][];
+                };
+            };
+        };
+    };
+    create_office_route_api_offices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfficeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_office_route_api_offices__office_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                office_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfficeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_organization_settings_route_api_organization_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_organization_settings_route_api_organization_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationSettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -488,6 +2645,338 @@ export interface operations {
             };
         };
     };
+    list_pay_components_api_pay_components_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayComponentResponse"][];
+                };
+            };
+        };
+    };
+    create_pay_component_api_pay_components_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayComponentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayComponentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_pay_component_api_pay_components__component_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                component_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayComponentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_component_rate_versions_api_pay_components__component_id__rate_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                component_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentRateVersionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_component_rate_version_api_pay_components__component_id__rate_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                component_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComponentRateVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentRateVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_payroll_units_route_api_payroll_units_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollUnitResponse"][];
+                };
+            };
+        };
+    };
+    create_payroll_unit_route_api_payroll_units_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollUnitCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollUnitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_payroll_unit_route_api_payroll_units__payroll_unit_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payroll_unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollUnitUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollUnitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_posts_route_api_posts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostResponse"][];
+                };
+            };
+        };
+    };
+    create_post_route_api_posts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_post_route_api_posts__post_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     readiness_check_api_readyz_get: {
         parameters: {
             query?: never;
@@ -506,6 +2995,127 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    list_recurring_instruction_versions_api_recurring_instructions__instruction_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instruction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringInstructionVersionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_recurring_instruction_version_api_recurring_instructions__instruction_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instruction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecurringInstructionVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecurringInstructionVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_report_configurations_api_report_configurations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportConfigurationResponse"][];
+                };
+            };
+        };
+    };
+    upsert_report_configuration_api_report_configurations__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportConfigurationUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportConfigurationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import versioning
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
@@ -36,8 +37,6 @@ from app.schemas.pay_setup import (
     _serialize_money,
     _serialize_rate,
 )
-
-# TODO: migrate to app.services.versioning once that lane lands
 
 
 def _validity_bounds(validity: Any) -> tuple[date, date | None]:
@@ -120,49 +119,17 @@ async def _insert_version(
     payload: dict[str, Any],
     change_reason: str | None = None,
 ) -> Mapping[str, Any]:
-    open_row = await _fetch_open_version(
+    """Delegate to the shared clip-and-insert helper (ADR 0005)."""
+    return await versioning.insert_version(
         db,
         version_table,
         organization_id=organization_id,
         header_id=header_id,
+        effective_from=effective_from,
+        values=payload,
+        change_reason=change_reason,
+        created_by=created_by,
     )
-    if open_row is not None:
-        old_lower, _ = _validity_bounds(open_row["validity"])
-        if effective_from <= old_lower:
-            raise ConflictError(
-                "effective_from must be after the current version start; "
-                "same-day correction is not supported."
-            )
-        try:
-            await db.execute(
-                sa.update(version_table)
-                .where(version_table.c.id == open_row["id"])
-                .values(
-                    validity=sa.func.daterange(old_lower, effective_from, "[)"),
-                )
-            )
-        except IntegrityError as exc:
-            await db.rollback()
-            _raise_integrity_error(exc)
-
-    values = {
-        "organization_id": organization_id,
-        "header_id": header_id,
-        "validity": sa.func.daterange(effective_from, None, "[)"),
-        "created_by": created_by,
-        "change_reason": change_reason,
-        **payload,
-    }
-    try:
-        result = await db.execute(
-            sa.insert(version_table).values(**values).returning(version_table)
-        )
-    except IntegrityError as exc:
-        await db.rollback()
-        _raise_integrity_error(exc)
-    row = result.mappings().one()
-    await db.flush()
-    return row
 
 
 async def _terminate_open_version(
