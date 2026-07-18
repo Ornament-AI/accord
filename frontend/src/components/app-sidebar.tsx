@@ -1,8 +1,9 @@
-import { LayoutDashboard } from "lucide-react";
 import type * as React from "react";
 import { Link, useLocation } from "react-router";
 import { toast } from "sonner";
+
 import { NavUser } from "@/components/nav-user";
+import { OrganizationSwitcher } from "@/components/organization-switcher";
 import {
 	Sidebar,
 	SidebarContent,
@@ -18,9 +19,7 @@ import {
 } from "@/components/ui/sidebar";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { useAuth } from "@/contexts/AuthContext";
-import { APP_NAME, APP_ORGANIZATION, APP_SUBTITLE } from "@/lib/branding";
-
-const primaryNavItems = [{ title: "Dashboard", icon: LayoutDashboard, path: "/" }] as const;
+import { NAV_REGISTRY } from "@/lib/nav-registry";
 
 function isPathActive(currentPath: string, itemPath: string) {
 	if (itemPath === "/") {
@@ -32,7 +31,7 @@ function isPathActive(currentPath: string, itemPath: string) {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const { state, isMobile } = useSidebar();
 	const location = useLocation();
-	const { user, logout } = useAuth();
+	const { user, activeOrganization, hasCapability, logout } = useAuth();
 
 	const handleSignOut = async () => {
 		try {
@@ -49,33 +48,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
 	const displayName = user?.name?.trim() || user?.email?.split("@")[0] || "User";
 	const isCompactSidebar = state === "collapsed" && !isMobile;
-	const compactBrandInitial = APP_NAME.charAt(0).toUpperCase();
+	const visibleNavItems = NAV_REGISTRY.filter(
+		(item) => item.capability === undefined || hasCapability(item.capability),
+	);
 
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
-				<SidebarMenu>
-					<SidebarMenuItem>
-						<SidebarMenuButton size="lg" className="pointer-events-none select-none">
-							{isCompactSidebar ? (
-								<span className="flex h-full w-full items-center justify-center text-base font-semibold leading-none tracking-tight">
-									{compactBrandInitial}
-								</span>
-							) : null}
-							<div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-								<span className="truncate text-sm font-medium">{APP_NAME}</span>
-								<span className="truncate text-xs text-muted-foreground">{APP_SUBTITLE}</span>
-							</div>
-						</SidebarMenuButton>
-					</SidebarMenuItem>
-				</SidebarMenu>
+				<OrganizationSwitcher />
 			</SidebarHeader>
 
 			<SidebarContent className="scroll-fade">
 				<SidebarGroup>
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{primaryNavItems.map((item) => (
+							{visibleNavItems.map((item) => (
 								<SidebarMenuItem key={item.title}>
 									<SidebarMenuButton
 										render={<Link to={item.path} />}
@@ -98,7 +85,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 					user={{
 						name: displayName,
 						email: user?.email || "",
-						organization: APP_ORGANIZATION,
+						organization: activeOrganization?.name ?? null,
+						isPlatformAdmin: user?.is_platform_admin ?? false,
 					}}
 					onSignOut={handleSignOut}
 				/>

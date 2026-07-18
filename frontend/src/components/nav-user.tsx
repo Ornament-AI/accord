@@ -34,6 +34,7 @@ export function NavUser({
 		name?: string;
 		email: string;
 		organization?: string | null;
+		isPlatformAdmin?: boolean;
 		avatar?: string;
 	};
 	onSignOut: () => void;
@@ -75,6 +76,12 @@ export function NavUser({
 				</span>
 				<span className="truncate text-sm">{organizationLabel}</span>
 			</div>
+			{user.isPlatformAdmin ? (
+				<div className="grid gap-0.5">
+					<span className="text-[length:var(--text-caption)] text-muted-foreground">Access</span>
+					<span className="truncate text-sm">Platform admin</span>
+				</div>
+			) : null}
 		</div>
 	);
 

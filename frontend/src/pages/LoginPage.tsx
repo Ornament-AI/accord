@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { LightRays } from "@/components/ui/light-rays";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { useAuth } from "@/contexts/AuthContext";
+import { resolveApiUrl } from "@/lib/api-url";
 import { APP_NAME } from "@/lib/branding";
+import { sanitizeReturnTo } from "@/lib/return-to";
 
 function consumeStoredError(): string | null {
 	const stored = sessionStorage.getItem("auth_error");
@@ -14,18 +16,38 @@ function consumeStoredError(): string | null {
 	return stored;
 }
 
+function messageForAuthErrorCode(code: string): string {
+	if (code === "auth_failed") {
+		return "Sign-in failed. Please try again.";
+	}
+	return `Unable to sign in (${code}). Please try again.`;
+}
+
+function resolveLoginError(urlError: string | null, storedError: string | null): string | null {
+	if (urlError) {
+		return messageForAuthErrorCode(urlError);
+	}
+	return storedError;
+}
+
 export default function LoginPage() {
 	const { user, isLoading } = useAuth();
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
-	const returnTo = searchParams.get("returnTo") || "/";
-	const [authError] = useState(consumeStoredError);
+	const returnTo = sanitizeReturnTo(searchParams.get("returnTo"));
+	const urlError = searchParams.get("error");
+	const [authError] = useState(() => resolveLoginError(urlError, consumeStoredError()));
 
 	useEffect(() => {
 		if (!isLoading && user) {
 			navigate(returnTo, { replace: true });
 		}
 	}, [user, isLoading, navigate, returnTo]);
+
+	const handleSignIn = () => {
+		const loginUrl = `${resolveApiUrl("/api/auth/login")}?return_to=${encodeURIComponent(returnTo)}`;
+		window.location.assign(loginUrl);
+	};
 
 	return (
 		<div className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-white p-6 dark:bg-background md:p-10 [--ray-color:rgba(255,165,60,0.4)] dark:[--ray-color:rgba(255,158,11,0.2)]">
@@ -44,7 +66,7 @@ export default function LoginPage() {
 					<div className="flex flex-col items-center gap-2 text-center">
 						<h1 className="text-2xl font-semibold">Welcome</h1>
 						<p className="text-sm text-muted-foreground">
-							Sign-in will be available once authentication is configured.
+							Sign in to continue to your payroll workspace.
 						</p>
 					</div>
 
@@ -54,7 +76,7 @@ export default function LoginPage() {
 						</Alert>
 					) : null}
 
-					<Button type="button" className="w-full" disabled>
+					<Button type="button" className="w-full" onClick={handleSignIn}>
 						Sign in
 					</Button>
 				</div>

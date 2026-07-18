@@ -2,19 +2,36 @@ import { fireEvent, screen } from "@testing-library/react";
 import { vi } from "vitest";
 
 import type { AuthUser } from "@/contexts/AuthContext";
+import type { ActiveOrganization, Capability, OrganizationMembership } from "@/types/auth";
 
 type AuthState = {
 	user: Partial<AuthUser> | null;
 	isLoading?: boolean;
+	activeOrganization?: ActiveOrganization | null;
+	organizations?: OrganizationMembership[];
+	shellEpoch?: number;
+	hasCapability?: (capability: Capability) => boolean;
+	switchOrganization?: (organizationId: string) => Promise<void>;
+	createOrganization?: (input: { name: string; slug: string }) => Promise<unknown>;
 	logout?: () => void | Promise<void>;
 	refetch?: () => void;
 };
 
 export function mockAuth(state: AuthState) {
+	const activeOrganization = state.activeOrganization ?? null;
 	return {
 		useAuth: () => ({
 			user: state.user,
 			isLoading: state.isLoading ?? false,
+			activeOrganization,
+			organizations: state.organizations ?? [],
+			shellEpoch: state.shellEpoch ?? 0,
+			hasCapability:
+				state.hasCapability ??
+				((capability: Capability) =>
+					Boolean(activeOrganization?.capabilities.includes(capability))),
+			switchOrganization: state.switchOrganization ?? vi.fn(async () => undefined),
+			createOrganization: state.createOrganization ?? vi.fn(async () => ({})),
 			logout: state.logout ?? vi.fn(),
 			refetch: state.refetch ?? vi.fn(),
 		}),
@@ -95,3 +112,11 @@ export function pickBaseUiOption(name: string | RegExp) {
 	fireEvent.pointerUp(option, { pointerType: "touch", button: 0 });
 	fireEvent.click(option);
 }
+
+export {
+	buildAuthMe,
+	buildNoOrgAuthMe,
+	buildRoleAuthMe,
+	ROLE_CAPABILITIES,
+} from "./auth-fixtures";
+export { createAuthHandlers } from "./auth-handlers";

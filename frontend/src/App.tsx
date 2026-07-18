@@ -5,7 +5,7 @@ import { RouterProvider } from "react-router";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { LoadingState } from "@/components/loading-state";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, AuthShellBoundary } from "@/contexts/AuthContext";
 import { accordMotion, loadMotionFeatures } from "@/lib/motion";
 import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
@@ -29,9 +29,11 @@ export function App() {
 								<Toaster position="top-center" />
 							</Suspense>
 							<AuthProvider>
-								<Suspense fallback={<LoadingState />}>
-									<RouterProvider router={router} />
-								</Suspense>
+								<AuthShellBoundary>
+									<Suspense fallback={<LoadingState />}>
+										<RouterProvider router={router} />
+									</Suspense>
+								</AuthShellBoundary>
 							</AuthProvider>
 						</ThemeProvider>
 					</MotionConfig>

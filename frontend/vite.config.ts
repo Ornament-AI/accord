@@ -56,6 +56,9 @@ export default defineConfig(({ mode }) => {
 			include: ["src/**/*.{test,spec}.{ts,tsx}"],
 			testTimeout: 15_000,
 			clearMocks: true,
+			// MSW's setupServer is process-local; parallel files racing on
+			// server.use/resetHandlers produce intermittent auth fixture bleed.
+			fileParallelism: false,
 		},
 	};
 });

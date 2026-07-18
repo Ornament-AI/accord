@@ -1,5 +1,19 @@
 import "@testing-library/jest-dom/vitest";
-import { vi } from "vitest";
+import { afterAll, afterEach, beforeAll, vi } from "vitest";
+
+import { server } from "@/test/msw-server";
+
+beforeAll(() => {
+	server.listen({ onUnhandledRequest: "bypass" });
+});
+
+afterEach(() => {
+	server.resetHandlers();
+});
+
+afterAll(() => {
+	server.close();
+});
 
 if (typeof window.localStorage?.getItem !== "function") {
 	const store = new Map<string, string>();
