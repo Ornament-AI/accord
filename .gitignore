@@ -54,3 +54,6 @@ dist-config/
 
 # Local dev orchestration state (scripts/start.sh)
 .accord-dev/
+
+# Stray uv artifacts (repo uses pip/requirements pins)
+uv.lock
