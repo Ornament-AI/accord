@@ -2,16 +2,31 @@
 
 Phase 1 exports shared mixins and the RLS policy helper. Phase 2 adds identity
 and tenancy tables (users, organizations, memberships, settings, idempotency
-keys, sessions). Importing this package populates ``SQLModel.metadata`` for
-Alembic.
+keys, sessions). Phase 3 adds org-structure, employee master data (header +
+version tables), pay components, recurring instructions, advances,
+accommodation, and report configurations. Importing this package populates
+``SQLModel.metadata`` for Alembic.
 """
 
+from app.models.accommodation import (
+    AccommodationAssignment,
+    accommodation_charge_versions,
+)
+from app.models.advances import AdvanceAccount, advance_installment_versions
 from app.models.base import (
     OrganizationOwnedMixin,
     TimestampMixin,
     UUIDPrimaryKeyMixin,
     rls_policy_sql,
     utcnow,
+)
+from app.models.effective import effective_on, select_active_version
+from app.models.employees import (
+    Employee,
+    employee_bank_account_versions,
+    employee_pay_versions,
+    employee_posting_versions,
+    employee_profile_versions,
 )
 from app.models.identity import (
     IdempotencyKey,
@@ -21,17 +36,44 @@ from app.models.identity import (
     Session,
     User,
 )
+from app.models.org_structure import EmployeeGroup, Office, PayrollUnit, Post
+from app.models.pay_components import PayComponent, component_rate_versions
+from app.models.recurring_instructions import (
+    RecurringInstruction,
+    recurring_instruction_versions,
+)
+from app.models.reports import ReportConfiguration
 
 __all__ = [
+    "AccommodationAssignment",
+    "AdvanceAccount",
+    "Employee",
+    "EmployeeGroup",
     "IdempotencyKey",
+    "Office",
     "Organization",
     "OrganizationMembership",
     "OrganizationOwnedMixin",
     "OrganizationSettings",
+    "PayComponent",
+    "PayrollUnit",
+    "Post",
+    "RecurringInstruction",
+    "ReportConfiguration",
     "Session",
     "TimestampMixin",
     "User",
     "UUIDPrimaryKeyMixin",
+    "accommodation_charge_versions",
+    "advance_installment_versions",
+    "component_rate_versions",
+    "effective_on",
+    "employee_bank_account_versions",
+    "employee_pay_versions",
+    "employee_posting_versions",
+    "employee_profile_versions",
+    "recurring_instruction_versions",
     "rls_policy_sql",
+    "select_active_version",
     "utcnow",
 ]
