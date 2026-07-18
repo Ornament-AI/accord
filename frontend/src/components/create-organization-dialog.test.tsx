@@ -30,7 +30,7 @@ describe("CreateOrganizationDialog", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("blocks empty name/slug on the client", async () => {
+	it("blocks empty name on the client", async () => {
 		const { handlers } = createAuthHandlers({ me: buildNoOrgAuthMe() });
 		server.use(...handlers);
 
@@ -39,32 +39,19 @@ describe("CreateOrganizationDialog", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
 
-		expect(await screen.findByText("Name and slug are required.")).toBeInTheDocument();
+		expect(await screen.findByText("Name is required.")).toBeInTheDocument();
+		expect(screen.queryByLabelText("Slug")).not.toBeInTheDocument();
 	});
 
-	it("auto-suggests a slug from the organization name until the slug is edited", async () => {
-		const { handlers } = createAuthHandlers({ me: buildNoOrgAuthMe() });
-		server.use(...handlers);
-
-		renderDialog();
-		await screen.findByLabelText("Name");
-
-		fireEvent.change(screen.getByLabelText("Name"), {
-			target: { value: "North Star Payroll" },
+	it("creates an organization with an auto-generated slug and closes the dialog", async () => {
+		const createBodies: Array<{ name: string; slug: string }> = [];
+		const { handlers } = createAuthHandlers({
+			me: buildNoOrgAuthMe(),
+			onCreateOrganization: (body) => {
+				createBodies.push(body);
+				return undefined;
+			},
 		});
-		expect(screen.getByLabelText("Slug")).toHaveValue("north-star-payroll");
-
-		fireEvent.change(screen.getByLabelText("Slug"), {
-			target: { value: "custom-slug" },
-		});
-		fireEvent.change(screen.getByLabelText("Name"), {
-			target: { value: "Different Name" },
-		});
-		expect(screen.getByLabelText("Slug")).toHaveValue("custom-slug");
-	});
-
-	it("creates an organization successfully and closes the dialog", async () => {
-		const { handlers } = createAuthHandlers({ me: buildNoOrgAuthMe() });
 		server.use(...handlers);
 
 		const { onOpenChange } = renderDialog();
@@ -78,15 +65,25 @@ describe("CreateOrganizationDialog", () => {
 		await waitFor(() => {
 			expect(onOpenChange).toHaveBeenCalledWith(false);
 		});
+		expect(createBodies).toEqual([{ name: "North Star", slug: "north-star" }]);
 	});
 
-	it("shows a field-level slug error on 409 without closing", async () => {
+	it("retries with a disambiguated slug on 409 without exposing slug UI", async () => {
+		let attempts = 0;
+		const createBodies: Array<{ name: string; slug: string }> = [];
 		const { handlers } = createAuthHandlers({
 			me: buildNoOrgAuthMe(),
-			onCreateOrganization: () => ({
-				status: 409,
-				body: { detail: "Organization slug already taken" },
-			}),
+			onCreateOrganization: (body) => {
+				attempts += 1;
+				createBodies.push(body);
+				if (attempts === 1) {
+					return {
+						status: 409,
+						body: { detail: "Organization slug already taken" },
+					};
+				}
+				return undefined;
+			},
 		});
 		server.use(...handlers);
 
@@ -98,8 +95,13 @@ describe("CreateOrganizationDialog", () => {
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
 
-		expect(await screen.findByText("This slug is already taken")).toBeInTheDocument();
-		expect(onOpenChange).not.toHaveBeenCalledWith(false);
-		expect(screen.getByRole("heading", { name: "Create organization" })).toBeInTheDocument();
+		await waitFor(() => {
+			expect(onOpenChange).toHaveBeenCalledWith(false);
+		});
+		expect(screen.queryByText("This slug is already taken")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("Slug")).not.toBeInTheDocument();
+		expect(createBodies).toHaveLength(2);
+		expect(createBodies[0]).toEqual({ name: "Taken Org", slug: "taken-org" });
+		expect(createBodies[1]?.slug).toMatch(/^taken-org-[a-z0-9]{6}$/);
 	});
 });

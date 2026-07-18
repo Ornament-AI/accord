@@ -41,7 +41,7 @@ describe("AuthContext and protected shell", () => {
 
 		renderApp({ initialEntries: ["/"] });
 
-		expect(await screen.findByText("Create your first organization")).toBeInTheDocument();
+		expect(await screen.findByTestId("no-organization-page")).toBeInTheDocument();
 		expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
 	});
 

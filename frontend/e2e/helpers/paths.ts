@@ -8,7 +8,7 @@ export const STORAGE_STATE_PATH = path.join(AUTH_DIR, "user.json");
 export const RUN_CONTEXT_PATH = path.join(AUTH_DIR, "run-context.json");
 
 export type RunContext = {
-	/** Unique slug used for this Playwright process run. */
+	/** Unique run token embedded in the org name (not a user-facing slug field). */
 	orgSlug: string;
 	orgName: string;
 	employeeNumber?: string;

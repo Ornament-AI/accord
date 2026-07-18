@@ -18,7 +18,10 @@ type AuthHandlerOptions = {
 	/** When true, GET /api/auth/me returns 401. */
 	unauthenticated?: boolean;
 	onSwitchOrganization?: (organizationId: string) => AuthMeResponse | ErrorResult;
-	onCreateOrganization?: (body: { name: string; slug: string }) => AuthMeResponse | ErrorResult;
+	/** Return an error, a me payload, or `undefined` to use the default create path. */
+	onCreateOrganization?: (
+		body: { name: string; slug: string },
+	) => AuthMeResponse | ErrorResult | undefined;
 	onLogout?: () => void;
 };
 
@@ -89,11 +92,13 @@ export function createAuthHandlers(options: AuthHandlerOptions = {}) {
 
 			if (options.onCreateOrganization) {
 				const result = options.onCreateOrganization({ name, slug });
-				if (isErrorResult(result)) {
-					return HttpResponse.json(result.body, { status: result.status });
+				if (result !== undefined) {
+					if (isErrorResult(result)) {
+						return HttpResponse.json(result.body, { status: result.status });
+					}
+					currentMe = result;
+					return HttpResponse.json(result, { status: 201 });
 				}
-				currentMe = result;
-				return HttpResponse.json(result, { status: 201 });
 			}
 
 			if (!currentMe) {

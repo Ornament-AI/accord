@@ -22,7 +22,7 @@ test("dev-bypass login, create org, land on dashboard with switcher", async ({ p
 	const orgName = `E2E Org ${orgSlug}`;
 
 	await loginViaDevBypass(page);
-	await ensureUniqueOrganization(page, { name: orgName, slug: orgSlug });
+	await ensureUniqueOrganization(page, { name: orgName });
 	await ensureDashboard(page);
 
 	await expect(page.getByTestId("dashboard-welcome")).toContainText(orgName);

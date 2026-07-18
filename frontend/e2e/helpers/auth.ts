@@ -8,14 +8,14 @@ import { clickUntilDialog } from "./ui";
  * email/name come from DEV_AUTH_EMAIL / DEV_AUTH_NAME read at backend process
  * startup, so a second UI identity is impossible without restarting uvicorn.
  *
- * start.sh does not forward PUBLIC_APP_URL/BASE_URL, so the login redirect
- * Location often points at http://localhost:5173 while Playwright uses
- * http://127.0.0.1:5173. We rewrite that Location so the session cookie
- * (host-only for 127.0.0.1) stays on the Playwright origin.
+ * Keep a defensive redirect rewrite for stacks started with an older or custom
+ * localhost BASE_URL. route.fetch must not follow the redirect: fulfilling the
+ * original /api/auth/login request with the final SPA response leaves the browser
+ * URL on the API path and makes React Router render its catch-all page.
  */
 export async function loginViaDevBypass(page: Page): Promise<void> {
 	await page.route("**/api/auth/login**", async (route) => {
-		const response = await route.fetch();
+		const response = await route.fetch({ maxRedirects: 0 });
 		const headers = { ...response.headers() };
 		const location = headers.location ?? headers.Location;
 		if (typeof location === "string" && location.includes("://localhost:5173")) {
@@ -36,15 +36,9 @@ export async function loginViaDevBypass(page: Page): Promise<void> {
 }
 
 /**
- * After AuthShellBoundary remounts RouterProvider (org create / switch / login
- * with existing memberships), the UI can land on the catch-all NotFound page
- * while still authenticated. Recover by navigating home.
- *
- * APP BUG (do not patch src in this lane): remounting `<RouterProvider>` via
- * `AuthShellBoundary` + `shellEpoch` after createOrganization can leave the
- * matched route on `*` ("Page not found") even though `window.location` is `/`.
- * Suspected files: `frontend/src/contexts/AuthContext.tsx` (remountShell),
- * `frontend/src/App.tsx` (AuthShellBoundary wrapping RouterProvider).
+ * Recover the dashboard if an interrupted navigation or stale retry starts on
+ * another route. Normal login, org create, and org switch flows should already
+ * stay on their matched route.
  */
 export async function ensureDashboard(page: Page): Promise<void> {
 	const notFound = page.getByText("Page not found");
@@ -73,39 +67,39 @@ export async function ensureDashboard(page: Page): Promise<void> {
 
 export async function fillCreateOrganizationDialog(
 	page: Page,
-	opts: { name: string; slug: string },
+	opts: { name: string },
 ): Promise<void> {
 	const dialog = page.getByRole("dialog");
 	await expect(dialog.getByRole("heading", { name: "Create organization" })).toBeVisible();
 	await dialog.getByLabel("Name").fill(opts.name);
-	await dialog.getByLabel("Slug").fill(opts.slug);
 	await dialog.getByRole("button", { name: "Create organization" }).click();
 	await expect(dialog).toBeHidden({ timeout: 30_000 });
 }
 
+/** Create org from the inline NoOrganizationPage form. */
 export async function createOrganization(
 	page: Page,
-	opts: { name: string; slug: string },
+	opts: { name: string },
 ): Promise<void> {
-	const createButton = page.getByRole("button", { name: "Create organization" });
-	await clickUntilDialog(page, createButton);
-	await fillCreateOrganizationDialog(page, opts);
+	await expect(page.getByTestId("no-organization-page")).toBeVisible();
+	await page.getByLabel("Organization Name").fill(opts.name);
+	await page.getByRole("button", { name: "Continue" }).click();
 }
 
 /** Create org from NoOrganizationPage, or from the org switcher if already a member. */
 export async function ensureUniqueOrganization(
 	page: Page,
-	opts: { name: string; slug: string },
+	opts: { name: string },
 ): Promise<void> {
-	const noOrgTitle = page.getByText("Create your first organization");
+	const noOrgPage = page.getByTestId("no-organization-page");
 	const dashboard = page.getByTestId("dashboard-page");
 
 	// Wait for /me + React to settle before branching — a non-waiting isVisible()
 	// right after login redirect races the no-org page and wrongly takes the
 	// "already has org" path.
-	await expect(noOrgTitle.or(dashboard)).toBeVisible({ timeout: 30_000 });
+	await expect(noOrgPage.or(dashboard)).toBeVisible({ timeout: 30_000 });
 
-	if (await noOrgTitle.isVisible()) {
+	if (await noOrgPage.isVisible()) {
 		await createOrganization(page, opts);
 		await ensureDashboard(page);
 		return;
