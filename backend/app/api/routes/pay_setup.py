@@ -11,6 +11,7 @@ from fastapi import APIRouter, Body, Depends, Query, status
 from app.api.deps import Session, TenantCtx, require_capability
 from app.auth.principal import AuthPrincipal
 from app.exceptions import ConflictError
+from app.timezone import current_ist_date
 from app.schemas.pay_setup import (
     AccommodationChargeVersionCreate,
     AccommodationChargeVersionResponse,
@@ -168,7 +169,7 @@ async def list_recurring_instructions(
         db,
         organization_id=_org_id(tenant),
         employee_id=employee_id,
-        as_of=as_of or date.today(),
+        as_of=as_of or current_ist_date(),
     )
 
 
@@ -246,7 +247,7 @@ async def list_advances(
         db,
         organization_id=_org_id(tenant),
         employee_id=employee_id,
-        as_of=as_of or date.today(),
+        as_of=as_of or current_ist_date(),
     )
 
 
@@ -307,7 +308,7 @@ async def list_accommodation(
         db,
         organization_id=_org_id(tenant),
         employee_id=employee_id,
-        as_of=as_of or date.today(),
+        as_of=as_of or current_ist_date(),
     )
 
 

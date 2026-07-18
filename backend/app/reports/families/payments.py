@@ -389,9 +389,11 @@ class BankAdviceBuilder:
         advice_total = _money(advice_total)
         posted_net = _posted_net_payable(version)
         # Defense in depth: advice credits must equal the posted run net payable.
-        assert advice_total == posted_net, (
-            f"bank advice total {advice_total} != posted net payable {posted_net}"
-        )
+        # Raise (not assert) so the invariant holds even under `python -O`.
+        if advice_total != posted_net:
+            raise ConflictError(
+                f"bank advice total {advice_total} != posted net payable {posted_net}"
+            )
 
         totals: tuple[Any, ...] = (
             "TOTAL",

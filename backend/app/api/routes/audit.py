@@ -5,7 +5,7 @@ Register with: ``app.include_router(audit.router, prefix="/api")``.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -22,8 +22,23 @@ def _org_id(tenant: TenantCtx) -> UUID:
     return UUID(tenant.organization_id)
 
 
+def _to_utc_naive(value: datetime) -> datetime:
+    """Normalize to UTC-naive so aware/naive bounds compare without TypeError.
+
+    Accord stores clock timestamps as UTC-naive; aware inputs are converted to
+    UTC (preserving their offset) and naive inputs are assumed already UTC.
+    """
+    if value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
+
+
 def _validate_time_bounds(from_time: datetime | None, to_time: datetime | None) -> None:
-    if from_time is not None and to_time is not None and from_time > to_time:
+    if (
+        from_time is not None
+        and to_time is not None
+        and _to_utc_naive(from_time) > _to_utc_naive(to_time)
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="from must be on or before to.",

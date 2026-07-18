@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.timezone import current_ist_date
+
 PDF_MEDIA_TYPE = "application/pdf"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -24,7 +26,7 @@ class XLSXResponse(Response):
 
 
 def export_content_disposition(slug: str, extension: str, *, as_of: date | None = None) -> str:
-    stamp = (as_of or date.today()).isoformat()
+    stamp = (as_of or current_ist_date()).isoformat()
     return f'attachment; filename="accord-{slug}-{stamp}.{extension}"'
 
 

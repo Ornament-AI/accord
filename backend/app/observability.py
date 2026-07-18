@@ -86,9 +86,12 @@ _ARTIFACT_STATUSES = (
 def matched_route_template(request: Request) -> str:
     """Return the matched route path template, or ``unmatched``.
 
-    Uses the concrete URL path with path-parameter values replaced by
-    ``{param}`` placeholders so cardinality stays bounded (never raw IDs).
-    Falls back to ``route.path`` when path params are unavailable.
+    Uses Starlette's ``route.path`` (the parameterized template, e.g.
+    ``/api/employees/{employee_id}``) directly so cardinality stays bounded
+    (never raw IDs). Routers are mounted via ``include_router(prefix="/api")``,
+    so ``route.path`` already carries the full prefixed template. Reading it
+    directly avoids naive string replacement that could clobber static segments
+    when a param value is a substring of a static path or another parameter.
     """
     route = request.scope.get("route")
     if route is None:
@@ -96,20 +99,7 @@ def matched_route_template(request: Request) -> str:
     route_path = getattr(route, "path", None)
     if not route_path:
         return "unmatched"
-
-    path_params = request.scope.get("path_params") or {}
-    if not path_params:
-        # Static matched route — include mount prefixes (e.g. /api/healthz).
-        return request.url.path
-
-    template = request.url.path
-    for name, value in sorted(
-        path_params.items(),
-        key=lambda item: len(str(item[1])),
-        reverse=True,
-    ):
-        template = template.replace(str(value), "{" + name + "}", 1)
-    return template
+    return route_path
 
 
 async def refresh_platform_gauges() -> None:
