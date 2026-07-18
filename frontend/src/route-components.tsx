@@ -81,6 +81,6 @@ export { OrganizationSetupPage };
 export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
-export const AuditPage = lazy(() => import("@/pages/AuditPage"));
+export const AuditPage = lazy(() => import("@/pages/audit/AuditPage"));
 export { NoOrganizationPage };
 export const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
