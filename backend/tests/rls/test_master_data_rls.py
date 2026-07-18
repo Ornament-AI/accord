@@ -354,8 +354,10 @@ def test_effective_on_boundary_date_resolution(
         )
         conn.commit()
 
+    # as_psycopg_url yields a bare postgresql:// DSN, which SQLAlchemy resolves
+    # to the psycopg2 dialect. Only psycopg (v3) is installed, so pin the driver.
     engine = create_engine(
-        as_psycopg_url(database_url),
+        as_psycopg_url(database_url).replace("postgresql://", "postgresql+psycopg://", 1),
         poolclass=NullPool,
     )
     try:
