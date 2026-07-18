@@ -16,7 +16,15 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
 from app.api.responses import problem_content, problem_response
-from app.api.routes import auth, employees, health, org_structure, organizations, pay_setup
+from app.api.routes import (
+    auth,
+    employees,
+    health,
+    org_structure,
+    organizations,
+    pay_setup,
+    payroll_runs,
+)
 from app.config import Settings, get_settings
 from app.db import dispose_engine, session_context
 from app.exceptions import AccordError
@@ -283,6 +291,7 @@ def create_app() -> FastAPI:
     app.include_router(employees.router, prefix="/api")
     app.include_router(org_structure.router, prefix="/api")
     app.include_router(pay_setup.router, prefix="/api")
+    app.include_router(payroll_runs.router, prefix="/api")
     return app
 
 
