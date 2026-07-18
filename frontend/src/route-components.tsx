@@ -6,7 +6,7 @@ import { AppShellProvider } from "@/contexts/AppShellContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
 import NoOrganizationPage from "@/pages/NoOrganizationPage";
-import OrganizationSetupPage from "@/pages/OrganizationSetupPage";
+import OrganizationSetupPage from "@/pages/org-setup/OrgSetupPage";
 
 const ProtectedShell = lazy(() =>
 	import("@/components/protected-shell").then((mod) => ({ default: mod.ProtectedShell })),
@@ -73,6 +73,10 @@ export const LoginPage = lazy(() => import("@/pages/LoginPage"));
 export const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 export const EmployeeListPage = lazy(() => import("@/pages/employees/EmployeeListPage"));
 export const EmployeeDetailPage = lazy(() => import("@/pages/employees/EmployeeDetailPage"));
+export const PayComponentsPage = lazy(() => import("@/pages/pay-components/PayComponentsPage"));
+export const PayComponentDetailPage = lazy(
+	() => import("@/pages/pay-components/PayComponentDetailPage"),
+);
 export { OrganizationSetupPage };
 export const PayRunsPage = lazy(() => import("@/pages/PayRunsPage"));
 export const ReportsPage = lazy(() => import("@/pages/ReportsPage"));

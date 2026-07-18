@@ -142,7 +142,7 @@ describe("Pay components list page", () => {
 		"gates New pay component and Edit on manage_master_data",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("auditor"),
+				me: buildRoleAuthMe("payroll_reviewer"),
 			});
 			const { handlers: payHandlers } = createPayComponentHandlers();
 			server.use(...authHandlers, ...payHandlers);
@@ -245,8 +245,8 @@ describe("Pay component detail page", () => {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
-					role: "auditor",
-					capabilities: ROLE_CAPABILITIES.auditor,
+					role: "payroll_reviewer",
+					capabilities: ROLE_CAPABILITIES.payroll_reviewer,
 				},
 			});
 			const { handlers: authHandlers } = createAuthHandlers({ me: withoutManage });

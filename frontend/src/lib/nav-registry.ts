@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+	Banknote,
 	Building2,
 	ClipboardList,
 	FileBarChart2,
@@ -31,7 +32,13 @@ export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
 		path: "/organization",
 		capability: "manage_organization",
 	},
-	{ title: "Pay Runs", icon: WalletCards, path: "/pay-runs", capability: "create_run" },
+	{
+		title: "Pay Components",
+		icon: WalletCards,
+		path: "/pay-components",
+		capability: "view_master_data",
+	},
+	{ title: "Pay Runs", icon: Banknote, path: "/pay-runs", capability: "create_run" },
 	{ title: "Reports", icon: FileBarChart2, path: "/reports", capability: "generate_reports" },
 	{ title: "Audit", icon: ClipboardList, path: "/audit", capability: "view_audit" },
 ] as const;

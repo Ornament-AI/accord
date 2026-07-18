@@ -1,6 +1,7 @@
 import type { AuthMeResponse, Capability, Role } from "@/types/auth";
 
 /** Test-only role → capability matrix (backend mapping is not in the frozen contract). */
+// Mirrors the backend-authoritative matrix in backend/app/auth/capabilities.py.
 export const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
 	organization_administrator: [
 		"manage_organization",
@@ -16,11 +17,18 @@ export const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
 		"release_reports",
 		"view_audit",
 	],
-	payroll_preparer: ["view_master_data", "create_run", "submit_run"],
-	payroll_reviewer: ["view_master_data", "approve_run"],
-	payroll_approver: ["view_master_data", "approve_run", "post_run"],
-	report_releaser: ["generate_reports", "release_reports"],
-	auditor: ["view_master_data", "view_audit", "generate_reports"],
+	payroll_preparer: [
+		"manage_master_data",
+		"view_master_data",
+		"create_run",
+		"submit_run",
+		"generate_reports",
+		"view_audit",
+	],
+	payroll_reviewer: ["view_master_data", "generate_reports", "view_audit"],
+	payroll_approver: ["approve_run", "generate_reports", "view_audit"],
+	report_releaser: ["post_run", "generate_reports", "release_reports", "view_audit"],
+	auditor: ["generate_reports", "view_audit"],
 };
 
 export function buildAuthMe(overrides: Partial<AuthMeResponse> = {}): AuthMeResponse {

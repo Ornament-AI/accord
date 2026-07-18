@@ -93,7 +93,7 @@ describe("Employee list page", () => {
 		"gates New employee on manage_master_data",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("auditor"),
+				me: buildRoleAuthMe("payroll_reviewer"),
 			});
 			const { handlers: employeeHandlers } = createEmployeeHandlers();
 			server.use(...authHandlers, ...employeeHandlers);

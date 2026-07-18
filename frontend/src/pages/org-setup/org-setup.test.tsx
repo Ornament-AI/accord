@@ -36,7 +36,7 @@ function renderOrgSetupPage() {
 async function setupPage(
 	role:
 		| "organization_administrator"
-		| "auditor"
+		| "payroll_reviewer"
 		| "payroll_preparer" = "organization_administrator",
 	handlerOptions: Parameters<typeof createOrgSetupHandlers>[0] = {},
 ) {
@@ -210,7 +210,7 @@ describe("OrgSetupPage capability gating", () => {
 	it(
 		"hides Add without manage_master_data and Settings without manage_organization",
 		async () => {
-			await setupPage("auditor");
+			await setupPage("payroll_reviewer");
 
 			expect(await screen.findByText("HO", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /Add office/i })).not.toBeInTheDocument();

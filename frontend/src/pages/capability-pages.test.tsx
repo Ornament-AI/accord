@@ -5,6 +5,7 @@ import { queryClient } from "@/lib/query-client";
 import { buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { server } from "@/test/msw-server";
+import { createOrgSetupHandlers } from "@/pages/org-setup/org-setup-handlers";
 import { renderApp } from "@/test/render-app";
 
 describe("capability-gated direct URL access", () => {
@@ -21,16 +22,17 @@ describe("capability-gated direct URL access", () => {
 		expect(await screen.findByText("You don't have access")).toBeInTheDocument();
 	});
 
-	it("renders the placeholder page when the user has the capability", async () => {
+	it("renders the organization setup page when the user has the capability", async () => {
 		const { handlers } = createAuthHandlers({
 			me: buildRoleAuthMe("organization_administrator"),
 		});
-		server.use(...handlers);
+		const { handlers: orgSetupHandlers } = createOrgSetupHandlers();
+		server.use(...handlers, ...orgSetupHandlers);
 
 		renderApp({ initialEntries: ["/organization"] });
 
 		await waitFor(async () => {
-			expect(await screen.findByText("Organization setup coming soon")).toBeInTheDocument();
+			expect(await screen.findByTestId("org-setup-page")).toBeInTheDocument();
 		});
 	});
 });
