@@ -26,6 +26,7 @@ import psycopg
 import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+CREATE_ROLES_SQL = BACKEND_ROOT / "scripts" / "create_roles.sql"
 
 # Base URL comes from the same env knob as the top-level conftest.py; the
 # migration tests derive per-test database names from it, keeping admin
@@ -51,6 +52,37 @@ def as_psycopg_url(asyncpg_url: str) -> str:
     """Convert a ``postgresql+asyncpg://…`` URL to a vanilla ``postgresql://…`` URL."""
     parsed = urlparse(asyncpg_url)
     return parsed._replace(scheme=parsed.scheme.replace("+asyncpg", "")).geturl()
+
+
+def ensure_accord_roles(*, database_url: str | None = None) -> None:
+    """Idempotently create accord_* roles (cluster-wide). Required before CREATE POLICY.
+
+    When ``database_url`` is provided, also applies schema USAGE + default
+    privileges in that database (roles themselves are cluster-wide either way).
+    """
+    target_url = as_psycopg_url(database_url) if database_url else _admin_url()
+    result = subprocess.run(
+        [
+            "psql",
+            target_url,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-f",
+            str(CREATE_ROLES_SQL),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"create_roles.sql failed\nstdout={result.stdout}\nstderr={result.stderr}"
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _accord_roles_exist() -> None:
+    ensure_accord_roles()
 
 
 @pytest.fixture

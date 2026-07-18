@@ -1,4 +1,4 @@
-"""A fresh database must upgrade cleanly to ``head`` (Phase 1)."""
+"""A fresh database must upgrade cleanly to ``head``."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import psycopg
 
 from .conftest import as_psycopg_url, diag, run_alembic
 
-INITIAL_REVISION = "b7e3c1a90f24"
+HEAD_REVISION = "c8d4e2f1a9b7"
 
 
 def _alembic_version(database_url: str) -> str | None:
@@ -32,7 +32,7 @@ def _parse_heads(stdout: str) -> set[str]:
         line = line.strip()
         if not line:
             continue
-        # e.g. "b7e3c1a90f24 (head)"
+        # e.g. "c8d4e2f1a9b7 (head)"
         rev = line.split()[0]
         heads.add(rev)
     return heads
@@ -45,9 +45,9 @@ def test_fresh_database_upgrades_to_head(scratch_db: str) -> None:
     heads = run_alembic(scratch_db, "heads")
     assert heads.returncode == 0, diag("alembic heads", heads)
     head_revs = _parse_heads(heads.stdout)
-    assert head_revs == {INITIAL_REVISION}
+    assert head_revs == {HEAD_REVISION}
 
-    assert _alembic_version(scratch_db) == INITIAL_REVISION
+    assert _alembic_version(scratch_db) == HEAD_REVISION
     assert _extension_exists(scratch_db, "btree_gist")
     assert not _extension_exists(scratch_db, "pgcrypto")
 
@@ -56,10 +56,10 @@ def test_fresh_database_upgrades_to_head(scratch_db: str) -> None:
 
 
 def test_initial_migration_upgrade_downgrade_upgrade_roundtrip(scratch_db: str) -> None:
-    """Round-trip: ``base -> head -> base -> head`` for migration 0001."""
+    """Round-trip: ``base -> head -> base -> head``."""
     up = run_alembic(scratch_db, "upgrade", "head")
     assert up.returncode == 0, diag("upgrade #1", up)
-    assert _alembic_version(scratch_db) == INITIAL_REVISION
+    assert _alembic_version(scratch_db) == HEAD_REVISION
     assert _extension_exists(scratch_db, "btree_gist")
 
     down = run_alembic(scratch_db, "downgrade", "base")
@@ -69,12 +69,12 @@ def test_initial_migration_upgrade_downgrade_upgrade_roundtrip(scratch_db: str) 
 
     up2 = run_alembic(scratch_db, "upgrade", "head")
     assert up2.returncode == 0, diag("upgrade #2", up2)
-    assert _alembic_version(scratch_db) == INITIAL_REVISION
+    assert _alembic_version(scratch_db) == HEAD_REVISION
     assert _extension_exists(scratch_db, "btree_gist")
 
     heads = run_alembic(scratch_db, "heads")
     assert heads.returncode == 0, diag("alembic heads after roundtrip", heads)
-    assert _parse_heads(heads.stdout) == {INITIAL_REVISION}
+    assert _parse_heads(heads.stdout) == {HEAD_REVISION}
     assert _alembic_version(scratch_db) in _parse_heads(heads.stdout)
 
     check = run_alembic(scratch_db, "check")
