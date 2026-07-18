@@ -165,3 +165,14 @@ async function onOrganizationSwitched(nextOrganizationId: string): Promise<void>
 3. **Org id in request body for all writes** — Rejected (ADR 0001). Hostile input; ignored or 422.
 4. **Allow soft cache invalidation only** — Rejected. Selective invalidation risks leaving org-scoped detail queries in memory; full `queryClient.clear()` + remount is mandatory.
 5. **Subdomain-per-org (`org-slug.accord.example`)** — Deferred. Possible future UX; would still resolve to server-side session/org binding and must not bypass membership checks.
+
+## Addendum (Gate D, 2026-07-17): self-service organization creation
+
+`POST /api/organizations` is deliberately gated only on an authenticated
+session, not on any capability: any signed-in user may create an organization
+and becomes its `organization_administrator`. This is the standard SaaS
+bootstrap flow (the no-organization welcome state depends on it) and is NOT a
+tenancy leak — each created organization is fully RLS-isolated. Gate D's
+adversarial suite (`backend/tests/gate_d/test_http_isolation.py`) asserts this
+behavior explicitly. Revisit if the platform later needs invite-only or
+platform-admin-gated organization provisioning (e.g. paid plans, vetting).
