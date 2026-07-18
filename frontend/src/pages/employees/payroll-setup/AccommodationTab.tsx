@@ -33,7 +33,6 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	type AccommodationResponse,
@@ -101,16 +100,10 @@ export function AccommodationTab({
 								<TableHead>Location</TableHead>
 								<TableHead className="text-right">License Fee</TableHead>
 								<TableHead className="text-right">
-									<Tooltip>
-										<TooltipTrigger
-											render={
-												<span data-testid="accommodation-foregone-caption" className="cursor-help">
-													Foregone HRA
-												</span>
-											}
-										/>
-										<TooltipContent side="top">{FOREGONE_HRA_INFO}</TooltipContent>
-									</Tooltip>
+									<span className="inline-flex items-center justify-end gap-1">
+										<span data-testid="accommodation-foregone-caption">Foregone HRA</span>
+										<InfoTip text={FOREGONE_HRA_INFO} ariaLabel="About Foregone HRA" />
+									</span>
 								</TableHead>
 							</TableRow>
 						</TableHeader>
