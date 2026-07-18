@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"target": "ES2024",
+		"useDefineForClassFields": true,
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"allowJs": false,
+		"skipLibCheck": true,
+		"strict": true,
+		"forceConsistentCasingInFileNames": true,
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"noEmit": true,
+		"jsx": "react-jsx",
+		"paths": {
+			"@/*": ["./src/*"]
+		},
+		"types": ["vitest/globals"]
+	},
+	"include": ["src"],
+	"exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

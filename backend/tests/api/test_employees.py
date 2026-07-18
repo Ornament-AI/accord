@@ -1,0 +1,389 @@
+"""Integration tests for Phase 3 employee master-data HTTP API."""
+
+from __future__ import annotations
+
+from uuid import UUID, uuid4
+
+import pytest
+
+from app.main import app as fastapi_app
+from app.api.routes.employees import router as employees_router
+from app.models.org_structure import Office, PayrollUnit, Post
+from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
+from tests.identity_helpers import seed_membership, seed_organization, seed_user
+
+if not any(getattr(r, "path", "").startswith("/api/employees") for r in fastapi_app.routes):
+    fastapi_app.include_router(employees_router, prefix="/api")
+
+
+async def _seed_posting_refs(session, org_id: UUID) -> tuple[Office, PayrollUnit, Post]:
+    office = Office(
+        organization_id=org_id,
+        name="HQ",
+        code=f"O-{uuid4().hex[:6]}",
+        jurisdiction="mumbai",
+    )
+    unit = PayrollUnit(organization_id=org_id, name="PU1", code=f"PU-{uuid4().hex[:6]}")
+    post = Post(organization_id=org_id, designation=f"Clerk-{uuid4().hex[:6]}", class_="III")
+    session.add_all([office, unit, post])
+    await session.flush()
+    return office, unit, post
+
+
+async def _admin_world(session, dev_settings, client, *, slug: str | None = None):
+    org = await seed_organization(
+        session,
+        name="Emp API Org",
+        slug=slug or f"emp-api-{uuid4().hex[:10]}",
+    )
+    admin = await seed_user(session, name="Org Admin")
+    await seed_membership(
+        session,
+        organization_id=org.id,
+        user_id=admin.id,
+        role="organization_administrator",
+    )
+    office, unit, post = await _seed_posting_refs(session, org.id)
+    await session.commit()
+    cookie = await mint_session_cookie(
+        session,
+        dev_settings,
+        user_id=admin.id,
+        active_organization_id=org.id,
+    )
+    apply_session_cookie(client, cookie)
+    return org, admin, office, unit, post
+
+
+def _profile_payload(regime: str) -> dict:
+    base = {
+        "name": "Alice",
+        "sevarth_id": f"SEV-{uuid4().hex[:6]}",
+        "pan": "ABCDE1234F",
+        "date_of_birth": "1990-01-15",
+        "date_of_joining": "2015-06-01",
+        "retirement_regime": regime,
+    }
+    if regime == "gpf":
+        base["gpf_jurisdiction"] = "mumbai"
+        base["pran"] = "123456789012"
+        base["gpf_account_number"] = "GPF998877"
+    elif regime == "nps":
+        base["pran"] = "123456789012"
+    elif regime == "epf":
+        base["epf_number"] = "EPF998877"
+    return base
+
+
+def _create_payload(
+    *,
+    office_id: UUID,
+    unit_id: UUID,
+    post_id: UUID,
+    regime: str = "gpf",
+    employee_number: str | None = None,
+    effective_from: str = "2026-01-01",
+    basic_pay: object = "50732.00",
+) -> dict:
+    return {
+        "employee_number": employee_number or f"E-{uuid4().hex[:6]}",
+        "effective_from": effective_from,
+        "profile": _profile_payload(regime),
+        "posting": {
+            "office_id": str(office_id),
+            "payroll_unit_id": str(unit_id),
+            "post_id": str(post_id),
+        },
+        "pay": {"pay_matrix_level": "L10", "basic_pay": basic_pay},
+        "bank": {
+            "account_number": "123456789012",
+            "ifsc": "SBIN0001234",
+            "bank_name": "SBI",
+            "branch": "Main",
+            "is_primary_salary": True,
+        },
+    }
+
+
+async def _create_employee(client, payload: dict) -> dict:
+    resp = await client.post("/api/employees", json=payload)
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def _auth_as(session, dev_settings, client, org_id: UUID, user, role: str) -> None:
+    await seed_membership(
+        session,
+        organization_id=org_id,
+        user_id=user.id,
+        role=role,
+    )
+    await session.commit()
+    cookie = await mint_session_cookie(
+        session,
+        dev_settings,
+        user_id=user.id,
+        active_organization_id=org_id,
+    )
+    apply_session_cookie(client, cookie)
+
+
+# --- Composite create (all regimes) ------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("regime", ["gpf", "nps", "epf"])
+async def test_create_employee_all_regimes_masks_sensitive_and_money_string(
+    client, session, dev_settings, regime
+):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    body = await _create_employee(
+        client,
+        _create_payload(
+            office_id=office.id,
+            unit_id=unit.id,
+            post_id=post.id,
+            regime=regime,
+        ),
+    )
+    assert body["profile"]["retirement_regime"] == regime
+    assert body["profile"]["pan"] == "••••234F"
+    assert body["bank"]["account_number"] == "••••9012"
+    assert body["pay"]["basic_pay"] == "50732.00"
+    assert isinstance(body["pay"]["basic_pay"], str)
+
+
+# --- Validation -------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_numeric_basic_pay(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    payload = _create_payload(
+        office_id=office.id,
+        unit_id=unit.id,
+        post_id=post.id,
+        basic_pay=50732.00,
+    )
+    resp = await client.post("/api/employees", json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_gpf_without_jurisdiction(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    payload = _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id)
+    del payload["profile"]["gpf_jurisdiction"]
+    resp = await client.post("/api/employees", json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_nps_with_jurisdiction(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    payload = _create_payload(
+        office_id=office.id,
+        unit_id=unit.id,
+        post_id=post.id,
+        regime="nps",
+    )
+    payload["profile"]["gpf_jurisdiction"] = "mumbai"
+    resp = await client.post("/api/employees", json=payload)
+    assert resp.status_code == 422
+
+
+# --- Pay as_of boundary -----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pay_version_as_of_before_on_after_boundary(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    future = await client.post(
+        f"/api/employees/{employee_id}/versions/pay",
+        json={
+            "effective_from": "2026-07-01",
+            "pay_matrix_level": "L11",
+            "basic_pay": "55000.00",
+            "change_reason": "annual increment",
+        },
+    )
+    assert future.status_code == 201, future.text
+
+    cases = [
+        ("2026-06-30", "L10", "50732.00"),
+        ("2026-07-01", "L11", "55000.00"),
+        ("2026-08-01", "L11", "55000.00"),
+    ]
+    for as_of, level, pay in cases:
+        resp = await client.get(f"/api/employees/{employee_id}", params={"as_of": as_of})
+        assert resp.status_code == 200, resp.text
+        detail = resp.json()
+        assert detail["pay"]["pay_matrix_level"] == level
+        assert detail["pay"]["basic_pay"] == pay
+
+
+# --- Version / employee conflicts -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_overlapping_effective_from_returns_409(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    overlap = await client.post(
+        f"/api/employees/{employee_id}/versions/pay",
+        json={
+            "effective_from": "2026-01-01",
+            "pay_matrix_level": "L12",
+            "basic_pay": "60000.00",
+        },
+    )
+    assert overlap.status_code == 409
+    assert overlap.json()["error"] == "ConflictError"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_employee_number_returns_409(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    payload = _create_payload(
+        office_id=office.id,
+        unit_id=unit.id,
+        post_id=post.id,
+        employee_number="E-DUP-001",
+    )
+    assert (await client.post("/api/employees", json=payload)).status_code == 201
+
+    dup = await client.post("/api/employees", json=payload)
+    assert dup.status_code == 409
+    assert dup.json()["error"] == "ConflictError"
+
+
+# --- Bank primary conflict --------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bank_primary_same_effective_from_returns_409(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    conflict = await client.post(
+        f"/api/employees/{employee_id}/versions/bank",
+        json={
+            "effective_from": "2026-01-01",
+            "account_number": "999988887777",
+            "ifsc": "SBIN0002222",
+            "bank_name": "SBI",
+            "branch": "Alt",
+            "is_primary_salary": True,
+        },
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"] == "ConflictError"
+
+
+# --- Masking + reveal -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_masking_default_and_reveal_admin_vs_preparer(client, session, dev_settings):
+    org, admin, office, unit, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    masked = await client.get(f"/api/employees/{employee_id}")
+    assert masked.status_code == 200
+    assert masked.json()["profile"]["pan"] == "••••234F"
+    assert masked.json()["bank"]["account_number"] == "••••9012"
+
+    revealed = await client.get(f"/api/employees/{employee_id}", params={"reveal": "true"})
+    assert revealed.status_code == 200
+    assert revealed.json()["profile"]["pan"] == "ABCDE1234F"
+    assert revealed.json()["bank"]["account_number"] == "123456789012"
+
+    preparer = await seed_user(session, name="Preparer")
+    await _auth_as(session, dev_settings, client, org.id, preparer, "payroll_preparer")
+    blocked = await client.get(f"/api/employees/{employee_id}", params={"reveal": "true"})
+    assert blocked.status_code == 403
+    assert blocked.json()["error"] == "urn:accord:capability:reveal_sensitive_fields"
+
+
+# --- Tenant isolation -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tenant_isolation_org_b_cannot_see_org_a_employee(client, session, dev_settings):
+    org_a, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    org_b = await seed_organization(session, name="Org B", slug=f"emp-b-{uuid4().hex[:10]}")
+    user_b = await seed_user(session, name="Org B Admin")
+    await _auth_as(session, dev_settings, client, org_b.id, user_b, "organization_administrator")
+
+    by_id = await client.get(f"/api/employees/{employee_id}")
+    assert by_id.status_code == 404
+
+    listed = await client.get("/api/employees")
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+
+
+# --- Capability gates -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_payroll_reviewer_can_get_but_not_post(client, session, dev_settings):
+    org, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+
+    reviewer = await seed_user(session, name="Reviewer")
+    await _auth_as(session, dev_settings, client, org.id, reviewer, "payroll_reviewer")
+
+    get_resp = await client.get(f"/api/employees/{created['id']}")
+    assert get_resp.status_code == 200
+
+    post_resp = await client.post(
+        "/api/employees",
+        json=_create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+    assert post_resp.status_code == 403
+    assert post_resp.json()["error"] == "urn:accord:capability:manage_master_data"
+
+
+@pytest.mark.asyncio
+async def test_auditor_cannot_get_employees(client, session, dev_settings):
+    org, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    await _create_employee(
+        client,
+        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+    )
+
+    auditor = await seed_user(session, name="Auditor")
+    await _auth_as(session, dev_settings, client, org.id, auditor, "auditor")
+
+    resp = await client.get("/api/employees")
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "urn:accord:capability:view_master_data"

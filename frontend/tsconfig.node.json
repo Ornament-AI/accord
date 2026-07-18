@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"composite": true,
+		"skipLibCheck": true,
+		"target": "ES2024",
+		"lib": ["ES2024"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"allowSyntheticDefaultImports": true,
+		"resolveJsonModule": true,
+		"types": ["node"],
+		"emitDeclarationOnly": true,
+		"outDir": "./dist-config"
+	},
+	"include": ["vite.config.ts"]
+}

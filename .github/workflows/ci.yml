@@ -1,0 +1,243 @@
+name: CI
+
+# Adapted from Atlas .github/workflows/ci.yml (v1.1.0) for Accord's stack
+# (PostgreSQL + WorkOS + MinIO/S3 object storage; no Firebase). Renamed
+# images: ghcr.io/ornament-ai/accord/{backend,web} (registry org carried over
+# from Atlas's ghcr.io/ornament-ai/* convention — confirm with the
+# orchestrator if that assumption is wrong). Every backend/frontend job is
+# gated on a `detect` job that checks for the presence of the files each lane
+# owns, so a lane that has not landed yet reports a clean "skipped" (not
+# "pending") status and does not block required checks, matching Atlas's own
+# documented reasoning for preferring job-level `if:` over workflow `paths:`
+# filtering.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  ACCORD_BACKEND_IMAGE: ghcr.io/ornament-ai/accord/backend
+  ACCORD_WEB_IMAGE: ghcr.io/ornament-ai/accord/web
+  POSTGRES_IMAGE: postgres:18-alpine
+  NODE_VERSION: "24.18.0"
+  PNPM_VERSION: "10.34.3"
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  # Cheap file-presence probe (not a paths-filter): downstream jobs gate on
+  # these booleans instead of skipping via workflow-level `paths:`, so a
+  # not-yet-landed lane reports "skipped" (satisfies required checks) rather
+  # than leaving the check stuck "Pending". See Atlas ci.yml for the same
+  # reasoning documented in more detail.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+      api_types: ${{ steps.detect.outputs.api_types }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        run: |
+          if [[ -f backend/requirements.txt && -f backend/Dockerfile ]]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::backend/ lane not fully landed yet — backend jobs will be skipped this run."
+          fi
+          if [[ -f frontend/package.json ]]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::frontend/ lane not fully landed yet — frontend jobs will be skipped this run."
+          fi
+          if [[ -x scripts/generate-api-types.sh ]]; then
+            echo "api_types=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_types=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  backend:
+    name: Backend lint + test
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: accord_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/accord_test
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/accord_test
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/accord_test
+      SESSION_SECRET_KEY: ci-only-weak-secret-not-for-production
+      ENVIRONMENT: development
+      DEV_AUTH_BYPASS: "false"
+      ACCORD_ALLOW_WEAK_SECRETS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: ruff check
+        run: python -m ruff check backend/app backend/tests
+      - name: ruff format --check
+        run: python -m ruff format --check backend/app backend/tests
+      - name: pytest
+        run: python -m pytest backend/tests -q
+
+  # Alembic migrations must apply cleanly against a fresh database and stay
+  # in sync with the SQLModel metadata. backend/migrations is committed as of
+  # this workflow (Phase 1 DB lane), so this job is wired unconditionally —
+  # it is NOT gated behind a "does migrations/ exist" skip; if it ever goes
+  # missing again that is a real regression and this job should fail loudly.
+  migrations:
+    name: Alembic upgrade + check
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: accord_migrations_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/accord_migrations_ci
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/accord_migrations_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Confirm migrations directory exists
+        run: test -d backend/migrations/versions || { echo "::error::backend/migrations/versions is missing — this job expects it to exist (Phase 1 DB lane landed)."; exit 1; }
+      - name: Bootstrap ADR-0001 database roles (accord_migrator / accord_app / accord_worker)
+        # Cluster roles are created out-of-band (never by Alembic), so the RLS
+        # policy DDL (CREATE POLICY ... TO accord_app / accord_worker) and the
+        # immutable-table REVOKEs in the migrations have their target roles.
+        # Mirrors backend/tests/migrations/conftest.py::ensure_accord_roles and
+        # deploy/object-storage/postgres-init-roles.sh.
+        env:
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -h localhost -p 5432 -U postgres -d accord_migrations_ci -f backend/scripts/create_roles.sql
+      - name: alembic upgrade head
+        working-directory: backend
+        run: python -m alembic upgrade head
+      - name: alembic check (no undetected model drift)
+        working-directory: backend
+        run: python -m alembic check
+
+  # Placeholder — activates once scripts/generate-api-types.sh wires
+  # backend/scripts/export_openapi.py output into
+  # frontend/src/types/api.generated.ts (see docs/atlas-upstream-manifest.md
+  # §2A). Runs unconditionally (not gated) so its own presence check is
+  # always visible in CI output.
+  api-type-drift:
+    name: API type drift check
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for generate-api-types wiring
+        run: |
+          if [[ "${{ needs.detect.outputs.api_types }}" == "true" ]]; then
+            echo "::notice::scripts/generate-api-types.sh exists — wire the real drift check here (regenerate frontend/src/types/api.generated.ts and git diff --exit-code)."
+          else
+            echo "::notice::scripts/generate-api-types.sh does not exist yet — this job is a placeholder until backend/scripts/export_openapi.py is wired to frontend/src/types/api.generated.ts."
+          fi
+
+  frontend:
+    name: Frontend lint + typecheck + test + build
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Enable pnpm via Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm --filter frontend lint
+      - name: Format check
+        run: pnpm --filter frontend format:check
+      - name: Typecheck
+        run: pnpm --filter frontend typecheck
+      - name: Test
+        run: pnpm --filter frontend test:run
+      - name: Build
+        run: pnpm --filter frontend build
+
+  docker-backend:
+    name: Docker build (backend)
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: false
+          tags: ${{ env.ACCORD_BACKEND_IMAGE }}:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-web:
+    name: Docker build (web)
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build web image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.web
+          push: false
+          tags: ${{ env.ACCORD_WEB_IMAGE }}:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

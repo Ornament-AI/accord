@@ -1,0 +1,20 @@
+{
+  "name": "accord",
+  "private": true,
+  "packageManager": "pnpm@10.34.3",
+  "scripts": {
+    "start": "./scripts/start.sh",
+    "stop": "./scripts/stop.sh",
+    "status": "./scripts/status.sh",
+    "dev": "./scripts/start.sh",
+    "dev:backend": "./scripts/start.sh --backend-only",
+    "dev:frontend": "./scripts/start.sh --frontend-only",
+    "build": "pnpm --filter frontend build",
+    "typecheck": "pnpm --filter frontend typecheck",
+    "lint": "pnpm --filter frontend lint",
+    "format": "pnpm --filter frontend format",
+    "test": "pnpm --filter frontend test:run",
+    "verify": "./scripts/verify.sh",
+    "generate:api": "pnpm --filter frontend generate:api"
+  }
+}

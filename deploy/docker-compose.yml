@@ -1,0 +1,287 @@
+# Accord deploy / local-stack compose.
+# Adapted from Atlas deploy/docker-compose.yml (v1.1.0) with PostgreSQL + MinIO,
+# WorkOS env matrix (ADR 0003), and no Firebase / restore-point / data-action machinery.
+#
+# Usage (from repo root):
+#   set -a && source deploy/.env && set +a   # or export required vars
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Build contexts reference backend/ and frontend/ paths that land in other lanes.
+# Image pulls use ghcr.io/ornament-ai/accord/{backend,web}:${ACCORD_TAG:-latest}
+# (registry org assumption — confirm with orchestrator).
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ACCORD_DB_NAME:-accord}
+      POSTGRES_USER: ${ACCORD_DB_USER:-accord}
+      POSTGRES_PASSWORD: ${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}
+      # Password applied to ADR roles on first boot (see postgres-init-roles.sh).
+      ACCORD_ROLE_PASSWORD: ${ACCORD_ROLE_PASSWORD:-${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}}
+    volumes:
+      # Postgres 18+ images store data under /var/lib/postgresql/<major>/…;
+      # mounting …/data breaks init (docker-library/postgres#1259).
+      - pgdata:/var/lib/postgresql
+      # ADR-0001 role bootstrap (runs once on empty volume).
+      - ../backend/scripts/create_roles.sql:/roles/create_roles.sql:ro
+      - ./object-storage/postgres-init-roles.sh:/docker-entrypoint-initdb.d/10-create-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    mem_limit: 512m
+    networks:
+      - backend-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    networks:
+      - backend-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Idempotent bucket bootstrap (OBJECT_STORAGE_BUCKET, default accord-artifacts).
+  # See deploy/object-storage/create-bucket.sh.
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      # cap_drop:ALL blocks writes under /root; keep mc config in /tmp.
+      MC_CONFIG_DIR: /tmp/mc
+      HOME: /tmp
+    volumes:
+      - ./object-storage/create-bucket.sh:/create-bucket.sh:ro
+    entrypoint: ["/bin/sh", "/create-bucket.sh"]
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 64m
+    networks:
+      - backend-net
+
+  # One-shot Alembic upgrade. Alembic config/migrations land in a later DB lane;
+  # this service references backend/Dockerfile once that lane lands.
+  migrations:
+    image: ghcr.io/ornament-ai/accord/backend:${ACCORD_TAG:-latest}
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Defaults use ADR-0001 roles created by postgres-init-roles.sh on first boot.
+      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+    networks:
+      - backend-net
+
+  api:
+    image: ghcr.io/ornament-ai/accord/backend:${ACCORD_TAG:-latest}
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
+      WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}
+      WORKOS_WEBHOOK_SECRET: ${WORKOS_WEBHOOK_SECRET:?WORKOS_WEBHOOK_SECRET is required}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?SESSION_SECRET_KEY is required}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-accord_session}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8082}
+      BASE_URL: ${BASE_URL:-${PUBLIC_APP_URL:-http://127.0.0.1:8082}}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${BASE_URL:-http://127.0.0.1:8082}}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-false}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-60000}
+      APP_VERSION: ${ACCORD_TAG:-latest}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    healthcheck:
+      # Probe readiness (/api/readyz), not just liveness, so auth/database
+      # startup failures keep the container out of rotation (ADR 0003 §6).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8000/api/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    networks:
+      - backend-net
+      - frontend-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    image: ghcr.io/ornament-ai/accord/backend:${ACCORD_TAG:-latest}
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command: ["python", "worker.py"]
+    environment:
+      DATABASE_URL: ${WORKER_DATABASE_URL:-postgresql+asyncpg://accord_worker:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
+      WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}
+      WORKOS_WEBHOOK_SECRET: ${WORKOS_WEBHOOK_SECRET:?WORKOS_WEBHOOK_SECRET is required}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?SESSION_SECRET_KEY is required}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-accord_session}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8082}
+      BASE_URL: ${BASE_URL:-${PUBLIC_APP_URL:-http://127.0.0.1:8082}}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${BASE_URL:-http://127.0.0.1:8082}}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-false}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-60000}
+      APP_VERSION: ${ACCORD_TAG:-latest}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    networks:
+      - backend-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    image: ghcr.io/ornament-ai/accord/web:${ACCORD_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8082:80"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+    mem_limit: 128m
+    networks:
+      - frontend-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  backend-net:
+    driver: bridge
+  frontend-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  minio-data:

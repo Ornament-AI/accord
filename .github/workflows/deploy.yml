@@ -1,0 +1,239 @@
+name: Deploy
+
+# Tag-triggered release pipeline for Accord.
+# Adapted from Atlas deploy.yml (image build/push to ghcr.io/ornament-ai/*)
+# and Atlas ci.yml migrations-release-upgrade (cross-release alembic replay).
+#
+# First-release behavior: when this is the first v* tag on the repo (no prior
+# v* tag exists), the migrations-release-upgrade job resolves has_previous=false
+# and skips the previous-tag → current-tag upgrade path gracefully. Image build
+# and push still run. Subsequent releases require a successful previous→current
+# alembic upgrade + alembic check + heads match.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io/ornament-ai/accord
+  PYTHON_VERSION: "3.14"
+  POSTGRES_IMAGE: postgres:18-alpine
+
+jobs:
+  build-and-push-backend:
+    name: Build and push backend image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker metadata (backend)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/backend
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=sha-,format=long
+          labels: |
+            org.opencontainers.image.title=accord-backend
+            org.opencontainers.image.description=Accord FastAPI backend
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-and-push-web:
+    name: Build and push web image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker metadata (web)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/web
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=sha-,format=long
+          labels: |
+            org.opencontainers.image.title=accord-web
+            org.opencontainers.image.description=Accord nginx + frontend static
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.web
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Cross-release Alembic upgrade path (previous v* → current tag).
+  # Mirrors Atlas ci.yml migrations-release-upgrade; active here because Accord
+  # ships real alembic revisions under backend/migrations/. CI's migrations job
+  # uses the postgres superuser DSN and does not run create_roles.sql — same
+  # approach here (roles SQL is an ops bootstrap, not required for upgrade).
+  migrations-release-upgrade:
+    name: Migrations release upgrade
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/release_upgrade
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/release_upgrade
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # First release: no prior v* tag → skip replay (images still published).
+      - name: Resolve previous release tag
+        id: prev
+        run: |
+          set -euo pipefail
+          current="${GITHUB_REF_NAME}"
+          prev="$(git tag -l 'v*' --sort=-v:refname | grep -vxF "$current" | head -n 1 || true)"
+          if [[ -z "$prev" ]]; then
+            echo "has_previous=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::First release ($current): no previous v* tag — skipping migration replay."
+          else
+            echo "has_previous=true" >> "$GITHUB_OUTPUT"
+            echo "previous_tag=$prev" >> "$GITHUB_OUTPUT"
+            echo "Previous release tag: $prev → current: $current"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.prev.outputs.has_previous == 'true'
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend dependencies (from current tag)
+        if: steps.prev.outputs.has_previous == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Create scratch database
+        if: steps.prev.outputs.has_previous == 'true'
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE DATABASE release_upgrade;
+          SQL
+
+      - name: Upgrade to previous release migration head
+        if: steps.prev.outputs.has_previous == 'true'
+        # Worktree so alembic script_location sees only migrations that shipped
+        # with the previous tag — applying current's tree would defeat the test.
+        run: |
+          set -euo pipefail
+          prev="${{ steps.prev.outputs.previous_tag }}"
+          git worktree add --detach ../accord-prev "$prev"
+          cd ../accord-prev/backend
+          test -d migrations/versions || {
+            echo "::error::Previous tag $prev has no backend/migrations/versions"
+            exit 1
+          }
+          python -m alembic upgrade head
+
+      - name: Upgrade to current tag migration head
+        if: steps.prev.outputs.has_previous == 'true'
+        working-directory: backend
+        run: python -m alembic upgrade head
+
+      - name: alembic check (no undetected model drift)
+        if: steps.prev.outputs.has_previous == 'true'
+        working-directory: backend
+        run: python -m alembic check
+
+      - name: Verify alembic heads match DB version
+        if: steps.prev.outputs.has_previous == 'true'
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          expected="$(python -m alembic heads 2>&1 | head -1 | awk '{print $1}')"
+          actual="$(PGPASSWORD=postgres psql -h localhost -U postgres -d release_upgrade -tAc "SELECT version_num FROM alembic_version")"
+          echo "expected=$expected actual=$actual"
+          test "$expected" = "$actual" || {
+            echo "::error::alembic HEAD mismatch after release upgrade"
+            exit 1
+          }
+
+  deployment-summary:
+    name: Deployment summary
+    needs: [build-and-push-backend, build-and-push-web, migrations-release-upgrade]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment summary
+        run: |
+          echo "## Images Pushed :package:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | Tags |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **backend** | \`${{ env.REGISTRY }}/backend:${{ github.ref_name }}\`, \`${{ env.REGISTRY }}/backend:sha-${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **web** | \`${{ env.REGISTRY }}/web:${{ github.ref_name }}\`, \`${{ env.REGISTRY }}/web:sha-${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Tag** | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
