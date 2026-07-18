@@ -57,7 +57,7 @@ describe("logout flow", () => {
 		const accountTrigger = await screen.findByRole("button", { name: /Ada Lovelace/i });
 		fireEvent.click(accountTrigger);
 
-		const signOut = await screen.findByText("Sign out");
+		const signOut = await screen.findByText("Sign Out");
 		fireEvent.click(signOut);
 
 		await waitFor(() => {

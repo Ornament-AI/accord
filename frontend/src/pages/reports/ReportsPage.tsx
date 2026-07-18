@@ -93,7 +93,7 @@ export default function ReportsPage() {
 									<div className="flex min-w-[16rem] flex-col gap-2">
 										<Label htmlFor="reports-posted-run">Posted run</Label>
 										<Select
-											value={selectedRunId ?? undefined}
+											value={selectedRunId}
 											onValueChange={(value) => {
 												setSelectedRunId(value || null);
 												setArtifactPage(1);
@@ -104,7 +104,12 @@ export default function ReportsPage() {
 												className="w-full max-w-md"
 												aria-label="Select posted run"
 											>
-												<SelectValue placeholder="Select a posted run" />
+												<SelectValue placeholder="Select a posted run">
+													{(value: string | null) => {
+														const run = postedRuns.find((item) => item.id === value);
+														return run ? postedRunLabel(run) : "Select a posted run";
+													}}
+												</SelectValue>
 											</SelectTrigger>
 											<SelectContent>
 												{postedRuns.map((run) => (

@@ -1385,7 +1385,7 @@ export interface components {
             /** Bank Name */
             bank_name: string;
             /** Branch */
-            branch: string;
+            branch?: string | null;
             /** Ifsc */
             ifsc: string;
             /**
@@ -1401,7 +1401,7 @@ export interface components {
             /** Bank Name */
             bank_name: string;
             /** Branch */
-            branch: string;
+            branch: string | null;
             /** Change Reason */
             change_reason: string | null;
             /**
@@ -1945,7 +1945,7 @@ export interface components {
             /** Basic Pay */
             basic_pay: number | string;
             /** Pay Matrix Level */
-            pay_matrix_level: string;
+            pay_matrix_level?: string | null;
         };
         /** PayVersionResponse */
         PayVersionResponse: {
@@ -1976,7 +1976,7 @@ export interface components {
              */
             id: string;
             /** Pay Matrix Level */
-            pay_matrix_level: string;
+            pay_matrix_level: string | null;
         };
         /** PayrollPeriodCreate */
         PayrollPeriodCreate: {
@@ -2351,16 +2351,10 @@ export interface components {
         };
         /** ProfileInput */
         ProfileInput: {
-            /**
-             * Date Of Birth
-             * Format: date
-             */
-            date_of_birth: string;
-            /**
-             * Date Of Joining
-             * Format: date
-             */
-            date_of_joining: string;
+            /** Date Of Birth */
+            date_of_birth?: string | null;
+            /** Date Of Joining */
+            date_of_joining?: string | null;
             /** Epf Number */
             epf_number?: string | null;
             /** Gpf Account Number */
@@ -2376,7 +2370,7 @@ export interface components {
             pran?: string | null;
             retirement_regime: components["schemas"]["RetirementRegime"];
             /** Sevarth Id */
-            sevarth_id: string;
+            sevarth_id?: string | null;
         };
         /** ProfileVersionResponse */
         ProfileVersionResponse: {
@@ -2392,16 +2386,10 @@ export interface components {
              * Format: uuid
              */
             created_by: string;
-            /**
-             * Date Of Birth
-             * Format: date
-             */
-            date_of_birth: string;
-            /**
-             * Date Of Joining
-             * Format: date
-             */
-            date_of_joining: string;
+            /** Date Of Birth */
+            date_of_birth: string | null;
+            /** Date Of Joining */
+            date_of_joining: string | null;
             /**
              * Effective From
              * Format: date
@@ -2431,7 +2419,7 @@ export interface components {
             /** Retirement Regime */
             retirement_regime: string;
             /** Sevarth Id */
-            sevarth_id: string;
+            sevarth_id: string | null;
         };
         /**
          * QuartersLocation

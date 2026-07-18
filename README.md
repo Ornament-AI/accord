@@ -56,30 +56,19 @@ local PostgreSQL 18 (or use Compose, which includes Postgres).
 # Frontend workspace deps (repo root)
 pnpm install
 
-# Backend venv + deps
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-cd ..
+# One-time: Postgres role/DBs (accord + accord_test), ADR roles, backend venv
+./scripts/dev-setup.sh
+# If Postgres is not running yet (Homebrew):
+# ./scripts/dev-setup.sh --start
 
-# Database roles (ADR 0001) — once per cluster/database; not run by Alembic.
-# Replace REPLACE_WITH_SECRET passwords before non-local use.
-psql -d postgres -f backend/scripts/create_roles.sql
-# Then create/point DATABASE_URL / MIGRATIONS_DATABASE_URL at accord_app /
-# accord_migrator (see backend/.env.example). For a minimal local loop,
-# scripts/start.sh can instead use a single ACCORD_DB_USER role/db
-# (createuser/createdb) without the full role split.
-
-# Migrate (from backend/, with env vars set)
-cd backend && alembic upgrade head && cd ..
-
-# Start API + Vite
+# Start API + Vite (runs alembic upgrade head when migrations exist)
 ./scripts/start.sh
 ```
 
-`./scripts/start.sh` will create the backend venv and run `alembic upgrade head`
-when migrations exist, if you skip the manual steps above.
+`./scripts/dev-setup.sh` creates the simple `ACCORD_DB_USER` / `ACCORD_DB_NAME`
+role and databases that `start.sh` expects, and also applies
+`backend/scripts/create_roles.sql` so ADR DSNs in `backend/.env.example`
+(`accord_app` / `accord_migrator`) work against the same app database.
 
 ### Docker Compose
 

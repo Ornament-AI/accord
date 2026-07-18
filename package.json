@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.34.3",
   "scripts": {
+    "setup": "./scripts/dev-setup.sh",
     "start": "./scripts/start.sh",
     "stop": "./scripts/stop.sh",
     "status": "./scripts/status.sh",

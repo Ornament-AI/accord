@@ -122,7 +122,20 @@ function formatAccordDateParts(date: Date): string {
  */
 export function formatDate(value: Date | string | null | undefined): string {
 	if (value === null || value === undefined) return "-";
-	const date = typeof value === "string" ? new Date(value) : value;
+	let date: Date;
+	if (typeof value === "string") {
+		if (DATE_ONLY_RE.test(value)) {
+			const [year, month, day] = value.split("-").map(Number);
+			date = new Date(year, month - 1, day);
+			if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+				return "-";
+			}
+		} else {
+			date = new Date(value);
+		}
+	} else {
+		date = value;
+	}
 	if (Number.isNaN(date.getTime())) return "-";
 
 	const day = String(date.getDate()).padStart(2, "0");

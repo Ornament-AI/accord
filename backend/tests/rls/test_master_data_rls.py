@@ -513,31 +513,7 @@ def test_gpf_jurisdiction_check_constraint(
         conn.commit()
 
         # Shift validity windows so EXCLUDE does not fire between cases.
-        # gpf + NULL — fails CHECK
-        with pytest.raises(psycopg.Error, match="(?i)check"):
-            conn.execute(
-                "INSERT INTO employee_profile_versions "
-                "(organization_id, header_id, validity, name, sevarth_id, "
-                "date_of_birth, date_of_joining, retirement_regime, "
-                "gpf_jurisdiction, created_by) VALUES "
-                "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
-                (
-                    seed.org_a_id,
-                    employee_id,
-                    date(2026, 2, 1),
-                    date(2026, 3, 1),
-                    "Name",
-                    "SEV-GPF",
-                    date(1990, 1, 1),
-                    date(2015, 1, 1),
-                    "gpf",
-                    None,
-                    seed.created_by,
-                ),
-            )
-        conn.rollback()
-
-        # nps + NULL — ok
+        # gpf + NULL — ok when the source does not state a jurisdiction
         conn.execute(
             "INSERT INTO employee_profile_versions "
             "(organization_id, header_id, validity, name, sevarth_id, "
@@ -549,6 +525,29 @@ def test_gpf_jurisdiction_check_constraint(
                 employee_id,
                 date(2026, 2, 1),
                 date(2026, 3, 1),
+                "Name",
+                "SEV-GPF",
+                date(1990, 1, 1),
+                date(2015, 1, 1),
+                "gpf",
+                None,
+                seed.created_by,
+            ),
+        )
+        conn.commit()
+
+        # nps + NULL — ok
+        conn.execute(
+            "INSERT INTO employee_profile_versions "
+            "(organization_id, header_id, validity, name, sevarth_id, "
+            "date_of_birth, date_of_joining, retirement_regime, "
+            "gpf_jurisdiction, created_by) VALUES "
+            "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
+            (
+                seed.org_a_id,
+                employee_id,
+                date(2026, 3, 1),
+                date(2026, 4, 1),
                 "Name",
                 "SEV-GPF",
                 date(1990, 1, 1),
@@ -571,8 +570,8 @@ def test_gpf_jurisdiction_check_constraint(
                 (
                     seed.org_a_id,
                     employee_id,
-                    date(2026, 3, 1),
                     date(2026, 4, 1),
+                    date(2026, 5, 1),
                     "Name",
                     "SEV-GPF",
                     date(1990, 1, 1),
@@ -594,8 +593,8 @@ def test_gpf_jurisdiction_check_constraint(
             (
                 seed.org_a_id,
                 employee_id,
-                date(2026, 3, 1),
                 date(2026, 4, 1),
+                date(2026, 5, 1),
                 "Name",
                 "SEV-GPF",
                 date(1990, 1, 1),

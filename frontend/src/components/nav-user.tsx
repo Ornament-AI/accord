@@ -116,7 +116,7 @@ export function NavUser({
 								}}
 							>
 								<LogOut size={16} />
-								<span>Sign out</span>
+								<span>Sign Out</span>
 							</button>
 						</SheetContent>
 					</Sheet>
@@ -149,7 +149,7 @@ export function NavUser({
 									onClick={onSignOut}
 								>
 									<LogOut size={16} />
-									<span>Sign out</span>
+									<span>Sign Out</span>
 								</DropdownMenuItem>
 							</DropdownMenuGroup>
 						</DropdownMenuContent>

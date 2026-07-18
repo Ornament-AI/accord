@@ -11,9 +11,8 @@
 # Adapted from Atlas scripts/start.sh (v1.1.0): env vars renamed to the
 # ADR-0003 app-settings matrix (no ATLAS_* app vars), local-Postgres-bootstrap
 # vars renamed ATLAS_DB_* -> ACCORD_DB_*, state dir renamed .atlas-dev ->
-# .accord-dev. No Firebase/WorkOS dev-auth-bypass DB seeding — Accord has no
-# users/auth schema yet (a later auth lane); that step is skipped with a
-# clear message until it lands.
+# .accord-dev. Dev-auth users are created lazily by the backend login route;
+# the launcher only needs to forward the configured local identity.
 
 set -euo pipefail
 
@@ -51,7 +50,11 @@ DATABASE_URL="${DATABASE_URL:-postgresql+asyncpg://$APP_USER:$APP_PASSWORD@$PGHO
 MIGRATIONS_DATABASE_URL="${MIGRATIONS_DATABASE_URL:-$DATABASE_URL}"
 CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT}"
 DEV_AUTH_BYPASS="${DEV_AUTH_BYPASS:-true}"
+DEV_AUTH_EMAIL="${DEV_AUTH_EMAIL:-dev@accord.local}"
+DEV_AUTH_NAME="${DEV_AUTH_NAME:-Dev Test User}"
 SESSION_SECRET_KEY="${SESSION_SECRET_KEY:-dev-only-local-session-secret}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:$FRONTEND_PORT}"
+PUBLIC_APP_URL="${PUBLIC_APP_URL:-$BASE_URL}"
 API_PROXY_TARGET="${API_PROXY_TARGET:-http://127.0.0.1:$BACKEND_PORT}"
 
 mkdir -p "$LOG_DIR"
@@ -142,7 +145,7 @@ if (( START_BACKEND )); then
 	fi
 
 	if ! PGPASSWORD="$APP_PASSWORD" "$PSQL" -h "$PGHOST" -p "$PGPORT" -U "$APP_USER" -d "$APP_DB" -Atqc "SELECT 1" >/dev/null 2>&1; then
-		die "Postgres not ready for $APP_DB at $PGHOST:$PGPORT as $APP_USER. Create the role/database (e.g. 'createuser -s $APP_USER && createdb -O $APP_USER $APP_DB') and retry."
+		die "Postgres not ready for $APP_DB at $PGHOST:$PGPORT as $APP_USER. Run: ./scripts/dev-setup.sh"
 	fi
 	info "Postgres $APP_DB at $PGHOST:$PGPORT"
 fi
@@ -181,18 +184,18 @@ if (( START_BACKEND && !backend_up )); then
 			warn "no migrations found under backend/migrations/versions — skipping alembic upgrade"
 		fi
 
-		if [[ "$DEV_AUTH_BYPASS" == "true" ]]; then
-			warn "skipping dev-auth-bypass user seed: backend auth/user schema not yet available (WorkOS auth lane has not landed). DEV_AUTH_BYPASS is set but no seed user is created."
-		fi
-
 		info "starting backend on http://127.0.0.1:$BACKEND_PORT"
 		nohup env \
 			DATABASE_URL="$DATABASE_URL" \
 			MIGRATIONS_DATABASE_URL="$MIGRATIONS_DATABASE_URL" \
 			ENVIRONMENT=development \
 			DEV_AUTH_BYPASS="$DEV_AUTH_BYPASS" \
+			DEV_AUTH_EMAIL="$DEV_AUTH_EMAIL" \
+			DEV_AUTH_NAME="$DEV_AUTH_NAME" \
 			SESSION_SECRET_KEY="$SESSION_SECRET_KEY" \
 			CORS_ORIGINS="$CORS_ORIGINS" \
+			BASE_URL="$BASE_URL" \
+			PUBLIC_APP_URL="$PUBLIC_APP_URL" \
 			.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT" \
 			</dev/null >>"$LOG_DIR/backend.log" 2>&1 &
 		echo $! >"$STATE_DIR/backend.pid"

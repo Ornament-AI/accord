@@ -99,14 +99,6 @@ Specs share one org per run via `storageState` and `e2e/.auth/run-context.json` 
 - **Suspect:** `idempotent_command` commits the in-progress lease before the executor (`backend/app/services/idempotency.py`), which clears request-scoped RLS `SET LOCAL` GUCs; `_lock_run` (`FOR UPDATE`) then finds no row.
 - **E2E handling:** Main payroll flow strips `Idempotency-Key` via `page.route` (header is optional). A `test.fixme` keeps the failing case documented.
 
-### NotFound flash after org create / shell remount
-
-- **Repro:** Create first organization (or remount after auth state change).
-- **Expected:** Land on Dashboard (`/`).
-- **Actual:** Catch-all “Page not found” while sidebar shows the new org; navigating `/` or Return Home recovers.
-- **Suspect:** `AuthShellBoundary` remounting `RouterProvider` via `shellEpoch` (`AuthContext.tsx` / `App.tsx`).
-- **E2E handling:** `ensureDashboard()` navigates home after org create.
-
 ## Dev auth limitation (maker/checker & reports)
 
 `DevAuthAdapter` (`backend/app/auth/adapters.py`) returns a single identity from `DEV_AUTH_EMAIL` / `DEV_AUTH_NAME` configured at **process startup**. With `DEV_AUTH_BYPASS=true`, `GET /api/auth/login` mints that session immediately (no WorkOS callback).
@@ -119,7 +111,7 @@ Consequences for this lane:
 
 ## Login redirect note
 
-`start.sh` does not forward `PUBLIC_APP_URL` / `BASE_URL`, so the API may redirect to `http://localhost:5173` after login. Helpers rewrite that Location to `http://127.0.0.1:5173` so the host-only session cookie matches Playwright’s `baseURL`.
+`start.sh` defaults `PUBLIC_APP_URL` / `BASE_URL` to `http://127.0.0.1:5173`, matching Playwright’s `baseURL`, and forwards `DEV_AUTH_EMAIL` / `DEV_AUTH_NAME` to the backend. Override those values before startup when testing a second local identity.
 
 ## Axe policy
 
@@ -134,6 +126,10 @@ reports *generate* journey stays skipped under the single dev-auth identity).
 
 Three real defects were driven out and fixed:
 
+- **Fixed (harness)** — dev-login interception now stops at the backend 302 before
+  rewriting its host. Following the redirect inside `route.fetch()` left the browser
+  URL on `/api/auth/login` while serving SPA HTML, which correctly rendered the
+  catch-all page.
 - **Fixed** — `PUT /api/payroll-runs/{id}/inputs/...` 500: response is now built
   before commit (a post-commit `db.refresh` ran under cleared RLS GUCs).
 - **Fixed** — submit/approve with `Idempotency-Key` 404: `idempotent_command`

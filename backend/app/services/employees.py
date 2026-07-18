@@ -61,7 +61,7 @@ def _integrity_is(exc: BaseException, *types: type[BaseException]) -> bool:
 def _profile_values(profile: ProfileInput) -> dict[str, Any]:
     return {
         "name": profile.name.strip(),
-        "sevarth_id": profile.sevarth_id.strip(),
+        "sevarth_id": profile.sevarth_id.strip() if profile.sevarth_id is not None else None,
         "pan": profile.pan,
         "date_of_birth": profile.date_of_birth,
         "date_of_joining": profile.date_of_joining,
@@ -87,7 +87,9 @@ def _posting_values(posting: PostingInput) -> dict[str, Any]:
 
 def _pay_values(pay: PayInput) -> dict[str, Any]:
     return {
-        "pay_matrix_level": pay.pay_matrix_level.strip(),
+        "pay_matrix_level": (
+            pay.pay_matrix_level.strip() if pay.pay_matrix_level is not None else None
+        ),
         "basic_pay": pay.basic_pay,
     }
 
@@ -97,7 +99,7 @@ def _bank_values(bank: BankInput) -> dict[str, Any]:
         "account_number": bank.account_number.strip(),
         "ifsc": bank.ifsc.strip(),
         "bank_name": bank.bank_name.strip(),
-        "branch": bank.branch.strip(),
+        "branch": bank.branch.strip() if bank.branch is not None else None,
         "is_primary_salary": bank.is_primary_salary,
     }
 

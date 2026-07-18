@@ -84,10 +84,10 @@ class ProfileInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
-    sevarth_id: str = Field(min_length=1)
+    sevarth_id: str | None = Field(default=None, min_length=1)
     pan: str | None = None
-    date_of_birth: date
-    date_of_joining: date
+    date_of_birth: date | None = None
+    date_of_joining: date | None = None
     retirement_regime: RetirementRegime
     gpf_jurisdiction: GpfJurisdiction | None = None
     pran: str | None = None
@@ -97,10 +97,7 @@ class ProfileInput(BaseModel):
 
     @model_validator(mode="after")
     def _regime_jurisdiction_coupling(self) -> Self:
-        if self.retirement_regime == RetirementRegime.GPF:
-            if self.gpf_jurisdiction is None:
-                raise ValueError("gpf_jurisdiction is required when retirement_regime is 'gpf'")
-        elif self.gpf_jurisdiction is not None:
+        if self.retirement_regime != RetirementRegime.GPF and self.gpf_jurisdiction is not None:
             raise ValueError(
                 "gpf_jurisdiction must be absent when retirement_regime is "
                 f"'{self.retirement_regime.value}'"
@@ -120,7 +117,7 @@ class PostingInput(BaseModel):
 class PayInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    pay_matrix_level: str = Field(min_length=1)
+    pay_matrix_level: str | None = Field(default=None, min_length=1)
     basic_pay: MoneyAmount
 
 
@@ -130,7 +127,7 @@ class BankInput(BaseModel):
     account_number: str = Field(min_length=1)
     ifsc: str = Field(min_length=1)
     bank_name: str = Field(min_length=1)
-    branch: str = Field(min_length=1)
+    branch: str | None = Field(default=None, min_length=1)
     is_primary_salary: bool = True
 
 
@@ -171,10 +168,10 @@ class ProfileVersionResponse(BaseModel):
     effective_from: date
     effective_to: date | None
     name: str
-    sevarth_id: str
+    sevarth_id: str | None
     pan: str | None
-    date_of_birth: date
-    date_of_joining: date
+    date_of_birth: date | None
+    date_of_joining: date | None
     retirement_regime: str
     gpf_jurisdiction: str | None
     pran: str | None
@@ -203,7 +200,7 @@ class PayVersionResponse(BaseModel):
     id: UUID
     effective_from: date
     effective_to: date | None
-    pay_matrix_level: str
+    pay_matrix_level: str | None
     basic_pay: MoneyAmount
     created_at: datetime
     created_by: UUID
@@ -217,7 +214,7 @@ class BankVersionResponse(BaseModel):
     account_number: str
     ifsc: str
     bank_name: str
-    branch: str
+    branch: str | None
     is_primary_salary: bool
     created_at: datetime
     created_by: UUID

@@ -170,12 +170,12 @@ async def test_create_rejects_numeric_basic_pay(client, session, dev_settings):
 
 
 @pytest.mark.asyncio
-async def test_create_rejects_gpf_without_jurisdiction(client, session, dev_settings):
+async def test_create_allows_gpf_with_unknown_jurisdiction(client, session, dev_settings):
     _, _, office, unit, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id)
     del payload["profile"]["gpf_jurisdiction"]
     resp = await client.post("/api/employees", json=payload)
-    assert resp.status_code == 422
+    assert resp.status_code == 201
 
 
 @pytest.mark.asyncio
@@ -190,6 +190,31 @@ async def test_create_rejects_nps_with_jurisdiction(client, session, dev_setting
     payload["profile"]["gpf_jurisdiction"] = "mumbai"
     resp = await client.post("/api/employees", json=payload)
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_allows_unknown_legacy_profile_fields(client, session, dev_settings):
+    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    payload = _create_payload(
+        office_id=office.id,
+        unit_id=unit.id,
+        post_id=post.id,
+        regime="nps",
+    )
+    payload["profile"]["sevarth_id"] = None
+    payload["profile"]["date_of_birth"] = None
+    payload["profile"]["date_of_joining"] = None
+    payload["pay"]["pay_matrix_level"] = None
+    payload["bank"]["branch"] = None
+
+    created = await _create_employee(client, payload)
+
+    assert created["profile"]["sevarth_id"] is None
+    assert created["profile"]["date_of_birth"] is None
+    assert created["profile"]["date_of_joining"] is None
+    assert created["pay"]["pay_matrix_level"] is None
+    assert created["pay"]["basic_pay"] == "50732.00"
+    assert created["bank"]["branch"] is None
 
 
 # --- Pay as_of boundary -----------------------------------------------------------

@@ -73,10 +73,10 @@ employee_profile_versions = Table(
     ),
     Column("validity", DATERANGE(), nullable=False),
     Column("name", Text, nullable=False),
-    Column("sevarth_id", Text, nullable=False),
+    Column("sevarth_id", Text, nullable=True),
     Column("pan", Text, nullable=True),
-    Column("date_of_birth", Date, nullable=False),
-    Column("date_of_joining", Date, nullable=False),
+    Column("date_of_birth", Date, nullable=True),
+    Column("date_of_joining", Date, nullable=True),
     Column("retirement_regime", Text, nullable=False),
     Column("gpf_jurisdiction", Text, nullable=True),
     Column("pran", Text, nullable=True),
@@ -103,8 +103,7 @@ employee_profile_versions = Table(
         name="ck_employee_profile_versions_gpf_jurisdiction",
     ),
     CheckConstraint(
-        "(retirement_regime = 'gpf' AND gpf_jurisdiction IS NOT NULL) OR "
-        "(retirement_regime <> 'gpf' AND gpf_jurisdiction IS NULL)",
+        "retirement_regime = 'gpf' OR gpf_jurisdiction IS NULL",
         name="ck_employee_profile_versions_gpf_jurisdiction_regime",
     ),
     ExcludeConstraint(
@@ -208,7 +207,7 @@ employee_pay_versions = Table(
         nullable=False,
     ),
     Column("validity", DATERANGE(), nullable=False),
-    Column("pay_matrix_level", Text, nullable=False),
+    Column("pay_matrix_level", Text, nullable=True),
     Column("basic_pay", Numeric(12, 2), nullable=False),
     Column(
         "created_at",
@@ -255,7 +254,7 @@ employee_bank_account_versions = Table(
     Column("account_number", Text, nullable=False),
     Column("ifsc", Text, nullable=False),
     Column("bank_name", Text, nullable=False),
-    Column("branch", Text, nullable=False),
+    Column("branch", Text, nullable=True),
     Column(
         "is_primary_salary",
         Boolean,
