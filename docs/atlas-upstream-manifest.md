@@ -9,7 +9,7 @@ files (not guessed).
 
 - Repo path: `/Users/darshan/Documents/GitHub/atlas`
 - Commit: `4d5d1f980f3b17144cc6f6173974ff9205fb573a`
-- Tag: TBD (to be filled when release tag is cut)
+- Tag: `v1.1.0` (annotated, local — not yet pushed; cut 2026-07-17 at commit `4d5d1f980f3b17144cc6f6173974ff9205fb573a` after Gate A verification: 19/19 checks, 1519 backend + 1155 frontend tests, 0 skipped, v1.0.0→HEAD migration replay verified)
 
 Verified with: `git -C /Users/darshan/Documents/GitHub/atlas rev-parse HEAD`
 
