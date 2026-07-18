@@ -1,0 +1,15 @@
+# Development- and test-only dependencies.
+# These are NOT installed into the production Docker image (backend/Dockerfile
+# only installs requirements.txt).
+
+# Sync Postgres driver reserved for a later migration-test harness.
+# The application itself talks to Postgres via asyncpg.
+psycopg[binary]==3.3.4
+
+# Test runner and async HTTP client used only in backend/tests/.
+httpx==0.28.1
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# Backend linting. Kept in dev deps so production images stay lean.
+ruff==0.15.20
