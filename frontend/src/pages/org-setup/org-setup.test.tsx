@@ -188,18 +188,41 @@ describe("Org setup capability gating", () => {
 	);
 
 	it(
-		"redirects /organization and /organization/settings to offices",
+		"redirects /organization to offices",
 		async () => {
 			await setupPage("/organization");
 			expect(
 				await screen.findByTestId("offices-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+});
 
-			queryClient.clear();
+describe("Org settings page", () => {
+	beforeEach(() => {
+		queryClient.clear();
+		vi.clearAllMocks();
+	});
+
+	it(
+		"updates settings on the happy path with a success toast",
+		async () => {
+			const { toast } = await import("sonner");
 			await setupPage("/organization/settings");
 			expect(
-				await screen.findByTestId("offices-page", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByTestId("settings-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
+			expect(await screen.findByTestId("settings-tab")).toBeInTheDocument();
+			expect(screen.getByLabelText("Locale")).toHaveValue("en-IN");
+
+			fireEvent.change(screen.getByLabelText("Locale"), { target: { value: "en-GB" } });
+			fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "GBP" } });
+			fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+			await waitFor(() => {
+				expect(toast.success).toHaveBeenCalledWith("Organization settings saved");
+			});
 		},
 		PAGE_TIMEOUT,
 	);

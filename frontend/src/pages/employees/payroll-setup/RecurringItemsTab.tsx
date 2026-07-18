@@ -411,12 +411,14 @@ type VersionForm = {
 	effective_from: string;
 	amount: string;
 	rate: string;
+	change_reason: string;
 };
 
 const emptyVersionForm = (): VersionForm => ({
 	effective_from: "",
 	amount: "",
 	rate: "",
+	change_reason: "",
 });
 
 function NewVersionDialog({
@@ -485,7 +487,7 @@ function NewVersionDialog({
 					effective_from: form.effective_from,
 					amount: hasAmount ? form.amount.trim() : null,
 					rate: hasRate ? form.rate.trim() : null,
-					change_reason: null,
+					change_reason: form.change_reason.trim() || null,
 				},
 			});
 			onOpenChange(false);
@@ -560,6 +562,19 @@ function NewVersionDialog({
 							/>
 						</div>
 
+						<div className="grid gap-2">
+							<Label htmlFor="nv-ri-change-reason">Change Reason (Optional)</Label>
+							<Textarea
+								id="nv-ri-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
+
 						{overlapError ? (
 							<p className="text-sm text-destructive" role="alert">
 								{overlapError}
@@ -607,10 +622,12 @@ function NewVersionDialog({
 
 type EndForm = {
 	end_on: string;
+	change_reason: string;
 };
 
 const emptyEndForm = (): EndForm => ({
 	end_on: "",
+	change_reason: "",
 });
 
 function EndInstructionDialog({
@@ -653,7 +670,7 @@ function EndInstructionDialog({
 				instructionId: instruction.id,
 				body: {
 					end_on: form.end_on,
-					change_reason: null,
+					change_reason: form.change_reason.trim() || null,
 				},
 			});
 			onOpenChange(false);
@@ -695,6 +712,19 @@ function EndInstructionDialog({
 								disabled={isSubmitting}
 								className="w-full"
 								placeholder="End On"
+							/>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="end-ri-change-reason">Change Reason (Optional)</Label>
+							<Textarea
+								id="end-ri-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
 							/>
 						</div>
 

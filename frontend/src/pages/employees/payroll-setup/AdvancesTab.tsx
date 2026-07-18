@@ -31,6 +31,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	ADVANCE_TYPES,
@@ -201,6 +202,7 @@ type AddAdvanceForm = {
 	installment_amount: string;
 	installments_recovered_opening: string;
 	installments_total: string;
+	change_reason: string;
 };
 
 const emptyAddForm = (): AddAdvanceForm => ({
@@ -212,6 +214,7 @@ const emptyAddForm = (): AddAdvanceForm => ({
 	installment_amount: "",
 	installments_recovered_opening: "0",
 	installments_total: "",
+	change_reason: "",
 });
 
 function AddAdvanceDialog({
@@ -467,6 +470,7 @@ type InstallmentVersionForm = {
 	installment_amount: string;
 	installments_recovered_opening: string;
 	installments_total: string;
+	change_reason: string;
 };
 
 const emptyVersionForm = (): InstallmentVersionForm => ({
@@ -474,6 +478,7 @@ const emptyVersionForm = (): InstallmentVersionForm => ({
 	installment_amount: "",
 	installments_recovered_opening: "0",
 	installments_total: "",
+	change_reason: "",
 });
 
 function NewInstallmentVersionDialog({
@@ -527,7 +532,7 @@ function NewInstallmentVersionDialog({
 					installment_amount: form.installment_amount.trim(),
 					installments_recovered_opening: Number(form.installments_recovered_opening),
 					installments_total: Number(form.installments_total),
-					change_reason: null,
+					change_reason: form.change_reason.trim() || null,
 				},
 			});
 			onOpenChange(false);
@@ -618,6 +623,19 @@ function NewInstallmentVersionDialog({
 									setForm((prev) => ({ ...prev, installments_total: event.target.value }))
 								}
 								disabled={isSubmitting}
+							/>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="niv-change-reason">Change Reason (Optional)</Label>
+							<Textarea
+								id="niv-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
 							/>
 						</div>
 

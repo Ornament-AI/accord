@@ -284,7 +284,8 @@ describe("Pay component detail page", () => {
 				{ timeout: PAGE_TIMEOUT },
 			);
 			expect(page).toBeInTheDocument();
-			expect(within(page).getByRole("heading", { name: "Basic Pay" })).toBeInTheDocument();
+			expect(within(page).getByRole("heading", { name: "BASIC" })).toBeInTheDocument();
+			expect(within(page).getByText("Basic Pay")).toBeInTheDocument();
 			expect(within(page).getByText("50000.00")).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 		},

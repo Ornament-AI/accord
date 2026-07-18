@@ -104,10 +104,26 @@ describe("capability-aware sidebar nav", () => {
 			"href",
 			"/organization/employee-groups",
 		);
-		expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+			"href",
+			"/organization/settings",
+		);
 
 		const folderTrigger = screen.getByRole("button", { name: /^Organization$/i });
 		expect(folderTrigger).toHaveAttribute("data-active", "false");
 		expect(screen.getByRole("link", { name: "Offices" })).toHaveAttribute("data-active", "true");
+	});
+
+	it("hides Settings for roles without manage_organization", async () => {
+		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("payroll_reviewer") });
+		server.use(...handlers);
+
+		renderSidebar("/organization/offices");
+
+		await waitFor(() => {
+			expect(screen.getByText("Organization")).toBeInTheDocument();
+		});
+		expect(screen.getByRole("link", { name: "Offices" })).toBeInTheDocument();
+		expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 	});
 });

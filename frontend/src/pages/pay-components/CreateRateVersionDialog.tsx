@@ -21,6 +21,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	CALC_KINDS,
@@ -55,6 +56,7 @@ type FormState = {
 	amount: string;
 	rate: string;
 	basis: string[];
+	change_reason: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -64,6 +66,7 @@ const emptyForm = (): FormState => ({
 	amount: "",
 	rate: "",
 	basis: [],
+	change_reason: "",
 });
 
 export function CreateRateVersionDialog({
@@ -114,7 +117,7 @@ export function CreateRateVersionDialog({
 			effective_from: form.effective_from,
 			calc_kind: form.calc_kind,
 			rounding_rule: form.rounding_rule,
-			change_reason: null,
+			change_reason: form.change_reason.trim() || null,
 		};
 
 		if (showAmount) {
@@ -308,6 +311,19 @@ export function CreateRateVersionDialog({
 									))}
 								</SelectContent>
 							</Select>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="create-rv-change-reason">Change Reason (Optional)</Label>
+							<Textarea
+								id="create-rv-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
 						</div>
 
 						{overlapError ? (

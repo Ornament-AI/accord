@@ -20,6 +20,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
 	type BankVersionResponse,
 	type EmployeeVersionKind,
@@ -111,6 +112,7 @@ export function ScheduleChangeDialog({
 	);
 
 	const [effectiveFrom, setEffectiveFrom] = useState(todayApiDate());
+	const [changeReason, setChangeReason] = useState("");
 	const [overlapError, setOverlapError] = useState<string | null>(null);
 	const [formError, setFormError] = useState<string | null>(null);
 
@@ -190,7 +192,7 @@ export function ScheduleChangeDialog({
 	const buildBody = (): Record<string, unknown> | null => {
 		const base = {
 			effective_from: effectiveFrom,
-			change_reason: null,
+			change_reason: changeReason.trim() || null,
 		};
 
 		if (kind === "profile") {
@@ -562,6 +564,17 @@ export function ScheduleChangeDialog({
 								</div>
 							</>
 						) : null}
+
+						<div className="grid gap-2">
+							<Label htmlFor="schedule-change-reason">Change Reason</Label>
+							<Textarea
+								id="schedule-change-reason"
+								value={changeReason}
+								onChange={(event) => setChangeReason(event.target.value)}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
 
 						{overlapError ? (
 							<p className="text-sm text-destructive" role="alert">

@@ -44,6 +44,11 @@ export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
 			{ title: "Payroll Units", path: "/organization/payroll-units" },
 			{ title: "Posts", path: "/organization/posts" },
 			{ title: "Employee Groups", path: "/organization/employee-groups" },
+			{
+				title: "Settings",
+				path: "/organization/settings",
+				capability: "manage_organization",
+			},
 		],
 	},
 	{

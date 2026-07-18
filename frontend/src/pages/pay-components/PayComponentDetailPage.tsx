@@ -150,7 +150,7 @@ export default function PayComponentDetailPage() {
 	return (
 		<CapabilityGate capability="view_master_data" title="Pay component">
 			<AppLayout
-				title={component ? <PayComponentBreadcrumb label={component.name} /> : "Pay component"}
+				title={component ? <PayComponentBreadcrumb label={component.code} /> : "Pay component"}
 				actions={
 					canManage ? (
 						<Button size="xs" onClick={() => setCreateOpen(true)}>
@@ -178,7 +178,8 @@ export default function PayComponentDetailPage() {
 						<>
 							<PageSection>
 								<div className="flex flex-wrap items-center gap-3">
-									<h2 className="text-xl font-semibold tracking-tight">{component.name}</h2>
+									<h2 className="text-xl font-semibold tracking-tight">{component.code}</h2>
+									<span className="text-muted-foreground">{component.name}</span>
 									<Badge variant="secondary">{classificationLabel(component.classification)}</Badge>
 									<Badge variant={component.is_active ? "default" : "outline"}>
 										{component.is_active ? "Active" : "Inactive"}

@@ -32,6 +32,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
@@ -178,6 +179,7 @@ type AddAssignmentForm = {
 	effective_from: string;
 	license_fee: string;
 	informational_hra_foregone: string;
+	change_reason: string;
 };
 
 const emptyAddForm = (): AddAssignmentForm => ({
@@ -186,6 +188,7 @@ const emptyAddForm = (): AddAssignmentForm => ({
 	effective_from: "",
 	license_fee: "",
 	informational_hra_foregone: "",
+	change_reason: "",
 });
 
 function AddAssignmentDialog({
@@ -395,12 +398,14 @@ type ChargeVersionForm = {
 	effective_from: string;
 	license_fee: string;
 	informational_hra_foregone: string;
+	change_reason: string;
 };
 
 const emptyChargeForm = (): ChargeVersionForm => ({
 	effective_from: "",
 	license_fee: "",
 	informational_hra_foregone: "",
+	change_reason: "",
 });
 
 function NewChargeVersionDialog({
@@ -457,7 +462,7 @@ function NewChargeVersionDialog({
 					effective_from: form.effective_from,
 					license_fee: form.license_fee.trim(),
 					informational_hra_foregone: foregone || null,
-					change_reason: null,
+					change_reason: form.change_reason.trim() || null,
 				},
 			});
 			onOpenChange(false);
@@ -535,6 +540,19 @@ function NewChargeVersionDialog({
 								}
 								disabled={isSubmitting}
 								placeholder="0.00"
+							/>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="ncv-change-reason">Change Reason (Optional)</Label>
+							<Textarea
+								id="ncv-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
 							/>
 						</div>
 

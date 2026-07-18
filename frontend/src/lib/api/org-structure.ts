@@ -19,6 +19,9 @@ export type EmployeeGroupResponse = components["schemas"]["EmployeeGroupResponse
 export type EmployeeGroupCreate = components["schemas"]["EmployeeGroupCreate"];
 export type EmployeeGroupUpdate = components["schemas"]["EmployeeGroupUpdate"];
 
+export type OrganizationSettingsResponse = components["schemas"]["OrganizationSettingsResponse"];
+export type OrganizationSettingsUpdate = components["schemas"]["OrganizationSettingsUpdate"];
+
 export type OfficeJurisdiction = OfficeCreate["jurisdiction"];
 
 export const orgStructureQueryKeys = {
@@ -27,6 +30,7 @@ export const orgStructureQueryKeys = {
 	payrollUnits: () => ["org-structure", "payroll-units"] as const,
 	posts: () => ["org-structure", "posts"] as const,
 	employeeGroups: () => ["org-structure", "employee-groups"] as const,
+	organizationSettings: () => ["org-structure", "organization-settings"] as const,
 };
 
 export function listOffices() {
@@ -103,6 +107,18 @@ export function createEmployeeGroup(body: EmployeeGroupCreate) {
 
 export function updateEmployeeGroup(employeeGroupId: string, body: EmployeeGroupUpdate) {
 	return fetchJson<EmployeeGroupResponse>(`/api/employee-groups/${employeeGroupId}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
+export function getOrganizationSettings() {
+	return fetchJson<OrganizationSettingsResponse>("/api/organization-settings");
+}
+
+export function updateOrganizationSettings(body: OrganizationSettingsUpdate) {
+	return fetchJson<OrganizationSettingsResponse>("/api/organization-settings", {
 		method: "PATCH",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(body),
@@ -222,6 +238,25 @@ export function useUpdateEmployeeGroup() {
 		}) => updateEmployeeGroup(employeeGroupId, body),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: orgStructureQueryKeys.employeeGroups() });
+		},
+	});
+}
+
+export function useOrganizationSettings() {
+	return useQuery({
+		queryKey: orgStructureQueryKeys.organizationSettings(),
+		queryFn: getOrganizationSettings,
+	});
+}
+
+export function useUpdateOrganizationSettings() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: updateOrganizationSettings,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({
+				queryKey: orgStructureQueryKeys.organizationSettings(),
+			});
 		},
 	});
 }
