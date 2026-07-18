@@ -40,6 +40,7 @@ import {
 	type PayrollRunCalculateResult,
 	type PayrollRunInputResponse,
 	type PayrollRunTotals,
+	type PayrollRunValidateResult,
 	parsePayrollRunVersion,
 	periodLabel,
 	runTypeLabel,
@@ -52,6 +53,7 @@ import { getErrorMessage } from "@/lib/errors";
 
 import { RunStatusBadge } from "./run-status-badge";
 import { UpsertInputDialog } from "./UpsertInputDialog";
+import { ValidationFindingsPanel, WorkflowActionBar } from "./workflow";
 
 declare module "@tanstack/react-table" {
 	interface ColumnMeta<TData extends RowData, TValue> {
@@ -218,6 +220,7 @@ export default function PayRunDetailPage() {
 	const [lastCalculateResult, setLastCalculateResult] = useState<PayrollRunCalculateResult | null>(
 		null,
 	);
+	const [validationResult, setValidationResult] = useState<PayrollRunValidateResult | null>(null);
 
 	const runQuery = usePayrollRun(runId);
 	const inputsQuery = usePayrollRunInputs(runId);
@@ -261,6 +264,7 @@ export default function PayRunDetailPage() {
 		try {
 			const result = await calculateMutation.mutateAsync();
 			setLastCalculateResult(result);
+			setValidationResult(null);
 			toast.success("Pay run calculated");
 		} catch (error) {
 			toast.error(getErrorMessage(error, "Failed to calculate pay run."));
@@ -361,6 +365,16 @@ export default function PayRunDetailPage() {
 										</Badge>
 									) : null}
 								</div>
+							</PageSection>
+
+							<PageSection className="grid gap-3">
+								<WorkflowActionBar
+									run={run}
+									versionInfo={versionInfo}
+									onValidated={setValidationResult}
+									onRefresh={() => void runQuery.refetch()}
+								/>
+								{validationResult ? <ValidationFindingsPanel result={validationResult} /> : null}
 							</PageSection>
 
 							<PageSection className="grid gap-3">
