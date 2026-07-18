@@ -1,0 +1,108 @@
+import { expect, type Page } from "@playwright/test";
+
+/**
+ * Dev auth bypass (backend DevAuthAdapter): GET /api/auth/login establishes a
+ * session immediately and redirects — there is no WorkOS round-trip. Identity
+ * email/name come from DEV_AUTH_EMAIL / DEV_AUTH_NAME read at backend process
+ * startup, so a second UI identity is impossible without restarting uvicorn.
+ *
+ * start.sh does not forward PUBLIC_APP_URL/BASE_URL, so the login redirect
+ * Location often points at http://localhost:5173 while Playwright uses
+ * http://127.0.0.1:5173. We rewrite that Location so the session cookie
+ * (host-only for 127.0.0.1) stays on the Playwright origin.
+ */
+export async function loginViaDevBypass(page: Page): Promise<void> {
+	await page.route("**/api/auth/login**", async (route) => {
+		const response = await route.fetch();
+		const headers = { ...response.headers() };
+		const location = headers.location ?? headers.Location;
+		if (typeof location === "string" && location.includes("://localhost:5173")) {
+			headers.location = location.replace("://localhost:5173", "://127.0.0.1:5173");
+			delete headers.Location;
+		}
+		await route.fulfill({
+			status: response.status(),
+			headers,
+			body: await response.body(),
+		});
+	});
+
+	await page.goto("/login");
+	await expect(page.getByRole("heading", { name: "Welcome" })).toBeVisible();
+	await page.getByRole("button", { name: "Sign in" }).click();
+	await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 30_000 });
+}
+
+/**
+ * After AuthShellBoundary remounts RouterProvider (org create / switch / login
+ * with existing memberships), the UI can land on the catch-all NotFound page
+ * while still authenticated. Recover by navigating home.
+ *
+ * APP BUG (do not patch src in this lane): remounting `<RouterProvider>` via
+ * `AuthShellBoundary` + `shellEpoch` after createOrganization can leave the
+ * matched route on `*` ("Page not found") even though `window.location` is `/`.
+ * Suspected files: `frontend/src/contexts/AuthContext.tsx` (remountShell),
+ * `frontend/src/App.tsx` (AuthShellBoundary wrapping RouterProvider).
+ */
+export async function ensureDashboard(page: Page): Promise<void> {
+	const notFound = page.getByText("Page not found");
+	if (await notFound.isVisible().catch(() => false)) {
+		const home = page.getByRole("link", { name: "Return Home" });
+		if (await home.isVisible().catch(() => false)) {
+			await home.click();
+		} else {
+			await page.goto("/");
+		}
+	} else if (!page.url().endsWith("/") && !new URL(page.url()).pathname.endsWith("/")) {
+		await page.goto("/");
+	}
+
+	if (!(await page.getByTestId("dashboard-page").isVisible().catch(() => false))) {
+		await page.goto("/");
+	}
+
+	await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 30_000 });
+}
+
+export async function fillCreateOrganizationDialog(
+	page: Page,
+	opts: { name: string; slug: string },
+): Promise<void> {
+	const dialog = page.getByRole("dialog");
+	await expect(dialog.getByRole("heading", { name: "Create organization" })).toBeVisible();
+	await dialog.getByLabel("Name").fill(opts.name);
+	await dialog.getByLabel("Slug").fill(opts.slug);
+	await dialog.getByRole("button", { name: "Create organization" }).click();
+	await expect(dialog).toBeHidden({ timeout: 30_000 });
+}
+
+export async function createOrganization(
+	page: Page,
+	opts: { name: string; slug: string },
+): Promise<void> {
+	const createButton = page.getByRole("button", { name: "Create organization" });
+	await expect(createButton).toBeVisible({ timeout: 30_000 });
+	await createButton.click();
+	await fillCreateOrganizationDialog(page, opts);
+}
+
+/** Create org from NoOrganizationPage, or from the org switcher if already a member. */
+export async function ensureUniqueOrganization(
+	page: Page,
+	opts: { name: string; slug: string },
+): Promise<void> {
+	const noOrgTitle = page.getByText("Create your first organization");
+	if (await noOrgTitle.isVisible().catch(() => false)) {
+		await createOrganization(page, opts);
+		await ensureDashboard(page);
+		return;
+	}
+
+	// Already authenticated into some org (e.g. retry after a prior create).
+	await ensureDashboard(page);
+	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();
+	await switcher.click();
+	await page.getByRole("menuitem", { name: "Create organization" }).click();
+	await fillCreateOrganizationDialog(page, opts);
+	await ensureDashboard(page);
+}
