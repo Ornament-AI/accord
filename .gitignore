@@ -51,3 +51,6 @@ postgres-data/
 # TypeScript incremental build state
 *.tsbuildinfo
 dist-config/
+
+# Local dev orchestration state (scripts/start.sh)
+.accord-dev/
