@@ -210,8 +210,8 @@ export function ScheduleChangeDialog({
 				pran: pran.trim() || null,
 				gpf_account_number: gpfAccountNumber.trim() || null,
 				epf_number: epfNumber.trim() || null,
-				date_of_birth: dateOfBirth,
-				date_of_joining: dateOfJoining,
+				date_of_birth: dateOfBirth.trim() || null,
+				date_of_joining: dateOfJoining.trim() || null,
 			};
 		}
 		if (kind === "posting") {

@@ -39,6 +39,7 @@ import {
 	usePayrollUnitsList,
 	usePostsList,
 } from "@/lib/api/org-structure";
+import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/utils";
 
@@ -66,19 +67,22 @@ function displayValue(value: string | number | boolean | null | undefined): stri
 	return String(value);
 }
 
-function labeledRef(id: string | null | undefined, lookup: Map<string, { name: string }>): string {
+function labeledRef(
+	id: string | null | undefined,
+	lookup: Map<string, { name?: string | null; code?: string | null }>,
+): string {
 	if (!id) return "—";
 	const item = lookup.get(id);
-	return item?.name?.trim() || "—";
+	return item ? namedEntityLabel(item, id) : id;
 }
 
 function labeledPostRef(
 	id: string | null | undefined,
-	lookup: Map<string, { designation: string }>,
+	lookup: Map<string, { designation?: string | null }>,
 ): string {
 	if (!id) return "—";
 	const item = lookup.get(id);
-	return item?.designation?.trim() || "—";
+	return item ? postEntityLabel(item, id) : id;
 }
 
 function EmployeeBreadcrumb({ label }: { label: string }) {
