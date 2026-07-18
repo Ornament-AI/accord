@@ -78,16 +78,23 @@ export async function pickDateWithin(
 	const dataDay = target.toLocaleDateString();
 	await scope.getByLabel(label).click();
 
-	const targetIndex = year * 12 + (month - 1);
-	const now = new Date();
-	let cursorIndex = now.getFullYear() * 12 + now.getMonth();
-	while (cursorIndex !== targetIndex) {
-		if (cursorIndex > targetIndex) {
-			await page.getByRole("button", { name: "Go to the Previous Month" }).click();
-			cursorIndex -= 1;
-		} else {
-			await page.getByRole("button", { name: "Go to the Next Month" }).click();
-			cursorIndex += 1;
+	const content = page.locator('[data-slot="date-picker-content"]');
+	const dropdowns = content.locator("select");
+	if ((await dropdowns.count()) >= 2) {
+		await dropdowns.nth(0).selectOption(String(month - 1));
+		await dropdowns.nth(1).selectOption(String(year));
+	} else {
+		const targetIndex = year * 12 + (month - 1);
+		const now = new Date();
+		let cursorIndex = now.getFullYear() * 12 + now.getMonth();
+		while (cursorIndex !== targetIndex) {
+			if (cursorIndex > targetIndex) {
+				await page.getByRole("button", { name: "Go to the Previous Month" }).click();
+				cursorIndex -= 1;
+			} else {
+				await page.getByRole("button", { name: "Go to the Next Month" }).click();
+				cursorIndex += 1;
+			}
 		}
 	}
 

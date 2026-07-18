@@ -315,18 +315,20 @@ describe("CreateEmployeeDialog", () => {
 		expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent("None");
 
 		openBaseUiSelect(screen.getByRole("combobox", { name: "Office" }));
-		expect(await screen.findByRole("option", { name: "Head Office" })).toBeInTheDocument();
-		expect(screen.getByRole("option", { name: "Regional Office" })).toBeInTheDocument();
-		pickBaseUiOption("Head Office");
+		expect(await screen.findByRole("option", { name: "Head Office (HO)" })).toBeInTheDocument();
+		expect(screen.getByRole("option", { name: "Regional Office (RO)" })).toBeInTheDocument();
+		pickBaseUiOption("Head Office (HO)");
 		await waitFor(() => {
-			expect(screen.getByRole("combobox", { name: "Office" })).toHaveTextContent("Head Office");
+			expect(screen.getByRole("combobox", { name: "Office" })).toHaveTextContent(
+				"Head Office (HO)",
+			);
 		});
 
 		openBaseUiSelect(screen.getByRole("combobox", { name: "Payroll Unit" }));
-		pickBaseUiOption("HQ Payroll");
+		pickBaseUiOption("HQ Payroll (PU-HQ)");
 		await waitFor(() => {
 			expect(screen.getByRole("combobox", { name: "Payroll Unit" })).toHaveTextContent(
-				"HQ Payroll",
+				"HQ Payroll (PU-HQ)",
 			);
 		});
 
@@ -337,9 +339,11 @@ describe("CreateEmployeeDialog", () => {
 		});
 
 		openBaseUiSelect(screen.getByRole("combobox", { name: "Employee Group" }));
-		pickBaseUiOption("Group A");
+		pickBaseUiOption("Group A (GRP-A)");
 		await waitFor(() => {
-			expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent("Group A");
+			expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent(
+				"Group A (GRP-A)",
+			);
 		});
 	});
 });
@@ -458,17 +462,23 @@ describe("ScheduleChangeDialog", () => {
 		expect(screen.queryByText("Post ID")).not.toBeInTheDocument();
 
 		expect(await screen.findByRole("combobox", { name: "Office" })).toHaveTextContent(
-			"Head Office",
+			"Head Office (HO)",
 		);
-		expect(screen.getByRole("combobox", { name: "Payroll Unit" })).toHaveTextContent("HQ Payroll");
+		expect(screen.getByRole("combobox", { name: "Payroll Unit" })).toHaveTextContent(
+			"HQ Payroll (PU-HQ)",
+		);
 		expect(screen.getByRole("combobox", { name: "Post" })).toHaveTextContent("Clerk");
-		expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent("Group A");
+		expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent(
+			"Group A (GRP-A)",
+		);
 
 		openBaseUiSelect(screen.getByRole("combobox", { name: "Office" }));
-		expect(await screen.findByRole("option", { name: "Regional Office" })).toBeInTheDocument();
-		pickBaseUiOption("Regional Office");
+		expect(await screen.findByRole("option", { name: "Regional Office (RO)" })).toBeInTheDocument();
+		pickBaseUiOption("Regional Office (RO)");
 		await waitFor(() => {
-			expect(screen.getByRole("combobox", { name: "Office" })).toHaveTextContent("Regional Office");
+			expect(screen.getByRole("combobox", { name: "Office" })).toHaveTextContent(
+				"Regional Office (RO)",
+			);
 		});
 	});
 });

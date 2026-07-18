@@ -4,7 +4,7 @@ import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, HISTORICAL_DATE_CALENDAR_PROPS } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -386,6 +386,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 									disabled={isSubmitting}
 									className="w-full"
 									placeholder="Date of Birth"
+									calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 								/>
 							</div>
 							<div className="grid gap-2">
@@ -397,6 +398,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 									disabled={isSubmitting}
 									className="w-full"
 									placeholder="Date of Joining"
+									calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 								/>
 							</div>
 						</div>

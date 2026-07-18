@@ -1,11 +1,14 @@
 /** User-facing labels: prefer human names; keep stable IDs when ambiguity matters. */
 
 export function namedEntityLabel(
-	item: { name?: string | null } | null | undefined,
+	item: { name?: string | null; code?: string | null } | null | undefined,
 	fallback = "—",
 ): string {
 	const name = item?.name?.trim();
-	return name || fallback;
+	const code = item?.code?.trim();
+	if (name && code) return `${name} (${code})`;
+	if (name) return name;
+	return code || fallback;
 }
 
 /** Posts use designation as the human-readable name. */
@@ -34,9 +37,5 @@ export function payComponentEntityLabel(
 	item: { name?: string | null; code?: string | null } | null | undefined,
 	fallback = "—",
 ): string {
-	const name = item?.name?.trim();
-	const code = item?.code?.trim();
-	if (name && code) return `${name} (${code})`;
-	if (name) return name;
-	return code || fallback;
+	return namedEntityLabel(item, fallback);
 }

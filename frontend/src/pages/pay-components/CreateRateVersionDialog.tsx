@@ -37,6 +37,7 @@ import {
 	useCreateComponentRateVersion,
 } from "@/lib/api/pay-setup";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
+import { payComponentEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
 
 type CreateRateVersionDialogProps = {
@@ -270,7 +271,7 @@ export function CreateRateVersionDialog({
 														disabled={isSubmitting}
 													/>
 													<Label htmlFor={checkboxId} className="font-normal">
-														{option.name}
+														{payComponentEntityLabel(option)}
 													</Label>
 												</div>
 											);

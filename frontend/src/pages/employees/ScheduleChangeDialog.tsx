@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, HISTORICAL_DATE_CALENDAR_PROPS } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -373,6 +373,7 @@ export function ScheduleChangeDialog({
 											disabled={isSubmitting}
 											className="w-full"
 											placeholder="Date of Birth"
+											calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 										/>
 									</div>
 									<div className="grid gap-2">
@@ -384,6 +385,7 @@ export function ScheduleChangeDialog({
 											disabled={isSubmitting}
 											className="w-full"
 											placeholder="Date of Joining"
+											calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 										/>
 									</div>
 								</div>
