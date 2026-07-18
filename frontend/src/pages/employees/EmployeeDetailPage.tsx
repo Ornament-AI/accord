@@ -30,7 +30,18 @@ import {
 import { getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/utils";
 
+import { AccommodationTab } from "./payroll-setup/AccommodationTab";
+import { AdvancesTab } from "./payroll-setup/AdvancesTab";
+import { RecurringItemsTab } from "./payroll-setup/RecurringItemsTab";
 import { ScheduleChangeDialog } from "./ScheduleChangeDialog";
+
+type EmployeeDetailTab = EmployeeVersionKind | "recurring" | "advances" | "accommodation";
+
+const VERSION_KINDS = new Set<EmployeeVersionKind>(["profile", "posting", "pay", "bank"]);
+
+function isVersionKind(tab: EmployeeDetailTab): tab is EmployeeVersionKind {
+	return VERSION_KINDS.has(tab as EmployeeVersionKind);
+}
 
 function regimeLabel(regime: string | null | undefined): string {
 	if (!regime) return "—";
@@ -95,13 +106,18 @@ export default function EmployeeDetailPage() {
 	const [asOf, setAsOf] = useState(() => todayApiDate());
 	const [reveal, setReveal] = useState(false);
 	const [scheduleKind, setScheduleKind] = useState<EmployeeVersionKind | null>(null);
-	const [activeTab, setActiveTab] = useState<EmployeeVersionKind>("profile");
+	const [activeTab, setActiveTab] = useState<EmployeeDetailTab>("profile");
 
 	const detailQuery = useEmployeeDetail(employeeId, {
 		as_of: asOf,
 		reveal: reveal && canReveal,
 	});
-	const versionsQuery = useEmployeeVersions(employeeId, activeTab, reveal && canReveal);
+	const versionKind = isVersionKind(activeTab) ? activeTab : "profile";
+	const versionsQuery = useEmployeeVersions(
+		isVersionKind(activeTab) ? employeeId : undefined,
+		versionKind,
+		reveal && canReveal,
+	);
 
 	const asOfDate = useMemo(() => parseApiDate(asOf), [asOf]);
 	const employee = detailQuery.data;
@@ -209,7 +225,7 @@ export default function EmployeeDetailPage() {
 							<PageSection>
 								<Tabs
 									value={activeTab}
-									onValueChange={(value) => setActiveTab(value as EmployeeVersionKind)}
+									onValueChange={(value) => setActiveTab(value as EmployeeDetailTab)}
 								>
 									<div className="flex flex-wrap items-center justify-between gap-2">
 										<TabsList variant="line">
@@ -217,8 +233,11 @@ export default function EmployeeDetailPage() {
 											<TabsTrigger value="posting">Posting</TabsTrigger>
 											<TabsTrigger value="pay">Pay</TabsTrigger>
 											<TabsTrigger value="bank">Bank</TabsTrigger>
+											<TabsTrigger value="recurring">Recurring Items</TabsTrigger>
+											<TabsTrigger value="advances">Advances</TabsTrigger>
+											<TabsTrigger value="accommodation">Accommodation</TabsTrigger>
 										</TabsList>
-										{canManage ? (
+										{canManage && isVersionKind(activeTab) ? (
 											<Button size="sm" onClick={() => setScheduleKind(activeTab)}>
 												Schedule change
 											</Button>
@@ -255,6 +274,18 @@ export default function EmployeeDetailPage() {
 											<h3 className="text-sm font-medium">Version history</h3>
 											<VersionHistoryList versions={versions} isLoading={versionsQuery.isLoading} />
 										</div>
+									</TabsContent>
+
+									<TabsContent value="recurring" className="mt-4">
+										<RecurringItemsTab employeeId={employeeId} asOf={asOf} canManage={canManage} />
+									</TabsContent>
+
+									<TabsContent value="advances" className="mt-4">
+										<AdvancesTab employeeId={employeeId} asOf={asOf} canManage={canManage} />
+									</TabsContent>
+
+									<TabsContent value="accommodation" className="mt-4">
+										<AccommodationTab employeeId={employeeId} asOf={asOf} canManage={canManage} />
 									</TabsContent>
 								</Tabs>
 							</PageSection>
