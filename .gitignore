@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.frontend-dist/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+playwright-report/
+test-results/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.eslintcache
+.turbo/
+
+# Environment / secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local data — real workbooks and PII must NEVER be committed
+*.xlsx
+*.xlsm
+*.xls
+!fixtures/sanitized/**/*.xlsx
+uploads/
+tmp/
+backups/
+minio-data/
+postgres-data/
