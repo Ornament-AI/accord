@@ -36,11 +36,12 @@ const emptyForm = (): FormState => ({ designation: "", class_name: "" });
 
 type PostsTabProps = {
 	canManage: boolean;
+	createOpen: boolean;
+	onCreateOpenChange: (open: boolean) => void;
 };
 
-export function PostsTab({ canManage }: PostsTabProps) {
+export function PostsTab({ canManage, createOpen, onCreateOpenChange }: PostsTabProps) {
 	const listQuery = usePostsList();
-	const [createOpen, setCreateOpen] = useState(false);
 	const [editing, setEditing] = useState<PostResponse | null>(null);
 
 	return (
@@ -56,9 +57,8 @@ export function PostsTab({ canManage }: PostsTabProps) {
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => setCreateOpen(true)}
+				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
-				addLabel="Add post"
 				data-testid="posts-tab"
 			/>
 			{canManage ? (
@@ -66,7 +66,7 @@ export function PostsTab({ canManage }: PostsTabProps) {
 					<PostFormDialog
 						mode="create"
 						open={createOpen}
-						onOpenChange={setCreateOpen}
+						onOpenChange={onCreateOpenChange}
 						item={null}
 					/>
 					<PostFormDialog

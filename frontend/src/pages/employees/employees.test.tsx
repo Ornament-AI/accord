@@ -91,7 +91,7 @@ describe("Employee list page", () => {
 	);
 
 	it(
-		"gates New employee on manage_master_data",
+		"gates Add employee on manage_master_data",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("payroll_reviewer"),
@@ -102,7 +102,7 @@ describe("Employee list page", () => {
 			renderApp({ initialEntries: ["/employees"] });
 
 			expect(await screen.findByText("E-001", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /New employee/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);

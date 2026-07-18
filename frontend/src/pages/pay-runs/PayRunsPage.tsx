@@ -4,7 +4,7 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { CalendarPlus, Plus, WalletCards } from "lucide-react";
+import { WalletCards } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -87,13 +87,11 @@ export default function PayRunsPage() {
 				actions={
 					canCreateRun ? (
 						<div className="flex flex-wrap items-center gap-2">
-							<Button size="sm" variant="outline" onClick={() => setCreatePeriodOpen(true)}>
-								<CalendarPlus className="size-4" />
-								New period
+							<Button size="xs" variant="outline" onClick={() => setCreatePeriodOpen(true)}>
+								Period
 							</Button>
-							<Button size="sm" onClick={() => setCreateRunOpen(true)}>
-								<Plus className="size-4" />
-								New pay run
+							<Button size="xs" onClick={() => setCreateRunOpen(true)}>
+								Add
 							</Button>
 						</div>
 					) : undefined
@@ -152,9 +150,8 @@ export default function PayRunsPage() {
 								description="Create a period and pay run to get started."
 							>
 								{canCreateRun ? (
-									<Button size="sm" onClick={() => setCreateRunOpen(true)}>
-										<Plus className="size-4" />
-										New pay run
+									<Button size="xs" onClick={() => setCreateRunOpen(true)}>
+										Add
 									</Button>
 								) : null}
 							</EmptyState>

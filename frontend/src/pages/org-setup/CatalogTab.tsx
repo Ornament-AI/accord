@@ -4,7 +4,6 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { DataTableShell } from "@/components/data-table-shell";
@@ -35,7 +34,6 @@ type CatalogTabProps<T extends { id: string }> = {
 	canManage: boolean;
 	onAdd: () => void;
 	onEdit: (row: T) => void;
-	addLabel: string;
 	toolbar?: ReactNode;
 	"data-testid"?: string;
 };
@@ -53,7 +51,6 @@ export function CatalogTab<T extends { id: string }>({
 	canManage,
 	onAdd,
 	onEdit,
-	addLabel,
 	toolbar,
 	"data-testid": testId,
 }: CatalogTabProps<T>) {
@@ -69,19 +66,7 @@ export function CatalogTab<T extends { id: string }>({
 
 	return (
 		<div className="flex flex-col gap-4" data-testid={testId}>
-			<PageToolbar
-				trailing={
-					canManage ? (
-						<Button size="sm" onClick={onAdd}>
-							<Plus className="size-4" />
-							{addLabel}
-						</Button>
-					) : undefined
-				}
-				trailingClassName="ml-auto"
-			>
-				{toolbar}
-			</PageToolbar>
+			{toolbar ? <PageToolbar>{toolbar}</PageToolbar> : null}
 
 			{isLoading ? <DataTableSkeleton /> : null}
 
@@ -95,9 +80,8 @@ export function CatalogTab<T extends { id: string }>({
 			{isEmpty ? (
 				<EmptyState icon={Icon} title={`No ${title.toLowerCase()}`} description={emptyDescription}>
 					{canManage ? (
-						<Button size="sm" onClick={onAdd}>
-							<Plus className="size-4" />
-							{addLabel}
+						<Button size="xs" onClick={onAdd}>
+							Add
 						</Button>
 					) : null}
 				</EmptyState>

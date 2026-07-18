@@ -36,11 +36,16 @@ const emptyForm = (): FormState => ({ code: "", name: "" });
 
 type PayrollUnitsTabProps = {
 	canManage: boolean;
+	createOpen: boolean;
+	onCreateOpenChange: (open: boolean) => void;
 };
 
-export function PayrollUnitsTab({ canManage }: PayrollUnitsTabProps) {
+export function PayrollUnitsTab({
+	canManage,
+	createOpen,
+	onCreateOpenChange,
+}: PayrollUnitsTabProps) {
 	const listQuery = usePayrollUnitsList();
-	const [createOpen, setCreateOpen] = useState(false);
 	const [editing, setEditing] = useState<PayrollUnitResponse | null>(null);
 
 	return (
@@ -56,9 +61,8 @@ export function PayrollUnitsTab({ canManage }: PayrollUnitsTabProps) {
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => setCreateOpen(true)}
+				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
-				addLabel="Add payroll unit"
 				data-testid="payroll-units-tab"
 			/>
 			{canManage ? (
@@ -66,7 +70,7 @@ export function PayrollUnitsTab({ canManage }: PayrollUnitsTabProps) {
 					<PayrollUnitFormDialog
 						mode="create"
 						open={createOpen}
-						onOpenChange={setCreateOpen}
+						onOpenChange={onCreateOpenChange}
 						item={null}
 					/>
 					<PayrollUnitFormDialog

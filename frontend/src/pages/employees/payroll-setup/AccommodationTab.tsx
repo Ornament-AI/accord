@@ -55,8 +55,8 @@ export function AccommodationTab({ employeeId, asOf, canManage }: AccommodationT
 			<div className="flex flex-wrap items-center justify-between gap-2">
 				<h3 className="text-sm font-medium">Accommodation</h3>
 				{canManage ? (
-					<Button size="sm" onClick={() => setAddOpen(true)}>
-						Add assignment
+					<Button size="xs" onClick={() => setAddOpen(true)}>
+						Add
 					</Button>
 				) : null}
 			</div>
@@ -90,8 +90,8 @@ export function AccommodationTab({ employeeId, asOf, canManage }: AccommodationT
 											{quartersLocationLabel(row.quarters_location)} — {row.quarters_identifier}
 										</span>
 										{canManage ? (
-											<Button size="sm" variant="outline" onClick={() => setVersionTarget(row)}>
-												New charge version
+											<Button size="xs" variant="outline" onClick={() => setVersionTarget(row)}>
+												Add
 											</Button>
 										) : null}
 									</CardTitle>
@@ -346,7 +346,7 @@ function AddAssignmentDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Add assignment"}
+							{isSubmitting ? "Creating…" : "Add"}
 						</Button>
 					</DialogFooter>
 				</form>

@@ -4,7 +4,7 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Plus, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -121,9 +121,8 @@ export default function EmployeeListPage() {
 				title="Employees"
 				actions={
 					canManage ? (
-						<Button size="sm" onClick={() => setCreateOpen(true)}>
-							<Plus className="size-4" />
-							New employee
+						<Button size="xs" onClick={() => setCreateOpen(true)}>
+							Add
 						</Button>
 					) : undefined
 				}
@@ -176,9 +175,8 @@ export default function EmployeeListPage() {
 							}
 						>
 							{canManage ? (
-								<Button size="sm" onClick={() => setCreateOpen(true)}>
-									<Plus className="size-4" />
-									New employee
+								<Button size="xs" onClick={() => setCreateOpen(true)}>
+									Add
 								</Button>
 							) : null}
 						</EmptyState>

@@ -113,7 +113,7 @@ describe("Pay runs list page", () => {
 			expect(
 				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			fireEvent.click(screen.getByRole("button", { name: /New period/i }));
+			fireEvent.click(screen.getByRole("button", { name: /^Period$/i }));
 
 			expect(
 				await screen.findByRole("heading", { name: "New payroll period" }),
@@ -184,7 +184,7 @@ describe("Pay runs list page", () => {
 			expect(
 				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			fireEvent.click(screen.getByRole("button", { name: /^New pay run$/i }));
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
 
 			expect(await screen.findByRole("heading", { name: "New pay run" })).toBeInTheDocument();
 			const dialog = screen.getByRole("dialog");
@@ -223,8 +223,8 @@ describe("Pay runs list page", () => {
 			expect(
 				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /New period/i })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /New pay run/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Period$/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -478,9 +478,9 @@ describe("Pay run detail — inputs and totals", () => {
 			).toBeInTheDocument();
 			expect(await screen.findByText("BASIC")).toBeInTheDocument();
 			expect(screen.getByText("₹1,500.00")).toBeInTheDocument();
-			expect(screen.getByRole("button", { name: /Add input/i })).toBeInTheDocument();
+			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
 
-			fireEvent.click(screen.getByRole("button", { name: /Add input/i }));
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
 			expect(await screen.findByRole("heading", { name: "Add run input" })).toBeInTheDocument();
 
 			await waitFor(() => {
@@ -491,7 +491,7 @@ describe("Pay run detail — inputs and totals", () => {
 			fireEvent.change(screen.getByLabelText("Component code"), { target: { value: "HRA" } });
 			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2500.00" } });
 			fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Housing adjust" } });
-			fireEvent.click(screen.getByRole("button", { name: "Add input" }));
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
 
 			await waitFor(() => {
 				expect(screen.queryByRole("heading", { name: "Add run input" })).not.toBeInTheDocument();
@@ -554,7 +554,7 @@ describe("Pay run detail — inputs and totals", () => {
 				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(await screen.findByText("BASIC")).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /Add input/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /Edit input/i })).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /Delete input/i })).not.toBeInTheDocument();
 		},

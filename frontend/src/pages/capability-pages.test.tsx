@@ -17,12 +17,12 @@ describe("capability-gated direct URL access", () => {
 		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("auditor") });
 		server.use(...handlers);
 
-		renderApp({ initialEntries: ["/organization"] });
+		renderApp({ initialEntries: ["/organization/offices"] });
 
 		expect(await screen.findByText("You don't have access")).toBeInTheDocument();
 	});
 
-	it("renders the organization setup page when the user has the capability", async () => {
+	it("renders the organization offices page when the user has the capability", async () => {
 		const { handlers } = createAuthHandlers({
 			me: buildRoleAuthMe("organization_administrator"),
 		});
@@ -32,7 +32,7 @@ describe("capability-gated direct URL access", () => {
 		renderApp({ initialEntries: ["/organization"] });
 
 		await waitFor(async () => {
-			expect(await screen.findByTestId("org-setup-page")).toBeInTheDocument();
+			expect(await screen.findByTestId("offices-page")).toBeInTheDocument();
 		});
 	});
 });

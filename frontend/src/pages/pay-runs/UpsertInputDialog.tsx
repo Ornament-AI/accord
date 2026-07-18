@@ -297,7 +297,7 @@ export function UpsertInputDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : isEdit ? "Save changes" : "Add input"}
+							{isSubmitting ? "Saving…" : isEdit ? "Save changes" : "Add"}
 						</Button>
 					</DialogFooter>
 				</form>

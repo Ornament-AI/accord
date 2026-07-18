@@ -11,12 +11,20 @@ import {
 
 import type { Capability } from "@/types/auth";
 
+export type NavRegistryChild = {
+	title: string;
+	path: string;
+	/** When set, the child is shown only if `hasCapability(capability)` is true. */
+	capability?: Capability;
+};
+
 export type NavRegistryEntry = {
 	title: string;
 	icon: LucideIcon;
 	path: string;
 	/** When set, the item is shown only if `hasCapability(capability)` is true. */
 	capability?: Capability;
+	children?: readonly NavRegistryChild[];
 };
 
 /**
@@ -27,10 +35,21 @@ export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
 	{ title: "Dashboard", icon: LayoutDashboard, path: "/" },
 	{ title: "Employees", icon: Users, path: "/employees", capability: "view_master_data" },
 	{
-		title: "Organization Setup",
+		title: "Organization",
 		icon: Building2,
 		path: "/organization",
-		capability: "manage_organization",
+		capability: "view_master_data",
+		children: [
+			{ title: "Offices", path: "/organization/offices" },
+			{ title: "Payroll Units", path: "/organization/payroll-units" },
+			{ title: "Posts", path: "/organization/posts" },
+			{ title: "Employee Groups", path: "/organization/employee-groups" },
+			{
+				title: "Settings",
+				path: "/organization/settings",
+				capability: "manage_organization",
+			},
+		],
 	},
 	{
 		title: "Pay Components",

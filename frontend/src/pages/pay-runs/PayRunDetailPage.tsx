@@ -4,7 +4,6 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Calculator, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
@@ -162,7 +161,7 @@ function buildInputColumns({
 				<div className="flex items-center gap-1">
 					<Button
 						type="button"
-						size="sm"
+						size="xs"
 						variant="ghost"
 						aria-label={`Edit input ${row.original.component_code}`}
 						onClick={(event) => {
@@ -170,12 +169,11 @@ function buildInputColumns({
 							onEdit(row.original);
 						}}
 					>
-						<Pencil className="size-4" />
 						Edit
 					</Button>
 					<Button
 						type="button"
-						size="sm"
+						size="xs"
 						variant="ghost"
 						aria-label={`Delete input ${row.original.component_code}`}
 						onClick={(event) => {
@@ -183,7 +181,6 @@ function buildInputColumns({
 							onDelete(row.original);
 						}}
 					>
-						<Trash2 className="size-4" />
 						Delete
 					</Button>
 				</div>
@@ -344,13 +341,12 @@ export default function PayRunDetailPage() {
 				actions={
 					run && canCreateRun ? (
 						<Button
-							size="sm"
+							size="xs"
 							onClick={() => void handleCalculate()}
 							disabled={!canCalculate || calculateMutation.isPending}
 							title={calculateReason ?? undefined}
 							aria-label="Calculate pay run"
 						>
-							<Calculator className="size-4" />
 							{calculateMutation.isPending ? "Calculating…" : "Calculate"}
 						</Button>
 					) : undefined
@@ -415,14 +411,13 @@ export default function PayRunDetailPage() {
 										/>
 										{canEditInputs ? (
 											<Button
-												size="sm"
+												size="xs"
 												onClick={() => {
 													setEditingInput(null);
 													setInputDialogOpen(true);
 												}}
 											>
-												<Plus className="size-4" />
-												Add input
+												Add
 											</Button>
 										) : null}
 									</div>

@@ -73,7 +73,19 @@ export function calcKindUsesBasis(kind: CalcKind): boolean {
 	return BASIS_CALC_KINDS.has(kind);
 }
 
+const CLASSIFICATION_LABELS: Record<Classification, string> = {
+	earning: "Earning",
+	employer_contribution: "Employer Contribution",
+	ag_deduction: "AG Deduction",
+	treasury_deduction: "Treasury Deduction",
+	gross_adjustment: "Gross Adjustment",
+	external_recovery: "External Recovery",
+};
+
 export function classificationLabel(value: string): string {
+	if (value in CLASSIFICATION_LABELS) {
+		return CLASSIFICATION_LABELS[value as Classification];
+	}
 	return value
 		.split("_")
 		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))

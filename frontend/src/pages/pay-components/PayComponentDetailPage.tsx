@@ -4,7 +4,6 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
@@ -154,9 +153,8 @@ export default function PayComponentDetailPage() {
 				title={component ? <PayComponentBreadcrumb label={component.code} /> : "Pay component"}
 				actions={
 					canManage ? (
-						<Button size="sm" onClick={() => setCreateOpen(true)}>
-							<Plus className="size-4" />
-							New rate version
+						<Button size="xs" onClick={() => setCreateOpen(true)}>
+							Add
 						</Button>
 					) : undefined
 				}

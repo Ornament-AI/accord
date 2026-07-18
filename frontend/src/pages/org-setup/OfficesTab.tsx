@@ -68,11 +68,12 @@ const emptyForm = (): OfficeFormState => ({
 
 type OfficesTabProps = {
 	canManage: boolean;
+	createOpen: boolean;
+	onCreateOpenChange: (open: boolean) => void;
 };
 
-export function OfficesTab({ canManage }: OfficesTabProps) {
+export function OfficesTab({ canManage, createOpen, onCreateOpenChange }: OfficesTabProps) {
 	const listQuery = useOfficesList();
-	const [createOpen, setCreateOpen] = useState(false);
 	const [editing, setEditing] = useState<OfficeResponse | null>(null);
 
 	return (
@@ -88,9 +89,8 @@ export function OfficesTab({ canManage }: OfficesTabProps) {
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => setCreateOpen(true)}
+				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
-				addLabel="Add office"
 				data-testid="offices-tab"
 			/>
 			{canManage ? (
@@ -98,7 +98,7 @@ export function OfficesTab({ canManage }: OfficesTabProps) {
 					<OfficeFormDialog
 						mode="create"
 						open={createOpen}
-						onOpenChange={setCreateOpen}
+						onOpenChange={onCreateOpenChange}
 						office={null}
 					/>
 					<OfficeFormDialog

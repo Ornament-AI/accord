@@ -1,7 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
 	DialogBody,
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
 	classificationLabel,
 	type PayComponentResponse,
@@ -150,16 +150,16 @@ export function EditPayComponentDialog({
 								/>
 							</div>
 
-							<div className="flex items-center gap-2">
-								<Checkbox
+							<div className="flex items-center justify-between gap-4">
+								<Label htmlFor="edit-pc-is-active">Active</Label>
+								<Switch
 									id="edit-pc-is-active"
 									checked={form.is_active}
 									onCheckedChange={(checked) =>
-										setForm((prev) => ({ ...prev, is_active: checked === true }))
+										setForm((prev) => ({ ...prev, is_active: checked }))
 									}
 									disabled={isSubmitting}
 								/>
-								<Label htmlFor="edit-pc-is-active">Active</Label>
 							</div>
 
 							{formError ? (
@@ -179,7 +179,7 @@ export function EditPayComponentDialog({
 								Cancel
 							</Button>
 							<Button type="submit" disabled={isSubmitting}>
-								{isSubmitting ? "Saving…" : "Save changes"}
+								{isSubmitting ? "Saving…" : "Save"}
 							</Button>
 						</DialogFooter>
 					</form>

@@ -76,9 +76,11 @@ describe("Pay components list page", () => {
 			expect(
 				await screen.findByTestId("pay-components-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText("BASIC", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
-			expect(screen.getByText("Basic Pay")).toBeInTheDocument();
+			expect(
+				await screen.findByText("Basic Pay", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
 			expect(screen.getByText("House Rent Allowance")).toBeInTheDocument();
+			expect(screen.queryByRole("columnheader", { name: "Code" })).not.toBeInTheDocument();
 			expect(screen.getAllByText("Earning").length).toBeGreaterThan(0);
 		},
 		PAGE_TIMEOUT,
@@ -95,8 +97,10 @@ describe("Pay components list page", () => {
 
 			renderPayRoutes("/pay-components");
 
-			expect(await screen.findByText("BASIC", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
-			fireEvent.click(screen.getByRole("button", { name: /New pay component/i }));
+			expect(
+				await screen.findByText("Basic Pay", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
 
 			expect(await screen.findByRole("heading", { name: "New pay component" })).toBeInTheDocument();
 			fireEvent.change(screen.getByLabelText("Code"), { target: { value: "DA" } });
@@ -109,8 +113,7 @@ describe("Pay components list page", () => {
 					screen.queryByRole("heading", { name: "New pay component" }),
 				).not.toBeInTheDocument();
 			});
-			expect(await screen.findByText("DA")).toBeInTheDocument();
-			expect(screen.getByText("Dearness Allowance")).toBeInTheDocument();
+			expect(await screen.findByText("Dearness Allowance")).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -139,7 +142,7 @@ describe("Pay components list page", () => {
 	});
 
 	it(
-		"gates New pay component and Edit on manage_master_data",
+		"gates Add pay component and row-edit on manage_master_data",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("payroll_reviewer"),
@@ -149,15 +152,19 @@ describe("Pay components list page", () => {
 
 			renderPayRoutes("/pay-components");
 
-			expect(await screen.findByText("BASIC", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /New pay component/i })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /Edit BASIC/i })).not.toBeInTheDocument();
+			expect(
+				await screen.findByText("Basic Pay", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
+			fireEvent.click(screen.getByText("Basic Pay"));
+			expect(screen.queryByRole("heading", { name: "Edit pay component" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
 
 	it(
-		"shows write actions when manage_master_data is granted",
+		"shows Add and opens edit on row click when manage_master_data is granted",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
@@ -167,9 +174,13 @@ describe("Pay components list page", () => {
 
 			renderPayRoutes("/pay-components");
 
-			expect(await screen.findByText("BASIC", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
-			expect(screen.getByRole("button", { name: /New pay component/i })).toBeInTheDocument();
-			expect(screen.getByRole("button", { name: /Edit BASIC/i })).toBeInTheDocument();
+			expect(
+				await screen.findByText("Basic Pay", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
+			expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
+			fireEvent.click(screen.getByText("Basic Pay"));
+			expect(await screen.findByRole("heading", { name: "Edit pay component" })).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -214,7 +225,7 @@ describe("Edit pay component dialog", () => {
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Basic Pay Revised" } });
 		fireEvent.change(screen.getByLabelText("Display order"), { target: { value: "5" } });
-		fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
 		await waitFor(() => {
 			expect(patches).toHaveLength(1);
@@ -238,7 +249,7 @@ describe("Pay component detail page", () => {
 	});
 
 	it(
-		"renders rate version history and gates New rate version",
+		"renders rate version history and gates Add rate version",
 		async () => {
 			const withoutManage = buildAuthMe({
 				active_organization: {
@@ -274,13 +285,13 @@ describe("Pay component detail page", () => {
 			expect(within(page).getByRole("heading", { name: "BASIC" })).toBeInTheDocument();
 			expect(within(page).getByText("Basic Pay")).toBeInTheDocument();
 			expect(within(page).getByText("50000.00")).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /New rate version/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
 
 	it(
-		"shows New rate version when manage_master_data is granted",
+		"shows Add when manage_master_data is granted",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
@@ -293,7 +304,7 @@ describe("Pay component detail page", () => {
 			expect(
 				await screen.findByTestId("pay-component-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(screen.getByRole("button", { name: /New rate version/i })).toBeInTheDocument();
+			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);

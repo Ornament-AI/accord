@@ -158,7 +158,6 @@
   --accord-motion-tooltip-open-scale: 0.98;
   --accord-motion-blur: 2px;
   --accord-motion-sheet-distance: 24px;
-  --accord-motion-tab-duration: var(--accord-motion-base);
   --accord-motion-shake-distance: 6px;
   --accord-motion-shake-overshoot: 4px;
 }
@@ -676,48 +675,6 @@
   translate: 0 var(--accord-motion-sheet-distance);
 }
 
-.accord-motion-tabs-indicator {
-  pointer-events: none;
-  position: absolute;
-  z-index: 0;
-  border-radius: calc(var(--radius) - 2px);
-  background: var(--background);
-  box-shadow: var(--app-material-shadow-3);
-  opacity: 1;
-  transition:
-    translate var(--accord-motion-tab-duration) var(--accord-motion-ease),
-    width var(--accord-motion-tab-duration) var(--accord-motion-ease),
-    height var(--accord-motion-tab-duration) var(--accord-motion-ease),
-    opacity var(--accord-motion-fast) var(--accord-motion-ease);
-  will-change: translate, width, height;
-}
-
-.accord-motion-tabs-indicator[data-orientation='horizontal'] {
-  top: var(--active-tab-top);
-  left: 0;
-  width: var(--active-tab-width);
-  height: var(--active-tab-height);
-  translate: var(--active-tab-left) 0;
-}
-
-.accord-motion-tabs-indicator[data-orientation='vertical'] {
-  top: 0;
-  left: 0;
-  width: var(--active-tab-width);
-  height: var(--active-tab-height);
-  translate: var(--active-tab-left) var(--active-tab-top);
-}
-
-.accord-motion-tabs-indicator[hidden] {
-  opacity: 0;
-}
-
-.accord-motion-tabs-trigger {
-  transition:
-    color var(--accord-motion-fast) var(--accord-motion-ease),
-    box-shadow var(--accord-motion-fast) var(--accord-motion-ease);
-}
-
 .accord-motion-toggle-pill {
   transition: transform var(--accord-motion-base) var(--accord-motion-ease);
 }
@@ -728,25 +685,6 @@
 
 .accord-motion-chevron {
   transition: transform var(--accord-motion-base) var(--accord-motion-ease);
-}
-
-.accord-motion-tabs-list[data-variant='line'] > .accord-motion-tabs-indicator {
-  border-radius: 999px;
-  background: var(--primary);
-  box-shadow: none;
-}
-
-.accord-motion-tabs-list[data-variant='line'] > .accord-motion-tabs-indicator[data-orientation='horizontal'] {
-  top: auto;
-  bottom: 0;
-  height: 2px;
-}
-
-.accord-motion-tabs-list[data-variant='line'] > .accord-motion-tabs-indicator[data-orientation='vertical'] {
-  right: 0;
-  left: auto;
-  width: 2px;
-  translate: 0 var(--active-tab-top);
 }
 
 .accord-motion-collapsible {

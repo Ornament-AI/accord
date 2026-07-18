@@ -21,10 +21,9 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 	// --- Office ---
 	await page.goto("/");
 	await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 30_000 });
-	await page.goto("/organization");
-	await expect(page.getByTestId("org-setup-page")).toBeVisible({ timeout: 30_000 });
-	await page.getByRole("tab", { name: "Offices" }).click();
-	await page.getByTestId("offices-tab").getByRole("button", { name: "Add office" }).first().click();
+	await page.goto("/organization/offices");
+	await expect(page.getByTestId("offices-page")).toBeVisible({ timeout: 30_000 });
+	await page.getByRole("button", { name: /^Add$/i }).click();
 
 	const officeDialog = page.getByRole("dialog");
 	await expect(officeDialog.getByRole("heading", { name: "Add office" })).toBeVisible();
@@ -48,7 +47,6 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 	await selectWithin(pcDialog, "Classification", "Earning");
 	await pcDialog.getByRole("button", { name: "Create component" }).click();
 	await expect(pcDialog).toBeHidden({ timeout: 30_000 });
-	await expect(page.getByTestId("pay-components-page")).toContainText(componentCode);
 	await expect(page.getByTestId("pay-components-page")).toContainText(componentName);
 
 	// --- Employee (composite dialog incl. retirement / tax regime) ---

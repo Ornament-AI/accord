@@ -202,7 +202,7 @@ export function WorkflowActionBar({
 						<span>This run changed since you loaded it. Refresh to see the latest version.</span>
 						<Button
 							type="button"
-							size="sm"
+							size="xs"
 							variant="outline"
 							onClick={() => {
 								setStaleAlert(false);
@@ -224,7 +224,7 @@ export function WorkflowActionBar({
 						<Button
 							key={action.id}
 							type="button"
-							size="sm"
+							size="xs"
 							variant={action.variant ?? "default"}
 							disabled={disabled}
 							title={disabledReason ?? undefined}

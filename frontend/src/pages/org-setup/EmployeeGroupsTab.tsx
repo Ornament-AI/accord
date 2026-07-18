@@ -36,11 +36,16 @@ const emptyForm = (): FormState => ({ code: "", name: "" });
 
 type EmployeeGroupsTabProps = {
 	canManage: boolean;
+	createOpen: boolean;
+	onCreateOpenChange: (open: boolean) => void;
 };
 
-export function EmployeeGroupsTab({ canManage }: EmployeeGroupsTabProps) {
+export function EmployeeGroupsTab({
+	canManage,
+	createOpen,
+	onCreateOpenChange,
+}: EmployeeGroupsTabProps) {
 	const listQuery = useEmployeeGroupsList();
-	const [createOpen, setCreateOpen] = useState(false);
 	const [editing, setEditing] = useState<EmployeeGroupResponse | null>(null);
 
 	return (
@@ -56,9 +61,8 @@ export function EmployeeGroupsTab({ canManage }: EmployeeGroupsTabProps) {
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => setCreateOpen(true)}
+				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
-				addLabel="Add employee group"
 				data-testid="employee-groups-tab"
 			/>
 			{canManage ? (
@@ -66,7 +70,7 @@ export function EmployeeGroupsTab({ canManage }: EmployeeGroupsTabProps) {
 					<EmployeeGroupFormDialog
 						mode="create"
 						open={createOpen}
-						onOpenChange={setCreateOpen}
+						onOpenChange={onCreateOpenChange}
 						item={null}
 					/>
 					<EmployeeGroupFormDialog

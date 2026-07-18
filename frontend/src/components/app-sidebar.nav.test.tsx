@@ -12,14 +12,14 @@ import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { server } from "@/test/msw-server";
-import type { Role } from "@/types/auth";
+import type { Capability, Role } from "@/types/auth";
 
-function renderSidebar() {
+function renderSidebar(initialPath = "/") {
 	return render(
 		<QueryClientProvider client={queryClient}>
 			<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME_TEST">
 				<AuthProvider>
-					<MemoryRouter>
+					<MemoryRouter initialEntries={[initialPath]}>
 						<SidebarProvider>
 							<AppSidebar />
 						</SidebarProvider>
@@ -32,9 +32,21 @@ function renderSidebar() {
 
 function expectedTitlesForRole(role: Role): string[] {
 	const capabilities = new Set(ROLE_CAPABILITIES[role]);
-	return NAV_REGISTRY.filter(
-		(item) => item.capability === undefined || capabilities.has(item.capability),
-	).map((item) => item.title);
+	const titles: string[] = [];
+	for (const item of NAV_REGISTRY) {
+		if (item.capability !== undefined && !capabilities.has(item.capability)) {
+			continue;
+		}
+		titles.push(item.title);
+		if (item.children) {
+			for (const child of item.children) {
+				if (child.capability === undefined || capabilities.has(child.capability as Capability)) {
+					titles.push(child.title);
+				}
+			}
+		}
+	}
+	return titles;
 }
 
 describe("capability-aware sidebar nav", () => {
@@ -49,7 +61,7 @@ describe("capability-aware sidebar nav", () => {
 		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe(role) });
 		server.use(...handlers);
 
-		renderSidebar();
+		renderSidebar("/organization/offices");
 
 		await waitFor(() => {
 			expect(screen.getByText("Dashboard")).toBeInTheDocument();
@@ -59,11 +71,55 @@ describe("capability-aware sidebar nav", () => {
 			expect(screen.getByText(title)).toBeInTheDocument();
 		}
 
-		const hiddenTitles = NAV_REGISTRY.map((item) => item.title).filter(
-			(title) => !expectedTitles.includes(title),
-		);
+		const allTitles = NAV_REGISTRY.flatMap((item) => [
+			item.title,
+			...(item.children?.map((child) => child.title) ?? []),
+		]);
+		const hiddenTitles = allTitles.filter((title) => !expectedTitles.includes(title));
 		for (const title of hiddenTitles) {
 			expect(screen.queryByText(title)).not.toBeInTheDocument();
 		}
+	});
+
+	it("nests Organization children in the sidebar", async () => {
+		const { handlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		server.use(...handlers);
+
+		renderSidebar("/organization/offices");
+
+		await waitFor(() => {
+			expect(screen.getByText("Organization")).toBeInTheDocument();
+		});
+		expect(screen.getByRole("link", { name: "Offices" })).toHaveAttribute(
+			"href",
+			"/organization/offices",
+		);
+		expect(screen.getByRole("link", { name: "Payroll Units" })).toHaveAttribute(
+			"href",
+			"/organization/payroll-units",
+		);
+		expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+			"href",
+			"/organization/settings",
+		);
+
+		const folderTrigger = screen.getByRole("button", { name: /^Organization$/i });
+		expect(folderTrigger).toHaveAttribute("data-active", "false");
+		expect(screen.getByRole("link", { name: "Offices" })).toHaveAttribute("data-active", "true");
+	});
+
+	it("hides Settings for roles without manage_organization", async () => {
+		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("payroll_reviewer") });
+		server.use(...handlers);
+
+		renderSidebar("/organization/offices");
+
+		await waitFor(() => {
+			expect(screen.getByText("Organization")).toBeInTheDocument();
+		});
+		expect(screen.getByRole("link", { name: "Offices" })).toBeInTheDocument();
+		expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 	});
 });

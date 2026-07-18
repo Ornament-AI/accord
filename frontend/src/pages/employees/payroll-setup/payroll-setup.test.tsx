@@ -140,7 +140,7 @@ describe("Employee payroll-setup tabs", () => {
 
 			await openEmployeeTab("Recurring Items");
 			fireEvent.click(
-				await screen.findByRole("button", { name: "Add instruction" }, { timeout: PAGE_TIMEOUT }),
+				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
 			);
 
 			expect(await screen.findByRole("heading", { name: "Add instruction" })).toBeInTheDocument();
@@ -150,7 +150,7 @@ describe("Employee payroll-setup tabs", () => {
 				target: { value: "2026-03-01" },
 			});
 			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1500.00" } });
-			fireEvent.click(screen.getByRole("button", { name: "Add instruction" }));
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
 
 			await waitFor(() => {
 				expect(screen.queryByRole("heading", { name: "Add instruction" })).not.toBeInTheDocument();
@@ -174,7 +174,7 @@ describe("Employee payroll-setup tabs", () => {
 
 			await openEmployeeTab("Recurring Items");
 			fireEvent.click(
-				await screen.findByRole("button", { name: "Add instruction" }, { timeout: PAGE_TIMEOUT }),
+				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
 			);
 			expect(await screen.findByRole("heading", { name: "Add instruction" })).toBeInTheDocument();
 			openBaseUiSelect(screen.getByLabelText("Component"));
@@ -183,7 +183,7 @@ describe("Employee payroll-setup tabs", () => {
 				target: { value: "2026-04-01" },
 			});
 			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2000.00" } });
-			fireEvent.click(screen.getByRole("button", { name: "Add instruction" }));
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
 
 			expect(
 				await screen.findByTestId("ri-overlap-error", {}, { timeout: PAGE_TIMEOUT }),
@@ -237,7 +237,7 @@ describe("Employee payroll-setup tabs", () => {
 
 			await openEmployeeTab("Advances");
 			fireEvent.click(
-				await screen.findByRole("button", { name: "Add advance" }, { timeout: PAGE_TIMEOUT }),
+				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
 			);
 			expect(await screen.findByRole("heading", { name: "Add advance" })).toBeInTheDocument();
 
@@ -257,7 +257,7 @@ describe("Employee payroll-setup tabs", () => {
 			fireEvent.change(within(form).getByLabelText("Installments total"), {
 				target: { value: "10" },
 			});
-			fireEvent.click(within(form).getByRole("button", { name: "Add advance" }));
+			fireEvent.click(within(form).getByRole("button", { name: /^Add$/ }));
 
 			expect(await screen.findByTestId("advance-form-error")).toHaveTextContent(
 				/Installment amount must be less than or equal to principal/,
@@ -266,7 +266,7 @@ describe("Employee payroll-setup tabs", () => {
 			fireEvent.change(within(form).getByLabelText("Installment amount"), {
 				target: { value: "5000.00" },
 			});
-			fireEvent.click(within(form).getByRole("button", { name: "Add advance" }));
+			fireEvent.click(within(form).getByRole("button", { name: /^Add$/ }));
 
 			await waitFor(() => {
 				expect(screen.queryByRole("heading", { name: "Add advance" })).not.toBeInTheDocument();
@@ -319,21 +319,21 @@ describe("Employee payroll-setup tabs", () => {
 			expect(
 				await screen.findByTestId("recurring-items-tab", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "Add instruction" })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "New version" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/ })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: "End" })).not.toBeInTheDocument();
 
 			fireEvent.click(screen.getByRole("tab", { name: "Advances" }));
 			expect(await screen.findByTestId("advances-tab")).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "Add advance" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/ })).not.toBeInTheDocument();
 			expect(
-				screen.queryByRole("button", { name: "New installment version" }),
+				screen.queryByRole("button", { name: "Add" }),
 			).not.toBeInTheDocument();
 
 			fireEvent.click(screen.getByRole("tab", { name: "Accommodation" }));
 			expect(await screen.findByTestId("accommodation-tab")).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "Add assignment" })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "New charge version" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/ })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);

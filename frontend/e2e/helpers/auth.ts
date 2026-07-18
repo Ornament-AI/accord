@@ -109,7 +109,7 @@ export async function ensureUniqueOrganization(
 	await ensureDashboard(page);
 	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();
 	await switcher.click();
-	const createMenuItem = page.getByRole("menuitem", { name: "Create organization" });
+	const createMenuItem = page.getByRole("menuitem", { name: "Add" });
 	await clickUntilDialog(page, createMenuItem);
 	await fillCreateOrganizationDialog(page, opts);
 	await ensureDashboard(page);

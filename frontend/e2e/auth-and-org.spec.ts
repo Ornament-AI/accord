@@ -32,7 +32,7 @@ test("dev-bypass login, create org, land on dashboard with switcher", async ({ p
 	await expect(switcher).toContainText(orgName);
 	await switcher.click();
 	await expect(page.getByRole("menuitem", { name: orgName })).toBeVisible();
-	await expect(page.getByRole("menuitem", { name: "Create organization" })).toBeVisible();
+	await expect(page.getByRole("menuitem", { name: "Add" })).toBeVisible();
 	await page.keyboard.press("Escape");
 
 	mkdirSync(AUTH_DIR, { recursive: true });

@@ -70,8 +70,8 @@ export function AdvancesTab({ employeeId, asOf, canManage }: AdvancesTabProps) {
 			<div className="flex flex-wrap items-center justify-between gap-2">
 				<h3 className="text-sm font-medium">Advances</h3>
 				{canManage ? (
-					<Button size="sm" onClick={() => setAddOpen(true)}>
-						Add advance
+					<Button size="xs" onClick={() => setAddOpen(true)}>
+						Add
 					</Button>
 				) : null}
 			</div>
@@ -115,8 +115,8 @@ export function AdvancesTab({ employeeId, asOf, canManage }: AdvancesTabProps) {
 									<TableCell>{formatProgress(row)}</TableCell>
 									{canManage ? (
 										<TableCell className="text-right">
-											<Button size="sm" variant="outline" onClick={() => setVersionTarget(row)}>
-												New installment version
+											<Button size="xs" variant="outline" onClick={() => setVersionTarget(row)}>
+												Add
 											</Button>
 										</TableCell>
 									) : null}
@@ -429,7 +429,7 @@ function AddAdvanceDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Add advance"}
+							{isSubmitting ? "Creating…" : "Add"}
 						</Button>
 					</DialogFooter>
 				</form>

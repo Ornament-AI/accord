@@ -86,8 +86,8 @@ export function RecurringItemsTab({ employeeId, asOf, canManage }: RecurringItem
 			<div className="flex flex-wrap items-center justify-between gap-2">
 				<h3 className="text-sm font-medium">Recurring items</h3>
 				{canManage ? (
-					<Button size="sm" onClick={() => setAddOpen(true)}>
-						Add instruction
+					<Button size="xs" onClick={() => setAddOpen(true)}>
+						Add
 					</Button>
 				) : null}
 			</div>
@@ -137,10 +137,10 @@ export function RecurringItemsTab({ employeeId, asOf, canManage }: RecurringItem
 										{canManage ? (
 											<TableCell className="text-right">
 												<div className="flex justify-end gap-2">
-													<Button size="sm" variant="outline" onClick={() => setVersionTarget(row)}>
-														New version
+													<Button size="xs" variant="outline" onClick={() => setVersionTarget(row)}>
+														Add
 													</Button>
-													<Button size="sm" variant="outline" onClick={() => setEndTarget(row)}>
+													<Button size="xs" variant="outline" onClick={() => setEndTarget(row)}>
 														End
 													</Button>
 												</div>
@@ -394,7 +394,7 @@ function AddInstructionDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Add instruction"}
+							{isSubmitting ? "Creating…" : "Add"}
 						</Button>
 					</DialogFooter>
 				</form>

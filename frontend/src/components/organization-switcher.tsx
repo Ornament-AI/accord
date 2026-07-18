@@ -1,4 +1,4 @@
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -99,8 +99,7 @@ export function OrganizationSwitcher() {
 									setCreateOpen(true);
 								}}
 							>
-								<Plus className="size-4" />
-								<span>Create organization</span>
+								<span>Add</span>
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>

@@ -1,4 +1,3 @@
-import { Eye, EyeOff } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
@@ -176,13 +175,12 @@ export default function EmployeeDetailPage() {
 					<div className="flex items-center gap-2">
 						{canReveal ? (
 							<Button
-								size="sm"
+								size="xs"
 								variant="outline"
 								aria-pressed={reveal}
 								aria-label={reveal ? "Hide sensitive fields" : "Reveal sensitive fields"}
 								onClick={() => setReveal((prev) => !prev)}
 							>
-								{reveal ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
 								{reveal ? "Hide" : "Reveal"}
 							</Button>
 						) : null}
@@ -238,7 +236,7 @@ export default function EmployeeDetailPage() {
 									onValueChange={(value) => setActiveTab(value as EmployeeDetailTab)}
 								>
 									<div className="flex flex-wrap items-center justify-between gap-2">
-										<TabsList variant="line">
+										<TabsList>
 											<TabsTrigger value="profile">Profile</TabsTrigger>
 											<TabsTrigger value="posting">Posting</TabsTrigger>
 											<TabsTrigger value="pay">Pay</TabsTrigger>
@@ -248,7 +246,7 @@ export default function EmployeeDetailPage() {
 											<TabsTrigger value="accommodation">Accommodation</TabsTrigger>
 										</TabsList>
 										{canManage && isVersionKind(activeTab) ? (
-											<Button size="sm" onClick={() => setScheduleKind(activeTab)}>
+											<Button size="xs" onClick={() => setScheduleKind(activeTab)}>
 												Schedule change
 											</Button>
 										) : null}

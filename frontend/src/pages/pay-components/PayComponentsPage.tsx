@@ -4,9 +4,8 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Pencil, Plus, Wallet } from "lucide-react";
+import { Wallet } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
@@ -39,72 +38,30 @@ declare module "@tanstack/react-table" {
 	}
 }
 
-type PayComponentsPageProps = {
-	canManage: boolean;
-	onEdit: (component: PayComponentResponse) => void;
-};
-
-function buildColumns({
-	canManage,
-	onEdit,
-}: PayComponentsPageProps): ColumnDef<PayComponentResponse>[] {
-	const columns: ColumnDef<PayComponentResponse>[] = [
-		{
-			accessorKey: "code",
-			header: "Code",
-		},
-		{
-			accessorKey: "name",
-			header: "Name",
-		},
-		{
-			accessorKey: "classification",
-			header: "Classification",
-			cell: ({ row }) => (
-				<Badge variant="secondary">{classificationLabel(row.original.classification)}</Badge>
-			),
-		},
-		{
-			accessorKey: "is_active",
-			header: "Active",
-			cell: ({ row }) => (row.original.is_active ? "Yes" : "No"),
-		},
-		{
-			accessorKey: "display_order",
-			header: "Display order",
-			meta: { align: "right" },
-		},
-	];
-
-	if (canManage) {
-		columns.push({
-			id: "actions",
-			header: "Actions",
-			enableHiding: false,
-			meta: { hideFromColumnVisibilityToggle: true },
-			cell: ({ row }) => (
-				<Button
-					type="button"
-					size="sm"
-					variant="ghost"
-					aria-label={`Edit ${row.original.code}`}
-					onClick={(event) => {
-						event.stopPropagation();
-						onEdit(row.original);
-					}}
-				>
-					<Pencil className="size-4" />
-					Edit
-				</Button>
-			),
-		});
-	}
-
-	return columns;
-}
+const columns: ColumnDef<PayComponentResponse>[] = [
+	{
+		accessorKey: "code",
+		header: "Code",
+	},
+	{
+		accessorKey: "name",
+		header: "Name",
+	},
+	{
+		accessorKey: "classification",
+		header: "Classification",
+		cell: ({ row }) => (
+			<Badge variant="secondary">{classificationLabel(row.original.classification)}</Badge>
+		),
+	},
+	{
+		accessorKey: "is_active",
+		header: "Active",
+		cell: ({ row }) => (row.original.is_active ? "Yes" : "No"),
+	},
+];
 
 export default function PayComponentsPage() {
-	const navigate = useNavigate();
 	const { hasCapability } = useAuth();
 	const canManage = hasCapability("manage_master_data");
 
@@ -114,18 +71,10 @@ export default function PayComponentsPage() {
 
 	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
 		"accord:pay-components:columns",
-		{},
+		{ code: false },
 	);
 
 	const listQuery = usePayComponentsList();
-
-	const columns = buildColumns({
-		canManage,
-		onEdit: (component) => {
-			setEditing(component);
-			setEditOpen(true);
-		},
-	});
 
 	const table = useReactTable({
 		data: listQuery.data ?? [],
@@ -138,15 +87,19 @@ export default function PayComponentsPage() {
 
 	const isEmpty = !listQuery.isLoading && (listQuery.data?.length ?? 0) === 0;
 
+	const openEdit = (component: PayComponentResponse) => {
+		setEditing(component);
+		setEditOpen(true);
+	};
+
 	return (
 		<CapabilityGate capability="view_master_data" title="Pay components">
 			<AppLayout
 				title="Pay components"
 				actions={
 					canManage ? (
-						<Button size="sm" onClick={() => setCreateOpen(true)}>
-							<Plus className="size-4" />
-							New pay component
+						<Button size="xs" onClick={() => setCreateOpen(true)}>
+							Add
 						</Button>
 					) : undefined
 				}
@@ -172,9 +125,8 @@ export default function PayComponentsPage() {
 							description="Create a pay component to get started."
 						>
 							{canManage ? (
-								<Button size="sm" onClick={() => setCreateOpen(true)}>
-									<Plus className="size-4" />
-									New pay component
+								<Button size="xs" onClick={() => setCreateOpen(true)}>
+									Add
 								</Button>
 							) : null}
 						</EmptyState>
@@ -183,8 +135,8 @@ export default function PayComponentsPage() {
 					{!listQuery.isLoading && !listQuery.isError && !isEmpty ? (
 						<DataTableShell
 							table={table}
-							onRowClick={(row) => void navigate(`/pay-components/${row.id}`)}
-							getRowAriaLabel={(row) => `Open pay component ${row.code}, ${row.name}`}
+							onRowClick={canManage ? openEdit : undefined}
+							getRowAriaLabel={(row) => `Edit pay component ${row.code}`}
 						/>
 					) : null}
 				</PageShell>
