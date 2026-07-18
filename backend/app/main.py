@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from app.api.responses import problem_content, problem_response
 from app.api.routes import (
+    audit,
     auth,
     employees,
     health,
@@ -25,6 +26,8 @@ from app.api.routes import (
     pay_setup,
     payroll_runs,
     run_commands,
+    run_posting,
+    run_workflow,
 )
 from app.config import Settings, get_settings
 from app.db import dispose_engine, session_context
@@ -294,6 +297,9 @@ def create_app() -> FastAPI:
     app.include_router(pay_setup.router, prefix="/api")
     app.include_router(payroll_runs.router, prefix="/api")
     app.include_router(run_commands.router, prefix="/api")
+    app.include_router(run_workflow.router, prefix="/api")
+    app.include_router(run_posting.router, prefix="/api")
+    app.include_router(audit.router, prefix="/api")
     return app
 
 
