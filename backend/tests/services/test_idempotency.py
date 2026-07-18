@@ -3,17 +3,37 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import timedelta
 
+import psycopg
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.db import get_session_factory
 from app.exceptions import ConflictError
 from app.models.base import utcnow
 from app.models.identity import IdempotencyKey
 from app.services.idempotency import compute_request_hash, idempotent_command
+from app.tenancy import set_config_local
 from tests.identity_helpers import seed_organization
+from tests.migrations.conftest import (
+    as_psycopg_url,
+    diag,
+    ensure_accord_roles,
+    run_alembic,
+    scratch_db as scratch_db,  # noqa: F401
+)
+
+
+def _grant_table_dml(database_url: str) -> None:
+    with psycopg.connect(as_psycopg_url(database_url), autocommit=True) as conn:
+        conn.execute(
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
+            "TO accord_app, accord_worker"
+        )
 
 
 def test_compute_request_hash_is_canonical():
@@ -274,6 +294,9 @@ async def test_same_key_different_organizations_do_not_collide(session):
 async def test_executor_raise_persists_failed_and_propagates(session):
     org = await seed_organization(session, slug="idem-raise")
     await session.commit()
+    # Capture before idempotent_command: failure-path rollback expires session ORM
+    # state after _execute_claimed snapshots tenant GUCs (opens a transaction).
+    org_id = org.id
 
     async def executor():
         raise RuntimeError("boom")
@@ -281,7 +304,7 @@ async def test_executor_raise_persists_failed_and_propagates(session):
     with pytest.raises(RuntimeError, match="boom"):
         await idempotent_command(
             session,
-            organization_id=org.id,
+            organization_id=org_id,
             key="cmd-raise",
             request_payload={"action": "submit"},
             executor=executor,
@@ -290,7 +313,7 @@ async def test_executor_raise_persists_failed_and_propagates(session):
     row = (
         await session.execute(
             select(IdempotencyKey).where(
-                IdempotencyKey.organization_id == org.id,
+                IdempotencyKey.organization_id == org_id,
                 IdempotencyKey.key == "cmd-raise",
             )
         )
@@ -349,3 +372,102 @@ async def test_concurrent_race_coherent_outcome(session):
     # At most one execution while the first claim is held; a conflict loser must
     # not have re-executed. If both somehow finish after success, still one call.
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_claimed_rebinds_tenant_gucs_under_accord_app(
+    scratch_db: str,
+) -> None:
+    """Regression: executor commit must not leave idempotency_keys updates blind.
+
+    WHY this fails pre-fix: without the rebind after executor commit/rollback,
+    ``db.get`` / UPDATE run under ``accord_app`` with no ``app.organization_id``
+    → forced RLS matches zero rows → key stays ``in_progress`` / snapshot never
+    written (or ``ConflictError`` "disappeared"). Superuser DSNs mask this.
+    """
+    up = run_alembic(scratch_db, "upgrade", "head")
+    assert up.returncode == 0, diag("alembic upgrade head", up)
+    ensure_accord_roles(database_url=scratch_db)
+    _grant_table_dml(scratch_db)
+
+    org_id = uuid.uuid4()
+    with psycopg.connect(as_psycopg_url(scratch_db)) as conn:
+        conn.execute(
+            "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
+            (org_id, "Idem GUC Org", "idem-guc-rebind"),
+        )
+        conn.execute(
+            "INSERT INTO organization_settings (organization_id) VALUES (%s)",
+            (org_id,),
+        )
+        conn.commit()
+
+    # NullPool returns/closes the connection on commit, which drops SET ROLE.
+    # Re-apply on every connect so FORCE RLS stays active across claim/executor
+    # commits (production connects as accord_app; SET ROLE is the passwordless
+    # test equivalent per tests/rls/test_identity_tenancy_rls.py).
+    engine = create_async_engine(scratch_db, poolclass=NullPool)
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_accord_app_role(dbapi_conn, _connection_record) -> None:  # noqa: ANN001
+        dbapi_conn.run_async(lambda conn: conn.execute("SET ROLE accord_app"))
+
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    calls: list[int] = []
+    key = "cmd-guc-rebind"
+    payload = {"action": "submit", "run_id": "guc-1"}
+
+    try:
+        async with factory() as db:
+            current_user = (await db.execute(text("SELECT current_user"))).scalar_one()
+            session_user = (await db.execute(text("SELECT session_user"))).scalar_one()
+            assert current_user == "accord_app"
+            assert session_user != "accord_app"
+
+            # Middleware-equivalent: bind org GUC with SET LOCAL before the command.
+            await set_config_local(db, "app.organization_id", str(org_id))
+
+            async def executor() -> dict:
+                calls.append(1)
+                # Mid-command commit drops SET LOCAL tenant GUCs — triggers the bug.
+                # Assert role survives the reconnect so we still exercise accord_app.
+                await db.commit()
+                role_after = (await db.execute(text("SELECT current_user"))).scalar_one()
+                assert role_after == "accord_app"
+                return {"result": "ok", "n": 1}
+
+            out = await idempotent_command(
+                db,
+                organization_id=org_id,
+                key=key,
+                request_payload=payload,
+                executor=executor,
+            )
+            assert out == {"result": "ok", "n": 1}
+            assert len(calls) == 1
+
+            # Final command commit cleared GUCs; rebind to inspect as accord_app.
+            await set_config_local(db, "app.organization_id", str(org_id))
+            assert (await db.execute(text("SELECT current_user"))).scalar_one() == "accord_app"
+            row = (
+                await db.execute(
+                    select(IdempotencyKey).where(
+                        IdempotencyKey.organization_id == org_id,
+                        IdempotencyKey.key == key,
+                    )
+                )
+            ).scalar_one()
+            assert row.status == "succeeded"
+            assert row.response_snapshot == {"result": "ok", "n": 1}
+
+            replay = await idempotent_command(
+                db,
+                organization_id=org_id,
+                key=key,
+                request_payload=payload,
+                executor=executor,
+            )
+            assert replay == {"result": "ok", "n": 1}
+            assert len(calls) == 1
+    finally:
+        await engine.dispose()

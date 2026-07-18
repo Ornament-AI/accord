@@ -258,16 +258,22 @@ async def _execute_claimed(
     row_id: UUID,
     executor: Executor,
 ) -> dict[str, Any]:
+    # Capture GUCs before executor runs: executor commit/rollback drops SET LOCAL.
+    gucs = await _snapshot_tenant_gucs(db)
     try:
         snapshot = await executor()
     except Exception:
         await db.rollback()
+        # Rollback cleared tenant GUCs; rebind before any idempotency_keys touch.
+        await _rebind_tenant_gucs(db, gucs)
         row = await db.get(IdempotencyKey, row_id)
         if row is not None:
             row.status = "failed"
             await db.commit()
         raise
 
+    # Executor may have committed (dropping SET LOCAL); rebind before get+UPDATE.
+    await _rebind_tenant_gucs(db, gucs)
     row = await db.get(IdempotencyKey, row_id)
     if row is None:
         raise ConflictError("Idempotency key disappeared during execution.")
