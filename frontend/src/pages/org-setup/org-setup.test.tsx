@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { queryClient } from "@/lib/query-client";
@@ -223,6 +223,53 @@ describe("Org settings page", () => {
 			await waitFor(() => {
 				expect(toast.success).toHaveBeenCalledWith("Organization settings saved");
 			});
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"surfaces 422 validation errors on settings fields",
+		async () => {
+			await setupPage("/organization/settings", "organization_administrator", {
+				settingsUpdateError: {
+					status: 422,
+					body: {
+						detail: [
+							{
+								loc: ["body", "locale"],
+								msg: "Invalid locale",
+								type: "value_error",
+							},
+						],
+					},
+				},
+			});
+			expect(
+				await screen.findByTestId("settings-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(await screen.findByTestId("settings-tab")).toBeInTheDocument();
+			fireEvent.change(screen.getByLabelText("Locale"), { target: { value: "nope" } });
+			fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+			expect(await screen.findByText("Invalid locale")).toBeInTheDocument();
+			const localeField = screen.getByLabelText("Locale").closest("div");
+			expect(localeField).not.toBeNull();
+			expect(within(localeField as HTMLElement).getByText("Invalid locale")).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"denies settings without manage_organization",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("payroll_reviewer"),
+			});
+			server.use(...authHandlers);
+			renderApp({ initialEntries: ["/organization/settings"] });
+			expect(
+				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);

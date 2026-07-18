@@ -60,8 +60,8 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 	await empDialog.getByLabel("Name", { exact: true }).fill(employeeName);
 	await empDialog.getByLabel("Sevarth ID").fill(`SEV-${suffix}`);
 	await selectWithin(empDialog, "Retirement Regime", "NPS");
-	await empDialog.getByLabel("Date of Birth").fill("1990-05-15");
-	await empDialog.getByLabel("Date of Joining").fill("2018-01-01");
+	await pickDateWithin(empDialog, "Date of Birth", "1990-05-15");
+	await pickDateWithin(empDialog, "Date of Joining", "2018-01-01");
 	await empDialog.getByLabel("PAN").fill(pan);
 
 	// Optional Pay section — needed so we can schedule a subsequent pay change.
