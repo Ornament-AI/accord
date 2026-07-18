@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -24,6 +25,7 @@ import {
 	classificationLabel,
 	useCreatePayComponent,
 } from "@/lib/api/pay-setup";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
 
 type CreatePayComponentDialogProps = {
@@ -104,83 +106,92 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>New pay component</DialogTitle>
 					<DialogDescription>
 						Create a pay component. Code and classification cannot be changed later.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="create-pc-code">Code</Label>
-						<Input
-							id="create-pc-code"
-							value={form.code}
-							onChange={(event) => {
-								setField("code", event.target.value);
-								setCodeError(null);
-							}}
-							aria-invalid={codeError ? true : undefined}
-							disabled={isSubmitting}
-							autoComplete="off"
-						/>
-						{codeError ? (
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="create-pc-code">Code</Label>
+							<Input
+								id="create-pc-code"
+								value={form.code}
+								onChange={(event) => {
+									setField("code", event.target.value);
+									setCodeError(null);
+								}}
+								aria-invalid={codeError ? true : undefined}
+								disabled={isSubmitting}
+								autoComplete="off"
+							/>
+							{codeError ? (
+								<p className="text-sm text-destructive" role="alert">
+									{codeError}
+								</p>
+							) : null}
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="create-pc-name">Name</Label>
+							<Input
+								id="create-pc-name"
+								value={form.name}
+								onChange={(event) => setField("name", event.target.value)}
+								disabled={isSubmitting}
+							/>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="create-pc-classification">Classification</Label>
+							<Select
+								value={form.classification}
+								onValueChange={(value) => setField("classification", value as Classification)}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="create-pc-classification" className="w-full">
+									<SelectValue>
+										{(value: Classification | null) =>
+											value ? classificationLabel(value) : "Select classification"
+										}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{CLASSIFICATIONS.map((classification) => (
+										<SelectItem key={classification} value={classification}>
+											{classificationLabel(classification)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="create-pc-display-order">Display order</Label>
+							<Input
+								id="create-pc-display-order"
+								type="number"
+								value={form.display_order}
+								onChange={(event) => setField("display_order", event.target.value)}
+								disabled={isSubmitting}
+							/>
+						</div>
+
+						{formError ? (
 							<p className="text-sm text-destructive" role="alert">
-								{codeError}
+								{formError}
 							</p>
 						) : null}
-					</div>
+					</DialogBody>
 
-					<div className="grid gap-2">
-						<Label htmlFor="create-pc-name">Name</Label>
-						<Input
-							id="create-pc-name"
-							value={form.name}
-							onChange={(event) => setField("name", event.target.value)}
-							disabled={isSubmitting}
-						/>
-					</div>
-
-					<div className="grid gap-2">
-						<Label htmlFor="create-pc-classification">Classification</Label>
-						<Select
-							value={form.classification}
-							onValueChange={(value) => setField("classification", value as Classification)}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="create-pc-classification" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{CLASSIFICATIONS.map((classification) => (
-									<SelectItem key={classification} value={classification}>
-										{classificationLabel(classification)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-
-					<div className="grid gap-2">
-						<Label htmlFor="create-pc-display-order">Display order</Label>
-						<Input
-							id="create-pc-display-order"
-							type="number"
-							value={form.display_order}
-							onChange={(event) => setField("display_order", event.target.value)}
-							disabled={isSubmitting}
-						/>
-					</div>
-
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
-
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

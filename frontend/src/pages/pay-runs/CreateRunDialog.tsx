@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -25,6 +26,7 @@ import {
 	useCreatePayrollRun,
 	usePayrollPeriods,
 } from "@/lib/api/payroll-runs";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 
 type CreateRunDialogProps = {
 	open: boolean;
@@ -49,6 +51,9 @@ export function CreateRunDialog({ open, onOpenChange }: CreateRunDialogProps) {
 
 	const periods = periodsQuery.data ?? [];
 	const defaultPeriodId = periods[0]?.id;
+	const periodLabels = Object.fromEntries(
+		periods.map((period) => [period.id, periodLabel(period.period_year, period.period_month)]),
+	);
 
 	useEffect(() => {
 		if (!open) {
@@ -89,64 +94,73 @@ export function CreateRunDialog({ open, onOpenChange }: CreateRunDialogProps) {
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>New pay run</DialogTitle>
 					<DialogDescription>
 						Create a payroll run for an existing period. Regular runs are unique per period.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="create-run-period">Period</Label>
-						<Select
-							value={form.period_id || undefined}
-							onValueChange={(value) => setForm((prev) => ({ ...prev, period_id: value ?? "" }))}
-							disabled={isSubmitting || periods.length === 0}
-						>
-							<SelectTrigger id="create-run-period" className="w-full">
-								<SelectValue placeholder="Select period" />
-							</SelectTrigger>
-							<SelectContent>
-								{periods.map((period) => (
-									<SelectItem key={period.id} value={period.id}>
-										{periodLabel(period.period_year, period.period_month)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="create-run-period">Period</Label>
+							<Select
+								value={form.period_id || null}
+								onValueChange={(value) => setForm((prev) => ({ ...prev, period_id: value ?? "" }))}
+								disabled={isSubmitting || periods.length === 0}
+							>
+								<SelectTrigger id="create-run-period" className="w-full">
+									<SelectValue placeholder="Select period">
+										{(value: string | null) => (value ? periodLabels[value] : "Select period")}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{periods.map((period) => (
+										<SelectItem key={period.id} value={period.id}>
+											{periodLabel(period.period_year, period.period_month)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="create-run-type">Run type</Label>
-						<Select
-							value={form.run_type}
-							onValueChange={(value) =>
-								setForm((prev) => ({ ...prev, run_type: value as RunType }))
-							}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="create-run-type" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{RUN_TYPES.map((runType) => (
-									<SelectItem key={runType} value={runType}>
-										{runTypeLabel(runType)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="create-run-type">Run type</Label>
+							<Select
+								value={form.run_type}
+								onValueChange={(value) =>
+									setForm((prev) => ({ ...prev, run_type: value as RunType }))
+								}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="create-run-type" className="w-full">
+									<SelectValue>
+										{(value: RunType | null) => (value ? runTypeLabel(value) : "Select run type")}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{RUN_TYPES.map((runType) => (
+										<SelectItem key={runType} value={runType}>
+											{runTypeLabel(runType)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

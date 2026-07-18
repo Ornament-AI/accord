@@ -4,18 +4,21 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { ArrowLeft, Calculator, Pencil, Plus, Trash2 } from "lucide-react";
+import { Calculator, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
+import {
+	ColumnVisibilityToggle,
+	usePersistedColumnVisibility,
+} from "@/components/column-visibility";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageSection, PageShell } from "@/components/page-shell";
-import { PageToolbar } from "@/components/page-toolbar";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -27,6 +30,14 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
@@ -73,6 +84,22 @@ const TOTAL_LABELS: Array<{ key: keyof PayrollRunTotals; label: string }> = [
 	{ key: "deductions_total", label: "Deductions" },
 	{ key: "net_payable", label: "Net payable" },
 ];
+
+function PayRunBreadcrumb({ label }: { label: string }) {
+	return (
+		<Breadcrumb>
+			<BreadcrumbList>
+				<BreadcrumbItem>
+					<BreadcrumbLink render={<Link to="/pay-runs" />}>Pay runs</BreadcrumbLink>
+				</BreadcrumbItem>
+				<BreadcrumbSeparator />
+				<BreadcrumbItem>
+					<BreadcrumbPage>{label}</BreadcrumbPage>
+				</BreadcrumbItem>
+			</BreadcrumbList>
+		</Breadcrumb>
+	);
+}
 
 function calculateDisabledReason(canCreateRun: boolean, status: string): string | null {
 	if (!canCreateRun) return "You do not have permission to calculate pay runs.";
@@ -129,6 +156,8 @@ function buildInputColumns({
 		columns.push({
 			id: "actions",
 			header: "Actions",
+			enableHiding: false,
+			meta: { hideFromColumnVisibilityToggle: true },
 			cell: ({ row }) => (
 				<div className="flex items-center gap-1">
 					<Button
@@ -221,6 +250,10 @@ export default function PayRunDetailPage() {
 		null,
 	);
 	const [validationResult, setValidationResult] = useState<PayrollRunValidateResult | null>(null);
+	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
+		"accord:pay-run-inputs:columns",
+		{},
+	);
 
 	const runQuery = usePayrollRun(runId);
 	const inputsQuery = usePayrollRunInputs(runId);
@@ -254,6 +287,8 @@ export default function PayRunDetailPage() {
 		columns: inputColumns,
 		getCoreRowModel: getCoreRowModel(),
 		getRowId: (row) => row.id,
+		state: { columnVisibility },
+		onColumnVisibilityChange: setColumnVisibility,
 	});
 
 	const calculateReason = run ? calculateDisabledReason(canCreateRun, run.status) : null;
@@ -298,9 +333,13 @@ export default function PayRunDetailPage() {
 		<CapabilityGate capability="create_run" title="Pay run">
 			<AppLayout
 				title={
-					run
-						? `${periodLabel(run.period_year, run.period_month)} · ${runTypeLabel(run.run_type)}`
-						: "Pay run"
+					run ? (
+						<PayRunBreadcrumb
+							label={`${periodLabel(run.period_year, run.period_month)} · ${runTypeLabel(run.run_type)}`}
+						/>
+					) : (
+						"Pay run"
+					)
 				}
 				actions={
 					run && canCreateRun ? (
@@ -318,18 +357,6 @@ export default function PayRunDetailPage() {
 				}
 			>
 				<PageShell data-testid="pay-run-detail-page">
-					<PageToolbar>
-						<Button
-							variant="ghost"
-							size="sm"
-							render={<Link to="/pay-runs" />}
-							aria-label="Back to pay runs"
-						>
-							<ArrowLeft className="size-4" />
-							Pay runs
-						</Button>
-					</PageToolbar>
-
 					{runQuery.isLoading ? (
 						<div className="grid gap-4">
 							<Skeleton className="h-20 w-full" />
@@ -380,18 +407,25 @@ export default function PayRunDetailPage() {
 							<PageSection className="grid gap-3">
 								<div className="flex flex-wrap items-center justify-between gap-2">
 									<h3 className="text-sm font-medium">Inputs</h3>
-									{canEditInputs ? (
-										<Button
-											size="sm"
-											onClick={() => {
-												setEditingInput(null);
-												setInputDialogOpen(true);
-											}}
-										>
-											<Plus className="size-4" />
-											Add input
-										</Button>
-									) : null}
+									<div className="flex items-center gap-2">
+										<ColumnVisibilityToggle
+											table={table}
+											iconOnly
+											triggerClassName="justify-center"
+										/>
+										{canEditInputs ? (
+											<Button
+												size="sm"
+												onClick={() => {
+													setEditingInput(null);
+													setInputDialogOpen(true);
+												}}
+											>
+												<Plus className="size-4" />
+												Add input
+											</Button>
+										) : null}
+									</div>
 								</div>
 
 								{inputsQuery.isLoading ? <DataTableSkeleton /> : null}

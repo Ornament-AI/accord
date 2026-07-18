@@ -17,7 +17,7 @@ export function WelcomeCard({ userName, organizationName, limited = false }: Wel
 		: "Select an organization to get started.";
 
 	return (
-		<Card className="app-material-level-1 app-border-level-1" data-testid="dashboard-welcome">
+		<Card data-testid="dashboard-welcome">
 			<CardHeader>
 				<CardTitle>{greeting}</CardTitle>
 				<CardDescription>

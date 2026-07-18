@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -31,6 +32,7 @@ import {
 	useCreateAccommodation,
 	useCreateAccommodationChargeVersion,
 } from "@/lib/api/pay-setup";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError, getErrorMessage } from "@/lib/errors";
 
 import { validateNonNegativeMoney, validatePositiveMoney } from "./money";
@@ -226,106 +228,115 @@ function AddAssignmentDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>Add assignment</DialogTitle>
 					<DialogDescription>
 						Assign government quarters and the initial license fee charge.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="add-acc-location">Quarters location</Label>
-						<Select
-							value={form.quarters_location}
-							onValueChange={(value) =>
-								setForm((prev) => ({
-									...prev,
-									quarters_location: value as QuartersLocation,
-								}))
-							}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="add-acc-location" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{QUARTERS_LOCATIONS.map((location) => (
-									<SelectItem key={location} value={location}>
-										{quartersLocationLabel(location)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="add-acc-location">Quarters location</Label>
+							<Select
+								value={form.quarters_location}
+								onValueChange={(value) =>
+									setForm((prev) => ({
+										...prev,
+										quarters_location: value as QuartersLocation,
+									}))
+								}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="add-acc-location" className="w-full">
+									<SelectValue>
+										{(value: QuartersLocation | null) =>
+											value ? quartersLocationLabel(value) : "Select quarters location"
+										}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{QUARTERS_LOCATIONS.map((location) => (
+										<SelectItem key={location} value={location}>
+											{quartersLocationLabel(location)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-acc-identifier">Quarters identifier</Label>
-						<Input
-							id="add-acc-identifier"
-							value={form.quarters_identifier}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, quarters_identifier: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-acc-identifier">Quarters identifier</Label>
+							<Input
+								id="add-acc-identifier"
+								value={form.quarters_identifier}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, quarters_identifier: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-acc-effective-from">Effective from</Label>
-						<Input
-							id="add-acc-effective-from"
-							type="date"
-							value={form.effective_from}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, effective_from: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-acc-effective-from">Effective from</Label>
+							<Input
+								id="add-acc-effective-from"
+								type="date"
+								value={form.effective_from}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-acc-license-fee">License fee</Label>
-						<Input
-							id="add-acc-license-fee"
-							inputMode="decimal"
-							value={form.license_fee}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, license_fee: event.target.value }))
-							}
-							disabled={isSubmitting}
-							placeholder="0.00"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-acc-license-fee">License fee</Label>
+							<Input
+								id="add-acc-license-fee"
+								inputMode="decimal"
+								value={form.license_fee}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, license_fee: event.target.value }))
+								}
+								disabled={isSubmitting}
+								placeholder="0.00"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-acc-foregone-hra">Informational foregone HRA (optional)</Label>
-						<Input
-							id="add-acc-foregone-hra"
-							inputMode="decimal"
-							value={form.informational_hra_foregone}
-							onChange={(event) =>
-								setForm((prev) => ({
-									...prev,
-									informational_hra_foregone: event.target.value,
-								}))
-							}
-							disabled={isSubmitting}
-							placeholder="0.00"
-						/>
-						<p className="text-xs text-muted-foreground">
-							Informational only — not deducted as a charge.
-						</p>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-acc-foregone-hra">Informational foregone HRA (optional)</Label>
+							<Input
+								id="add-acc-foregone-hra"
+								inputMode="decimal"
+								value={form.informational_hra_foregone}
+								onChange={(event) =>
+									setForm((prev) => ({
+										...prev,
+										informational_hra_foregone: event.target.value,
+									}))
+								}
+								disabled={isSubmitting}
+								placeholder="0.00"
+							/>
+							<p className="text-xs text-muted-foreground">
+								Informational only — not deducted as a charge.
+							</p>
+						</div>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"
@@ -429,82 +440,87 @@ function NewChargeVersionDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>New charge version</DialogTitle>
 					<DialogDescription>
 						Create a new license fee charge version for this assignment.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="ncv-effective-from">Effective from</Label>
-						<Input
-							id="ncv-effective-from"
-							type="date"
-							value={form.effective_from}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, effective_from: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="ncv-effective-from">Effective from</Label>
+							<Input
+								id="ncv-effective-from"
+								type="date"
+								value={form.effective_from}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="ncv-license-fee">License fee</Label>
-						<Input
-							id="ncv-license-fee"
-							inputMode="decimal"
-							value={form.license_fee}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, license_fee: event.target.value }))
-							}
-							disabled={isSubmitting}
-							placeholder="0.00"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="ncv-license-fee">License fee</Label>
+							<Input
+								id="ncv-license-fee"
+								inputMode="decimal"
+								value={form.license_fee}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, license_fee: event.target.value }))
+								}
+								disabled={isSubmitting}
+								placeholder="0.00"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="ncv-foregone-hra">Informational foregone HRA (optional)</Label>
-						<Input
-							id="ncv-foregone-hra"
-							inputMode="decimal"
-							value={form.informational_hra_foregone}
-							onChange={(event) =>
-								setForm((prev) => ({
-									...prev,
-									informational_hra_foregone: event.target.value,
-								}))
-							}
-							disabled={isSubmitting}
-							placeholder="0.00"
-						/>
-						<p className="text-xs text-muted-foreground">
-							Informational only — not deducted as a charge.
-						</p>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="ncv-foregone-hra">Informational foregone HRA (optional)</Label>
+							<Input
+								id="ncv-foregone-hra"
+								inputMode="decimal"
+								value={form.informational_hra_foregone}
+								onChange={(event) =>
+									setForm((prev) => ({
+										...prev,
+										informational_hra_foregone: event.target.value,
+									}))
+								}
+								disabled={isSubmitting}
+								placeholder="0.00"
+							/>
+							<p className="text-xs text-muted-foreground">
+								Informational only — not deducted as a charge.
+							</p>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="ncv-change-reason">Change reason (optional)</Label>
-						<Textarea
-							id="ncv-change-reason"
-							value={form.change_reason}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, change_reason: event.target.value }))
-							}
-							disabled={isSubmitting}
-							rows={2}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="ncv-change-reason">Change reason (optional)</Label>
+							<Textarea
+								id="ncv-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

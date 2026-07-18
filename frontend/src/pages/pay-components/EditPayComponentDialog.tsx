@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -17,6 +18,7 @@ import {
 	type PayComponentResponse,
 	useUpdatePayComponent,
 } from "@/lib/api/pay-setup";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
 
 type EditPayComponentDialogProps = {
@@ -96,8 +98,8 @@ export function EditPayComponentDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>Edit pay component</DialogTitle>
 					<DialogDescription>
 						Update name, display order, or active status. Code and classification are fixed.
@@ -105,64 +107,69 @@ export function EditPayComponentDialog({
 				</DialogHeader>
 
 				{component ? (
-					<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-						<div className="grid gap-2">
-							<Label htmlFor="edit-pc-code">Code</Label>
-							<Input id="edit-pc-code" value={component.code} readOnly disabled />
-						</div>
+					<form
+						className="flex min-h-0 flex-1 flex-col"
+						onSubmit={(event) => void handleSubmit(event)}
+					>
+						<DialogBody className="grid gap-4 pb-8">
+							<div className="grid gap-2">
+								<Label htmlFor="edit-pc-code">Code</Label>
+								<Input id="edit-pc-code" value={component.code} readOnly disabled />
+							</div>
 
-						<div className="grid gap-2">
-							<Label htmlFor="edit-pc-classification">Classification</Label>
-							<Input
-								id="edit-pc-classification"
-								value={classificationLabel(component.classification)}
-								readOnly
-								disabled
-							/>
-						</div>
+							<div className="grid gap-2">
+								<Label htmlFor="edit-pc-classification">Classification</Label>
+								<Input
+									id="edit-pc-classification"
+									value={classificationLabel(component.classification)}
+									readOnly
+									disabled
+								/>
+							</div>
 
-						<div className="grid gap-2">
-							<Label htmlFor="edit-pc-name">Name</Label>
-							<Input
-								id="edit-pc-name"
-								value={form.name}
-								onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-								disabled={isSubmitting}
-							/>
-						</div>
+							<div className="grid gap-2">
+								<Label htmlFor="edit-pc-name">Name</Label>
+								<Input
+									id="edit-pc-name"
+									value={form.name}
+									onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+									disabled={isSubmitting}
+								/>
+							</div>
 
-						<div className="grid gap-2">
-							<Label htmlFor="edit-pc-display-order">Display order</Label>
-							<Input
-								id="edit-pc-display-order"
-								type="number"
-								value={form.display_order}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, display_order: event.target.value }))
-								}
-								disabled={isSubmitting}
-							/>
-						</div>
+							<div className="grid gap-2">
+								<Label htmlFor="edit-pc-display-order">Display order</Label>
+								<Input
+									id="edit-pc-display-order"
+									type="number"
+									value={form.display_order}
+									onChange={(event) =>
+										setForm((prev) => ({ ...prev, display_order: event.target.value }))
+									}
+									disabled={isSubmitting}
+								/>
+							</div>
 
-						<div className="flex items-center gap-2">
-							<Checkbox
-								id="edit-pc-is-active"
-								checked={form.is_active}
-								onCheckedChange={(checked) =>
-									setForm((prev) => ({ ...prev, is_active: checked === true }))
-								}
-								disabled={isSubmitting}
-							/>
-							<Label htmlFor="edit-pc-is-active">Active</Label>
-						</div>
+							<div className="flex items-center gap-2">
+								<Checkbox
+									id="edit-pc-is-active"
+									checked={form.is_active}
+									onCheckedChange={(checked) =>
+										setForm((prev) => ({ ...prev, is_active: checked === true }))
+									}
+									disabled={isSubmitting}
+								/>
+								<Label htmlFor="edit-pc-is-active">Active</Label>
+							</div>
 
-						{formError ? (
-							<p className="text-sm text-destructive" role="alert">
-								{formError}
-							</p>
-						) : null}
+							{formError ? (
+								<p className="text-sm text-destructive" role="alert">
+									{formError}
+								</p>
+							) : null}
+						</DialogBody>
 
-						<DialogFooter>
+						<DialogFooter className="border-t px-6 py-4">
 							<Button
 								type="button"
 								variant="outline"

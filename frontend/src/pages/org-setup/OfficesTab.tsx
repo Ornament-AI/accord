@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -28,6 +29,7 @@ import {
 	useOfficesList,
 	useUpdateOffice,
 } from "@/lib/api/org-structure";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
 
 import { CatalogTab } from "./CatalogTab";
@@ -194,71 +196,81 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<form onSubmit={(event) => void handleSubmit(event)} className="grid gap-4">
-					<DialogHeader>
-						<DialogTitle>{mode === "create" ? "Add office" : "Edit office"}</DialogTitle>
-						<DialogDescription>
-							{mode === "create"
-								? "Create an office for this organization."
-								: "Update office details. The code cannot be changed."}
-						</DialogDescription>
-					</DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
+					<DialogTitle>{mode === "create" ? "Add office" : "Edit office"}</DialogTitle>
+					<DialogDescription>
+						{mode === "create"
+							? "Create an office for this organization."
+							: "Update office details. The code cannot be changed."}
+					</DialogDescription>
+				</DialogHeader>
 
-					<div className="grid gap-2">
-						<Label htmlFor="office-code">Code</Label>
-						<Input
-							id="office-code"
-							value={form.code}
-							onChange={(event) => {
-								setForm((prev) => ({ ...prev, code: event.target.value }));
-								setCodeError(null);
-							}}
-							disabled={isSubmitting || naturalKeyReadonly}
-							readOnly={naturalKeyReadonly}
-							aria-invalid={codeError ? true : undefined}
-						/>
-						{codeError ? <p className="text-sm text-destructive">{codeError}</p> : null}
-					</div>
+				<form
+					onSubmit={(event) => void handleSubmit(event)}
+					className="flex min-h-0 flex-1 flex-col"
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="office-code">Code</Label>
+							<Input
+								id="office-code"
+								value={form.code}
+								onChange={(event) => {
+									setForm((prev) => ({ ...prev, code: event.target.value }));
+									setCodeError(null);
+								}}
+								disabled={isSubmitting || naturalKeyReadonly}
+								readOnly={naturalKeyReadonly}
+								aria-invalid={codeError ? true : undefined}
+							/>
+							{codeError ? <p className="text-sm text-destructive">{codeError}</p> : null}
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="office-name">Name</Label>
-						<Input
-							id="office-name"
-							value={form.name}
-							onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-							disabled={isSubmitting}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="office-name">Name</Label>
+							<Input
+								id="office-name"
+								value={form.name}
+								onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="office-jurisdiction">Jurisdiction</Label>
-						<Select
-							value={form.jurisdiction}
-							onValueChange={(value) =>
-								setForm((prev) => ({
-									...prev,
-									jurisdiction: value as OfficeJurisdiction,
-								}))
-							}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="office-jurisdiction" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{JURISDICTIONS.map((item) => (
-									<SelectItem key={item.value} value={item.value}>
-										{item.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="office-jurisdiction">Jurisdiction</Label>
+							<Select
+								value={form.jurisdiction}
+								onValueChange={(value) =>
+									setForm((prev) => ({
+										...prev,
+										jurisdiction: value as OfficeJurisdiction,
+									}))
+								}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="office-jurisdiction" className="w-full">
+									<SelectValue>
+										{(value: OfficeJurisdiction | null) =>
+											JURISDICTIONS.find((item) => item.value === value)?.label ??
+											"Select jurisdiction"
+										}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{JURISDICTIONS.map((item) => (
+										<SelectItem key={item.value} value={item.value}>
+											{item.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					{formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+						{formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

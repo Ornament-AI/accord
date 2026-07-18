@@ -55,25 +55,26 @@ describe("Employee list page", () => {
 
 			renderApp({ initialEntries: ["/employees"] });
 
-			expect(
-				await screen.findByLabelText("Search employees", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
 			expect(await screen.findByText("E-001", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
 			expect(screen.getByText("Alice Example")).toBeInTheDocument();
 			expect(screen.getAllByText("GPF").length).toBeGreaterThan(0);
 
-			fireEvent.change(screen.getByLabelText("Search employees"), {
-				target: { value: "Alice" },
-			});
+			fireEvent.click(screen.getByRole("button", { name: "Search" }));
+			const searchInput = await screen.findByRole(
+				"textbox",
+				{ name: "Search employees" },
+				{ timeout: PAGE_TIMEOUT },
+			);
+			fireEvent.change(searchInput, { target: { value: "Alice" } });
+			fireEvent.submit(searchInput.closest("form")!);
 
 			await waitFor(() => {
 				expect(screen.getByText("Alice Example")).toBeInTheDocument();
 				expect(screen.queryByText("E-002")).not.toBeInTheDocument();
 			});
 
-			fireEvent.change(screen.getByLabelText("Search employees"), {
-				target: { value: "" },
-			});
+			fireEvent.click(screen.getByRole("button", { name: "Search: Alice" }));
+			fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
 			await waitFor(() => {
 				expect(screen.getByText("E-002")).toBeInTheDocument();

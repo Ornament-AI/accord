@@ -7,6 +7,10 @@ import {
 import { Download, FileStack, Loader2 } from "lucide-react";
 import { useMemo } from "react";
 
+import {
+	ColumnVisibilityToggle,
+	usePersistedColumnVisibility,
+} from "@/components/column-visibility";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
@@ -82,6 +86,11 @@ export function ArtifactsSection({
 	totalPages,
 	onPageChange,
 }: ArtifactsSectionProps) {
+	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
+		"accord:artifacts:columns",
+		{},
+	);
+
 	const runsById = useMemo(() => new Map(runs.map((run) => [run.id, run])), [runs]);
 
 	const columns = useMemo<ColumnDef<ArtifactResponse>[]>(
@@ -115,6 +124,8 @@ export function ArtifactsSection({
 			{
 				id: "actions",
 				header: "Actions",
+				enableHiding: false,
+				meta: { hideFromColumnVisibilityToggle: true },
 				cell: ({ row }) => <DownloadArtifactButton artifactId={row.original.id} />,
 			},
 		],
@@ -126,17 +137,22 @@ export function ArtifactsSection({
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 		getRowId: (row) => row.id,
+		state: { columnVisibility },
+		onColumnVisibilityChange: setColumnVisibility,
 	});
 
 	return (
 		<PageSection data-testid="artifacts-section" className="flex flex-col gap-3">
-			<div>
-				<h2 className="text-base font-semibold tracking-tight">Recent artifacts</h2>
-				<p className="text-muted-foreground text-sm">
-					{selectedRunId
-						? "Artifacts for the selected posted run."
-						: "Recent export artifacts across posted runs."}
-				</p>
+			<div className="flex flex-wrap items-start justify-between gap-2">
+				<div>
+					<h2 className="text-base font-semibold tracking-tight">Recent artifacts</h2>
+					<p className="text-muted-foreground text-sm">
+						{selectedRunId
+							? "Artifacts for the selected posted run."
+							: "Recent export artifacts across posted runs."}
+					</p>
+				</div>
+				<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
 			</div>
 
 			{isLoading ? <DataTableSkeleton /> : null}

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -34,6 +35,7 @@ import {
 	roundingRuleLabel,
 	useCreateComponentRateVersion,
 } from "@/lib/api/pay-setup";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
 
 type CreateRateVersionDialogProps = {
@@ -157,166 +159,181 @@ export function CreateRateVersionDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>New rate version</DialogTitle>
 					<DialogDescription>
 						Add an effective rate version for this pay component.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="create-rv-effective-from">Effective from</Label>
-						<Input
-							id="create-rv-effective-from"
-							type="date"
-							value={form.effective_from}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, effective_from: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
-
-					<div className="grid gap-2">
-						<Label htmlFor="create-rv-calc-kind">Calculation kind</Label>
-						<Select
-							value={form.calc_kind}
-							onValueChange={(value) =>
-								setForm((prev) => ({
-									...prev,
-									calc_kind: value as CalcKind,
-									amount: "",
-									rate: "",
-									basis: [],
-								}))
-							}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="create-rv-calc-kind" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{CALC_KINDS.map((kind) => (
-									<SelectItem key={kind} value={kind}>
-										{calcKindLabel(kind)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-
-					{showAmount ? (
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="create-rv-amount">Amount</Label>
+							<Label htmlFor="create-rv-effective-from">Effective from</Label>
 							<Input
-								id="create-rv-amount"
-								inputMode="decimal"
-								value={form.amount}
-								onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
+								id="create-rv-effective-from"
+								type="date"
+								value={form.effective_from}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								}
 								disabled={isSubmitting}
-								placeholder="0.00"
 							/>
 						</div>
-					) : null}
 
-					{showRate ? (
 						<div className="grid gap-2">
-							<Label htmlFor="create-rv-rate">Rate</Label>
-							<Input
-								id="create-rv-rate"
-								inputMode="decimal"
-								value={form.rate}
-								onChange={(event) => setForm((prev) => ({ ...prev, rate: event.target.value }))}
+							<Label htmlFor="create-rv-calc-kind">Calculation kind</Label>
+							<Select
+								value={form.calc_kind}
+								onValueChange={(value) =>
+									setForm((prev) => ({
+										...prev,
+										calc_kind: value as CalcKind,
+										amount: "",
+										rate: "",
+										basis: [],
+									}))
+								}
 								disabled={isSubmitting}
-								placeholder="0.0000"
-							/>
+							>
+								<SelectTrigger id="create-rv-calc-kind" className="w-full">
+									<SelectValue>
+										{(value: CalcKind | null) =>
+											value ? calcKindLabel(value) : "Select calculation kind"
+										}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{CALC_KINDS.map((kind) => (
+										<SelectItem key={kind} value={kind}>
+											{calcKindLabel(kind)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 						</div>
-					) : null}
 
-					{showBasis ? (
-						<fieldset className="grid gap-2">
-							<legend className="text-sm font-medium">Basis components</legend>
-							<div className="grid max-h-40 gap-2 overflow-y-auto rounded-md border p-3">
-								{basisOptions.length === 0 ? (
-									<p className="text-sm text-muted-foreground">
-										No other components available for basis.
-									</p>
-								) : (
-									basisOptions.map((option) => {
-										const checkboxId = `create-rv-basis-${option.code}`;
-										return (
-											<div key={option.id} className="flex items-center gap-2">
-												<Checkbox
-													id={checkboxId}
-													checked={form.basis.includes(option.code)}
-													onCheckedChange={(checked) => toggleBasis(option.code, checked === true)}
-													disabled={isSubmitting}
-												/>
-												<Label htmlFor={checkboxId} className="font-normal">
-													{option.code}
-													<span className="text-muted-foreground"> — {option.name}</span>
-												</Label>
-											</div>
-										);
-									})
-								)}
+						{showAmount ? (
+							<div className="grid gap-2">
+								<Label htmlFor="create-rv-amount">Amount</Label>
+								<Input
+									id="create-rv-amount"
+									inputMode="decimal"
+									value={form.amount}
+									onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
+									disabled={isSubmitting}
+									placeholder="0.00"
+								/>
 							</div>
-						</fieldset>
-					) : null}
+						) : null}
 
-					<div className="grid gap-2">
-						<Label htmlFor="create-rv-rounding">Rounding rule</Label>
-						<Select
-							value={form.rounding_rule}
-							onValueChange={(value) =>
-								setForm((prev) => ({
-									...prev,
-									rounding_rule: value as RoundingRule,
-								}))
-							}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="create-rv-rounding" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{ROUNDING_RULES.map((rule) => (
-									<SelectItem key={rule} value={rule}>
-										{roundingRuleLabel(rule)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+						{showRate ? (
+							<div className="grid gap-2">
+								<Label htmlFor="create-rv-rate">Rate</Label>
+								<Input
+									id="create-rv-rate"
+									inputMode="decimal"
+									value={form.rate}
+									onChange={(event) => setForm((prev) => ({ ...prev, rate: event.target.value }))}
+									disabled={isSubmitting}
+									placeholder="0.0000"
+								/>
+							</div>
+						) : null}
 
-					<div className="grid gap-2">
-						<Label htmlFor="create-rv-change-reason">Change reason (optional)</Label>
-						<Textarea
-							id="create-rv-change-reason"
-							value={form.change_reason}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, change_reason: event.target.value }))
-							}
-							disabled={isSubmitting}
-							rows={2}
-						/>
-					</div>
+						{showBasis ? (
+							<fieldset className="grid gap-2">
+								<legend className="text-sm font-medium">Basis components</legend>
+								<div className="grid max-h-40 gap-2 overflow-y-auto rounded-md border p-3">
+									{basisOptions.length === 0 ? (
+										<p className="text-sm text-muted-foreground">
+											No other components available for basis.
+										</p>
+									) : (
+										basisOptions.map((option) => {
+											const checkboxId = `create-rv-basis-${option.code}`;
+											return (
+												<div key={option.id} className="flex items-center gap-2">
+													<Checkbox
+														id={checkboxId}
+														checked={form.basis.includes(option.code)}
+														onCheckedChange={(checked) =>
+															toggleBasis(option.code, checked === true)
+														}
+														disabled={isSubmitting}
+													/>
+													<Label htmlFor={checkboxId} className="font-normal">
+														{option.code}
+														<span className="text-muted-foreground"> — {option.name}</span>
+													</Label>
+												</div>
+											);
+										})
+									)}
+								</div>
+							</fieldset>
+						) : null}
 
-					{overlapError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{overlapError}
-						</p>
-					) : null}
+						<div className="grid gap-2">
+							<Label htmlFor="create-rv-rounding">Rounding rule</Label>
+							<Select
+								value={form.rounding_rule}
+								onValueChange={(value) =>
+									setForm((prev) => ({
+										...prev,
+										rounding_rule: value as RoundingRule,
+									}))
+								}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="create-rv-rounding" className="w-full">
+									<SelectValue>
+										{(value: RoundingRule | null) =>
+											value ? roundingRuleLabel(value) : "Select rounding rule"
+										}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{ROUNDING_RULES.map((rule) => (
+										<SelectItem key={rule} value={rule}>
+											{roundingRuleLabel(rule)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						<div className="grid gap-2">
+							<Label htmlFor="create-rv-change-reason">Change reason (optional)</Label>
+							<Textarea
+								id="create-rv-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
 
-					<DialogFooter>
+						{overlapError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{overlapError}
+							</p>
+						) : null}
+
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
+
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

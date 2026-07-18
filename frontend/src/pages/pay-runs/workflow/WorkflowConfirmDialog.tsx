@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -16,6 +17,7 @@ import {
 	type PayrollRunCalculateResult,
 	type PayrollRunTotals,
 } from "@/lib/api/payroll-runs";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 
 import type { WorkflowActionId } from "./workflow-actions";
 
@@ -131,76 +133,84 @@ export function WorkflowConfirmDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md" data-testid="workflow-confirm-dialog">
-				<DialogHeader>
+			<DialogContent
+				className={DIALOG_CONTENT_CLASSNAMES.compactForm}
+				data-testid="workflow-confirm-dialog"
+			>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>{TITLES[command]}</DialogTitle>
 					<DialogDescription>{DESCRIPTIONS[command]}</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					{postSummary ? (
-						<div
-							className="grid gap-2 rounded-md border border-border bg-muted/30 p-3 text-sm"
-							data-testid="post-summary"
-						>
-							<p className="font-medium text-foreground">
-								This action is irreversible. Posted pay runs cannot be mutated in place.
-							</p>
-							<dl className="grid gap-1 text-muted-foreground">
-								<div className="flex justify-between gap-4">
-									<dt>Version</dt>
-									<dd className="font-medium text-foreground">v{postSummary.version_number}</dd>
-								</div>
-								<div className="flex justify-between gap-4">
-									<dt>Content hash</dt>
-									<dd
-										className="truncate font-mono text-xs text-foreground"
-										title={postSummary.content_hash}
-									>
-										{postSummary.content_hash}
-									</dd>
-								</div>
-								{TOTAL_KEYS.filter((item) => postSummary.totals[item.key]).map((item) => (
-									<div key={item.key} className="flex justify-between gap-4">
-										<dt>{item.label}</dt>
-										<dd className="font-medium text-foreground">
-											{formatCanonicalMoney(postSummary.totals[item.key])}
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						{postSummary ? (
+							<div
+								className="grid gap-2 rounded-md border border-border bg-muted/30 p-3 text-sm"
+								data-testid="post-summary"
+							>
+								<p className="font-medium text-foreground">
+									This action is irreversible. Posted pay runs cannot be mutated in place.
+								</p>
+								<dl className="grid gap-1 text-muted-foreground">
+									<div className="flex justify-between gap-4">
+										<dt>Version</dt>
+										<dd className="font-medium text-foreground">v{postSummary.version_number}</dd>
+									</div>
+									<div className="flex justify-between gap-4">
+										<dt>Content hash</dt>
+										<dd
+											className="truncate font-mono text-xs text-foreground"
+											title={postSummary.content_hash}
+										>
+											{postSummary.content_hash}
 										</dd>
 									</div>
-								))}
-							</dl>
-						</div>
-					) : null}
+									{TOTAL_KEYS.filter((item) => postSummary.totals[item.key]).map((item) => (
+										<div key={item.key} className="flex justify-between gap-4">
+											<dt>{item.label}</dt>
+											<dd className="font-medium text-foreground">
+												{formatCanonicalMoney(postSummary.totals[item.key])}
+											</dd>
+										</div>
+									))}
+								</dl>
+							</div>
+						) : null}
 
-					{showReasonField ? (
-						<div className="grid gap-2">
-							<Label htmlFor="workflow-reason">
-								Reason{reasonRequired ? " (required)" : " (optional)"}
-							</Label>
-							<Textarea
-								id="workflow-reason"
-								value={reason}
-								onChange={(event) => setReason(event.target.value)}
-								disabled={isPending}
-								aria-required={reasonRequired}
-								data-testid="workflow-reason"
-							/>
-						</div>
-					) : null}
+						{showReasonField ? (
+							<div className="grid gap-2">
+								<Label htmlFor="workflow-reason">
+									Reason{reasonRequired ? " (required)" : " (optional)"}
+								</Label>
+								<Textarea
+									id="workflow-reason"
+									value={reason}
+									onChange={(event) => setReason(event.target.value)}
+									disabled={isPending}
+									aria-required={reasonRequired}
+									data-testid="workflow-reason"
+								/>
+							</div>
+						) : null}
 
-					{displayError ? (
-						<p
-							className="text-sm text-destructive"
-							role="alert"
-							data-testid="workflow-dialog-error"
-						>
-							{displayError}
-						</p>
-					) : null}
+						{displayError ? (
+							<p
+								className="text-sm text-destructive"
+								role="alert"
+								data-testid="workflow-dialog-error"
+							>
+								{displayError}
+							</p>
+						) : null}
 
-					<input type="hidden" name="idempotencyKey" value={idempotencyKey} readOnly />
+						<input type="hidden" name="idempotencyKey" value={idempotencyKey} readOnly />
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

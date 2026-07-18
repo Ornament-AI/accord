@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -20,6 +21,7 @@ import {
 	usePostsList,
 	useUpdatePost,
 } from "@/lib/api/org-structure";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
 
 import { CatalogTab } from "./CatalogTab";
@@ -153,48 +155,55 @@ function PostFormDialog({ mode, open, onOpenChange, item }: FormDialogProps) {
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<form onSubmit={(event) => void handleSubmit(event)} className="grid gap-4">
-					<DialogHeader>
-						<DialogTitle>{mode === "create" ? "Add post" : "Edit post"}</DialogTitle>
-						<DialogDescription>
-							{mode === "create"
-								? "Create a post for this organization."
-								: "Update post details. The designation cannot be changed."}
-						</DialogDescription>
-					</DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
+					<DialogTitle>{mode === "create" ? "Add post" : "Edit post"}</DialogTitle>
+					<DialogDescription>
+						{mode === "create"
+							? "Create a post for this organization."
+							: "Update post details. The designation cannot be changed."}
+					</DialogDescription>
+				</DialogHeader>
 
-					<div className="grid gap-2">
-						<Label htmlFor="post-designation">Designation</Label>
-						<Input
-							id="post-designation"
-							value={form.designation}
-							onChange={(event) => {
-								setForm((prev) => ({ ...prev, designation: event.target.value }));
-								setDesignationError(null);
-							}}
-							disabled={isSubmitting || naturalKeyReadonly}
-							readOnly={naturalKeyReadonly}
-							aria-invalid={designationError ? true : undefined}
-						/>
-						{designationError ? (
-							<p className="text-sm text-destructive">{designationError}</p>
-						) : null}
-					</div>
+				<form
+					onSubmit={(event) => void handleSubmit(event)}
+					className="flex min-h-0 flex-1 flex-col"
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="post-designation">Designation</Label>
+							<Input
+								id="post-designation"
+								value={form.designation}
+								onChange={(event) => {
+									setForm((prev) => ({ ...prev, designation: event.target.value }));
+									setDesignationError(null);
+								}}
+								disabled={isSubmitting || naturalKeyReadonly}
+								readOnly={naturalKeyReadonly}
+								aria-invalid={designationError ? true : undefined}
+							/>
+							{designationError ? (
+								<p className="text-sm text-destructive">{designationError}</p>
+							) : null}
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="post-class-name">Class</Label>
-						<Input
-							id="post-class-name"
-							value={form.class_name}
-							onChange={(event) => setForm((prev) => ({ ...prev, class_name: event.target.value }))}
-							disabled={isSubmitting}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="post-class-name">Class</Label>
+							<Input
+								id="post-class-name"
+								value={form.class_name}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, class_name: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					{formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+						{formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

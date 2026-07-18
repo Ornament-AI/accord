@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -36,6 +37,7 @@ import {
 	usePayComponentsList,
 	useRecurringInstructions,
 } from "@/lib/api/pay-setup";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError, getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/utils";
 
@@ -275,100 +277,114 @@ function AddInstructionDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>Add instruction</DialogTitle>
 					<DialogDescription>
 						Create a recurring payroll instruction for this employee.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="add-ri-component">Component</Label>
-						<Select
-							value={form.component_id || undefined}
-							onValueChange={(value) => setForm((prev) => ({ ...prev, component_id: value ?? "" }))}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="add-ri-component" className="w-full">
-								<SelectValue placeholder="Select component" />
-							</SelectTrigger>
-							<SelectContent>
-								{components.map((component) => (
-									<SelectItem key={component.id} value={component.id}>
-										{component.code} — {component.name}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="add-ri-component">Component</Label>
+							<Select
+								value={form.component_id || null}
+								onValueChange={(value) =>
+									setForm((prev) => ({ ...prev, component_id: value ?? "" }))
+								}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="add-ri-component" className="w-full">
+									<SelectValue placeholder="Select component">
+										{(value: string | null) => {
+											const component = components.find((item) => item.id === value);
+											return component
+												? `${component.code} — ${component.name}`
+												: "Select component";
+										}}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{components.map((component) => (
+										<SelectItem key={component.id} value={component.id}>
+											{component.code} — {component.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-ri-effective-from">Effective from</Label>
-						<Input
-							id="add-ri-effective-from"
-							type="date"
-							value={form.effective_from}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, effective_from: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-ri-effective-from">Effective from</Label>
+							<Input
+								id="add-ri-effective-from"
+								type="date"
+								value={form.effective_from}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-ri-amount">Amount</Label>
-						<Input
-							id="add-ri-amount"
-							inputMode="decimal"
-							value={form.amount}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, amount: event.target.value, rate: "" }))
-							}
-							disabled={isSubmitting || form.rate.trim().length > 0}
-							placeholder="0.00"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-ri-amount">Amount</Label>
+							<Input
+								id="add-ri-amount"
+								inputMode="decimal"
+								value={form.amount}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, amount: event.target.value, rate: "" }))
+								}
+								disabled={isSubmitting || form.rate.trim().length > 0}
+								placeholder="0.00"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-ri-rate">Rate</Label>
-						<Input
-							id="add-ri-rate"
-							inputMode="decimal"
-							value={form.rate}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, rate: event.target.value, amount: "" }))
-							}
-							disabled={isSubmitting || form.amount.trim().length > 0}
-							placeholder="0.00"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-ri-rate">Rate</Label>
+							<Input
+								id="add-ri-rate"
+								inputMode="decimal"
+								value={form.rate}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, rate: event.target.value, amount: "" }))
+								}
+								disabled={isSubmitting || form.amount.trim().length > 0}
+								placeholder="0.00"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="add-ri-reason">Reason (optional)</Label>
-						<Textarea
-							id="add-ri-reason"
-							value={form.reason}
-							onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))}
-							disabled={isSubmitting}
-							rows={2}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="add-ri-reason">Reason (optional)</Label>
+							<Textarea
+								id="add-ri-reason"
+								value={form.reason}
+								onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
 
-					{overlapError ? (
-						<p className="text-sm text-destructive" role="alert" data-testid="ri-overlap-error">
-							{overlapError}
-						</p>
-					) : null}
+						{overlapError ? (
+							<p className="text-sm text-destructive" role="alert" data-testid="ri-overlap-error">
+								{overlapError}
+							</p>
+						) : null}
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"
@@ -482,82 +498,87 @@ function NewVersionDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>New version</DialogTitle>
 					<DialogDescription>
 						Create a new effective version for this recurring instruction.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="nv-ri-effective-from">Effective from</Label>
-						<Input
-							id="nv-ri-effective-from"
-							type="date"
-							value={form.effective_from}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, effective_from: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="nv-ri-effective-from">Effective from</Label>
+							<Input
+								id="nv-ri-effective-from"
+								type="date"
+								value={form.effective_from}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="nv-ri-amount">Amount</Label>
-						<Input
-							id="nv-ri-amount"
-							inputMode="decimal"
-							value={form.amount}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, amount: event.target.value, rate: "" }))
-							}
-							disabled={isSubmitting || form.rate.trim().length > 0}
-							placeholder="0.00"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="nv-ri-amount">Amount</Label>
+							<Input
+								id="nv-ri-amount"
+								inputMode="decimal"
+								value={form.amount}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, amount: event.target.value, rate: "" }))
+								}
+								disabled={isSubmitting || form.rate.trim().length > 0}
+								placeholder="0.00"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="nv-ri-rate">Rate</Label>
-						<Input
-							id="nv-ri-rate"
-							inputMode="decimal"
-							value={form.rate}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, rate: event.target.value, amount: "" }))
-							}
-							disabled={isSubmitting || form.amount.trim().length > 0}
-							placeholder="0.00"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="nv-ri-rate">Rate</Label>
+							<Input
+								id="nv-ri-rate"
+								inputMode="decimal"
+								value={form.rate}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, rate: event.target.value, amount: "" }))
+								}
+								disabled={isSubmitting || form.amount.trim().length > 0}
+								placeholder="0.00"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="nv-ri-change-reason">Change reason (optional)</Label>
-						<Textarea
-							id="nv-ri-change-reason"
-							value={form.change_reason}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, change_reason: event.target.value }))
-							}
-							disabled={isSubmitting}
-							rows={2}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="nv-ri-change-reason">Change reason (optional)</Label>
+							<Textarea
+								id="nv-ri-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
 
-					{overlapError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{overlapError}
-						</p>
-					) : null}
+						{overlapError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{overlapError}
+							</p>
+						) : null}
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"
@@ -643,8 +664,8 @@ function EndInstructionDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>End instruction</DialogTitle>
 					<DialogDescription>
 						Terminate this recurring instruction on the selected date.
@@ -652,47 +673,49 @@ function EndInstructionDialog({
 				</DialogHeader>
 
 				<form
-					className="grid gap-4"
+					className="flex min-h-0 flex-1 flex-col"
 					onSubmit={(event) => void handleSubmit(event)}
 					data-testid="end-instruction-form"
 				>
-					<div className="grid gap-2">
-						<Label htmlFor="end-ri-end-on">End on</Label>
-						<Input
-							id="end-ri-end-on"
-							type="date"
-							value={form.end_on}
-							onChange={(event) => setForm((prev) => ({ ...prev, end_on: event.target.value }))}
-							disabled={isSubmitting}
-						/>
-					</div>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="end-ri-end-on">End on</Label>
+							<Input
+								id="end-ri-end-on"
+								type="date"
+								value={form.end_on}
+								onChange={(event) => setForm((prev) => ({ ...prev, end_on: event.target.value }))}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="end-ri-change-reason">Change reason (optional)</Label>
-						<Textarea
-							id="end-ri-change-reason"
-							value={form.change_reason}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, change_reason: event.target.value }))
-							}
-							disabled={isSubmitting}
-							rows={2}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="end-ri-change-reason">Change reason (optional)</Label>
+							<Textarea
+								id="end-ri-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
 
-					{overlapError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{overlapError}
-						</p>
-					) : null}
+						{overlapError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{overlapError}
+							</p>
+						) : null}
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

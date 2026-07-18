@@ -4,18 +4,29 @@ import {
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { ArrowLeft, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
+import {
+	ColumnVisibilityToggle,
+	usePersistedColumnVisibility,
+} from "@/components/column-visibility";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageSection, PageShell } from "@/components/page-shell";
-import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,6 +50,22 @@ declare module "@tanstack/react-table" {
 		align?: "left" | "right" | "center";
 		className?: string;
 	}
+}
+
+function PayComponentBreadcrumb({ label }: { label: string }) {
+	return (
+		<Breadcrumb>
+			<BreadcrumbList>
+				<BreadcrumbItem>
+					<BreadcrumbLink render={<Link to="/pay-components" />}>Pay components</BreadcrumbLink>
+				</BreadcrumbItem>
+				<BreadcrumbSeparator />
+				<BreadcrumbItem>
+					<BreadcrumbPage>{label}</BreadcrumbPage>
+				</BreadcrumbItem>
+			</BreadcrumbList>
+		</Breadcrumb>
+	);
 }
 
 function formatEffectiveRange(version: ComponentRateVersionResponse): string {
@@ -77,21 +104,27 @@ const rateVersionColumns: ColumnDef<ComponentRateVersionResponse>[] = [
 ];
 
 export default function PayComponentDetailPage() {
-	const { id } = useParams<{ id: string }>();
+	const { componentId } = useParams<{ componentId: string }>();
 	const { hasCapability } = useAuth();
 	const canManage = hasCapability("manage_master_data");
 	const [createOpen, setCreateOpen] = useState(false);
 
-	const componentQuery = usePayComponent(id);
-	const rateVersionsQuery = useComponentRateVersions(id);
+	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
+		"accord:pay-component-rate-versions:columns",
+		{},
+	);
+
+	const componentQuery = usePayComponent(componentId);
+	const rateVersionsQuery = useComponentRateVersions(componentId);
 	const allComponentsQuery = usePayComponentsList();
 
 	const component = componentQuery.data;
 	const rateVersions = rateVersionsQuery.data ?? [];
 
 	const basisOptions = useMemo(
-		() => (allComponentsQuery.data ?? []).filter((item) => item.id !== id && item.is_active),
-		[allComponentsQuery.data, id],
+		() =>
+			(allComponentsQuery.data ?? []).filter((item) => item.id !== componentId && item.is_active),
+		[allComponentsQuery.data, componentId],
 	);
 
 	const table = useReactTable({
@@ -99,9 +132,11 @@ export default function PayComponentDetailPage() {
 		columns: rateVersionColumns,
 		getCoreRowModel: getCoreRowModel(),
 		getRowId: (row) => row.id,
+		state: { columnVisibility },
+		onColumnVisibilityChange: setColumnVisibility,
 	});
 
-	if (!id) {
+	if (!componentId) {
 		return (
 			<CapabilityGate capability="view_master_data" title="Pay component">
 				<AppLayout title="Pay component">
@@ -116,7 +151,7 @@ export default function PayComponentDetailPage() {
 	return (
 		<CapabilityGate capability="view_master_data" title="Pay component">
 			<AppLayout
-				title={component ? component.code : "Pay component"}
+				title={component ? <PayComponentBreadcrumb label={component.code} /> : "Pay component"}
 				actions={
 					canManage ? (
 						<Button size="sm" onClick={() => setCreateOpen(true)}>
@@ -127,18 +162,6 @@ export default function PayComponentDetailPage() {
 				}
 			>
 				<PageShell data-testid="pay-component-detail-page">
-					<PageToolbar>
-						<Button
-							variant="ghost"
-							size="sm"
-							render={<Link to="/pay-components" />}
-							aria-label="Back to pay components"
-						>
-							<ArrowLeft className="size-4" />
-							Pay components
-						</Button>
-					</PageToolbar>
-
 					{componentQuery.isLoading ? (
 						<div className="grid gap-4">
 							<Skeleton className="h-20 w-full" />
@@ -169,6 +192,11 @@ export default function PayComponentDetailPage() {
 							<PageSection className="grid gap-3">
 								<div className="flex flex-wrap items-center justify-between gap-2">
 									<h3 className="text-sm font-medium">Rate version history</h3>
+									<ColumnVisibilityToggle
+										table={table}
+										iconOnly
+										triggerClassName="justify-center"
+									/>
 								</div>
 
 								{rateVersionsQuery.isLoading ? <DataTableSkeleton /> : null}

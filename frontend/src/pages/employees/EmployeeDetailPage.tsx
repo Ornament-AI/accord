@@ -1,4 +1,4 @@
-import { ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
@@ -8,8 +8,15 @@ import { EmptyState } from "@/components/empty-state";
 import { PageSection, PageShell } from "@/components/page-shell";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,6 +53,22 @@ function isVersionKind(tab: EmployeeDetailTab): tab is EmployeeVersionKind {
 function regimeLabel(regime: string | null | undefined): string {
 	if (!regime) return "—";
 	return regime.toUpperCase();
+}
+
+function EmployeeBreadcrumb({ label }: { label: string }) {
+	return (
+		<Breadcrumb>
+			<BreadcrumbList>
+				<BreadcrumbItem>
+					<BreadcrumbLink render={<Link to="/employees" />}>Employees</BreadcrumbLink>
+				</BreadcrumbItem>
+				<BreadcrumbSeparator />
+				<BreadcrumbItem>
+					<BreadcrumbPage>{label}</BreadcrumbPage>
+				</BreadcrumbItem>
+			</BreadcrumbList>
+		</Breadcrumb>
+	);
 }
 
 function FieldRow({ label, value }: { label: string; value: ReactNode }) {
@@ -148,7 +171,7 @@ export default function EmployeeDetailPage() {
 	return (
 		<CapabilityGate capability="view_master_data" title="Employee">
 			<AppLayout
-				title={employee ? employee.employee_number : "Employee"}
+				title={employee ? <EmployeeBreadcrumb label={employee.employee_number} /> : "Employee"}
 				actions={
 					<div className="flex items-center gap-2">
 						{canReveal ? (
@@ -168,15 +191,6 @@ export default function EmployeeDetailPage() {
 			>
 				<PageShell data-testid="employee-detail-page">
 					<PageToolbar>
-						<Button
-							variant="ghost"
-							size="sm"
-							render={<Link to="/employees" />}
-							aria-label="Back to employees"
-						>
-							<ArrowLeft className="size-4" />
-							Employees
-						</Button>
 						<DatePicker
 							value={asOfDate}
 							onValueChange={(date) => {
@@ -204,22 +218,18 @@ export default function EmployeeDetailPage() {
 					{employee ? (
 						<>
 							<PageSection>
-								<Card size="sm">
-									<CardHeader className="border-b">
-										<CardTitle className="flex flex-wrap items-center gap-3">
-											<span>{employee.employee_number}</span>
-											<span className="text-muted-foreground font-normal">
-												{profile?.name ?? "—"}
-											</span>
-											{profile?.retirement_regime ? (
-												<Badge variant="secondary">{regimeLabel(profile.retirement_regime)}</Badge>
-											) : null}
-										</CardTitle>
-									</CardHeader>
-									<CardContent className="pt-4 text-sm text-muted-foreground">
-										As of {formatDate(employee.as_of)}
-									</CardContent>
-								</Card>
+								<div className="flex flex-wrap items-center gap-3">
+									<h2 className="text-xl font-semibold tracking-tight">
+										{employee.employee_number}
+									</h2>
+									<span className="text-muted-foreground">{profile?.name ?? "—"}</span>
+									{profile?.retirement_regime ? (
+										<Badge variant="secondary">{regimeLabel(profile.retirement_regime)}</Badge>
+									) : null}
+								</div>
+								<p className="mt-1 text-sm text-muted-foreground">
+									As of {formatDate(employee.as_of)}
+								</p>
 							</PageSection>
 
 							<PageSection>

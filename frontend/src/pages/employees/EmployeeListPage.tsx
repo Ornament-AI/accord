@@ -5,21 +5,26 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Plus, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
+import {
+	ColumnVisibilityToggle,
+	usePersistedColumnVisibility,
+} from "@/components/column-visibility";
+import { DataSearchControl } from "@/components/data-search-control";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { FilterScrollRow } from "@/components/filter-scroll-row";
 import { PageShell } from "@/components/page-shell";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import {
 	type EmployeeSummary,
@@ -37,15 +42,6 @@ declare module "@tanstack/react-table" {
 		align?: "left" | "right" | "center";
 		className?: string;
 	}
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-	const [debounced, setDebounced] = useState(value);
-	useEffect(() => {
-		const handle = window.setTimeout(() => setDebounced(value), delayMs);
-		return () => window.clearTimeout(handle);
-	}, [value, delayMs]);
-	return debounced;
 }
 
 function regimeLabel(regime: string | null | undefined): string {
@@ -94,11 +90,14 @@ export default function EmployeeListPage() {
 	const [search, setSearch] = useState("");
 	const [page, setPage] = useState(1);
 	const [createOpen, setCreateOpen] = useState(false);
-	const debouncedSearch = useDebouncedValue(search, 300);
+	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
+		"accord:employees:columns",
+		{},
+	);
 
 	const listQuery = useEmployeesList({
 		as_of: asOf,
-		search: debouncedSearch.trim() || null,
+		search: search.trim() || null,
 		page,
 		size: 20,
 	});
@@ -108,6 +107,8 @@ export default function EmployeeListPage() {
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 		getRowId: (row) => row.id,
+		state: { columnVisibility },
+		onColumnVisibilityChange: setColumnVisibility,
 	});
 
 	const asOfDate = useMemo(() => parseApiDate(asOf), [asOf]);
@@ -129,27 +130,30 @@ export default function EmployeeListPage() {
 			>
 				<PageShell data-testid="employee-list-page">
 					<PageToolbar>
-						<Input
-							value={search}
-							onChange={(event) => {
-								setSearch(event.target.value);
+						<DataSearchControl
+							search={search.trim() || undefined}
+							title="Search employees"
+							description="Search by employee number or name."
+							placeholder="Employee number or name…"
+							onSearchChange={(next) => {
+								setSearch(next ?? "");
 								setPage(1);
 							}}
-							placeholder="Search employees…"
-							aria-label="Search employees"
-							className="max-w-xs"
 						/>
-						<DatePicker
-							value={asOfDate}
-							onValueChange={(date) => {
-								if (date) {
-									setAsOf(toApiDate(date));
-									setPage(1);
-								}
-							}}
-							aria-label="As of date"
-							placeholder="As of"
-						/>
+						<FilterScrollRow>
+							<DatePicker
+								value={asOfDate}
+								onValueChange={(date) => {
+									if (date) {
+										setAsOf(toApiDate(date));
+										setPage(1);
+									}
+								}}
+								aria-label="As of date"
+								placeholder="As of"
+							/>
+						</FilterScrollRow>
+						<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
 					</PageToolbar>
 
 					{listQuery.isLoading ? <DataTableSkeleton /> : null}
@@ -166,7 +170,7 @@ export default function EmployeeListPage() {
 							icon={Users}
 							title="No employees found"
 							description={
-								debouncedSearch.trim()
+								search.trim()
 									? "Try a different search term or as-of date."
 									: "Create an employee to get started."
 							}

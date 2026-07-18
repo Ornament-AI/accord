@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -38,6 +39,7 @@ import {
 	useCreateAdvance,
 	useCreateAdvanceInstallmentVersion,
 } from "@/lib/api/pay-setup";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError, getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/utils";
 
@@ -267,8 +269,8 @@ function AddAdvanceDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>Add advance</DialogTitle>
 					<DialogDescription>
 						Record an advance and its first installment schedule for this employee.
@@ -276,91 +278,45 @@ function AddAdvanceDialog({
 				</DialogHeader>
 
 				<form
-					className="grid gap-4"
+					className="flex min-h-0 flex-1 flex-col"
 					onSubmit={(event) => void handleSubmit(event)}
 					data-testid="add-advance-form"
 				>
-					<div className="grid gap-2">
-						<Label htmlFor="add-adv-type">Type</Label>
-						<Select
-							value={form.advance_type}
-							onValueChange={(value) =>
-								setForm((prev) => ({ ...prev, advance_type: value as AdvanceType }))
-							}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="add-adv-type" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{ADVANCE_TYPES.map((type) => (
-									<SelectItem key={type} value={type}>
-										{advanceTypeLabel(type)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-
-					<div className="grid gap-2">
-						<Label htmlFor="add-adv-principal">Principal</Label>
-						<Input
-							id="add-adv-principal"
-							inputMode="decimal"
-							value={form.principal}
-							onChange={(event) => setForm((prev) => ({ ...prev, principal: event.target.value }))}
-							disabled={isSubmitting}
-							placeholder="0.00"
-						/>
-					</div>
-
-					<div className="grid gap-2">
-						<Label htmlFor="add-adv-sanctioned-on">Sanctioned on</Label>
-						<Input
-							id="add-adv-sanctioned-on"
-							type="date"
-							value={form.sanctioned_on}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, sanctioned_on: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
-
-					<div className="grid gap-2">
-						<Label htmlFor="add-adv-reference">Reference (optional)</Label>
-						<Input
-							id="add-adv-reference"
-							value={form.reference}
-							onChange={(event) => setForm((prev) => ({ ...prev, reference: event.target.value }))}
-							disabled={isSubmitting}
-						/>
-					</div>
-
-					<fieldset className="grid gap-3 rounded-md border p-3">
-						<legend className="px-1 text-sm font-medium">First installment</legend>
-
+					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="add-adv-inst-from">Effective from</Label>
-							<Input
-								id="add-adv-inst-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+							<Label htmlFor="add-adv-type">Type</Label>
+							<Select
+								value={form.advance_type}
+								onValueChange={(value) =>
+									setForm((prev) => ({ ...prev, advance_type: value as AdvanceType }))
 								}
 								disabled={isSubmitting}
-							/>
+							>
+								<SelectTrigger id="add-adv-type" className="w-full">
+									<SelectValue>
+										{(value: AdvanceType | null) =>
+											value ? advanceTypeLabel(value) : "Select advance type"
+										}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{ADVANCE_TYPES.map((type) => (
+										<SelectItem key={type} value={type}>
+											{advanceTypeLabel(type)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-adv-inst-amount">Installment amount</Label>
+							<Label htmlFor="add-adv-principal">Principal</Label>
 							<Input
-								id="add-adv-inst-amount"
+								id="add-adv-principal"
 								inputMode="decimal"
-								value={form.installment_amount}
+								value={form.principal}
 								onChange={(event) =>
-									setForm((prev) => ({ ...prev, installment_amount: event.target.value }))
+									setForm((prev) => ({ ...prev, principal: event.target.value }))
 								}
 								disabled={isSubmitting}
 								placeholder="0.00"
@@ -368,46 +324,102 @@ function AddAdvanceDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-adv-inst-recovered">Installments recovered (opening)</Label>
+							<Label htmlFor="add-adv-sanctioned-on">Sanctioned on</Label>
 							<Input
-								id="add-adv-inst-recovered"
-								type="number"
-								min={0}
-								step={1}
-								value={form.installments_recovered_opening}
+								id="add-adv-sanctioned-on"
+								type="date"
+								value={form.sanctioned_on}
 								onChange={(event) =>
-									setForm((prev) => ({
-										...prev,
-										installments_recovered_opening: event.target.value,
-									}))
+									setForm((prev) => ({ ...prev, sanctioned_on: event.target.value }))
 								}
 								disabled={isSubmitting}
 							/>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-adv-inst-total">Installments total</Label>
+							<Label htmlFor="add-adv-reference">Reference (optional)</Label>
 							<Input
-								id="add-adv-inst-total"
-								type="number"
-								min={1}
-								step={1}
-								value={form.installments_total}
+								id="add-adv-reference"
+								value={form.reference}
 								onChange={(event) =>
-									setForm((prev) => ({ ...prev, installments_total: event.target.value }))
+									setForm((prev) => ({ ...prev, reference: event.target.value }))
 								}
 								disabled={isSubmitting}
 							/>
 						</div>
-					</fieldset>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert" data-testid="advance-form-error">
-							{formError}
-						</p>
-					) : null}
+						<fieldset className="grid gap-3 rounded-md border p-3">
+							<legend className="px-1 text-sm font-medium">First installment</legend>
 
-					<DialogFooter>
+							<div className="grid gap-2">
+								<Label htmlFor="add-adv-inst-from">Effective from</Label>
+								<Input
+									id="add-adv-inst-from"
+									type="date"
+									value={form.effective_from}
+									onChange={(event) =>
+										setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+									}
+									disabled={isSubmitting}
+								/>
+							</div>
+
+							<div className="grid gap-2">
+								<Label htmlFor="add-adv-inst-amount">Installment amount</Label>
+								<Input
+									id="add-adv-inst-amount"
+									inputMode="decimal"
+									value={form.installment_amount}
+									onChange={(event) =>
+										setForm((prev) => ({ ...prev, installment_amount: event.target.value }))
+									}
+									disabled={isSubmitting}
+									placeholder="0.00"
+								/>
+							</div>
+
+							<div className="grid gap-2">
+								<Label htmlFor="add-adv-inst-recovered">Installments recovered (opening)</Label>
+								<Input
+									id="add-adv-inst-recovered"
+									type="number"
+									min={0}
+									step={1}
+									value={form.installments_recovered_opening}
+									onChange={(event) =>
+										setForm((prev) => ({
+											...prev,
+											installments_recovered_opening: event.target.value,
+										}))
+									}
+									disabled={isSubmitting}
+								/>
+							</div>
+
+							<div className="grid gap-2">
+								<Label htmlFor="add-adv-inst-total">Installments total</Label>
+								<Input
+									id="add-adv-inst-total"
+									type="number"
+									min={1}
+									step={1}
+									value={form.installments_total}
+									onChange={(event) =>
+										setForm((prev) => ({ ...prev, installments_total: event.target.value }))
+									}
+									disabled={isSubmitting}
+								/>
+							</div>
+						</fieldset>
+
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert" data-testid="advance-form-error">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
+
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"
@@ -510,95 +522,100 @@ function NewInstallmentVersionDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>New installment version</DialogTitle>
 					<DialogDescription>
 						Schedule a new installment version for this advance.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="niv-effective-from">Effective from</Label>
-						<Input
-							id="niv-effective-from"
-							type="date"
-							value={form.effective_from}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, effective_from: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="niv-effective-from">Effective from</Label>
+							<Input
+								id="niv-effective-from"
+								type="date"
+								value={form.effective_from}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="niv-amount">Installment amount</Label>
-						<Input
-							id="niv-amount"
-							inputMode="decimal"
-							value={form.installment_amount}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, installment_amount: event.target.value }))
-							}
-							disabled={isSubmitting}
-							placeholder="0.00"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="niv-amount">Installment amount</Label>
+							<Input
+								id="niv-amount"
+								inputMode="decimal"
+								value={form.installment_amount}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, installment_amount: event.target.value }))
+								}
+								disabled={isSubmitting}
+								placeholder="0.00"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="niv-recovered">Installments recovered (opening)</Label>
-						<Input
-							id="niv-recovered"
-							type="number"
-							min={0}
-							step={1}
-							value={form.installments_recovered_opening}
-							onChange={(event) =>
-								setForm((prev) => ({
-									...prev,
-									installments_recovered_opening: event.target.value,
-								}))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="niv-recovered">Installments recovered (opening)</Label>
+							<Input
+								id="niv-recovered"
+								type="number"
+								min={0}
+								step={1}
+								value={form.installments_recovered_opening}
+								onChange={(event) =>
+									setForm((prev) => ({
+										...prev,
+										installments_recovered_opening: event.target.value,
+									}))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="niv-total">Installments total</Label>
-						<Input
-							id="niv-total"
-							type="number"
-							min={1}
-							step={1}
-							value={form.installments_total}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, installments_total: event.target.value }))
-							}
-							disabled={isSubmitting}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="niv-total">Installments total</Label>
+							<Input
+								id="niv-total"
+								type="number"
+								min={1}
+								step={1}
+								value={form.installments_total}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, installments_total: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="niv-change-reason">Change reason (optional)</Label>
-						<Textarea
-							id="niv-change-reason"
-							value={form.change_reason}
-							onChange={(event) =>
-								setForm((prev) => ({ ...prev, change_reason: event.target.value }))
-							}
-							disabled={isSubmitting}
-							rows={2}
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="niv-change-reason">Change reason (optional)</Label>
+							<Textarea
+								id="niv-change-reason"
+								value={form.change_reason}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, change_reason: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

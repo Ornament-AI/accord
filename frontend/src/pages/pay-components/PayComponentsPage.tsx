@@ -10,6 +10,10 @@ import { useNavigate } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
+import {
+	ColumnVisibilityToggle,
+	usePersistedColumnVisibility,
+} from "@/components/column-visibility";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
@@ -76,6 +80,8 @@ function buildColumns({
 		columns.push({
 			id: "actions",
 			header: "Actions",
+			enableHiding: false,
+			meta: { hideFromColumnVisibilityToggle: true },
 			cell: ({ row }) => (
 				<Button
 					type="button"
@@ -106,6 +112,11 @@ export default function PayComponentsPage() {
 	const [editOpen, setEditOpen] = useState(false);
 	const [editing, setEditing] = useState<PayComponentResponse | null>(null);
 
+	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
+		"accord:pay-components:columns",
+		{},
+	);
+
 	const listQuery = usePayComponentsList();
 
 	const columns = buildColumns({
@@ -121,6 +132,8 @@ export default function PayComponentsPage() {
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 		getRowId: (row) => row.id,
+		state: { columnVisibility },
+		onColumnVisibilityChange: setColumnVisibility,
 	});
 
 	const isEmpty = !listQuery.isLoading && (listQuery.data?.length ?? 0) === 0;
@@ -139,6 +152,10 @@ export default function PayComponentsPage() {
 				}
 			>
 				<PageShell data-testid="pay-components-page">
+					<div className="flex flex-wrap items-center justify-end gap-2">
+						<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
+					</div>
+
 					{listQuery.isLoading ? <DataTableSkeleton /> : null}
 
 					{listQuery.isError ? (

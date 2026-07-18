@@ -13,6 +13,7 @@ import { CapabilityGate } from "@/components/capability-gate";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { FilterScrollRow } from "@/components/filter-scroll-row";
 import { PageShell } from "@/components/page-shell";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
@@ -28,6 +29,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { type AuditEventResponse, toAuditDayBound, useAuditEventsList } from "@/lib/api/audit";
 import { getErrorMessage } from "@/lib/errors";
+import { dateRangeFilterWidthStyle, filterWidthStyle } from "@/lib/filter-width";
 import { cn, formatDateTime } from "@/lib/utils";
 
 import { AuditEventDetail } from "./AuditEventDetail";
@@ -161,48 +163,50 @@ export default function AuditPage() {
 			<AppLayout title="Audit">
 				<PageShell data-testid="audit-page">
 					<PageToolbar>
-						<Input
-							value={command}
-							onChange={(event) => {
-								setCommand(event.target.value);
-								setPage(1);
-							}}
-							placeholder="Command…"
-							aria-label="Filter by command"
-							className="max-w-[12rem]"
-						/>
-						<Input
-							value={entityType}
-							onChange={(event) => {
-								setEntityType(event.target.value);
-								setPage(1);
-							}}
-							placeholder="Entity type…"
-							aria-label="Filter by entity type"
-							className="max-w-[12rem]"
-						/>
-						<Input
-							value={entityId}
-							onChange={(event) => {
-								setEntityId(event.target.value);
-								setPage(1);
-							}}
-							placeholder="Entity ID…"
-							aria-label="Search by entity ID"
-							className="max-w-[16rem]"
-						/>
-						<DateRangePicker
-							value={dateRange}
-							onValueChange={(range) => {
-								setDateRange(range);
-								setPage(1);
-							}}
-							aria-label="Filter by date range"
-							placeholder="Date range"
-							numberOfMonths={isMobile ? 1 : 2}
-							presets={datePresets}
-							className="max-w-[17rem]"
-						/>
+						<FilterScrollRow>
+							<Input
+								value={command}
+								onChange={(event) => {
+									setCommand(event.target.value);
+									setPage(1);
+								}}
+								placeholder="Command…"
+								aria-label="Filter by command"
+								style={filterWidthStyle([], "Command…")}
+							/>
+							<Input
+								value={entityType}
+								onChange={(event) => {
+									setEntityType(event.target.value);
+									setPage(1);
+								}}
+								placeholder="Entity type…"
+								aria-label="Filter by entity type"
+								style={filterWidthStyle([], "Entity type…")}
+							/>
+							<Input
+								value={entityId}
+								onChange={(event) => {
+									setEntityId(event.target.value);
+									setPage(1);
+								}}
+								placeholder="Entity ID…"
+								aria-label="Search by entity ID"
+								style={filterWidthStyle([], "Entity ID…", { maxCh: 20 })}
+							/>
+							<DateRangePicker
+								value={dateRange}
+								onValueChange={(range) => {
+									setDateRange(range);
+									setPage(1);
+								}}
+								aria-label="Filter by date range"
+								placeholder="Date range"
+								numberOfMonths={isMobile ? 1 : 2}
+								presets={datePresets}
+								style={dateRangeFilterWidthStyle("Date range", Boolean(dateRange?.from))}
+							/>
+						</FilterScrollRow>
 					</PageToolbar>
 
 					<div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
@@ -240,7 +244,7 @@ export default function AuditPage() {
 						</div>
 
 						<aside
-							className="hidden min-h-0 rounded-lg border border-border/60 bg-card/40 p-4 md:block"
+							className="app-material-level-1 hidden min-h-0 rounded-lg border app-border-level-1 bg-card p-4 md:block"
 							data-testid="audit-detail-panel"
 						>
 							<AuditEventDetail eventId={selectedId} />

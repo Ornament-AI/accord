@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/app-layout";
+import { PageShell } from "@/components/page-shell";
 import { useAuth } from "@/contexts/AuthContext";
 
 import { DashboardContent } from "./dashboard/DashboardContent";
@@ -13,13 +14,13 @@ export default function DashboardPage() {
 
 	return (
 		<AppLayout title="Dashboard">
-			<div className="flex min-h-0 flex-1 flex-col gap-6 p-6" data-testid="dashboard-page">
+			<PageShell data-testid="dashboard-page">
 				{canViewDashboardData ? (
 					<DashboardContent />
 				) : (
 					<WelcomeCard userName={user?.name} organizationName={activeOrganization?.name} limited />
 				)}
-			</div>
+			</PageShell>
 		</AppLayout>
 	);
 }

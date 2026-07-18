@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -12,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreatePayrollPeriod } from "@/lib/api/payroll-runs";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
 
 type CreatePeriodDialogProps = {
@@ -79,8 +81,8 @@ export function CreatePeriodDialog({ open, onOpenChange }: CreatePeriodDialogPro
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>New payroll period</DialogTitle>
 					<DialogDescription>
 						Create a payroll period for a calendar month. Duplicate year/month combinations are
@@ -88,40 +90,45 @@ export function CreatePeriodDialog({ open, onOpenChange }: CreatePeriodDialogPro
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					<div className="grid gap-2">
-						<Label htmlFor="create-period-year">Year</Label>
-						<Input
-							id="create-period-year"
-							type="number"
-							value={form.period_year}
-							onChange={(event) => setField("period_year", event.target.value)}
-							disabled={isSubmitting}
-							autoComplete="off"
-						/>
-					</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="create-period-year">Year</Label>
+							<Input
+								id="create-period-year"
+								type="number"
+								value={form.period_year}
+								onChange={(event) => setField("period_year", event.target.value)}
+								disabled={isSubmitting}
+								autoComplete="off"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="create-period-month">Month</Label>
-						<Input
-							id="create-period-month"
-							type="number"
-							min={1}
-							max={12}
-							value={form.period_month}
-							onChange={(event) => setField("period_month", event.target.value)}
-							disabled={isSubmitting}
-							autoComplete="off"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="create-period-month">Month</Label>
+							<Input
+								id="create-period-month"
+								type="number"
+								min={1}
+								max={12}
+								value={form.period_month}
+								onChange={(event) => setField("period_month", event.target.value)}
+								disabled={isSubmitting}
+								autoComplete="off"
+							/>
+						</div>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

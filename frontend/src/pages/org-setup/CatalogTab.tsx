@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { getErrorMessage } from "@/lib/errors";
@@ -68,15 +69,19 @@ export function CatalogTab<T extends { id: string }>({
 
 	return (
 		<div className="flex flex-col gap-4" data-testid={testId}>
-			<div className="flex flex-wrap items-center justify-between gap-2">
-				<div className="flex min-w-0 flex-1 items-center gap-2">{toolbar}</div>
-				{canManage ? (
-					<Button size="sm" onClick={onAdd}>
-						<Plus className="size-4" />
-						{addLabel}
-					</Button>
-				) : null}
-			</div>
+			<PageToolbar
+				trailing={
+					canManage ? (
+						<Button size="sm" onClick={onAdd}>
+							<Plus className="size-4" />
+							{addLabel}
+						</Button>
+					) : undefined
+				}
+				trailingClassName="ml-auto"
+			>
+				{toolbar}
+			</PageToolbar>
 
 			{isLoading ? <DataTableSkeleton /> : null}
 

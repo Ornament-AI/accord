@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -26,6 +27,7 @@ import {
 	type PayrollRunInputResponse,
 	useUpsertPayrollRunInput,
 } from "@/lib/api/payroll-runs";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 
 type UpsertInputDialogProps = {
 	open: boolean;
@@ -140,8 +142,8 @@ export function UpsertInputDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
+				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>{isEdit ? "Edit run input" : "Add run input"}</DialogTitle>
 					<DialogDescription>
 						{isEdit
@@ -150,125 +152,142 @@ export function UpsertInputDialog({
 					</DialogDescription>
 				</DialogHeader>
 
-				<form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
-					{!isEdit ? (
-						<>
-							<div className="grid gap-2">
-								<Label htmlFor="upsert-input-employee-search">Search employees</Label>
-								<Input
-									id="upsert-input-employee-search"
-									value={form.employee_search}
-									onChange={(event) => setField("employee_search", event.target.value)}
-									disabled={isSubmitting}
-									placeholder="Name, number, or Sevarth ID"
-									autoComplete="off"
-								/>
-							</div>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						{!isEdit ? (
+							<>
+								<div className="grid gap-2">
+									<Label htmlFor="upsert-input-employee-search">Search employees</Label>
+									<Input
+										id="upsert-input-employee-search"
+										value={form.employee_search}
+										onChange={(event) => setField("employee_search", event.target.value)}
+										disabled={isSubmitting}
+										placeholder="Name, number, or Sevarth ID"
+										autoComplete="off"
+									/>
+								</div>
 
-							<div className="grid gap-2">
-								<Label htmlFor="upsert-input-employee">Employee</Label>
-								<Select
-									value={form.employee_id || undefined}
-									onValueChange={(value) => setField("employee_id", value ?? "")}
-									disabled={isSubmitting}
-								>
-									<SelectTrigger id="upsert-input-employee" className="w-full">
-										<SelectValue placeholder="Select employee" />
-									</SelectTrigger>
-									<SelectContent>
-										{employees.map((employee) => (
-											<SelectItem key={employee.id} value={employee.id}>
-												{employee.employee_number}
-												{employee.name ? ` — ${employee.name}` : ""}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
+								<div className="grid gap-2">
+									<Label htmlFor="upsert-input-employee">Employee</Label>
+									<Select
+										value={form.employee_id || null}
+										onValueChange={(value) => setField("employee_id", value ?? "")}
+										disabled={isSubmitting}
+									>
+										<SelectTrigger id="upsert-input-employee" className="w-full">
+											<SelectValue placeholder="Select employee">
+												{(value: string | null) => {
+													const employee = employees.find((item) => item.id === value);
+													return employee
+														? `${employee.employee_number}${employee.name ? ` — ${employee.name}` : ""}`
+														: "Select employee";
+												}}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{employees.map((employee) => (
+												<SelectItem key={employee.id} value={employee.id}>
+													{employee.employee_number}
+													{employee.name ? ` — ${employee.name}` : ""}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
 
-							<div className="grid gap-2">
-								<Label htmlFor="upsert-input-component">Component code</Label>
-								<Input
-									id="upsert-input-component"
-									value={form.component_code}
-									onChange={(event) => setField("component_code", event.target.value)}
-									disabled={isSubmitting}
-									autoComplete="off"
-								/>
+								<div className="grid gap-2">
+									<Label htmlFor="upsert-input-component">Component code</Label>
+									<Input
+										id="upsert-input-component"
+										value={form.component_code}
+										onChange={(event) => setField("component_code", event.target.value)}
+										disabled={isSubmitting}
+										autoComplete="off"
+									/>
+								</div>
+							</>
+						) : (
+							<div className="grid gap-1 text-sm">
+								<p>
+									<span className="text-muted-foreground">Employee:</span> {editing?.employee_id}
+								</p>
+								<p>
+									<span className="text-muted-foreground">Component:</span>{" "}
+									{editing?.component_code}
+								</p>
 							</div>
-						</>
-					) : (
-						<div className="grid gap-1 text-sm">
-							<p>
-								<span className="text-muted-foreground">Employee:</span> {editing?.employee_id}
-							</p>
-							<p>
-								<span className="text-muted-foreground">Component:</span> {editing?.component_code}
-							</p>
+						)}
+
+						<div className="grid gap-2">
+							<Label htmlFor="upsert-input-kind">Input kind</Label>
+							<Select
+								value={form.input_kind}
+								onValueChange={(value) => setField("input_kind", value as InputKind)}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="upsert-input-kind" className="w-full">
+									<SelectValue>
+										{(value: InputKind | null) =>
+											value ? inputKindLabel(value) : "Select input kind"
+										}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{INPUT_KINDS.map((kind) => (
+										<SelectItem key={kind} value={kind}>
+											{inputKindLabel(kind)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 						</div>
-					)}
 
-					<div className="grid gap-2">
-						<Label htmlFor="upsert-input-kind">Input kind</Label>
-						<Select
-							value={form.input_kind}
-							onValueChange={(value) => setField("input_kind", value as InputKind)}
-							disabled={isSubmitting}
-						>
-							<SelectTrigger id="upsert-input-kind" className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{INPUT_KINDS.map((kind) => (
-									<SelectItem key={kind} value={kind}>
-										{inputKindLabel(kind)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="upsert-input-amount">Amount</Label>
+							<Input
+								id="upsert-input-amount"
+								value={form.amount}
+								onChange={(event) => setField("amount", event.target.value)}
+								disabled={isSubmitting}
+								autoComplete="off"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="upsert-input-amount">Amount</Label>
-						<Input
-							id="upsert-input-amount"
-							value={form.amount}
-							onChange={(event) => setField("amount", event.target.value)}
-							disabled={isSubmitting}
-							autoComplete="off"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="upsert-input-rate">Rate</Label>
+							<Input
+								id="upsert-input-rate"
+								value={form.rate}
+								onChange={(event) => setField("rate", event.target.value)}
+								disabled={isSubmitting}
+								autoComplete="off"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="upsert-input-rate">Rate</Label>
-						<Input
-							id="upsert-input-rate"
-							value={form.rate}
-							onChange={(event) => setField("rate", event.target.value)}
-							disabled={isSubmitting}
-							autoComplete="off"
-						/>
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="upsert-input-reason">Reason</Label>
+							<Input
+								id="upsert-input-reason"
+								value={form.reason}
+								onChange={(event) => setField("reason", event.target.value)}
+								disabled={isSubmitting}
+								required
+								autoComplete="off"
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="upsert-input-reason">Reason</Label>
-						<Input
-							id="upsert-input-reason"
-							value={form.reason}
-							onChange={(event) => setField("reason", event.target.value)}
-							disabled={isSubmitting}
-							required
-							autoComplete="off"
-						/>
-					</div>
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
 
-					{formError ? (
-						<p className="text-sm text-destructive" role="alert">
-							{formError}
-						</p>
-					) : null}
-
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

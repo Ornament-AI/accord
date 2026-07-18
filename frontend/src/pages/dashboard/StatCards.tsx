@@ -1,6 +1,7 @@
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardTitleWithInfo } from "@/components/info-tip";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { DashboardResponse } from "@/lib/api/dashboard";
 import { formatCanonicalMoney } from "@/lib/api/payroll-runs";
 import { cn } from "@/lib/utils";
@@ -50,12 +51,18 @@ export function StatCards({ data }: StatCardsProps) {
 	const { headcount, latest_posted: latestPosted, variance } = data;
 
 	return (
-		<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="dashboard-stat-cards">
+		<div
+			className="grid gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4"
+			data-testid="dashboard-stat-cards"
+		>
 			<Card size="sm" data-testid="stat-active-employees">
 				<CardHeader className="border-b">
-					<CardTitle className="text-sm font-medium text-muted-foreground">
+					<CardTitleWithInfo
+						className="text-sm font-medium text-muted-foreground"
+						info="Headcount active as of today, split by retirement regime."
+					>
 						Active employees
-					</CardTitle>
+					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">
 					<p className="text-2xl font-semibold tracking-tight">{headcount.active_employees}</p>
@@ -65,9 +72,12 @@ export function StatCards({ data }: StatCardsProps) {
 
 			<Card size="sm" data-testid="stat-latest-gross">
 				<CardHeader className="border-b">
-					<CardTitle className="text-sm font-medium text-muted-foreground">
+					<CardTitleWithInfo
+						className="text-sm font-medium text-muted-foreground"
+						info="Gross pay from the most recently posted payroll run."
+					>
 						Latest posted gross
-					</CardTitle>
+					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">
 					<p className="text-2xl font-semibold tracking-tight">
@@ -81,7 +91,12 @@ export function StatCards({ data }: StatCardsProps) {
 
 			<Card size="sm" data-testid="stat-net-payable">
 				<CardHeader className="border-b">
-					<CardTitle className="text-sm font-medium text-muted-foreground">Net payable</CardTitle>
+					<CardTitleWithInfo
+						className="text-sm font-medium text-muted-foreground"
+						info="Net payable from the most recently posted payroll run."
+					>
+						Net payable
+					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">
 					<p className="text-2xl font-semibold tracking-tight">
@@ -93,7 +108,12 @@ export function StatCards({ data }: StatCardsProps) {
 
 			<Card size="sm" data-testid="stat-employer-cost">
 				<CardHeader className="border-b">
-					<CardTitle className="text-sm font-medium text-muted-foreground">Employer cost</CardTitle>
+					<CardTitleWithInfo
+						className="text-sm font-medium text-muted-foreground"
+						info="Employer contribution total from the most recently posted payroll run."
+					>
+						Employer cost
+					</CardTitleWithInfo>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-1">
 					<p className="text-2xl font-semibold tracking-tight">

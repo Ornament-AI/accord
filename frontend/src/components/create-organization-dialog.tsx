@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
@@ -12,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
+import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
 import { suggestOrganizationSlug } from "@/lib/organization-slug";
 
@@ -83,44 +85,46 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent>
-				<form onSubmit={handleSubmit} className="grid gap-4">
-					<DialogHeader>
-						<DialogTitle>Create organization</DialogTitle>
-						<DialogDescription>
-							Set up a new organization. You will be signed into it after creation.
-						</DialogDescription>
-					</DialogHeader>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
+					<DialogTitle>Create organization</DialogTitle>
+					<DialogDescription>
+						Set up a new organization. You will be signed into it after creation.
+					</DialogDescription>
+				</DialogHeader>
 
-					<div className="grid gap-2">
-						<Label htmlFor="create-org-name">Name</Label>
-						<Input
-							id="create-org-name"
-							value={name}
-							onChange={(event) => handleNameChange(event.target.value)}
-							placeholder="Acme Payroll"
-							autoComplete="organization"
-							disabled={isSubmitting}
-						/>
-					</div>
+				<form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="create-org-name">Name</Label>
+							<Input
+								id="create-org-name"
+								value={name}
+								onChange={(event) => handleNameChange(event.target.value)}
+								placeholder="Acme Payroll"
+								autoComplete="organization"
+								disabled={isSubmitting}
+							/>
+						</div>
 
-					<div className="grid gap-2">
-						<Label htmlFor="create-org-slug">Slug</Label>
-						<Input
-							id="create-org-slug"
-							value={slug}
-							onChange={(event) => handleSlugChange(event.target.value)}
-							placeholder="acme-payroll"
-							autoComplete="off"
-							disabled={isSubmitting}
-							aria-invalid={slugError ? true : undefined}
-						/>
-						{slugError ? <p className="text-sm text-destructive">{slugError}</p> : null}
-					</div>
+						<div className="grid gap-2">
+							<Label htmlFor="create-org-slug">Slug</Label>
+							<Input
+								id="create-org-slug"
+								value={slug}
+								onChange={(event) => handleSlugChange(event.target.value)}
+								placeholder="acme-payroll"
+								autoComplete="off"
+								disabled={isSubmitting}
+								aria-invalid={slugError ? true : undefined}
+							/>
+							{slugError ? <p className="text-sm text-destructive">{slugError}</p> : null}
+						</div>
 
-					{formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+						{formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+					</DialogBody>
 
-					<DialogFooter>
+					<DialogFooter className="border-t px-6 py-4">
 						<Button
 							type="button"
 							variant="outline"

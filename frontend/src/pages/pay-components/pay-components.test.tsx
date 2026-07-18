@@ -35,7 +35,7 @@ function renderPayRoutes(initialEntry: string) {
 						<MemoryRouter initialEntries={[initialEntry]}>
 							<Routes>
 								<Route path="/pay-components" element={<PayComponentsPage />} />
-								<Route path="/pay-components/:id" element={<PayComponentDetailPage />} />
+								<Route path="/pay-components/:componentId" element={<PayComponentDetailPage />} />
 							</Routes>
 						</MemoryRouter>
 					</AuthShellBoundary>
@@ -331,6 +331,8 @@ describe("Create rate version dialog", () => {
 		);
 
 		expect(await screen.findByRole("heading", { name: "New rate version" })).toBeInTheDocument();
+		expect(screen.getByLabelText("Calculation kind")).toHaveTextContent("Fixed Recurring Amount");
+		expect(screen.getByLabelText("Rounding rule")).toHaveTextContent("Round half up (rupee)");
 
 		// Default fixed_recurring_amount → amount visible, rate/basis hidden
 		expect(screen.getByLabelText("Amount")).toBeInTheDocument();
