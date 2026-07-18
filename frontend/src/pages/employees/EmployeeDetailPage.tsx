@@ -296,7 +296,7 @@ export default function EmployeeDetailPage() {
 								{reveal ? "Hide" : "Reveal"}
 							</Button>
 						) : null}
-						{canManage && isVersionKind(activeTab) ? (
+						{canManage && employee && isVersionKind(activeTab) ? (
 							<Button size="xs" onClick={() => setScheduleKind(activeTab)}>
 								Edit
 							</Button>
