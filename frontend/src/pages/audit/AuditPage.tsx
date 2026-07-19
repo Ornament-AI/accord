@@ -136,7 +136,6 @@ export default function AuditPage() {
 
 	const totalPages = listQuery.data?.total_pages ?? 1;
 	const isEmpty = !listQuery.isLoading && (listQuery.data?.items.length ?? 0) === 0;
-	const hasEvents = !listQuery.isLoading && !listQuery.isError && !isEmpty;
 
 	const selectEvent = (event: AuditEventResponse) => {
 		setSelectedId(event.id);
@@ -196,7 +195,7 @@ export default function AuditPage() {
 					<div
 						className={cn(
 							"grid min-h-0 flex-1 gap-4",
-							hasEvents && "md:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]",
+							!isEmpty && "md:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]",
 						)}
 					>
 						<div className="min-w-0">
@@ -232,7 +231,7 @@ export default function AuditPage() {
 							) : null}
 						</div>
 
-						{hasEvents ? (
+						{!isEmpty ? (
 							<aside
 								className="hidden min-h-0 rounded-lg border app-border-level-1 bg-card p-4 md:block"
 								data-testid="audit-detail-panel"
