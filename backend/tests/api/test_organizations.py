@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth.capabilities import CAPABILITIES
-from app.models.identity import Organization, OrganizationMembership
+from app.models.identity import Organization, OrganizationMembership, OrganizationSettings
 from tests.identity_helpers import login_dev, session_cookie_from_response
 
 
@@ -47,6 +47,18 @@ async def test_create_organization_201_defaults_and_admin_capabilities(
     ).scalar_one()
     assert membership.role == "organization_administrator"
     assert membership.is_active is True
+
+    compatibility_settings = (
+        await session.execute(
+            select(OrganizationSettings).where(
+                OrganizationSettings.organization_id == org.id,
+            )
+        )
+    ).scalar_one()
+    assert compatibility_settings.locale == "en-IN"
+    assert compatibility_settings.timezone == "Asia/Kolkata"
+    assert compatibility_settings.currency == "INR"
+    assert compatibility_settings.financial_year_start_month == 4
 
 
 @pytest.mark.asyncio

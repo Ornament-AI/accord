@@ -8,11 +8,13 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    CHAR,
     CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Text,
     UniqueConstraint,
     text,
@@ -191,6 +193,53 @@ class OrganizationMembership(
             nullable=False,
             server_default=text("true"),
         ),
+    )
+
+
+class OrganizationSettings(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    OrganizationOwnedMixin,
+    table=True,
+):
+    """Legacy rollout-compatibility row for organization invariants.
+
+    The mutable settings API is retired. This mapping remains temporarily so a
+    migration-before-roll deployment can continue serving the previous API
+    binary until every instance has been replaced.
+    """
+
+    __tablename__ = "organization_settings"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            name="uq_organization_settings_organization_id",
+        ),
+        CheckConstraint(
+            "financial_year_start_month BETWEEN 1 AND 12",
+            name="ck_organization_settings_financial_year_start_month",
+        ),
+    )
+
+    id: uuid.UUID = _id_field()
+    created_at: datetime = _created_at_field()
+    updated_at: datetime = _updated_at_field()
+    organization_id: uuid.UUID = _organization_id_field()
+    locale: str = Field(
+        default="en-IN",
+        sa_column=Column(Text, nullable=False, server_default=text("'en-IN'")),
+    )
+    timezone: str = Field(
+        default="Asia/Kolkata",
+        sa_column=Column(Text, nullable=False, server_default=text("'Asia/Kolkata'")),
+    )
+    currency: str = Field(
+        default="INR",
+        sa_column=Column(CHAR(3), nullable=False, server_default=text("'INR'")),
+    )
+    financial_year_start_month: int = Field(
+        default=4,
+        sa_column=Column(Integer, nullable=False, server_default=text("4")),
     )
 
 

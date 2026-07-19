@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.session import get_session_store
 from app.config import Settings
 from app.exceptions import ConflictError, ValidationError
-from app.models.identity import Organization, OrganizationMembership, User
+from app.models.identity import Organization, OrganizationMembership, OrganizationSettings, User
 from app.tenancy import bind_tenant_context
 
 RESERVED_SLUGS = frozenset({"api", "admin", "app", "auth", "www"})
@@ -46,7 +46,7 @@ async def create_organization(
     1. insert Organization (no RLS)
     2. flush → id
     3. bind_tenant_context(org.id, user.id)
-    4. insert OrganizationMembership
+    4. insert legacy OrganizationSettings compatibility row + membership
     5. rotate session
     6. commit
     """
@@ -61,6 +61,7 @@ async def create_organization(
 
     await bind_tenant_context(db, organization_id=org.id, user_id=user.id)
 
+    db.add(OrganizationSettings(organization_id=org.id))
     db.add(
         OrganizationMembership(
             organization_id=org.id,

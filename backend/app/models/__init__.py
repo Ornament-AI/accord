@@ -35,6 +35,7 @@ from app.models.identity import (
     IdempotencyKey,
     Organization,
     OrganizationMembership,
+    OrganizationSettings,
     Session,
     User,
 )
@@ -75,6 +76,7 @@ __all__ = [
     "Organization",
     "OrganizationMembership",
     "OrganizationOwnedMixin",
+    "OrganizationSettings",
     "OutboxEvent",
     "PayComponent",
     "PayrollApproval",

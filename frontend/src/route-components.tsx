@@ -13,6 +13,7 @@ import {
 	PayrollUnitsPage,
 	PostsPage,
 } from "@/pages/org-setup/OrgSetupPage";
+import SelectOrganizationPage from "@/pages/SelectOrganizationPage";
 
 const ProtectedShell = lazy(() =>
 	import("@/components/protected-shell").then((mod) => ({ default: mod.ProtectedShell })),
@@ -40,6 +41,10 @@ export function ProtectedLayout() {
 		);
 	}
 
+	if (activeOrganization === null) {
+		return <SelectOrganizationPage />;
+	}
+
 	return (
 		<AppShellProvider>
 			<Suspense fallback={<LoadingState />}>
@@ -50,7 +55,11 @@ export function ProtectedLayout() {
 }
 
 export function AuthenticatedIndexRedirect() {
-	const { hasCapability } = useAuth();
+	const { activeOrganization, hasCapability } = useAuth();
+
+	if (activeOrganization === null) {
+		return <SelectOrganizationPage />;
+	}
 
 	if (hasCapability("create_run")) {
 		return <Navigate to="/pay-runs" replace />;
@@ -102,5 +111,5 @@ export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsPage = lazy(() => import("@/pages/reports/ReportsPage"));
 export const AuditPage = lazy(() => import("@/pages/audit/AuditPage"));
-export { NoOrganizationPage };
+export { NoOrganizationPage, SelectOrganizationPage };
 export const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
