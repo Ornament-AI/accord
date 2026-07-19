@@ -592,10 +592,7 @@ function NewVersionDialog({
 						<Button
 							type="button"
 							variant="outline"
-							onClick={() => {
-								onOpenChange(false);
-								onRequestEnd();
-							}}
+							onClick={onRequestEnd}
 							disabled={isSubmitting}
 						>
 							End
