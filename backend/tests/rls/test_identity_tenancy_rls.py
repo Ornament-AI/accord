@@ -22,6 +22,7 @@ from tests.migrations.conftest import (
 
 TENANT_TABLES = (
     "organization_memberships",
+    "organization_settings",
     "idempotency_keys",
 )
 
@@ -81,6 +82,10 @@ def _seed_tenants(database_url: str) -> SeededTenants:
                 "organization_administrator",
             ),
         )
+        conn.execute(
+            "INSERT INTO organization_settings (organization_id) VALUES (%s), (%s)",
+            (org_a_id, org_b_id),
+        )
         # Same key string in both orgs — uniqueness is per-organization.
         conn.execute(
             "INSERT INTO idempotency_keys "
@@ -137,9 +142,11 @@ def test_tenant_select_scoped_to_organization_guc(
         memberships = conn.execute(
             "SELECT organization_id FROM organization_memberships"
         ).fetchall()
+        settings = conn.execute("SELECT organization_id FROM organization_settings").fetchall()
         keys = conn.execute("SELECT organization_id, key FROM idempotency_keys").fetchall()
 
     assert {row[0] for row in memberships} == {seed.org_a_id}
+    assert {row[0] for row in settings} == {seed.org_a_id}
     assert {row[0] for row in keys} == {seed.org_a_id}
     assert all(row[1] == "dup-key" for row in keys)
 

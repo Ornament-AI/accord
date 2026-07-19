@@ -40,7 +40,7 @@ Migrations apply `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` via
 
 | Phase | Migration | Tables with `_apply_forced_rls` |
 | --- | --- | --- |
-| 2 | `backend/migrations/versions/c8d4e2f1a9b7_phase2_identity_tenancy_tables.py` | `organization_memberships` (175), `idempotency_keys` (279); the former `organization_settings` table is removed at head by revision `d1c7a2e9f4b6` |
+| 2 | `backend/migrations/versions/c8d4e2f1a9b7_phase2_identity_tenancy_tables.py` | `organization_memberships` (175), `organization_settings` (236), `idempotency_keys` (279); settings API is retired but the table remains for rolling compatibility |
 | 3 | `backend/migrations/versions/2f397740f38a_phase3_master_data_tables.py` | All master-data tenant tables (e.g. `employees` 130, `employee_bank_account_versions` 499, …) |
 | 4 | `backend/migrations/versions/021faa7dd776_phase4_payroll_run_tables.py` | `payroll_periods`–`payroll_result_lines` (144–407) |
 | 5 | `backend/migrations/versions/a9f3c2e81b04_phase5_platform_tables.py` | `audit_events`, `outbox_events`, `payroll_approvals`, `jobs`, `export_artifacts` (138–359) |
@@ -92,7 +92,7 @@ re-validates membership before rotating
 **Gate D cross-tenant SQL — Partial.**  
 `backend/tests/gate_d/test_sql_isolation.py` proves UPDATE/DELETE/INSERT/JOIN/
 COUNT/fail-closed/worker parity for **identity** tenant tables only
-(`organization_memberships`, `idempotency_keys` —
+(`organization_memberships`, `organization_settings`, `idempotency_keys` —
 lines 26–30, 138–362). It does **not** SQL-adversarially cover master-data or
 payroll tables. Broader coverage exists outside Gate D in
 `backend/tests/rls/test_master_data_rls.py`,

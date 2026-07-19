@@ -25,6 +25,7 @@ from tests.migrations.conftest import (
 
 TENANT_TABLES = (
     "organization_memberships",
+    "organization_settings",
     "idempotency_keys",
 )
 
@@ -84,6 +85,10 @@ def _seed_tenants(database_url: str) -> SeededTenants:
                 user_b_id,
                 "organization_administrator",
             ),
+        )
+        conn.execute(
+            "INSERT INTO organization_settings (organization_id) VALUES (%s), (%s)",
+            (org_a_id, org_b_id),
         )
         conn.execute(
             "INSERT INTO idempotency_keys "
@@ -222,6 +227,7 @@ def test_count_aggregates_only_org_a_rows(
 
     assert counts == {
         "organization_memberships": 1,
+        "organization_settings": 1,
         "idempotency_keys": 1,
     }
 
