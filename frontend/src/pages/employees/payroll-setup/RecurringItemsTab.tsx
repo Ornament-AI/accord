@@ -589,12 +589,7 @@ function NewVersionDialog({
 					</DialogBody>
 
 					<DialogFooter className="border-t px-6 py-4 sm:justify-between">
-						<Button
-							type="button"
-							variant="outline"
-							onClick={onRequestEnd}
-							disabled={isSubmitting}
-						>
+						<Button type="button" variant="outline" onClick={onRequestEnd} disabled={isSubmitting}>
 							End
 						</Button>
 						<div className="flex flex-wrap gap-2">
