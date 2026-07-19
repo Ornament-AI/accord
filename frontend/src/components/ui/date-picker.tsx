@@ -45,7 +45,7 @@ const HISTORICAL_DATE_CALENDAR_PROPS: NonNullable<DatePickerProps["calendarProps
 /** Year/month dropdowns for dates that may be recovered from the past or scheduled ahead. */
 const SCHEDULABLE_DATE_CALENDAR_PROPS: NonNullable<DatePickerProps["calendarProps"]> = {
 	captionLayout: "dropdown",
-	startMonth: new Date(1920, 0),
+	startMonth: new Date(new Date().getFullYear() - 10, 0),
 	endMonth: new Date(new Date().getFullYear() + 50, 11),
 	reverseYears: true,
 };
