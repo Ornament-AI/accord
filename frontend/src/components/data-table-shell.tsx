@@ -50,8 +50,8 @@ export function DataTableShell<TData>({
 	};
 
 	return (
-		<div className="flex flex-col gap-2">
-			<div className="app-table-surface overflow-hidden rounded-lg">
+		<div className="flex min-w-0 flex-col gap-2">
+			<div className="app-table-surface min-w-0 overflow-hidden rounded-lg">
 				<div className={isPlaceholderData ? "pointer-events-none" : undefined}>
 					<Table surface={false} className={tableClassName}>
 						<TableHeader>

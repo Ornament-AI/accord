@@ -141,42 +141,42 @@ describe("WorkflowActionBar visibility matrix", () => {
 			name: "calculated + preparer caps",
 			status: "calculated",
 			capabilities: ["create_run", "submit_run"],
-			visible: ["validate", "submit", "withdraw"],
+			visible: ["validate", "submit"],
 			enabled: ["validate", "submit"],
 		},
 		{
 			name: "submitted + submit/approve",
 			status: "submitted",
 			capabilities: ["submit_run", "approve_run", "create_run"],
-			visible: ["validate", "submit", "withdraw", "approve", "reject"],
+			visible: ["withdraw", "approve", "reject"],
 			enabled: ["withdraw", "approve", "reject"],
 		},
 		{
 			name: "approved + post",
 			status: "approved",
 			capabilities: ["post_run", "create_run"],
-			visible: ["validate", "post", "reverse"],
+			visible: ["post"],
 			enabled: ["post"],
 		},
 		{
 			name: "posted + reverse",
 			status: "posted",
 			capabilities: ["post_run", "create_run"],
-			visible: ["validate", "post", "reverse"],
+			visible: ["reverse"],
 			enabled: ["reverse"],
 		},
 		{
 			name: "calculated without submit",
 			status: "calculated",
 			capabilities: ["approve_run", "create_run"],
-			visible: ["validate", "approve", "reject"],
+			visible: ["validate"],
 			enabled: ["validate"],
 		},
 		{
 			name: "draft disables all legal actions",
 			status: "draft",
 			capabilities: ALL_CAPS,
-			visible: WORKFLOW_ACTIONS.map((a) => a.id),
+			visible: [],
 			enabled: [],
 		},
 	];
@@ -219,9 +219,16 @@ describe("WorkflowActionBar visibility matrix", () => {
 			server.use(...authHandlers, ...pay.handlers, ...workflow.handlers);
 
 			renderDetail("run-1");
-			expect(
-				await screen.findByTestId("workflow-action-bar", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
+			if (visible.length > 0) {
+				expect(
+					await screen.findByTestId("workflow-action-bar", {}, { timeout: PAGE_TIMEOUT }),
+				).toBeInTheDocument();
+			} else {
+				expect(
+					await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
+				).toBeInTheDocument();
+				expect(screen.queryByTestId("workflow-action-bar")).not.toBeInTheDocument();
+			}
 
 			for (const actionId of WORKFLOW_ACTIONS.map((a) => a.id)) {
 				const button = screen.queryByTestId(`workflow-action-${actionId}`);
@@ -273,7 +280,7 @@ describe("WorkflowActionBar visibility matrix", () => {
 				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 
-			expect(screen.getByTestId("workflow-action-validate")).toBeInTheDocument();
+			expect(screen.queryByTestId("workflow-action-validate")).not.toBeInTheDocument();
 			expect(screen.queryByTestId("workflow-action-submit")).not.toBeInTheDocument();
 			expect(screen.queryByTestId("workflow-action-approve")).not.toBeInTheDocument();
 			expect(screen.queryByTestId("workflow-action-post")).not.toBeInTheDocument();

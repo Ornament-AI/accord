@@ -66,7 +66,26 @@ describe("Pay Runs list page", () => {
 	});
 
 	it(
-		"renders periods and runs, and navigates to detail on row click",
+		"renders the pay runs empty state",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({ periods: [], runs: [] });
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs");
+
+			expect(
+				await screen.findByText("No pay runs", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.getByText("Create a period and pay run to get started.")).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"renders runs and navigates to detail on row click",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
@@ -79,11 +98,8 @@ describe("Pay Runs list page", () => {
 			expect(
 				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(
-				await screen.findByTestId("payroll-periods-list", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			expect(screen.getAllByText("2026-07").length).toBeGreaterThan(0);
-			expect(screen.getAllByText("2026-06").length).toBeGreaterThan(0);
+			expect(await screen.findByText("2026-07", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
+			expect(screen.getByText("2026-06")).toBeInTheDocument();
 			expect(screen.getByText("Regular")).toBeInTheDocument();
 			expect(screen.getByText("Supplemental")).toBeInTheDocument();
 			expect(screen.getByText("Draft")).toBeInTheDocument();
@@ -100,11 +116,13 @@ describe("Pay Runs list page", () => {
 	it(
 		"creates a payroll period successfully",
 		async () => {
+			const onCreatePeriod = vi.fn();
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
 			});
 			const { handlers: payHandlers } = createPayRunHandlers({
 				periods: [buildPeriod({ id: "period-1", period_year: 2026, period_month: 7 })],
+				onCreatePeriod,
 			});
 			server.use(...authHandlers, ...payHandlers);
 
@@ -127,7 +145,7 @@ describe("Pay Runs list page", () => {
 					screen.queryByRole("heading", { name: "New Payroll Period" }),
 				).not.toBeInTheDocument();
 			});
-			expect(await screen.findByText("2026-08")).toBeInTheDocument();
+			expect(onCreatePeriod).toHaveBeenCalledWith({ period_year: 2026, period_month: 8 });
 		},
 		PAGE_TIMEOUT,
 	);
@@ -188,7 +206,9 @@ describe("Pay Runs list page", () => {
 
 			expect(await screen.findByRole("heading", { name: "New Pay Run" })).toBeInTheDocument();
 			const dialog = screen.getByRole("dialog");
-			expect(within(dialog).getByLabelText("Period")).toHaveTextContent("2026-07");
+			await waitFor(() => {
+				expect(within(dialog).getByLabelText("Period")).toHaveTextContent("2026-07");
+			});
 			expect(within(dialog).getByLabelText("Run Type")).toHaveTextContent("Regular");
 			openBaseUiSelect(screen.getByLabelText("Run Type"));
 			pickBaseUiOption("Regular");
@@ -344,8 +364,9 @@ describe("Pay run detail — calculate gating", () => {
 			expect(screen.getByText("Net Payable")).toBeInTheDocument();
 			expect(screen.getByText("₹99,000.00")).toBeInTheDocument();
 			expect(await screen.findByText("Calculated")).toBeInTheDocument();
-			expect(screen.getByText("Engine engine-1.0.0")).toBeInTheDocument();
-			expect(screen.getByText("v2")).toBeInTheDocument();
+			expect(screen.getByText("Version 2")).toBeInTheDocument();
+			expect(screen.queryByText(/Engine engine-/)).not.toBeInTheDocument();
+			expect(await screen.findByText("Employee results")).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -377,13 +398,13 @@ describe("Pay run detail — calculate gating", () => {
 	);
 });
 
-describe("Pay run detail — inputs and totals", () => {
+describe("Pay run detail — results and adjustments", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});
 
 	it(
-		"renders totals from mocked current_version",
+		"renders a prioritized payroll summary and employee results",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
@@ -417,8 +438,11 @@ describe("Pay run detail — inputs and totals", () => {
 			).toBeInTheDocument();
 			expect(screen.getByText("₹12,34,567.89")).toBeInTheDocument();
 			expect(screen.getByText("₹20,00,000.00")).toBeInTheDocument();
-			expect(screen.getByText("Engine engine-2.0.0")).toBeInTheDocument();
-			expect(screen.getByText("v3")).toBeInTheDocument();
+			expect(screen.getByText("Version 3")).toBeInTheDocument();
+			expect(screen.queryByText(/Engine engine-/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/Hash hash-/)).not.toBeInTheDocument();
+			expect(await screen.findByText("Employee results")).toBeInTheDocument();
+			expect(screen.getByText("E-001")).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -476,7 +500,8 @@ describe("Pay run detail — inputs and totals", () => {
 			expect(
 				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText("BASIC")).toBeInTheDocument();
+			expect(await screen.findByText("Basic")).toBeInTheDocument();
+			expect(screen.getByText("Employee emp-1")).toBeInTheDocument();
 			expect(screen.getByText("₹1,500.00")).toBeInTheDocument();
 			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
 
@@ -553,7 +578,7 @@ describe("Pay run detail — inputs and totals", () => {
 			expect(
 				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText("BASIC")).toBeInTheDocument();
+			expect(await screen.findByText("Basic")).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /Edit input/i })).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /Delete input/i })).not.toBeInTheDocument();

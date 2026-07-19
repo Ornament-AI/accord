@@ -67,7 +67,9 @@ export function WorkflowActionBar({
 		postMutation.isPending ||
 		reverseMutation.isPending;
 
-	const visibleActions = WORKFLOW_ACTIONS.filter((action) => hasCapability(action.capability));
+	const visibleActions = WORKFLOW_ACTIONS.filter(
+		(action) => hasCapability(action.capability) && action.legalStatuses.includes(run.status),
+	);
 
 	const handleWorkflowError = (error: unknown) => {
 		const urn = getWorkflowErrorUrn(error);

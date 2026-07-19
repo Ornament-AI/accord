@@ -10,6 +10,8 @@ export type PayrollRunListItem = components["schemas"]["PayrollRunListItem"];
 export type PayrollRunDetail = components["schemas"]["PayrollRunDetail"];
 export type PayrollRunInputResponse = components["schemas"]["PayrollRunInputResponse"];
 export type PayrollRunInputUpsert = components["schemas"]["PayrollRunInputUpsert"];
+export type PayrollRunResults = components["schemas"]["RunResultsResponse"];
+export type PayrollEmployeeResult = components["schemas"]["EmployeeResultSummary"];
 export type RunType = components["schemas"]["RunType"];
 export type InputKind = components["schemas"]["InputKind"];
 
@@ -69,6 +71,7 @@ export const payrollRunQueryKeys = {
 	runs: (filters: PayrollRunFilters = {}) => ["payroll-runs", filters] as const,
 	run: (runId: string) => ["payroll-run", runId] as const,
 	inputs: (runId: string) => ["payroll-run-inputs", runId] as const,
+	results: (runId: string) => ["payroll-run-results", runId] as const,
 };
 
 export function periodLabel(year: number, month: number): string {
@@ -232,6 +235,10 @@ export function listPayrollRunInputs(runId: string) {
 	return fetchJson<PayrollRunInputResponse[]>(`/api/payroll-runs/${runId}/inputs`);
 }
 
+export function getPayrollRunResults(runId: string) {
+	return fetchJson<PayrollRunResults>(`/api/payroll-runs/${runId}/results`);
+}
+
 export function upsertPayrollRunInput(
 	runId: string,
 	employeeId: string,
@@ -311,6 +318,14 @@ export function usePayrollRunInputs(runId: string | undefined) {
 	});
 }
 
+export function usePayrollRunResults(runId: string | undefined, enabled: boolean) {
+	return useQuery({
+		queryKey: payrollRunQueryKeys.results(runId ?? ""),
+		queryFn: () => getPayrollRunResults(runId!),
+		enabled: Boolean(runId) && enabled,
+	});
+}
+
 export function useUpsertPayrollRunInput(runId: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
@@ -325,6 +340,7 @@ export function useUpsertPayrollRunInput(runId: string) {
 		}) => upsertPayrollRunInput(runId, employeeId, componentCode, body),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
 		},
 	});
 }
@@ -347,6 +363,7 @@ export function useCalculatePayrollRun(runId: string) {
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.run(runId) });
 			void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
 		},
 	});
 }

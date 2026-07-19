@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit-events/filter-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Audit Filter Options */
+        get: operations["get_audit_filter_options_api_audit_events_filter_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit-events/{event_id}": {
         parameters: {
             query?: never;
@@ -1299,10 +1316,7 @@ export interface components {
              */
             updated_at: string;
         };
-        /**
-         * AuditActor
-         * @description User attribution for an audit event; omitted for system-originated rows.
-         */
+        /** AuditActor */
         AuditActor: {
             /** Email */
             email: string;
@@ -1314,9 +1328,26 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** AuditEventResponse */
-        AuditEventResponse: {
+        /** AuditEventDetailResponse */
+        AuditEventDetailResponse: {
+            /** Access Details */
+            access_details?: {
+                [key: string]: unknown;
+            };
             actor?: components["schemas"]["AuditActor"] | null;
+            /** After State */
+            after_state?: {
+                [key: string]: unknown;
+            } | null;
+            /** Before State */
+            before_state?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Changed Count
+             * @default 0
+             */
+            changed_count: number;
             /** Command */
             command: string;
             /**
@@ -1329,8 +1360,17 @@ export interface components {
              * Format: uuid
              */
             entity_id: string;
+            /** Entity Label */
+            entity_label: string;
             /** Entity Type */
             entity_type: string;
+            /** Event Kind */
+            event_kind?: ("mutation" | "access") | null;
+            /**
+             * Has Structured Detail
+             * @default false
+             */
+            has_structured_detail: boolean;
             /**
              * Id
              * Format: uuid
@@ -1338,10 +1378,56 @@ export interface components {
             id: string;
             /** Request Id */
             request_id?: string | null;
-            /** Summary */
-            summary?: {
+            /** Resource State */
+            resource_state?: {
                 [key: string]: unknown;
-            };
+            } | null;
+        };
+        /** AuditEventListItem */
+        AuditEventListItem: {
+            actor?: components["schemas"]["AuditActor"] | null;
+            /**
+             * Changed Count
+             * @default 0
+             */
+            changed_count: number;
+            /** Command */
+            command: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Entity Id
+             * Format: uuid
+             */
+            entity_id: string;
+            /** Entity Label */
+            entity_label: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Event Kind */
+            event_kind?: ("mutation" | "access") | null;
+            /**
+             * Has Structured Detail
+             * @default false
+             */
+            has_structured_detail: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** AuditFilterOptionsResponse */
+        AuditFilterOptionsResponse: {
+            /** Actors */
+            actors: components["schemas"]["AuditActor"][];
+            /** Commands */
+            commands: string[];
+            /** Entity Types */
+            entity_types: string[];
         };
         /** BankInput */
         BankInput: {
@@ -1764,10 +1850,10 @@ export interface components {
             /** Total Pages */
             total_pages: number;
         };
-        /** PaginatedAuditEventResponse */
-        PaginatedResponse_AuditEventResponse_: {
+        /** PaginatedAuditEventListItem */
+        PaginatedResponse_AuditEventListItem_: {
             /** Items */
-            items: components["schemas"]["AuditEventResponse"][];
+            items: components["schemas"]["AuditEventListItem"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -2685,7 +2771,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse_AuditEventResponse_"];
+                    "application/json": components["schemas"]["PaginatedResponse_AuditEventListItem_"];
                 };
             };
             /** @description Validation Error */
@@ -2695,6 +2781,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audit_filter_options_api_audit_events_filter_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditFilterOptionsResponse"];
                 };
             };
         };
@@ -2716,7 +2822,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuditEventResponse"];
+                    "application/json": components["schemas"]["AuditEventDetailResponse"];
                 };
             };
             /** @description Validation Error */

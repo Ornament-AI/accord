@@ -22,222 +22,187 @@ function renderAuditPage() {
 	);
 }
 
-describe("Audit history page", () => {
+function useAuditor(events = createAuditHandlers()) {
+	const { handlers: authHandlers } = createAuthHandlers({ me: buildRoleAuthMe("auditor") });
+	server.use(...authHandlers, ...events.handlers);
+	return events;
+}
+
+describe("Atlas-parity audit history", () => {
 	beforeEach(() => {
 		queryClient.clear();
+		Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
 	});
 
-	it(
-		"renders audit events newest-first and supports pagination",
-		async () => {
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("auditor"),
-			});
-			const { handlers: auditHandlers } = createAuditHandlers({ pageSize: 20 });
-			server.use(...authHandlers, ...auditHandlers);
+	it("groups the rail by date and automatically selects the newest desktop event", async () => {
+		const newest = buildAuditEvent({
+			id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			entity_label: "July Regular run",
+			created_at: "2026-07-18T12:00:00",
+		});
+		const older = buildAuditEvent({
+			id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			entity_label: "June Regular run",
+			created_at: "2026-07-17T12:00:00",
+		});
+		useAuditor(createAuditHandlers({ events: [older, newest] }));
 
-			renderAuditPage();
+		renderAuditPage();
+		expect(
+			await screen.findByText("18 Jul, 2026", {}, { timeout: PAGE_TIMEOUT }),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("audit-workspace")).not.toContainElement(
+			screen.getByTestId("audit-filter-toolbar"),
+		);
+		expect(screen.getByText("17 Jul, 2026")).toBeInTheDocument();
+		expect(await screen.findByTestId("audit-event-detail")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /July Regular run/i })).toHaveAttribute(
+			"aria-current",
+			"true",
+		);
+		expect(screen.queryByText("Select an event")).not.toBeInTheDocument();
+	});
 
-			expect(
-				await screen.findByTestId("audit-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
+	it("renders changed mutation fields only without raw JSON", async () => {
+		const event = buildAuditEvent({
+			id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+			entity_label: "2026-07 Regular run",
+			command: "payroll_run.reverse",
+			request_id: "req-reverse-001",
+			before_state: { status: "posted", lock_version: 4, organization_id: "org" },
+			after_state: { status: "reversed", lock_version: 5, organization_id: "org" },
+			access_details: {
+				reason: "Duplicate posting",
+				reversal_run_id: "99999999-9999-9999-9999-999999999999",
+			},
+		});
+		useAuditor(createAuditHandlers({ events: [event] }));
+		renderAuditPage();
 
-			const rows = await screen.findAllByRole(
-				"button",
-				{ name: /View audit event/i },
+		const detail = await screen.findByTestId("audit-event-detail", {}, { timeout: PAGE_TIMEOUT });
+		expect(within(detail).getByText(/Ada Lovelace \(ada@example.com\)/)).toBeInTheDocument();
+		expect(within(detail).getByText("Payroll run")).toBeInTheDocument();
+		expect(within(detail).getByText(event.entity_id)).toBeInTheDocument();
+		expect(within(detail).getByText("req-reverse-001")).toBeInTheDocument();
+		expect(within(detail).getByText("Context")).toBeInTheDocument();
+		expect(within(detail).getByText("Duplicate posting")).toBeInTheDocument();
+		expect(within(detail).getByText("Status")).toBeInTheDocument();
+		expect(within(detail).getByText("posted")).toBeInTheDocument();
+		expect(within(detail).getByText("reversed")).toBeInTheDocument();
+		expect(within(detail).queryByText("Lock version")).not.toBeInTheDocument();
+		expect(within(detail).queryByText("Raw JSON")).not.toBeInTheDocument();
+	});
+
+	it("uses a dedicated access-details presentation", async () => {
+		const event = buildAuditEvent({
+			id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+			command: "artifact.download",
+			event_kind: "access",
+			entity_type: "export_artifact",
+			entity_label: "Payroll Register",
+			before_state: null,
+			after_state: null,
+			resource_state: { report_type: "payroll_register", size_bytes: 4096 },
+			access_details: { accessed_at: "2026-07-18T12:00:00" },
+		});
+		useAuditor(createAuditHandlers({ events: [event] }));
+		renderAuditPage();
+
+		const detail = await screen.findByTestId("audit-event-detail", {}, { timeout: PAGE_TIMEOUT });
+		expect(within(detail).getByText("Resource")).toBeInTheDocument();
+		expect(within(detail).getByText("Access Details")).toBeInTheDocument();
+		expect(within(detail).getByText("Report type")).toBeInTheDocument();
+		expect(within(detail).queryByText("Before")).not.toBeInTheDocument();
+	});
+
+	it("shows the minimal legacy message", async () => {
+		const event = buildAuditEvent({
+			id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+			event_kind: null,
+			has_structured_detail: false,
+			before_state: null,
+			after_state: null,
+		});
+		useAuditor(createAuditHandlers({ events: [event] }));
+		renderAuditPage();
+		expect(
+			await screen.findByText(
+				"Detailed changes were not recorded for this legacy event.",
+				{},
 				{ timeout: PAGE_TIMEOUT },
+			),
+		).toBeInTheDocument();
+	});
+
+	it("debounces entity ID, resets filters, and replaces selection across pages", async () => {
+		const audit = useAuditor(createAuditHandlers({ pageSize: 20 }));
+		renderAuditPage();
+		await screen.findByText("2026-07 Regular run 1", {}, { timeout: PAGE_TIMEOUT });
+
+		const entityId = "22222222-2222-2222-2222-000000000001";
+		fireEvent.change(screen.getByLabelText("Filter by Entity ID"), { target: { value: entityId } });
+		await waitFor(() => {
+			expect(audit.capturedListRequests.some((request) => request.entity_id === entityId)).toBe(
+				true,
 			);
-			expect(rows.length).toBe(20);
-			expect(screen.getByTestId("audit-detail-panel")).toBeInTheDocument();
-			expect(screen.getByText("Select an event")).toBeInTheDocument();
-			// Seed index 0 is newest and uses payroll_run.post.
-			expect(rows[0]).toHaveAccessibleName(/View audit event payroll_run\.post/);
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+		await waitFor(() => expect(screen.getByLabelText("Filter by Entity ID")).toHaveValue(""));
 
-			const newestLabel = rows[0].textContent ?? "";
-			fireEvent.click(screen.getByRole("button", { name: "Go to page 2" }));
-
-			await waitFor(() => {
-				const page2Rows = screen.getAllByRole("button", { name: /View audit event/i });
-				expect(page2Rows.length).toBe(5);
-				expect(screen.queryByRole("button", { name: newestLabel })).not.toBeInTheDocument();
-			});
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"sends text filter params and renders the date calendar without presets",
-		async () => {
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("auditor"),
-			});
-			const { handlers: auditHandlers, capturedListRequests } = createAuditHandlers();
-			server.use(...authHandlers, ...auditHandlers);
-
-			renderAuditPage();
-
-			await screen.findByLabelText("Filter by Command", {}, { timeout: PAGE_TIMEOUT });
-
-			fireEvent.change(screen.getByLabelText("Filter by Command"), {
-				target: { value: "submit" },
-			});
-			await waitFor(() => {
-				expect(capturedListRequests.some((params) => params.command === "submit")).toBe(true);
-			});
-
-			fireEvent.change(screen.getByLabelText("Filter by Entity Type"), {
-				target: { value: "payroll_run" },
-			});
-			await waitFor(() => {
-				expect(
-					capturedListRequests.some(
-						(params) => params.command === "submit" && params.entity_type === "payroll_run",
-					),
-				).toBe(true);
-			});
-
-			const entityId = "22222222-2222-2222-2222-000000000001";
-			fireEvent.change(screen.getByLabelText("Search by Entity ID"), {
-				target: { value: entityId },
-			});
-			await waitFor(() => {
-				expect(capturedListRequests.some((params) => params.entity_id === entityId)).toBe(true);
-			});
-
-			fireEvent.click(screen.getByLabelText("Filter by Date Range"));
-			expect(screen.getAllByRole("grid").length).toBeGreaterThan(0);
-			expect(screen.queryByRole("button", { name: "Last 7 Days" })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "Last 30 Days" })).not.toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"selecting an event renders detail including summary rows",
-		async () => {
-			const event = buildAuditEvent({
-				id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-				command: "payroll_run.post",
-				entity_type: "payroll_run",
-				entity_id: "33333333-3333-3333-3333-333333333333",
-				actor: {
-					id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-					name: "Ada Lovelace",
-					email: "ada@example.com",
-				},
-				request_id: "req-detail-1",
-				summary: {
-					from_status: "approved",
-					to_status: "posted",
-					nested: { ignored: true },
-				},
-				created_at: "2026-07-18T15:30:00",
-			});
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("auditor"),
-			});
-			const { handlers: auditHandlers } = createAuditHandlers({ events: [event] });
-			server.use(...authHandlers, ...auditHandlers);
-
-			renderAuditPage();
-
-			fireEvent.click(
-				await screen.findByRole(
-					"button",
-					{ name: /View audit event payroll_run\.post/i },
-					{ timeout: PAGE_TIMEOUT },
-				),
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Go to page 2" }, { timeout: PAGE_TIMEOUT }),
+		);
+		await waitFor(() => {
+			expect(screen.getByRole("button", { name: /2026-07 Regular run 21/i })).toHaveAttribute(
+				"aria-current",
+				"true",
 			);
+		});
+	});
 
-			const detail = await screen.findByTestId("audit-event-detail", {}, { timeout: PAGE_TIMEOUT });
-			expect(within(detail).getByText(/Ada Lovelace/)).toBeInTheDocument();
-			expect(within(detail).getByText(/ada@example.com/)).toBeInTheDocument();
-			expect(within(detail).getByText("req-detail-1")).toBeInTheDocument();
-			expect(within(detail).getByText(/payroll_run · 33333333/)).toBeInTheDocument();
+	it("renders one empty state without a detail pane", async () => {
+		useAuditor(createAuditHandlers({ empty: true }));
+		renderAuditPage();
+		expect(
+			await screen.findByText("No audit events", {}, { timeout: PAGE_TIMEOUT }),
+		).toBeInTheDocument();
+		expect(screen.queryByTestId("audit-detail-panel")).not.toBeInTheDocument();
+		expect(screen.queryByText("Select an event")).not.toBeInTheDocument();
+	});
 
-			const summary = within(detail).getByTestId("audit-event-summary");
-			expect(within(summary).getByText("from_status")).toBeInTheDocument();
-			expect(within(summary).getByText("approved")).toBeInTheDocument();
-			expect(within(summary).getByText("to_status")).toBeInTheDocument();
-			expect(within(summary).getByText("posted")).toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
+	it("opens contextual event details in a mobile sheet", async () => {
+		Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+		const event = buildAuditEvent({
+			id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+			entity_label: "Mobile Regular run",
+			command: "approve",
+		});
+		useAuditor(createAuditHandlers({ events: [event] }));
+		renderAuditPage();
 
-	it(
-		"shows System when actor is null",
-		async () => {
-			const event = buildAuditEvent({
-				id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
-				command: "artifact.download",
-				actor: null,
-				summary: { artifact_id: "art-1" },
-			});
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("auditor"),
-			});
-			const { handlers: auditHandlers } = createAuditHandlers({ events: [event] });
-			server.use(...authHandlers, ...auditHandlers);
+		expect(screen.queryByTestId("audit-event-detail")).not.toBeInTheDocument();
+		fireEvent.click(
+			await screen.findByRole("button", { name: /Mobile Regular run/i }, { timeout: PAGE_TIMEOUT }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		expect(within(dialog).getByText("Mobile Regular run")).toBeInTheDocument();
+		expect(await within(dialog).findByTestId("audit-event-detail")).toBeInTheDocument();
+	});
 
-			renderAuditPage();
-
-			fireEvent.click(
-				await screen.findByRole(
-					"button",
-					{ name: /View audit event artifact\.download/i },
-					{ timeout: PAGE_TIMEOUT },
-				),
-			);
-
-			const detail = await screen.findByTestId("audit-event-detail", {}, { timeout: PAGE_TIMEOUT });
-			expect(within(detail).getByText("System")).toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"blocks access without view_audit",
-		async () => {
-			const me = buildAuthMe({
-				active_organization: {
-					id: "org-acme",
-					name: "Acme Payroll",
-					slug: "acme-payroll",
-					role: "payroll_preparer",
-					capabilities: ["view_master_data", "create_run"] as Capability[],
-				},
-			});
-			const { handlers } = createAuthHandlers({ me });
-			server.use(...handlers);
-
-			renderAuditPage();
-
-			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			expect(screen.queryByTestId("audit-page")).not.toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"renders empty state when there are no events",
-		async () => {
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("auditor"),
-			});
-			const { handlers: auditHandlers } = createAuditHandlers({ empty: true });
-			server.use(...authHandlers, ...auditHandlers);
-
-			renderAuditPage();
-
-			expect(
-				await screen.findByText("No audit events", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			expect(screen.getByText("No events match the current filters.")).toBeInTheDocument();
-			expect(screen.queryByTestId("audit-detail-panel")).not.toBeInTheDocument();
-			expect(screen.queryByText("Select an event")).not.toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
+	it("blocks access without view_audit", async () => {
+		const me = buildAuthMe({
+			active_organization: {
+				id: "org-acme",
+				name: "Acme Payroll",
+				slug: "acme-payroll",
+				role: "payroll_preparer",
+				capabilities: ["view_master_data", "create_run"] as Capability[],
+			},
+		});
+		server.use(...createAuthHandlers({ me }).handlers);
+		renderAuditPage();
+		expect(
+			await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+		).toBeInTheDocument();
+	});
 });

@@ -28,7 +28,6 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -47,6 +46,7 @@ import {
 	inputKindLabel,
 	isCalculateAllowedStatus,
 	isDraftStatus,
+	type PayrollEmployeeResult,
 	type PayrollRunCalculateResult,
 	type PayrollRunInputResponse,
 	type PayrollRunTotals,
@@ -58,6 +58,7 @@ import {
 	useDeletePayrollRunInput,
 	usePayrollRun,
 	usePayrollRunInputs,
+	usePayrollRunResults,
 } from "@/lib/api/payroll-runs";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -72,17 +73,25 @@ declare module "@tanstack/react-table" {
 	}
 }
 
-const TOTAL_LABELS: Array<{ key: keyof PayrollRunTotals; label: string }> = [
+const BREAKDOWN_TOTALS: Array<{ key: keyof PayrollRunTotals; label: string }> = [
 	{ key: "earnings_total", label: "Earnings" },
-	{ key: "employer_contribution_total", label: "Employer Contribution" },
-	{ key: "gross_adjustment_total", label: "Gross Adjustment" },
-	{ key: "gross_total", label: "Gross" },
-	{ key: "ag_deduction_total", label: "AG Deduction" },
-	{ key: "treasury_deduction_total", label: "Treasury Deduction" },
-	{ key: "external_recovery_total", label: "External Recovery" },
-	{ key: "deductions_total", label: "Deductions" },
-	{ key: "net_payable", label: "Net Payable" },
+	{ key: "employer_contribution_total", label: "Employer contributions" },
+	{ key: "gross_adjustment_total", label: "Gross adjustments" },
+	{ key: "ag_deduction_total", label: "AG deductions" },
+	{ key: "treasury_deduction_total", label: "Treasury deductions" },
+	{ key: "external_recovery_total", label: "External recoveries" },
 ];
+
+function humanizeCode(value: string): string {
+	return value
+		.toLowerCase()
+		.split("_")
+		.filter(Boolean)
+		.map((part) =>
+			part.length <= 3 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1),
+		)
+		.join(" ");
+}
 
 function PayRunBreadcrumb({ label }: { label: string }) {
 	return (
@@ -110,12 +119,14 @@ function calculateDisabledReason(canCreateRun: boolean, status: string): string 
 
 type InputColumnsArgs = {
 	canEditInputs: boolean;
+	employeeNumbers: Map<string, string>;
 	onEdit: (input: PayrollRunInputResponse) => void;
 	onDelete: (input: PayrollRunInputResponse) => void;
 };
 
 function buildInputColumns({
 	canEditInputs,
+	employeeNumbers,
 	onEdit,
 	onDelete,
 }: InputColumnsArgs): ColumnDef<PayrollRunInputResponse>[] {
@@ -123,10 +134,17 @@ function buildInputColumns({
 		{
 			accessorKey: "employee_id",
 			header: "Employee",
+			cell: ({ row }) => (
+				<span className="font-medium">
+					{employeeNumbers.get(row.original.employee_id) ??
+						`Employee ${row.original.employee_id.slice(0, 8)}`}
+				</span>
+			),
 		},
 		{
 			accessorKey: "component_code",
 			header: "Component",
+			cell: ({ row }) => humanizeCode(row.original.component_code),
 		},
 		{
 			accessorKey: "input_kind",
@@ -136,13 +154,17 @@ function buildInputColumns({
 		{
 			accessorKey: "amount",
 			header: "Amount",
-			cell: ({ row }) => formatCanonicalMoney(row.original.amount),
+			cell: ({ row }) => (
+				<span className="tabular-nums">{formatCanonicalMoney(row.original.amount)}</span>
+			),
 			meta: { align: "right" },
 		},
 		{
 			accessorKey: "rate",
 			header: "Rate",
-			cell: ({ row }) => formatCanonicalMoney(row.original.rate),
+			cell: ({ row }) => (
+				<span className="tabular-nums">{formatCanonicalMoney(row.original.rate)}</span>
+			),
 			meta: { align: "right" },
 		},
 		{
@@ -191,48 +213,116 @@ function buildInputColumns({
 	return columns;
 }
 
-function TotalsCards({ totals }: { totals: PayrollRunTotals }) {
-	const entries = TOTAL_LABELS.filter(
-		(item) => totals[item.key] != null && totals[item.key] !== "",
-	);
-	const extraKeys = Object.keys(totals).filter(
-		(key) => !TOTAL_LABELS.some((item) => item.key === key) && totals[key],
-	);
-
-	if (entries.length === 0 && extraKeys.length === 0) {
-		return <p className="text-sm text-muted-foreground">No totals available yet.</p>;
-	}
-
+function FinancialSummary({
+	totals,
+	employeeCount,
+}: {
+	totals: PayrollRunTotals;
+	employeeCount: number | null;
+}) {
 	return (
-		<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="pay-run-totals">
-			{entries.map((item) => (
-				<Card key={item.key} size="sm">
-					<CardHeader className="border-b">
-						<CardTitle className="text-sm font-medium text-muted-foreground">
-							{item.label}
-						</CardTitle>
+		<div
+			className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(20rem,1fr)]"
+			data-testid="pay-run-totals"
+		>
+			<div className="grid gap-3 sm:grid-cols-3">
+				<Card size="sm" className="sm:col-span-3">
+					<CardHeader>
+						<CardTitle className="text-sm font-medium text-muted-foreground">Net Payable</CardTitle>
 					</CardHeader>
 					<CardContent>
-						<p className="text-lg font-semibold tracking-tight">
-							{formatCanonicalMoney(totals[item.key])}
+						<p className="text-3xl font-semibold tracking-tight tabular-nums">
+							{formatCanonicalMoney(totals.net_payable)}
 						</p>
 					</CardContent>
 				</Card>
-			))}
-			{extraKeys.map((key) => (
-				<Card key={key} size="sm">
-					<CardHeader className="border-b">
-						<CardTitle className="text-sm font-medium text-muted-foreground">{key}</CardTitle>
+				<Card size="sm">
+					<CardHeader>
+						<CardTitle className="text-sm text-muted-foreground">Gross Pay</CardTitle>
 					</CardHeader>
 					<CardContent>
-						<p className="text-lg font-semibold tracking-tight">
-							{formatCanonicalMoney(totals[key])}
+						<p className="text-lg font-semibold tabular-nums">
+							{formatCanonicalMoney(totals.gross_total)}
 						</p>
 					</CardContent>
 				</Card>
-			))}
+				<Card size="sm">
+					<CardHeader>
+						<CardTitle className="text-sm text-muted-foreground">Total Deductions</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<p className="text-lg font-semibold tabular-nums">
+							{formatCanonicalMoney(totals.deductions_total)}
+						</p>
+					</CardContent>
+				</Card>
+				<Card size="sm">
+					<CardHeader>
+						<CardTitle className="text-sm text-muted-foreground">Employees</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<p className="text-lg font-semibold tabular-nums">
+							{employeeCount == null ? "—" : employeeCount.toLocaleString("en-IN")}
+						</p>
+					</CardContent>
+				</Card>
+			</div>
+
+			<Card size="sm">
+				<CardHeader className="border-b">
+					<CardTitle>Payroll breakdown</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<dl className="grid gap-3">
+						{BREAKDOWN_TOTALS.map((item) => (
+							<div key={item.key} className="flex items-center justify-between gap-4">
+								<dt className="text-muted-foreground">{item.label}</dt>
+								<dd className="font-medium tabular-nums">
+									{formatCanonicalMoney(totals[item.key])}
+								</dd>
+							</div>
+						))}
+					</dl>
+				</CardContent>
+			</Card>
 		</div>
 	);
+}
+
+function buildEmployeeResultColumns(): ColumnDef<PayrollEmployeeResult>[] {
+	return [
+		{
+			accessorKey: "employee_number",
+			header: "Employee",
+			cell: ({ row }) => <span className="font-medium">{row.original.employee_number}</span>,
+		},
+		{
+			accessorKey: "earnings_total",
+			header: "Earnings",
+			cell: ({ row }) => (
+				<span className="tabular-nums">{formatCanonicalMoney(row.original.earnings_total)}</span>
+			),
+			meta: { align: "right" },
+		},
+		{
+			accessorKey: "deductions_total",
+			header: "Deductions",
+			cell: ({ row }) => (
+				<span className="tabular-nums">{formatCanonicalMoney(row.original.deductions_total)}</span>
+			),
+			meta: { align: "right" },
+		},
+		{
+			accessorKey: "net_payable",
+			header: "Net payable",
+			cell: ({ row }) => (
+				<span className="font-semibold tabular-nums">
+					{formatCanonicalMoney(row.original.net_payable)}
+				</span>
+			),
+			meta: { align: "right" },
+		},
+	];
 }
 
 export default function PayRunDetailPage() {
@@ -265,18 +355,35 @@ export default function PayRunDetailPage() {
 		const fromDetail = parsePayrollRunVersion(run?.current_version);
 		return fromDetail ?? lastCalculateResult;
 	}, [run?.current_version, lastCalculateResult]);
+	const resultsQuery = usePayrollRunResults(runId, Boolean(versionInfo));
+	// Ignore cached results that belong to a prior calculation version.
+	const resultsAreCurrent = Boolean(
+		resultsQuery.data &&
+			versionInfo &&
+			resultsQuery.data.version.version_number === versionInfo.version_number &&
+			(!versionInfo.version_id || resultsQuery.data.version.id === versionInfo.version_id),
+	);
+	const employeeResults = resultsAreCurrent ? (resultsQuery.data?.employees ?? []) : [];
+	const totals = resultsAreCurrent ? (resultsQuery.data?.totals ?? versionInfo?.totals) : versionInfo?.totals;
+	const resultsPending =
+		Boolean(versionInfo) && !resultsAreCurrent && (resultsQuery.isLoading || resultsQuery.isFetching);
+	const employeeNumbers = useMemo(
+		() => new Map(employeeResults.map((result) => [result.employee_id, result.employee_number])),
+		[employeeResults],
+	);
 
 	const inputColumns = useMemo(
 		() =>
 			buildInputColumns({
 				canEditInputs,
+				employeeNumbers,
 				onEdit: (input) => {
 					setEditingInput(input);
 					setInputDialogOpen(true);
 				},
 				onDelete: (input) => setDeletingInput(input),
 			}),
-		[canEditInputs],
+		[canEditInputs, employeeNumbers],
 	);
 
 	const table = useReactTable({
@@ -286,6 +393,12 @@ export default function PayRunDetailPage() {
 		getRowId: (row) => row.id,
 		state: { columnVisibility },
 		onColumnVisibilityChange: setColumnVisibility,
+	});
+	const employeeResultsTable = useReactTable({
+		data: employeeResults,
+		columns: buildEmployeeResultColumns(),
+		getCoreRowModel: getCoreRowModel(),
+		getRowId: (row) => row.employee_id,
 	});
 
 	const calculateReason = run ? calculateDisabledReason(canCreateRun, run.status) : null;
@@ -347,7 +460,11 @@ export default function PayRunDetailPage() {
 							title={calculateReason ?? undefined}
 							aria-label="Calculate Pay Run"
 						>
-							{calculateMutation.isPending ? "Calculating…" : "Calculate"}
+							{calculateMutation.isPending
+								? "Calculating…"
+								: run.status === "draft"
+									? "Calculate"
+									: "Recalculate"}
 						</Button>
 					) : undefined
 				}
@@ -369,28 +486,19 @@ export default function PayRunDetailPage() {
 
 					{run ? (
 						<>
-							<PageSection>
-								<div className="flex flex-wrap items-center gap-3">
-									<h2 className="text-xl font-semibold tracking-tight">
+							<PageSection className="grid gap-3">
+								<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+									<h1 className="text-2xl font-semibold tracking-tight">
 										{periodLabel(run.period_year, run.period_month)}
-									</h2>
+									</h1>
 									<span className="text-muted-foreground">{runTypeLabel(run.run_type)}</span>
 									<RunStatusBadge status={run.status} />
-									{versionInfo?.engine_version ? (
-										<Badge variant="outline">Engine {versionInfo.engine_version}</Badge>
-									) : null}
 									{versionInfo && versionInfo.version_number > 0 ? (
-										<Badge variant="outline">v{versionInfo.version_number}</Badge>
-									) : null}
-									{versionInfo?.content_hash ? (
-										<Badge variant="muted" title={versionInfo.content_hash}>
-											Hash {versionInfo.content_hash.slice(0, 12)}
-										</Badge>
+										<span className="text-xs text-muted-foreground">
+											Version {versionInfo.version_number}
+										</span>
 									) : null}
 								</div>
-							</PageSection>
-
-							<PageSection className="grid gap-3">
 								<WorkflowActionBar
 									run={run}
 									versionInfo={versionInfo}
@@ -401,8 +509,65 @@ export default function PayRunDetailPage() {
 							</PageSection>
 
 							<PageSection className="grid gap-3">
+								<div>
+									<h2 className="text-base font-semibold">Payroll results</h2>
+									<p className="text-sm text-muted-foreground">
+										The payable outcome and employee-level calculation for this run.
+									</p>
+								</div>
+								{versionInfo && totals ? (
+									<>
+										<FinancialSummary
+											totals={totals}
+											employeeCount={
+												resultsPending || resultsQuery.isError ? null : employeeResults.length
+											}
+										/>
+										{resultsPending ? <DataTableSkeleton /> : null}
+										{!resultsPending && resultsQuery.isError ? (
+											<ErrorWithRetry
+												message={getErrorMessage(
+													resultsQuery.error,
+													"Failed to load employee results.",
+												)}
+												onRetry={() => void resultsQuery.refetch()}
+											/>
+										) : null}
+										{!resultsPending &&
+										!resultsQuery.isError &&
+										employeeResults.length > 0 ? (
+											<div className="grid gap-2">
+												<h3 className="text-sm font-medium">Employee results</h3>
+												<DataTableShell
+													table={employeeResultsTable}
+													tableClassName="min-w-[42rem]"
+												/>
+											</div>
+										) : null}
+										{!resultsQuery.isLoading &&
+										!resultsQuery.isError &&
+										employeeResults.length === 0 ? (
+											<p className="text-sm text-muted-foreground">
+												No employee results were produced for this run.
+											</p>
+										) : null}
+									</>
+								) : (
+									<EmptyState
+										title="No calculated results"
+										description="Calculate this run to produce payroll totals and employee results."
+									/>
+								)}
+							</PageSection>
+
+							<PageSection className="grid gap-3">
 								<div className="flex flex-wrap items-center justify-between gap-2">
-									<h3 className="text-sm font-medium">Inputs</h3>
+									<div>
+										<h2 className="text-base font-semibold">Run adjustments</h2>
+										<p className="text-sm text-muted-foreground">
+											One-time amounts, overrides, and exceptions applied to this run.
+										</p>
+									</div>
 									<div className="flex items-center gap-2">
 										<ColumnVisibilityToggle
 											table={table}
@@ -441,24 +606,8 @@ export default function PayRunDetailPage() {
 								) : null}
 
 								{!inputsQuery.isLoading && !inputsQuery.isError && inputs.length > 0 ? (
-									<DataTableShell table={table} />
+									<DataTableShell table={table} tableClassName="min-w-[54rem]" />
 								) : null}
-							</PageSection>
-
-							<PageSection className="grid gap-3">
-								<h3 className="text-sm font-medium">Results</h3>
-								{/*
-								  CONTRACT GAP: OpenAPI has no per-employee results-read endpoint and no
-								  run-versions list endpoint. Show totals (+ version metadata in the header)
-								  only. A per-employee results table can be added here when an endpoint exists.
-								*/}
-								{versionInfo ? (
-									<TotalsCards totals={versionInfo.totals} />
-								) : (
-									<p className="text-sm text-muted-foreground">
-										No calculated results yet. Run Calculate to produce totals.
-									</p>
-								)}
 							</PageSection>
 						</>
 					) : null}

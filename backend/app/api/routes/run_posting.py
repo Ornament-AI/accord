@@ -55,6 +55,7 @@ async def post_payroll_run(
             organization_id=org_id,
             run_id=run_id,
             user_id=user_id,
+            idempotency_key=idempotency_key,
         )
 
     return await idempotent_command(
@@ -85,6 +86,7 @@ async def reverse_payroll_run(
             run_id=run_id,
             user_id=user_id,
             reason=body.reason,
+            idempotency_key=idempotency_key,
         )
 
     return await idempotent_command(

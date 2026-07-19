@@ -1,11 +1,15 @@
 import { HttpResponse, http } from "msw";
 
-import type { AuditEventResponse, PaginatedAuditEventResponse } from "@/lib/api/audit";
+import type {
+	AuditEventDetail,
+	AuditEventListItem,
+	AuditFilterOptions,
+	PaginatedAuditEventResponse,
+} from "@/lib/api/audit";
 
 export type AuditHandlersOptions = {
-	events?: AuditEventResponse[];
+	events?: AuditEventDetail[];
 	pageSize?: number;
-	/** When true, list always returns an empty page. */
 	empty?: boolean;
 };
 
@@ -20,6 +24,79 @@ export type CapturedAuditListRequest = {
 	page_size: string | null;
 };
 
+function listItem(event: AuditEventDetail): AuditEventListItem {
+	const {
+		request_id: _requestId,
+		before_state: _beforeState,
+		after_state: _afterState,
+		resource_state: _resourceState,
+		access_details: _accessDetails,
+		...item
+	} = event;
+	return item;
+}
+
+export function buildAuditEvent(
+	overrides: Partial<AuditEventDetail> & { id: string },
+): AuditEventDetail {
+	const command = overrides.command ?? "submit";
+	const beforeState = overrides.before_state ?? { status: "calculated", lock_version: 1 };
+	const afterState = overrides.after_state ?? { status: "submitted", lock_version: 2 };
+	return {
+		id: overrides.id,
+		command,
+		event_kind: overrides.event_kind ?? "mutation",
+		entity_type: overrides.entity_type ?? "payroll_run",
+		entity_id: overrides.entity_id ?? "11111111-1111-1111-1111-111111111111",
+		entity_label: overrides.entity_label ?? "2026-07 Regular run",
+		actor:
+			overrides.actor === undefined
+				? {
+						id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+						name: "Ada Lovelace",
+						email: "ada@example.com",
+					}
+				: overrides.actor,
+		changed_count: overrides.changed_count ?? 1,
+		has_structured_detail: overrides.has_structured_detail ?? true,
+		request_id: overrides.request_id ?? "req-001",
+		before_state: beforeState,
+		after_state: afterState,
+		resource_state: overrides.resource_state ?? null,
+		access_details: overrides.access_details ?? {},
+		created_at: overrides.created_at ?? "2026-07-18T10:00:00",
+	};
+}
+
+function defaultEvents(count: number): AuditEventDetail[] {
+	return Array.from({ length: count }, (_, index) => {
+		const n = index + 1;
+		const created = new Date(Date.UTC(2026, 6, 18, 12, 0, 0));
+		created.setUTCMinutes(created.getUTCMinutes() - index);
+		const command =
+			index % 4 === 0
+				? "payroll_run.post"
+				: index % 4 === 1
+					? "artifact.download"
+					: index % 4 === 2
+						? "approve"
+						: "submit";
+		const isAccess = command === "artifact.download";
+		return buildAuditEvent({
+			id: `aaaaaaaa-bbbb-cccc-dddd-${String(n).padStart(12, "0")}`,
+			command,
+			event_kind: isAccess ? "access" : "mutation",
+			entity_type: isAccess ? "export_artifact" : "payroll_run",
+			entity_id: `22222222-2222-2222-2222-${String(n).padStart(12, "0")}`,
+			entity_label: isAccess ? `Payroll Register ${n}` : `2026-07 Regular run ${n}`,
+			before_state: isAccess ? null : { status: "approved" },
+			after_state: isAccess ? null : { status: "posted" },
+			resource_state: isAccess ? { report_type: "payroll_register", size_bytes: 2048 } : null,
+			created_at: created.toISOString().replace(/\.\d{3}Z$/, ""),
+		});
+	});
+}
+
 function captureParams(url: URL): CapturedAuditListRequest {
 	return {
 		entity_type: url.searchParams.get("entity_type"),
@@ -33,82 +110,30 @@ function captureParams(url: URL): CapturedAuditListRequest {
 	};
 }
 
-export function buildAuditEvent(
-	overrides: Partial<AuditEventResponse> & { id: string },
-): AuditEventResponse {
-	return {
-		id: overrides.id,
-		command: overrides.command ?? "submit",
-		entity_type: overrides.entity_type ?? "payroll_run",
-		entity_id: overrides.entity_id ?? "11111111-1111-1111-1111-111111111111",
-		actor:
-			overrides.actor === undefined
-				? {
-						id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-						name: "Ada Lovelace",
-						email: "ada@example.com",
-					}
-				: overrides.actor,
-		request_id: overrides.request_id ?? "req-001",
-		summary: overrides.summary ?? { action: "submit", status: "submitted" },
-		created_at: overrides.created_at ?? "2026-07-18T10:00:00",
-	};
-}
-
-function defaultEvents(count: number): AuditEventResponse[] {
-	return Array.from({ length: count }, (_, index) => {
-		const n = index + 1;
-		const created = new Date(Date.UTC(2026, 6, 18, 12, 0, 0));
-		created.setUTCMinutes(created.getUTCMinutes() - index);
-		const command =
-			index % 5 === 0
-				? "payroll_run.post"
-				: index % 5 === 1
-					? "artifact.download"
-					: index % 5 === 2
-						? "auth.login"
-						: index % 5 === 3
-							? "approve"
-							: "submit";
-		return buildAuditEvent({
-			id: `aaaaaaaa-bbbb-cccc-dddd-${String(n).padStart(12, "0")}`,
-			command,
-			entity_type: command.startsWith("artifact.") ? "export_artifact" : "payroll_run",
-			entity_id: `22222222-2222-2222-2222-${String(n).padStart(12, "0")}`,
-			actor:
-				index % 7 === 0
-					? null
-					: {
-							id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-							name: index === 0 ? "Ada Lovelace" : `Actor ${n}`,
-							email: index === 0 ? "ada@example.com" : `actor${n}@example.com`,
-						},
-			request_id: `req-${String(n).padStart(3, "0")}`,
-			summary: {
-				action: command,
-				version: n,
-				note: `Event ${n}`,
-			},
-			created_at: created.toISOString().replace(/\.\d{3}Z$/, ""),
-		});
-	});
-}
-
 export function createAuditHandlers(options: AuditHandlersOptions = {}) {
 	const pageSize = options.pageSize ?? 20;
-	const store = new Map<string, AuditEventResponse>();
+	const store = new Map<string, AuditEventDetail>();
 	const capturedListRequests: CapturedAuditListRequest[] = [];
-
-	const seed = options.empty ? [] : (options.events ?? defaultEvents(25));
-	for (const event of seed) {
+	for (const event of options.empty ? [] : (options.events ?? defaultEvents(25))) {
 		store.set(event.id, event);
 	}
 
 	const handlers = [
+		http.get("/api/audit-events/filter-options", () => {
+			const events = Array.from(store.values());
+			const actorMap = new Map(
+				events.flatMap((event) => (event.actor ? [[event.actor.id, event.actor] as const] : [])),
+			);
+			const body: AuditFilterOptions = {
+				entity_types: Array.from(new Set(events.map((event) => event.entity_type))).sort(),
+				commands: Array.from(new Set(events.map((event) => event.command))).sort(),
+				actors: Array.from(actorMap.values()),
+			};
+			return HttpResponse.json(body);
+		}),
 		http.get("/api/audit-events", ({ request }) => {
 			const url = new URL(request.url);
 			capturedListRequests.push(captureParams(url));
-
 			const entityType = url.searchParams.get("entity_type");
 			const entityId = url.searchParams.get("entity_id");
 			const command = url.searchParams.get("command");
@@ -117,63 +142,31 @@ export function createAuditHandlers(options: AuditHandlersOptions = {}) {
 			const to = url.searchParams.get("to");
 			const page = Number(url.searchParams.get("page") ?? "1");
 			const size = Number(url.searchParams.get("page_size") ?? String(pageSize));
-
 			let items = Array.from(store.values());
-
-			if (entityType) {
-				items = items.filter((item) => item.entity_type === entityType);
-			}
-			if (entityId) {
-				items = items.filter((item) => item.entity_id === entityId);
-			}
-			if (command) {
-				items = items.filter((item) => item.command === command);
-			}
-			if (actorUserId) {
-				items = items.filter((item) => item.actor?.id === actorUserId);
-			}
-			if (from) {
-				const fromMs = Date.parse(from);
-				if (!Number.isNaN(fromMs)) {
-					items = items.filter((item) => Date.parse(item.created_at) >= fromMs);
-				}
-			}
-			if (to) {
-				const toMs = Date.parse(to);
-				if (!Number.isNaN(toMs)) {
-					items = items.filter((item) => Date.parse(item.created_at) <= toMs);
-				}
-			}
-
-			// Newest-first (matches backend order_by created_at.desc, id.desc).
-			items.sort((a, b) => {
-				const byTime = Date.parse(b.created_at) - Date.parse(a.created_at);
-				if (byTime !== 0) return byTime;
-				return b.id.localeCompare(a.id);
-			});
-
+			if (entityType) items = items.filter((item) => item.entity_type === entityType);
+			if (entityId) items = items.filter((item) => item.entity_id === entityId);
+			if (command) items = items.filter((item) => item.command === command);
+			if (actorUserId) items = items.filter((item) => item.actor?.id === actorUserId);
+			if (from) items = items.filter((item) => Date.parse(item.created_at) >= Date.parse(from));
+			if (to) items = items.filter((item) => Date.parse(item.created_at) <= Date.parse(to));
+			items.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
 			const total = items.length;
-			const totalPages = Math.max(1, Math.ceil(total / size) || 1);
+			const totalPages = Math.max(1, Math.ceil(total / size));
 			const start = (page - 1) * size;
-			const pageItems = items.slice(start, start + size);
-
 			const body: PaginatedAuditEventResponse = {
-				items: pageItems,
+				items: items.slice(start, start + size).map(listItem),
 				total,
 				page,
 				page_size: size,
-				total_pages: total === 0 ? 1 : totalPages,
+				total_pages: totalPages,
 			};
 			return HttpResponse.json(body);
 		}),
-
 		http.get("/api/audit-events/:eventId", ({ params }) => {
-			const eventId = String(params.eventId);
-			const event = store.get(eventId);
-			if (!event) {
-				return HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
-			}
-			return HttpResponse.json(event);
+			const event = store.get(String(params.eventId));
+			return event
+				? HttpResponse.json(event)
+				: HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
 		}),
 	];
 
