@@ -364,9 +364,13 @@ export default function PayRunDetailPage() {
 			(!versionInfo.version_id || resultsQuery.data.version.id === versionInfo.version_id),
 	);
 	const employeeResults = resultsAreCurrent ? (resultsQuery.data?.employees ?? []) : [];
-	const totals = resultsAreCurrent ? (resultsQuery.data?.totals ?? versionInfo?.totals) : versionInfo?.totals;
+	const totals = resultsAreCurrent
+		? (resultsQuery.data?.totals ?? versionInfo?.totals)
+		: versionInfo?.totals;
 	const resultsPending =
-		Boolean(versionInfo) && !resultsAreCurrent && (resultsQuery.isLoading || resultsQuery.isFetching);
+		Boolean(versionInfo) &&
+		!resultsAreCurrent &&
+		(resultsQuery.isLoading || resultsQuery.isFetching);
 	const employeeNumbers = useMemo(
 		() => new Map(employeeResults.map((result) => [result.employee_id, result.employee_number])),
 		[employeeResults],
@@ -533,9 +537,7 @@ export default function PayRunDetailPage() {
 												onRetry={() => void resultsQuery.refetch()}
 											/>
 										) : null}
-										{!resultsPending &&
-										!resultsQuery.isError &&
-										employeeResults.length > 0 ? (
+										{!resultsPending && !resultsQuery.isError && employeeResults.length > 0 ? (
 											<div className="grid gap-2">
 												<h3 className="text-sm font-medium">Employee results</h3>
 												<DataTableShell
