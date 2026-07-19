@@ -7,6 +7,8 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from app.api.deps import Session, TenantCtx, require_capability
 from app.auth.principal import AuthPrincipal
@@ -86,7 +88,10 @@ async def update_pay_component(
 ) -> dict[str, Any]:
     if "code" in body or "classification" in body:
         raise ConflictError("code and classification are immutable after creation.")
-    update = PayComponentUpdate.model_validate(body)
+    try:
+        update = PayComponentUpdate.model_validate(body)
+    except PydanticValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
     return await pay_setup_service.update_pay_component(
         db,
         organization_id=_org_id(tenant),

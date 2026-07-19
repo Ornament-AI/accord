@@ -91,7 +91,9 @@ Non-summed:
 | Employer share (EPF employer only) | 29,785 |
 | Gross bill | 5,102,985 |
 | Total deductions | 1,264,890 |
-| Net payable | 3,838,095 |
+| Net payable (treasury-face) | 3,838,095 |
+| Off-bill employer remittance (NPS employer) | 152,943 |
+| Employee disbursement (net payable + off-bill NPS) | 3,991,038 |
 | GPF total (Mumbai 165,000 + Nagpur 115,000) | 280,000 |
 | Income tax | 550,700 |
 | GIS | 22,440 |
@@ -108,15 +110,17 @@ Identities:
 ```text
 salary_earnings + employer_share = gross_bill
 gross_bill − total_deductions = net_payable
+net_payable + offbill_employer_remittance = employee_disbursement
 ```
 
 ## Critical asymmetry (do not “fix”)
 
-Documented open question in `docs/payroll-domain.md`:
+Resolved in `docs/payroll-domain.md` (department sign-off 18 Jul 2026):
 
-1. **EPF employer 29,785** is an `employer_contribution` line **inside gross bill**, paired 1:1 with `EPF_EMPLOYER_TRANSFER` 29,785.
-2. **NPS employer 152,943** appears **only** as `NPS_EMPLOYER_TRANSFER` (deduction / employer-transfer). It is **not** added to gross bill as `employer_contribution`.
+1. **EPF employer 29,785** is an `employer_contribution` line **inside gross bill**, paired 1:1 with `EPF_EMPLOYER_TRANSFER` 29,785 (true pass-through).
+2. **NPS employer 152,943** appears **only** as `NPS_EMPLOYER_TRANSFER` (deduction / employer-transfer). It is **off-bill** — not added to gross bill as `employer_contribution`.
 3. Therefore `employer_share` (29,785) ≠ full employer-transfer bucket (182,728).
+4. Because NPS employer is off-bill, **Net Payable (3,838,095) ≠ employee disbursement (3,991,038)**; the two differ by the off-bill NPS employer 152,943 and are reconciled separately.
 
 `validate.py` asserts this asymmetry explicitly.
 
@@ -125,12 +129,12 @@ Documented open question in `docs/payroll-domain.md`:
 See `expected_totals.json` → `report_reconciliation`:
 
 - Pay Bill / Treasury Face header totals = primary aggregates above
-- Bank/RTGS advice sum = net payable 3,838,095
+- Bank/RTGS advice sum = employee disbursement 3,991,038 (NOT net payable)
 - GPF Mumbai schedule = 165,000; GPF Nagpur schedule = 115,000
 - NPS schedule employee/employer = 109,245 / 152,943 (**excludes EPF**)
 - Income tax 550,700; Professional tax 5,600; GIS 22,440; HBA 72,723
 - Accommodation Mumbai actual 10,419; Worli actual 1,250
-- Sum of payslip nets = 3,838,095
+- Sum of payslip nets (take-home / disbursement) = 3,991,038
 
 ## Validation
 

@@ -12,6 +12,19 @@ where::
 
     gross_total = earnings_total + employer_contribution_total + gross_adjustment_total
     deductions_total = ag_deduction_total + treasury_deduction_total + external_recovery_total
+
+Disbursement identity (see docs/payroll-domain.md, "Resolved" section)::
+
+    disbursement == net_payable + offbill_employer_remittance
+
+``net_payable`` is the treasury-face / bill figure: it has employer transfers
+(including off-bill NPS employer) subtracted. ``offbill_employer_remittance`` is
+the sum of employer-transfer deduction lines that have **no** paired
+``employer_contribution`` addition in gross (NPS employer is off-bill; EPF
+employer is a true pass-through and is therefore **not** counted here).
+``disbursement`` adds those off-bill transfers back — it is what the employee
+actually receives in bank/RTGS credit, and is reconciled **separately** from
+``net_payable`` (the two are not asserted equal).
 """
 
 from __future__ import annotations
@@ -37,6 +50,8 @@ class CalculationTrace:
     source_version_ids: tuple[str, ...]
     calculator_kind: str
     engine_version: str
+    employer_transfer: bool = False
+    transfer_of: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +73,14 @@ class EmployeeResult:
     external_recovery_total: Money
     deductions_total: Money
     net_payable: Money
+    offbill_employer_remittance: Money = Money.zero()
+    disbursement: Money = Money.zero()
+
+    def __post_init__(self) -> None:
+        if self.disbursement != self.net_payable + self.offbill_employer_remittance:
+            raise ValueError(
+                "EmployeeResult disbursement must equal net_payable + offbill_employer_remittance"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,3 +106,11 @@ class RunResult:
     deductions_total: Money
     net_payable: Money
     content_hash: str
+    offbill_employer_remittance: Money = Money.zero()
+    disbursement: Money = Money.zero()
+
+    def __post_init__(self) -> None:
+        if self.disbursement != self.net_payable + self.offbill_employer_remittance:
+            raise ValueError(
+                "RunResult disbursement must equal net_payable + offbill_employer_remittance"
+            )

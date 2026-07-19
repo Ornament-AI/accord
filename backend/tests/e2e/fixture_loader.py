@@ -62,6 +62,10 @@ class ComponentSeed:
     api_classification: str | None
     informational: bool = False
     excluded_from_totals: bool = False
+    # Employer-transfer pairing drives off-bill remittance / disbursement.
+    # ``transfer_of`` is None for off-bill transfers (NPS employer).
+    employer_transfer: bool = False
+    transfer_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +196,8 @@ def load_june_fixture() -> JuneFixture:
                 api_classification=_CLASSIFICATION_TO_API.get(fixture_cls),
                 informational=bool(row.get("informational", False)),
                 excluded_from_totals=bool(row.get("excluded_from_totals", False)),
+                employer_transfer=bool(row.get("employer_transfer", False)),
+                transfer_of=row.get("pairs_with"),
             )
         )
 

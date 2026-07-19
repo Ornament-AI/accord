@@ -1696,6 +1696,8 @@ export interface components {
         EmployeeResultDetail: {
             /** Deductions Total */
             deductions_total: string;
+            /** Disbursement */
+            disbursement: string;
             /** Earnings Total */
             earnings_total: string;
             /**
@@ -1713,11 +1715,15 @@ export interface components {
             lines: components["schemas"]["ResultLine"][];
             /** Net Payable */
             net_payable: string;
+            /** Offbill Employer Remittance */
+            offbill_employer_remittance: string;
         };
         /** EmployeeResultSummary */
         EmployeeResultSummary: {
             /** Deductions Total */
             deductions_total: string;
+            /** Disbursement */
+            disbursement: string;
             /** Earnings Total */
             earnings_total: string;
             /**
@@ -1733,6 +1739,8 @@ export interface components {
             gross_total: string;
             /** Net Payable */
             net_payable: string;
+            /** Offbill Employer Remittance */
+            offbill_employer_remittance: string;
         };
         /** EmployeeSummary */
         EmployeeSummary: {
@@ -1886,8 +1894,15 @@ export interface components {
              * @default 0
              */
             display_order: number;
+            /**
+             * Employer Transfer
+             * @default false
+             */
+            employer_transfer: boolean;
             /** Name */
             name: string;
+            /** Transfer Of */
+            transfer_of?: string | null;
         };
         /** PayComponentResponse */
         PayComponentResponse: {
@@ -1902,6 +1917,8 @@ export interface components {
             created_at: string;
             /** Display Order */
             display_order: number;
+            /** Employer Transfer */
+            employer_transfer: boolean;
             /**
              * Id
              * Format: uuid
@@ -1911,6 +1928,8 @@ export interface components {
             is_active: boolean;
             /** Name */
             name: string;
+            /** Transfer Of */
+            transfer_of: string | null;
             /**
              * Updated At
              * Format: date-time

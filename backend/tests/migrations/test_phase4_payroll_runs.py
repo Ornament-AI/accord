@@ -7,7 +7,7 @@ import psycopg
 from .conftest import as_psycopg_url, diag, run_alembic
 
 INITIAL_REVISION = "2f397740f38a"
-HEAD_REVISION = "e6a8c4d2f901"
+HEAD_REVISION = "e2b9d47c1503"
 
 PHASE4_TABLES = (
     "payroll_periods",

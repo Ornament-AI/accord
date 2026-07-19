@@ -22,6 +22,8 @@ HARD = {
     "gross_bill": Decimal("5102985"),
     "total_deductions": Decimal("1264890"),
     "net_payable": Decimal("3838095"),
+    "offbill_employer_remittance": Decimal("152943"),
+    "employee_disbursement": Decimal("3991038"),
     "gpf_total": Decimal("280000"),
     "gpf_mumbai": Decimal("165000"),
     "gpf_nagpur": Decimal("115000"),
@@ -538,7 +540,7 @@ def main() -> int:
         "pay_bill.total_deductions": HARD["total_deductions"],
         "pay_bill.net_payable": HARD["net_payable"],
         "treasury_face.net_payable": HARD["net_payable"],
-        "bank_rtgs_advice_sum": HARD["net_payable"],
+        "bank_rtgs_advice_sum": HARD["employee_disbursement"],
         "gpf_mumbai_schedule": HARD["gpf_mumbai"],
         "gpf_nagpur_schedule": HARD["gpf_nagpur"],
         "nps_contribution_schedule.employee": HARD["nps_employee"],
@@ -549,7 +551,7 @@ def main() -> int:
         "hba_schedule": HARD["hba"],
         "accommodation_mumbai_actual": HARD["accommodation_mumbai"],
         "accommodation_worli_actual": HARD["accommodation_worli"],
-        "payslip_nets_sum": HARD["net_payable"],
+        "payslip_nets_sum": HARD["employee_disbursement"],
     }
     for label, raw in report_checks.items():
         actual = parse_amount(raw, f"report_reconciliation.{label}")

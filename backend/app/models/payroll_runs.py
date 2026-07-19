@@ -345,6 +345,12 @@ payroll_employee_results = Table(
     Column("gross_total", Numeric(14, 2), nullable=False),
     Column("deductions_total", Numeric(14, 2), nullable=False),
     Column("net_payable", Numeric(14, 2), nullable=False),
+    # Treasury-face net (``net_payable``) diverges from what the employee is
+    # actually credited, because off-bill NPS employer is deducted without a
+    # gross addition. See docs/payroll-domain.md "Resolved".
+    #   disbursement = net_payable + offbill_employer_remittance
+    Column("offbill_employer_remittance", Numeric(14, 2), nullable=False),
+    Column("disbursement", Numeric(14, 2), nullable=False),
     UniqueConstraint(
         "organization_id",
         "run_version_id",

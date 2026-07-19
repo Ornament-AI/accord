@@ -77,6 +77,11 @@ PERIOD_YEAR = 2026
 PERIOD_MONTH = 6
 TEMPLATE_VERSION = "v1"
 EXPECTED_NET = Decimal("3838095.00")
+# Employee disbursement = net payable + off-bill NPS employer (152,943).
+# Reconciled SEPARATELY from net payable and never asserted equal to it.
+# Department sign-off 18 Jul 2026; see docs/payroll-domain.md "Resolved".
+EXPECTED_DISBURSEMENT = Decimal("3991038.00")
+EXPECTED_OFFBILL = Decimal("152943.00")
 
 _CLASSIFICATION_DB = {
     "earning": "earning",
@@ -166,6 +171,8 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
             name=comp.name,
             classification=db_cls,
             display_order=display_order,
+            employer_transfer=comp.employer_transfer,
+            transfer_of=comp.transfer_of,
         )
         session.add(component)
         await session.flush()
@@ -495,8 +502,11 @@ async def test_bank_advice_total_and_row_count(session):
     assert dto.report_type == REPORT_TYPE_BANK_ADVICE
     credits = _section_by_title(dto, "Payment credits")
     assert credits.totals is not None
-    net_idx = _col_index(credits, "net_payable")
-    assert _dec(credits.totals[net_idx]) == EXPECTED_NET
+    credit_idx = _col_index(credits, "disbursement")
+    assert _dec(credits.totals[credit_idx]) == EXPECTED_DISBURSEMENT
+    # The advice must NOT equal treasury-face net payable.
+    assert _dec(credits.totals[credit_idx]) != EXPECTED_NET
+    assert _dec(credits.totals[credit_idx]) - EXPECTED_NET == EXPECTED_OFFBILL
 
     db_rows = (
         (
@@ -510,7 +520,7 @@ async def test_bank_advice_total_and_row_count(session):
         .mappings()
         .all()
     )
-    paid_count = sum(1 for row in db_rows if _dec(row["net_payable"]) > _ZERO)
+    paid_count = sum(1 for row in db_rows if _dec(row["disbursement"]) > _ZERO)
     assert len(credits.rows) == paid_count
     assert paid_count == 32
 
@@ -576,7 +586,7 @@ async def test_missing_primary_account_error_then_recovers(session):
         await _bind(session, world["org_id"], world["user_id"])
         dto = await bank_advice_builder.build(session, _ctx(world))
         credits = _section_by_title(dto, "Payment credits")
-        assert _dec(credits.totals[_col_index(credits, "net_payable")]) == EXPECTED_NET
+        assert _dec(credits.totals[_col_index(credits, "disbursement")]) == EXPECTED_DISBURSEMENT
     finally:
         # Ensure cached world keeps a bank account for later tests even if assert fails.
         await _bind(session, world["org_id"], world["user_id"])
@@ -619,6 +629,7 @@ async def test_payslip_nets_sum_and_line_reconciliation(session):
     assert len(dto.sections) == 32
 
     nets_sum = _ZERO
+    disbursements_sum = _ZERO
     kind_idx = 0
     code_idx = 1
     amount_idx = 3
@@ -647,8 +658,16 @@ async def test_payslip_nets_sum_and_line_reconciliation(session):
         assert net == _dec(db["net_payable"])
         nets_sum += net
 
+        # Take-home shown on the payslip is the disbursement, not the
+        # treasury-face net (off-bill NPS employer is not withheld from pay).
+        disbursement_row = next(row for row in section.rows if row[code_idx] == "disbursement")
+        disbursement = _dec(disbursement_row[amount_idx])
+        assert disbursement == _dec(db["disbursement"])
+        assert disbursement == net + _dec(db["offbill_employer_remittance"])
+        disbursements_sum += disbursement
+
         words_row = next(row for row in section.rows if row[code_idx] == "amount_in_words")
-        assert words_row[2] == amount_in_words(net)
+        assert words_row[2] == amount_in_words(disbursement)
 
         line_rows = (
             (
@@ -676,6 +695,8 @@ async def test_payslip_nets_sum_and_line_reconciliation(session):
             assert _dec(payslip_row[amount_idx]) == _dec(db_line["amount"])
 
     assert _dec(nets_sum) == EXPECTED_NET
+    assert _dec(disbursements_sum) == EXPECTED_DISBURSEMENT
+    assert _dec(disbursements_sum) - _dec(nets_sum) == EXPECTED_OFFBILL
 
 
 @pytest.mark.asyncio
@@ -706,7 +727,7 @@ async def test_bank_advice_excel_reload(session):
     dto = await bank_advice_builder.build(session, _ctx(world))
     payload = bank_advice_to_json(dto)
     assert payload["report_type"] == REPORT_TYPE_BANK_ADVICE
-    assert payload["sections"][0]["totals"]["net_payable"] == "3838095.00"
+    assert payload["sections"][0]["totals"]["disbursement"] == "3991038.00"
 
     xlsx = bank_advice_to_excel(dto)
     wb = load_workbook(BytesIO(xlsx))
@@ -722,9 +743,9 @@ async def test_bank_advice_excel_reload(session):
     assert "••••" not in str(ws.cell(row=6, column=3).value)
 
     totals_row = 6 + len(credits.rows)
-    net_cell = ws.cell(row=totals_row, column=5)
-    assert net_cell.number_format == MONEY_FORMAT
-    assert _dec(net_cell.value) == EXPECTED_NET
+    credit_cell = ws.cell(row=totals_row, column=5)
+    assert credit_cell.number_format == MONEY_FORMAT
+    assert _dec(credit_cell.value) == EXPECTED_DISBURSEMENT
 
 
 @pytest.mark.asyncio

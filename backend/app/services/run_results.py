@@ -45,6 +45,8 @@ def _employee_summary(row: sa.RowMapping) -> dict[str, Any]:
         "gross_total": _money_str(row["gross_total"]),
         "deductions_total": _money_str(row["deductions_total"]),
         "net_payable": _money_str(row["net_payable"]),
+        "offbill_employer_remittance": _money_str(row["offbill_employer_remittance"]),
+        "disbursement": _money_str(row["disbursement"]),
     }
 
 

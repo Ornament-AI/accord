@@ -162,6 +162,8 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
             name=comp.name,
             classification=db_cls,
             display_order=display_order,
+            employer_transfer=comp.employer_transfer,
+            transfer_of=comp.transfer_of,
         )
         session.add(component)
         await session.flush()

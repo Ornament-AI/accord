@@ -31,6 +31,8 @@ export function buildPayComponent(
 		name: overrides.name ?? overrides.code,
 		classification: overrides.classification ?? "earning",
 		display_order: overrides.display_order ?? 0,
+		employer_transfer: overrides.employer_transfer ?? false,
+		transfer_of: overrides.transfer_of ?? null,
 		is_active: overrides.is_active ?? true,
 		created_at: overrides.created_at ?? now,
 		updated_at: overrides.updated_at ?? now,
@@ -135,6 +137,8 @@ export function createPayComponentHandlers(options: PayComponentHandlersOptions 
 				name: body.name.trim(),
 				classification: body.classification,
 				display_order: body.display_order ?? 0,
+				employer_transfer: body.employer_transfer,
+				transfer_of: body.transfer_of ?? null,
 				created_at: now,
 				updated_at: now,
 			});
@@ -166,6 +170,8 @@ export function createPayComponentHandlers(options: PayComponentHandlersOptions 
 				name: update.name ?? existing.name,
 				display_order: update.display_order ?? existing.display_order,
 				is_active: update.is_active ?? existing.is_active,
+				employer_transfer: update.employer_transfer ?? existing.employer_transfer,
+				transfer_of: update.transfer_of === undefined ? existing.transfer_of : update.transfer_of,
 				updated_at: "2026-07-18T12:30:00Z",
 			};
 			store.set(componentId, next);

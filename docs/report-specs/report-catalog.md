@@ -60,8 +60,8 @@ Every generated file (preview payload reference, Excel, PDF) is an export artifa
 | --- | --- | --- | --- |
 | **Payroll register — Pay Bill** | Primary bill register: earnings, employer contributions, deductions by classification, gross bill, and net payable for the posted run. | JSON preview, Excel, PDF | `salary_earnings`, `employer_share`, `gross_bill`, deduction buckets (AG / treasury / external), `net_payable`; line sum = header totals |
 | **Payroll register — Treasury Face** | Treasury-facing face sheet / abstract of the same posted bill for treasury submission. | JSON preview, Excel, PDF | Face totals = Pay Bill header totals for the same `posted_run_id`; treasury deduction aggregates match statutory schedules |
-| **Bank / RTGS advice** | Payment instruction list to credit employee bank accounts (RTGS/NEFT/salary credit). | JSON preview, Excel, PDF | Sum of advice credit amounts = posted **net payable**; one row per payable employee bank credit on the snapshot |
-| **Payslips** | Per-employee earnings and deduction statement for the posted period. | JSON preview, Excel, PDF | Each payslip’s lines and net = that employee’s posted lines; run-level sum of payslip nets = posted net payable |
+| **Bank / RTGS advice** | Payment instruction list to credit employee bank accounts (RTGS/NEFT/salary credit). | JSON preview, Excel, PDF | Sum of advice credit amounts = posted **disbursement** (**not** net payable); one row per payable employee bank credit on the snapshot |
+| **Payslips** | Per-employee earnings and deduction statement for the posted period. | JSON preview, Excel, PDF | Each payslip’s lines and take-home = that employee’s posted lines; run-level sum of payslip disbursements = posted disbursement |
 | **Office approval note** | Maker/checker approval note with **signatory** blocks for office endorsement of the posted bill. | JSON preview, Excel, PDF | Bill totals on the note = Pay Bill / Treasury Face for the same run; signatory slots present (names/roles from snapshot or configured office block frozen for the artifact) |
 | **GPF — Mumbai schedule** | Remittance schedule for **Mumbai** GPF jurisdiction only. | JSON preview, Excel, PDF | Schedule total = sum of posted Mumbai GPF employee subscriptions (and any Mumbai-routed GPF lines); **never** includes Nagpur rows |
 | **GPF — Nagpur schedule** | Remittance schedule for **Nagpur** GPF jurisdiction only. | JSON preview, Excel, PDF | Schedule total = sum of posted Nagpur GPF lines; **never** merged with Mumbai into one schedule file |
@@ -95,21 +95,24 @@ GPF_Mumbai_schedule_total + GPF_Nagpur_schedule_total = total_GPF_elsewhere
 
 Where `total_GPF_elsewhere` is the consolidated GPF subscription total on Pay Bill / employee AG_deduction aggregates for the same posted run. No third “other GPF” bucket is silently omitted: if a future jurisdiction appears, it needs its own schedule row in this catalog before it can contribute to the identity.
 
-### Bank / RTGS vs net payable
+### Bank / RTGS vs disbursement
 
 ```text
-sum(bank_rtgs_advice.credit_amount) = posted_run.net_payable
+sum(bank_rtgs_advice.credit_amount) = posted_run.disbursement
+posted_run.disbursement = posted_run.net_payable + posted_run.offbill_employer_remittance
 ```
 
-Every payable employee credit on the advice comes from the posted net line and snapshotted bank account. Zero-net employees do not invent credits.
+The advice reconciles to **disbursement**, *not* to `net_payable`. Off-bill NPS employer is subtracted from the treasury-face net without a matching gross addition, so the two figures differ by exactly that amount and **must never be asserted equal** (department sign-off 18 Jul 2026; see [payroll-domain.md](../payroll-domain.md) “Resolved”).
+
+Every payable employee credit on the advice comes from the posted disbursement line and snapshotted bank account. Zero-disbursement employees do not invent credits.
 
 ### Payslips vs posted employee lines
 
 Payslip DTOs are a projection of posted employee lines:
 
 - Line-by-line component codes, classifications, and amounts match the posted run version for that employee.
-- Per-employee net on the payslip equals that employee’s posted net payable.
-- Sum of payslip nets equals run-level posted net payable.
+- Per-employee take-home (`disbursement`) on the payslip equals that employee’s posted disbursement; the treasury-face `net_payable` is shown as a separate line.
+- Sum of payslip disbursements equals run-level posted disbursement.
 
 ### NPS and EPF separation
 

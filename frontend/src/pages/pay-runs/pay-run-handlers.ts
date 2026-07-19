@@ -169,6 +169,8 @@ export function buildRunResults(overrides: Partial<PayrollRunResults> = {}): Pay
 				gross_total: "67000.00",
 				deductions_total: "8000.00",
 				net_payable: "59000.00",
+				offbill_employer_remittance: "0.00",
+				disbursement: "59000.00",
 			},
 			{
 				employee_id: "emp-2",
@@ -178,6 +180,8 @@ export function buildRunResults(overrides: Partial<PayrollRunResults> = {}): Pay
 				gross_total: "45000.00",
 				deductions_total: "5000.00",
 				net_payable: "40000.00",
+				offbill_employer_remittance: "0.00",
+				disbursement: "40000.00",
 			},
 		],
 	};

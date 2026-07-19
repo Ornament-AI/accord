@@ -12,10 +12,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
 	classificationLabel,
 	type PayComponentResponse,
+	usePayComponentsList,
 	useUpdatePayComponent,
 } from "@/lib/api/pay-setup";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
@@ -31,7 +39,11 @@ type FormState = {
 	name: string;
 	display_order: string;
 	is_active: boolean;
+	employer_transfer: boolean;
+	transfer_of: string;
 };
+
+const OFF_BILL_VALUE = "__offbill__";
 
 export function EditPayComponentDialog({
 	open,
@@ -39,10 +51,13 @@ export function EditPayComponentDialog({
 	component,
 }: EditPayComponentDialogProps) {
 	const updateComponent = useUpdatePayComponent();
+	const componentsQuery = usePayComponentsList();
 	const [form, setForm] = useState<FormState>({
 		name: "",
 		display_order: "0",
 		is_active: true,
+		employer_transfer: false,
+		transfer_of: "",
 	});
 	const [formError, setFormError] = useState<string | null>(null);
 
@@ -52,6 +67,8 @@ export function EditPayComponentDialog({
 				name: component.name,
 				display_order: String(component.display_order),
 				is_active: component.is_active,
+				employer_transfer: component.employer_transfer,
+				transfer_of: component.transfer_of ?? "",
 			});
 			setFormError(null);
 		}
@@ -80,6 +97,8 @@ export function EditPayComponentDialog({
 					name: form.name.trim(),
 					display_order: displayOrder,
 					is_active: form.is_active,
+					employer_transfer: form.employer_transfer,
+					transfer_of: form.employer_transfer ? form.transfer_of || null : null,
 				},
 			});
 			onOpenChange(false);
@@ -95,6 +114,9 @@ export function EditPayComponentDialog({
 	};
 
 	const isSubmitting = updateComponent.isPending;
+	const employerContributions = (componentsQuery.data ?? []).filter(
+		(item) => item.classification === "employer_contribution" && item.is_active,
+	);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -161,6 +183,61 @@ export function EditPayComponentDialog({
 									disabled={isSubmitting}
 								/>
 							</div>
+
+							{["ag_deduction", "treasury_deduction", "external_recovery"].includes(
+								component.classification,
+							) ? (
+								<>
+									<div className="flex items-center justify-between gap-4">
+										<div className="grid gap-1">
+											<Label htmlFor="edit-pc-employer-transfer">Employer transfer</Label>
+											<p className="text-xs text-muted-foreground">
+												Marks an employer-funded deduction.
+											</p>
+										</div>
+										<Switch
+											id="edit-pc-employer-transfer"
+											checked={form.employer_transfer}
+											onCheckedChange={(checked) =>
+												setForm((prev) => ({
+													...prev,
+													employer_transfer: checked,
+													transfer_of: checked ? prev.transfer_of : "",
+												}))
+											}
+											disabled={isSubmitting}
+										/>
+									</div>
+
+									{form.employer_transfer ? (
+										<div className="grid gap-2">
+											<Label htmlFor="edit-pc-transfer-of">Paired employer contribution</Label>
+											<Select
+												value={form.transfer_of || OFF_BILL_VALUE}
+												onValueChange={(value) =>
+													setForm((prev) => ({
+														...prev,
+														transfer_of: value === OFF_BILL_VALUE ? "" : value,
+													}))
+												}
+												disabled={isSubmitting}
+											>
+												<SelectTrigger id="edit-pc-transfer-of" className="w-full">
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value={OFF_BILL_VALUE}>None (off-bill)</SelectItem>
+													{employerContributions.map((item) => (
+														<SelectItem key={item.id} value={item.code}>
+															{item.name} ({item.code})
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</div>
+									) : null}
+								</>
+							) : null}
 
 							{formError ? (
 								<p className="text-sm text-destructive" role="alert">

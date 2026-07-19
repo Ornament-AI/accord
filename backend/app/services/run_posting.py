@@ -79,6 +79,8 @@ def _trace_from_row(row: Any) -> CalculationTrace:
         source_version_ids=tuple(str(item) for item in source_ids),
         calculator_kind=str(payload.get("calculator_kind") or row["calc_kind"]),
         engine_version=str(payload.get("engine_version") or ""),
+        employer_transfer=bool(payload.get("employer_transfer", False)),
+        transfer_of=(None if payload.get("transfer_of") is None else str(payload["transfer_of"])),
     )
 
 
@@ -188,6 +190,11 @@ async def _load_run_result(
                 external_recovery_total=external_recovery_total,
                 deductions_total=deductions_total,
                 net_payable=net_payable,
+                # Off-bill remittance is not derivable from trace lines (the
+                # transfer metadata is not part of the hashed trace), so it is
+                # read from the persisted snapshot columns.
+                offbill_employer_remittance=_money_from_db(emp["offbill_employer_remittance"]),
+                disbursement=_money_from_db(emp["disbursement"]),
             )
         )
 
@@ -202,6 +209,8 @@ async def _load_run_result(
         run_external = Money.sum([e.external_recovery_total for e in employee_tuple])
         run_deductions = Money.sum([e.deductions_total for e in employee_tuple])
         run_net = Money.sum([e.net_payable for e in employee_tuple])
+        run_offbill = Money.sum([e.offbill_employer_remittance for e in employee_tuple])
+        run_disbursement = Money.sum([e.disbursement for e in employee_tuple])
     else:
         run_earnings = Money.zero()
         run_employer = Money.zero()
@@ -212,6 +221,8 @@ async def _load_run_result(
         run_external = Money.zero()
         run_deductions = Money.zero()
         run_net = Money.zero()
+        run_offbill = Money.zero()
+        run_disbursement = Money.zero()
 
     return RunResult(
         period=_period_label(period.period_year, period.period_month),
@@ -227,6 +238,8 @@ async def _load_run_result(
         external_recovery_total=run_external,
         deductions_total=run_deductions,
         net_payable=run_net,
+        offbill_employer_remittance=run_offbill,
+        disbursement=run_disbursement,
         content_hash=version["content_hash"],
     )
 

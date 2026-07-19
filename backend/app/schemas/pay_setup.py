@@ -105,6 +105,34 @@ class PayComponentCreate(BaseModel):
     name: str = Field(min_length=1)
     classification: Classification
     display_order: int = 0
+    # Employer-transfer pairing drives off-bill remittance and disbursement
+    # (docs/payroll-domain.md "Resolved"). ``transfer_of`` names the
+    # employer_contribution code this line reverses; leave it null on an
+    # employer-transfer line to mark the transfer as off-bill (NPS employer).
+    employer_transfer: bool = False
+    transfer_of: str | None = None
+
+    @model_validator(mode="after")
+    def _transfer_of_requires_employer_transfer(self) -> "PayComponentCreate":
+        if self.transfer_of is not None and not self.employer_transfer:
+            raise ValueError("transfer_of requires employer_transfer=true")
+        if self.employer_transfer and self.classification not in {
+            Classification.AG_DEDUCTION,
+            Classification.TREASURY_DEDUCTION,
+            Classification.EXTERNAL_RECOVERY,
+        }:
+            raise ValueError("employer_transfer requires a deduction classification")
+        return self
+
+    @field_validator("transfer_of")
+    @classmethod
+    def _strip_optional_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("transfer_of must not be empty")
+        return stripped
 
     @field_validator("code", "name")
     @classmethod
@@ -121,10 +149,31 @@ class PayComponentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     display_order: int | None = None
     is_active: bool | None = None
+    employer_transfer: bool | None = None
+    transfer_of: str | None = None
+
+    @field_validator("name", "display_order", "is_active", "employer_transfer")
+    @classmethod
+    def _reject_null_non_nullable_updates(cls, value: Any) -> Any:
+        # Omitted fields keep their defaults without running this validator.
+        # Only transfer_of may be explicitly null, because null clears a pairing.
+        if value is None:
+            raise ValueError("must not be null")
+        return value
+
+    @field_validator("transfer_of")
+    @classmethod
+    def _strip_optional_transfer_of(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("transfer_of must not be empty")
+        return stripped
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> PayComponentUpdate:
-        if self.name is None and self.display_order is None and self.is_active is None:
+        if not self.model_fields_set:
             raise ValueError("At least one updatable field is required.")
         return self
 
@@ -138,6 +187,8 @@ class PayComponentResponse(BaseModel):
     classification: str
     is_active: bool
     display_order: int
+    employer_transfer: bool
+    transfer_of: str | None
     created_at: datetime
     updated_at: datetime
 
