@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 

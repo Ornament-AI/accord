@@ -333,7 +333,7 @@ def test_validate_return_to_rejects_unsafe(value):
 def test_validate_return_to_accepts_relative_path():
     from app.api.routes.auth import validate_return_to
 
-    assert validate_return_to("/dashboard") == "/dashboard"
+    assert validate_return_to("/pay-runs") == "/pay-runs"
     assert validate_return_to("/settings/org") == "/settings/org"
     assert validate_return_to(None) is None
     assert validate_return_to("") is None
@@ -358,14 +358,14 @@ async def test_return_to_round_trip_via_callback_state(client, monkeypatch):
     )
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
-    state = sign_oauth_state(value, redirect_to="/dashboard")
+    state = sign_oauth_state(value, redirect_to="/pay-runs")
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
         follow_redirects=False,
     )
     assert resp.status_code == 302
-    assert resp.headers["location"] == "http://localhost:5173/dashboard"
+    assert resp.headers["location"] == "http://localhost:5173/pay-runs"
     clear_settings_cache()
 
 
@@ -411,11 +411,11 @@ async def test_callback_drops_evil_return_to_in_state(client, monkeypatch):
 async def test_login_dev_return_to_valid_redirects(client, dev_settings):
     resp = await client.get(
         "/api/auth/login",
-        params={"return_to": "/dashboard"},
+        params={"return_to": "/pay-runs"},
         follow_redirects=False,
     )
     assert resp.status_code == 302
-    assert resp.headers["location"] == "http://localhost:5173/dashboard"
+    assert resp.headers["location"] == "http://localhost:5173/pay-runs"
 
 
 @pytest.mark.asyncio

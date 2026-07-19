@@ -64,6 +64,12 @@ async def _seed_audit_event(
     request_id: str | None = None,
     created_at: datetime | None = None,
     bind_user_id: UUID | None = None,
+    event_kind: str | None = None,
+    entity_label: str | None = None,
+    actor_snapshot: dict | None = None,
+    before_state: dict | None = None,
+    after_state: dict | None = None,
+    metadata: dict | None = None,
 ) -> AuditEvent:
     """Insert an audit_events row under tenant GUC (same seed pattern as other API tests)."""
     async with session.begin():
@@ -79,6 +85,13 @@ async def _seed_audit_event(
             command=command,
             entity_type=entity_type,
             entity_id=entity_id,
+            event_kind=event_kind,
+            entity_label=entity_label,
+            actor_snapshot=actor_snapshot,
+            before_state=before_state,
+            after_state=after_state,
+            metadata_=metadata or {},
+            changed_count=1 if before_state != after_state and event_kind == "mutation" else 0,
             summary=summary or {"before": {}, "after": {}},
         )
         if created_at is not None:
@@ -187,11 +200,9 @@ async def test_list_pagination_newest_first_and_actor_shapes(client, session):
     assert page2.status_code == 200, page2.text
     body2 = page2.json()
     assert [item["id"] for item in body2["items"]] == [str(e1.id)]
-    assert body2["items"][0]["request_id"] == "req-1"
-    assert body2["items"][0]["summary"] == {
-        "before": {"status": "draft"},
-        "after": {"status": "submitted"},
-    }
+    assert "request_id" not in body2["items"][0]
+    assert "summary" not in body2["items"][0]
+    assert body2["items"][0]["has_structured_detail"] is False
 
 
 @pytest.mark.asyncio
@@ -409,6 +420,15 @@ async def test_detail_happy_path(client, session):
         request_id="detail-req",
         summary={"before": {"status": "approved"}, "after": {"status": "posted"}},
         bind_user_id=user_id,
+        event_kind="mutation",
+        entity_label="2026-07 Regular run",
+        actor_snapshot={
+            "id": str(user_id),
+            "name": "Actor at event time",
+            "email": "snapshot@example.com",
+        },
+        before_state={"status": "approved", "lock_version": 4},
+        after_state={"status": "posted", "lock_version": 5},
     )
 
     resp = await client.get(f"/api/audit-events/{event.id}")
@@ -419,13 +439,51 @@ async def test_detail_happy_path(client, session):
     assert body["entity_type"] == "payroll_run"
     assert body["entity_id"] == str(entity_id)
     assert body["request_id"] == "detail-req"
-    assert body["summary"] == {
-        "before": {"status": "approved"},
-        "after": {"status": "posted"},
-    }
+    assert body["event_kind"] == "mutation"
+    assert body["entity_label"] == "2026-07 Regular run"
+    assert body["changed_count"] == 1
+    assert body["before_state"]["status"] == "approved"
+    assert body["after_state"]["status"] == "posted"
+    assert "summary" not in body
     assert body["actor"]["id"] == str(user_id)
-    assert body["actor"]["name"]
-    assert body["actor"]["email"]
+    assert body["actor"]["name"] == "Actor at event time"
+    assert body["actor"]["email"] == "snapshot@example.com"
+
+
+@pytest.mark.asyncio
+async def test_filter_options_are_exact_and_tenant_scoped(client, session):
+    org_id, user_id = await _create_org_as_admin(client)
+    await _seed_audit_event(
+        session,
+        org_id=org_id,
+        actor_user_id=user_id,
+        command="payroll_run.post",
+        entity_type="payroll_run",
+        entity_id=uuid4(),
+        event_kind="mutation",
+        entity_label="2026-07 Regular run",
+        actor_snapshot={
+            "id": str(user_id),
+            "name": "Captured Actor",
+            "email": "captured@example.com",
+        },
+        before_state={"status": "approved"},
+        after_state={"status": "posted"},
+        bind_user_id=user_id,
+    )
+
+    response = await client.get("/api/audit-events/filter-options")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["entity_types"] == ["payroll_run"]
+    assert body["commands"] == ["payroll_run.post"]
+    assert body["actors"] == [
+        {
+            "id": str(user_id),
+            "name": "Captured Actor",
+            "email": "captured@example.com",
+        }
+    ]
 
 
 @pytest.mark.asyncio

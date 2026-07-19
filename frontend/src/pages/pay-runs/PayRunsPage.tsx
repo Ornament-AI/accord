@@ -1,10 +1,10 @@
+import { MoneyIcon as WalletCards } from "@phosphor-icons/react/dist/csr/Money";
 import {
 	type ColumnDef,
 	getCoreRowModel,
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { WalletCards } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -14,16 +14,13 @@ import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageSection, PageShell } from "@/components/page-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-	type PayrollPeriodResponse,
 	type PayrollRunListItem,
 	periodLabel,
 	runTypeLabel,
-	usePayrollPeriods,
 	usePayrollRuns,
 } from "@/lib/api/payroll-runs";
 import { getErrorMessage } from "@/lib/errors";
@@ -65,10 +62,8 @@ export default function PayRunsPage() {
 	const [createPeriodOpen, setCreatePeriodOpen] = useState(false);
 	const [createRunOpen, setCreateRunOpen] = useState(false);
 
-	const periodsQuery = usePayrollPeriods();
 	const runsQuery = usePayrollRuns();
 
-	const periods = periodsQuery.data ?? [];
 	const runs = runsQuery.data ?? [];
 
 	const table = useReactTable({
@@ -99,41 +94,6 @@ export default function PayRunsPage() {
 			>
 				<PageShell data-testid="pay-runs-page">
 					<PageSection className="grid gap-3">
-						<div className="flex flex-wrap items-center justify-between gap-2">
-							<h2 className="text-sm font-medium">Payroll Periods</h2>
-						</div>
-
-						{periodsQuery.isLoading ? <DataTableSkeleton rows={3} /> : null}
-
-						{periodsQuery.isError ? (
-							<ErrorWithRetry
-								message={getErrorMessage(periodsQuery.error, "Failed to load payroll periods.")}
-								onRetry={() => void periodsQuery.refetch()}
-							/>
-						) : null}
-
-						{!periodsQuery.isLoading && !periodsQuery.isError && periods.length === 0 ? (
-							<p className="text-sm text-muted-foreground">No payroll periods yet.</p>
-						) : null}
-
-						{!periodsQuery.isLoading && !periodsQuery.isError && periods.length > 0 ? (
-							<ul className="flex flex-wrap gap-2" data-testid="payroll-periods-list">
-								{periods.map((period: PayrollPeriodResponse) => (
-									<li key={period.id}>
-										<Badge variant="secondary">
-											{periodLabel(period.period_year, period.period_month)}
-										</Badge>
-									</li>
-								))}
-							</ul>
-						) : null}
-					</PageSection>
-
-					<PageSection className="grid gap-3">
-						<div className="flex flex-wrap items-center justify-between gap-2">
-							<h2 className="text-sm font-medium">Pay Runs</h2>
-						</div>
-
 						{runsQuery.isLoading ? <DataTableSkeleton /> : null}
 
 						{runsQuery.isError ? (
@@ -148,13 +108,7 @@ export default function PayRunsPage() {
 								icon={WalletCards}
 								title="No pay runs"
 								description="Create a period and pay run to get started."
-							>
-								{canCreateRun ? (
-									<Button size="xs" onClick={() => setCreateRunOpen(true)}>
-										Add
-									</Button>
-								) : null}
-							</EmptyState>
+							/>
 						) : null}
 
 						{!runsQuery.isLoading && !runsQuery.isError && !runsEmpty ? (

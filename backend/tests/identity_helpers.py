@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.adapters import DevAuthAdapter
 from app.config import Settings, get_settings
 from app.models.base import utcnow
-from app.models.identity import Organization, OrganizationMembership, OrganizationSettings, User
+from app.models.identity import Organization, OrganizationMembership, User
 from app.models.identity import Session as SessionRow
 
 
@@ -104,7 +104,6 @@ async def seed_organization(
     name: str = "Seed Org",
     slug: str | None = None,
     is_active: bool = True,
-    with_settings: bool = True,
 ) -> Organization:
     org = Organization(
         name=name,
@@ -113,9 +112,6 @@ async def seed_organization(
     )
     db.add(org)
     await db.flush()
-    if with_settings:
-        db.add(OrganizationSettings(organization_id=org.id))
-        await db.flush()
     return org
 
 

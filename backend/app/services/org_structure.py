@@ -1,4 +1,4 @@
-"""Org-structure master data and organization settings services."""
+"""Organization-structure master data services."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError
-from app.models.identity import OrganizationSettings
 from app.models.org_structure import EmployeeGroup, Office, PayrollUnit, Post
 from app.schemas.org_structure import PostResponse
 
@@ -278,43 +277,3 @@ async def update_employee_group(
     await db.flush()
     await db.commit()
     return employee_group
-
-
-async def get_organization_settings(
-    db: AsyncSession,
-    organization_id: UUID,
-) -> OrganizationSettings:
-    result = await db.execute(
-        select(OrganizationSettings).where(
-            OrganizationSettings.organization_id == organization_id,
-        )
-    )
-    settings = result.scalar_one_or_none()
-    if settings is None:
-        raise NotFoundError("Organization settings not found.")
-    return settings
-
-
-async def update_organization_settings(
-    db: AsyncSession,
-    organization_id: UUID,
-    *,
-    locale: str | None = None,
-    timezone: str | None = None,
-    currency: str | None = None,
-    financial_year_start_month: int | None = None,
-) -> OrganizationSettings:
-    settings = await get_organization_settings(db, organization_id)
-
-    if locale is not None:
-        settings.locale = locale
-    if timezone is not None:
-        settings.timezone = timezone
-    if currency is not None:
-        settings.currency = currency
-    if financial_year_start_month is not None:
-        settings.financial_year_start_month = financial_year_start_month
-
-    await db.flush()
-    await db.commit()
-    return settings

@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit-events/filter-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Audit Filter Options */
+        get: operations["get_audit_filter_options_api_audit_events_filter_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audit-events/{event_id}": {
         parameters: {
             query?: never;
@@ -237,23 +254,6 @@ export interface paths {
          * @description Ingest WorkOS events verified by signature (no session cookie).
          */
         post: operations["workos_webhook_api_auth_webhooks_workos_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dashboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Dashboard */
-        get: operations["get_dashboard_api_dashboard_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -473,24 +473,6 @@ export interface paths {
         head?: never;
         /** Update Office Route */
         patch: operations["update_office_route_api_offices__office_id__patch"];
-        trace?: never;
-    };
-    "/api/organization-settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Organization Settings Route */
-        get: operations["get_organization_settings_route_api_organization_settings_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Organization Settings Route */
-        patch: operations["update_organization_settings_route_api_organization_settings_patch"];
         trace?: never;
     };
     "/api/organizations": {
@@ -1334,10 +1316,7 @@ export interface components {
              */
             updated_at: string;
         };
-        /**
-         * AuditActor
-         * @description User attribution for an audit event; omitted for system-originated rows.
-         */
+        /** AuditActor */
         AuditActor: {
             /** Email */
             email: string;
@@ -1349,9 +1328,26 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** AuditEventResponse */
-        AuditEventResponse: {
+        /** AuditEventDetailResponse */
+        AuditEventDetailResponse: {
+            /** Access Details */
+            access_details?: {
+                [key: string]: unknown;
+            };
             actor?: components["schemas"]["AuditActor"] | null;
+            /** After State */
+            after_state?: {
+                [key: string]: unknown;
+            } | null;
+            /** Before State */
+            before_state?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Changed Count
+             * @default 0
+             */
+            changed_count: number;
             /** Command */
             command: string;
             /**
@@ -1364,8 +1360,17 @@ export interface components {
              * Format: uuid
              */
             entity_id: string;
+            /** Entity Label */
+            entity_label: string;
             /** Entity Type */
             entity_type: string;
+            /** Event Kind */
+            event_kind?: ("mutation" | "access") | null;
+            /**
+             * Has Structured Detail
+             * @default false
+             */
+            has_structured_detail: boolean;
             /**
              * Id
              * Format: uuid
@@ -1373,10 +1378,56 @@ export interface components {
             id: string;
             /** Request Id */
             request_id?: string | null;
-            /** Summary */
-            summary?: {
+            /** Resource State */
+            resource_state?: {
                 [key: string]: unknown;
-            };
+            } | null;
+        };
+        /** AuditEventListItem */
+        AuditEventListItem: {
+            actor?: components["schemas"]["AuditActor"] | null;
+            /**
+             * Changed Count
+             * @default 0
+             */
+            changed_count: number;
+            /** Command */
+            command: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Entity Id
+             * Format: uuid
+             */
+            entity_id: string;
+            /** Entity Label */
+            entity_label: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Event Kind */
+            event_kind?: ("mutation" | "access") | null;
+            /**
+             * Has Structured Detail
+             * @default false
+             */
+            has_structured_detail: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** AuditFilterOptionsResponse */
+        AuditFilterOptionsResponse: {
+            /** Actors */
+            actors: components["schemas"]["AuditActor"][];
+            /** Commands */
+            commands: string[];
+            /** Entity Types */
+            entity_types: string[];
         };
         /** BankInput */
         BankInput: {
@@ -1545,26 +1596,6 @@ export interface components {
             /** Slug */
             slug: string;
         };
-        /** CurrentPeriodRun */
-        CurrentPeriodRun: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Status */
-            status: string;
-            /** Version Number */
-            version_number: number | null;
-        };
-        /** CurrentPeriodSummary */
-        CurrentPeriodSummary: {
-            /** Month */
-            month: number;
-            run: components["schemas"]["CurrentPeriodRun"] | null;
-            /** Year */
-            year: number;
-        };
         /**
          * CurrentVersion
          * @description Immutable calculated version summary (run detail + results list).
@@ -1590,17 +1621,6 @@ export interface components {
             };
             /** Version Number */
             version_number: number;
-        };
-        /** DashboardResponse */
-        DashboardResponse: {
-            current_period: components["schemas"]["CurrentPeriodSummary"] | null;
-            headcount: components["schemas"]["HeadcountSummary"];
-            latest_posted: components["schemas"]["PostedRunSummary"] | null;
-            pipeline: components["schemas"]["PipelineSummary"];
-            previous_posted: components["schemas"]["PostedRunSummary"] | null;
-            /** Recent Artifacts */
-            recent_artifacts: components["schemas"]["RecentArtifactSummary"][];
-            variance: components["schemas"]["VarianceSummary"] | null;
         };
         /** EmployeeDetail */
         EmployeeDetail: {
@@ -1767,12 +1787,6 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /** HeadcountSummary */
-        HeadcountSummary: {
-            /** Active Employees */
-            active_employees: number;
-            by_regime: components["schemas"]["RegimeBreakdown"];
-        };
         /**
          * InputKind
          * @enum {string}
@@ -1823,43 +1837,6 @@ export interface components {
             /** Name */
             name?: string | null;
         };
-        /** OrganizationSettingsResponse */
-        OrganizationSettingsResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Currency */
-            currency: string;
-            /** Financial Year Start Month */
-            financial_year_start_month: number;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Locale */
-            locale: string;
-            /** Timezone */
-            timezone: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** OrganizationSettingsUpdate */
-        OrganizationSettingsUpdate: {
-            /** Currency */
-            currency?: string | null;
-            /** Financial Year Start Month */
-            financial_year_start_month?: number | null;
-            /** Locale */
-            locale?: string | null;
-            /** Timezone */
-            timezone?: string | null;
-        };
         /** PaginatedArtifactResponse */
         PaginatedResponse_ArtifactResponse_: {
             /** Items */
@@ -1873,10 +1850,10 @@ export interface components {
             /** Total Pages */
             total_pages: number;
         };
-        /** PaginatedAuditEventResponse */
-        PaginatedResponse_AuditEventResponse_: {
+        /** PaginatedAuditEventListItem */
+        PaginatedResponse_AuditEventListItem_: {
             /** Items */
-            items: components["schemas"]["AuditEventResponse"][];
+            items: components["schemas"]["AuditEventListItem"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -2191,36 +2168,6 @@ export interface components {
             /** Name */
             name?: string | null;
         };
-        /** PeriodYearMonth */
-        PeriodYearMonth: {
-            /** Month */
-            month: number;
-            /** Year */
-            year: number;
-        };
-        /**
-         * PipelineSummary
-         * @description Counts of ``PayrollRun`` rows by status.
-         *
-         *     ``calculating`` runs are omitted from this map (not rolled into another
-         *     bucket).
-         */
-        PipelineSummary: {
-            /** Approved */
-            approved: number;
-            /** Calculated */
-            calculated: number;
-            /** Draft */
-            draft: number;
-            /** Posted */
-            posted: number;
-            /** Rejected */
-            rejected: number;
-            /** Reversed */
-            reversed: number;
-            /** Submitted */
-            submitted: number;
-        };
         /** PostCreate */
         PostCreate: {
             /** Class Name */
@@ -2256,34 +2203,6 @@ export interface components {
             class_name?: string | null;
             /** Designation */
             designation?: string | null;
-        };
-        /** PostedRunSummary */
-        PostedRunSummary: {
-            period: components["schemas"]["PeriodYearMonth"];
-            /**
-             * Posted At
-             * Format: date-time
-             */
-            posted_at: string;
-            /**
-             * Run Id
-             * Format: uuid
-             */
-            run_id: string;
-            totals: components["schemas"]["PostedTotals"];
-        };
-        /** PostedTotals */
-        PostedTotals: {
-            /** Deductions */
-            deductions: string;
-            /** Earnings */
-            earnings: string;
-            /** Employer Contribution */
-            employer_contribution: string;
-            /** Gross */
-            gross: string;
-            /** Net */
-            net: string;
         };
         /** PostingInput */
         PostingInput: {
@@ -2431,21 +2350,6 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
-        /** RecentArtifactSummary */
-        RecentArtifactSummary: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Report Type */
-            report_type: string;
-        };
         /** RecurringInstructionCreate */
         RecurringInstructionCreate: {
             /** Amount */
@@ -2552,15 +2456,6 @@ export interface components {
             rate?: string | null;
             /** Reason */
             reason?: string | null;
-        };
-        /** RegimeBreakdown */
-        RegimeBreakdown: {
-            /** Epf */
-            epf: number;
-            /** Gpf */
-            gpf: number;
-            /** Nps */
-            nps: number;
         };
         /** ReportConfigurationResponse */
         ReportConfigurationResponse: {
@@ -2675,13 +2570,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-        };
-        /** VarianceSummary */
-        VarianceSummary: {
-            /** Gross Delta */
-            gross_delta: string;
-            /** Net Delta */
-            net_delta: string;
         };
     };
     responses: never;
@@ -2883,7 +2771,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse_AuditEventResponse_"];
+                    "application/json": components["schemas"]["PaginatedResponse_AuditEventListItem_"];
                 };
             };
             /** @description Validation Error */
@@ -2893,6 +2781,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audit_filter_options_api_audit_events_filter_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditFilterOptionsResponse"];
                 };
             };
         };
@@ -2914,7 +2822,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuditEventResponse"];
+                    "application/json": components["schemas"]["AuditEventDetailResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3080,26 +2988,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    get_dashboard_api_dashboard_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DashboardResponse"];
                 };
             };
         };
@@ -3735,59 +3623,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OfficeResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_organization_settings_route_api_organization_settings_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationSettingsResponse"];
-                };
-            };
-        };
-    };
-    update_organization_settings_route_api_organization_settings_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrganizationSettingsUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationSettingsResponse"];
                 };
             };
             /** @description Validation Error */

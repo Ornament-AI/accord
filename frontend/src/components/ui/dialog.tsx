@@ -1,5 +1,5 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { XIcon } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -85,10 +85,16 @@ function DialogContent({
 				{showCloseButton && (
 					<DialogPrimitive.Close
 						data-slot="dialog-close"
-						className="data-open:bg-accent data-open:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 outline-none transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/35 disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+						render={
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label="Close"
+								className="absolute top-3 right-3 text-muted-foreground hover:text-foreground"
+							/>
+						}
 					>
-						<XIcon />
-						<span className="sr-only">Close</span>
+						<XIcon aria-hidden />
 					</DialogPrimitive.Close>
 				)}
 			</DialogPrimitive.Popup>
@@ -131,7 +137,7 @@ function DialogFooter({
 		<div
 			data-slot="dialog-footer"
 			className={cn(
-				"flex shrink-0 flex-row flex-wrap gap-2 bg-background sm:justify-end",
+				"flex shrink-0 flex-row flex-nowrap justify-center gap-3 bg-background [&>button]:h-auto [&>button]:min-h-9 [&>button]:min-w-0 [&>button]:flex-1 [&>button]:whitespace-normal sm:justify-end sm:gap-2 sm:[&>button]:h-9 sm:[&>button]:flex-none sm:[&>button]:whitespace-nowrap",
 				className,
 			)}
 			{...props}

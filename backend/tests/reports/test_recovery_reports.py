@@ -325,7 +325,7 @@ async def _posted_lines_by_component(
 
 
 _IDENTITY_TRUNCATE_SQL = text(
-    "TRUNCATE TABLE sessions, organization_memberships, organization_settings, "
+    "TRUNCATE TABLE sessions, organization_memberships, "
     "organizations, users, idempotency_keys RESTART IDENTITY CASCADE"
 )
 

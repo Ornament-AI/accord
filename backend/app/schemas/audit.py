@@ -1,22 +1,19 @@
-"""Pydantic schemas for audit-event read API."""
+"""Pydantic schemas for the compact audit timeline and structured detail API."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.pagination import PaginatedResponse
 
-# Command names align with ADR 0008 / 0009 (e.g. ``post``, ``artifact.download``).
 COMMAND_NAME_PATTERN = r"^[a-z][a-z0-9_.]*$"
 
 
 class AuditActor(BaseModel):
-    """User attribution for an audit event; omitted for system-originated rows."""
-
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -24,17 +21,33 @@ class AuditActor(BaseModel):
     email: str
 
 
-class AuditEventResponse(BaseModel):
+class AuditEventListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     command: str
+    event_kind: Literal["mutation", "access"] | None = None
     entity_type: str
     entity_id: UUID
+    entity_label: str
     actor: AuditActor | None = None
-    request_id: str | None = None
-    summary: dict[str, Any] = Field(default_factory=dict)
+    changed_count: int = 0
+    has_structured_detail: bool = False
     created_at: datetime
 
 
-AuditEventListPage = PaginatedResponse[AuditEventResponse]
+class AuditEventDetailResponse(AuditEventListItem):
+    request_id: str | None = None
+    before_state: dict[str, Any] | None = None
+    after_state: dict[str, Any] | None = None
+    resource_state: dict[str, Any] | None = None
+    access_details: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditFilterOptionsResponse(BaseModel):
+    entity_types: list[str]
+    commands: list[str]
+    actors: list[AuditActor]
+
+
+AuditEventListPage = PaginatedResponse[AuditEventListItem]

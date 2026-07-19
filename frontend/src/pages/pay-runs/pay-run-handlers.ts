@@ -8,6 +8,7 @@ import type {
 	PayrollRunInputResponse,
 	PayrollRunInputUpsert,
 	PayrollRunListItem,
+	PayrollRunResults,
 	PayrollRunTotals,
 } from "@/lib/api/payroll-runs";
 import type { components } from "@/types/api.generated";
@@ -17,6 +18,7 @@ export type PayRunHandlersOptions = {
 	runs?: PayrollRunListItem[];
 	details?: Record<string, PayrollRunDetail>;
 	inputs?: Record<string, PayrollRunInputResponse[]>;
+	results?: Record<string, PayrollRunResults>;
 	/** When set, POST /api/payroll-periods returns this status/body (e.g. 409). */
 	createPeriodError?: { status: number; body: Record<string, unknown> };
 	/** When set, POST /api/payroll-runs returns this status/body. */
@@ -154,11 +156,39 @@ export function buildCurrentVersion(
 	};
 }
 
+export function buildRunResults(overrides: Partial<PayrollRunResults> = {}): PayrollRunResults {
+	return {
+		version: overrides.version ?? buildCurrentVersion(),
+		totals: overrides.totals ?? ({ ...DEFAULT_TOTALS } as { [key: string]: string }),
+		employees: overrides.employees ?? [
+			{
+				employee_id: "emp-1",
+				employee_number: "E-001",
+				earnings_total: "60000.00",
+				employer_contribution_total: "7000.00",
+				gross_total: "67000.00",
+				deductions_total: "8000.00",
+				net_payable: "59000.00",
+			},
+			{
+				employee_id: "emp-2",
+				employee_number: "E-002",
+				earnings_total: "40000.00",
+				employer_contribution_total: "5000.00",
+				gross_total: "45000.00",
+				deductions_total: "5000.00",
+				net_payable: "40000.00",
+			},
+		],
+	};
+}
+
 export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 	const periods = new Map<string, PayrollPeriodResponse>();
 	const runs = new Map<string, PayrollRunListItem>();
 	const details = new Map<string, PayrollRunDetail>();
 	const inputs = new Map<string, PayrollRunInputResponse[]>();
+	const results = new Map<string, PayrollRunResults>();
 
 	const seedPeriods = options.periods ?? [
 		buildPeriod({ id: "period-1", period_year: 2026, period_month: 7 }),
@@ -204,6 +234,17 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 			});
 		details.set(run.id, detail);
 		inputs.set(run.id, options.inputs?.[run.id] ?? []);
+		if (options.results?.[run.id]) {
+			results.set(run.id, options.results[run.id]);
+		} else if (detail.current_version) {
+			results.set(
+				run.id,
+				buildRunResults({
+					version: detail.current_version,
+					totals: detail.current_version.totals,
+				}),
+			);
+		}
 	}
 
 	if (options.details) {
@@ -232,6 +273,12 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 	if (options.inputs) {
 		for (const [runId, list] of Object.entries(options.inputs)) {
 			inputs.set(runId, list);
+		}
+	}
+
+	if (options.results) {
+		for (const [runId, value] of Object.entries(options.results)) {
+			results.set(runId, value);
 		}
 	}
 
@@ -340,6 +387,18 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 			return HttpResponse.json(detail);
 		}),
 
+		http.get("/api/payroll-runs/:runId/results", ({ params }) => {
+			const runId = String(params.runId);
+			const result = results.get(runId);
+			if (!result) {
+				return HttpResponse.json(
+					{ detail: "Payroll run has no calculated version", error: "ConflictError" },
+					{ status: 409 },
+				);
+			}
+			return HttpResponse.json(result);
+		}),
+
 		http.post("/api/payroll-runs/:runId/calculate", ({ params }) => {
 			const runId = String(params.runId);
 			if (options.calculateError) {
@@ -377,6 +436,13 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 				lock_version: run.lock_version + 1,
 				updated_at: nextDetail.updated_at,
 			});
+			results.set(
+				runId,
+				buildRunResults({
+					version: nextDetail.current_version ?? buildCurrentVersion(result),
+					totals: result.totals as { [key: string]: string },
+				}),
+			);
 
 			return HttpResponse.json(result);
 		}),
@@ -476,5 +542,5 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 		}),
 	];
 
-	return { handlers, periods, runs, details, inputs };
+	return { handlers, periods, runs, details, inputs, results };
 }

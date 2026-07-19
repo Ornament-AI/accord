@@ -308,6 +308,10 @@ Notes:
 
 - `users` has **no** `organization_id`; multi-org membership is only via `organization_memberships`.
 - `idempotency_keys` is per-organization with composite unique `(organization_id, idempotency_key)`.
+- India-specific locale, timezone, currency, and financial-year conventions are
+  application invariants. Their public mutable API is retired, while the
+  `organization_settings` table remains temporarily as a rolling-deploy
+  compatibility shell for older binaries.
 
 ## Consequences
 

@@ -26,7 +26,8 @@ from app.models.payroll_runs import (
     payroll_result_lines,
     payroll_run_versions,
 )
-from app.models.platform import AuditEvent, OutboxEvent, PayrollApproval
+from app.models.platform import OutboxEvent, PayrollApproval
+from app.services.audit_events import entity_snapshot, write_mutation_event
 
 # ADR 0008 §4: maker/checker SoD is submitter ≠ approver only. Poster may equal
 # approver (report_releaser posts; payroll_approver approves). Poster ≠ submitter
@@ -252,6 +253,7 @@ async def post_run(
     organization_id: UUID,
     run_id: UUID,
     user_id: UUID,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """Post an approved run: lock, recheck, then approval+audit+outbox+status."""
     stmt = (
@@ -339,21 +341,6 @@ async def post_run(
         )
     )
     db.add(
-        AuditEvent(
-            organization_id=organization_id,
-            actor_user_id=user_id,
-            command="payroll_run.post",
-            entity_type="payroll_run",
-            entity_id=run.id,
-            summary={
-                "status": "posted",
-                "run_version_id": str(version_id),
-                "content_hash": content_hash,
-                "totals": totals,
-            },
-        )
-    )
-    db.add(
         OutboxEvent(
             organization_id=organization_id,
             event_type="payroll_run.posted",
@@ -367,10 +354,29 @@ async def post_run(
         )
     )
 
+    before_state = entity_snapshot(run)
     run.status = "posted"
     run.lock_version = run.lock_version + 1
     run.updated_at = now
     await db.flush()
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=user_id,
+        command="payroll_run.post",
+        entity_type="payroll_run",
+        entity_id=run.id,
+        entity_label=f"{_period_label(period.period_year, period.period_month)} {run.run_type.replace('_', ' ').title()} run",
+        before_state=before_state,
+        after_state=entity_snapshot(run),
+        summary={
+            "status": "posted",
+            "run_version_id": str(version_id),
+            "content_hash": content_hash,
+            "totals": totals,
+        },
+        idempotency_key=idempotency_key,
+    )
     await db.commit()
 
     return _run_summary(run)
@@ -382,6 +388,7 @@ async def reverse_run(
     run_id: UUID,
     user_id: UUID,
     reason: str,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """Reverse a posted run by creating a draft reversal run (immutable snapshot intact)."""
     if reason is None or not str(reason).strip():
@@ -420,6 +427,7 @@ async def reverse_run(
         raise ConflictError("Current run version not found.")
 
     now = datetime.now(timezone.utc)
+    before_state = entity_snapshot(run)
     reversal = PayrollRun(
         id=uuid4(),
         organization_id=organization_id,
@@ -452,22 +460,6 @@ async def reverse_run(
         )
     )
     db.add(
-        AuditEvent(
-            organization_id=organization_id,
-            actor_user_id=user_id,
-            command="payroll_run.reverse",
-            entity_type="payroll_run",
-            entity_id=run.id,
-            summary={
-                "status": "reversed",
-                "run_version_id": str(version_id),
-                "content_hash": content_hash,
-                "reversal_run_id": str(reversal.id),
-                "reason": trimmed_reason,
-            },
-        )
-    )
-    db.add(
         OutboxEvent(
             organization_id=organization_id,
             event_type="payroll_run.reversed",
@@ -483,6 +475,30 @@ async def reverse_run(
     )
 
     await db.flush()
+    period = await db.get(PayrollPeriod, run.period_id)
+    period_label = (
+        _period_label(period.period_year, period.period_month) if period is not None else "Unknown"
+    )
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=user_id,
+        command="payroll_run.reverse",
+        entity_type="payroll_run",
+        entity_id=run.id,
+        entity_label=f"{period_label} {run.run_type.replace('_', ' ').title()} run",
+        before_state=before_state,
+        after_state=entity_snapshot(run),
+        summary={
+            "status": "reversed",
+            "run_version_id": str(version_id),
+            "content_hash": content_hash,
+            "reversal_run_id": str(reversal.id),
+            "reason": trimmed_reason,
+        },
+        metadata={"reversal_run_id": str(reversal.id), "reason": trimmed_reason},
+        idempotency_key=idempotency_key,
+    )
     await db.commit()
 
     return _run_summary(run, extra={"reversal_run_id": str(reversal.id)})

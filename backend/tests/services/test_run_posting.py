@@ -366,6 +366,13 @@ async def test_post_happy_path_writes_approval_audit_outbox(session):
             )
         )
     ).scalar_one()
+    assert audit.event_kind == "mutation"
+    assert audit.before_state is not None and audit.before_state["status"] == "approved"
+    assert audit.after_state is not None and audit.after_state["status"] == "posted"
+    assert audit.changed_count == 1
+    assert audit.actor_snapshot is not None
+    assert audit.actor_snapshot["id"] == str(world["user_id"])
+    assert audit.entity_label.startswith("2026-")
     assert audit.summary["content_hash"] == calc["content_hash"]
     assert audit.summary["totals"]["net_payable"] == "51000.00"
 
@@ -629,6 +636,10 @@ async def test_reverse_happy_path(session):
             )
         )
     ).scalar_one()
+    assert audit.event_kind == "mutation"
+    assert audit.before_state is not None and audit.before_state["status"] == "posted"
+    assert audit.after_state is not None and audit.after_state["status"] == "reversed"
+    assert audit.changed_count == 1
     assert audit.summary["reversal_run_id"] == result["reversal_run_id"]
 
     outbox = (

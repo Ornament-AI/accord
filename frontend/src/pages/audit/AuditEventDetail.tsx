@@ -1,47 +1,48 @@
-import { ChevronDown, ClipboardList } from "lucide-react";
-import { type ReactNode, useState } from "react";
-
-import { EmptyState } from "@/components/empty-state";
-import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Skeleton } from "@/components/ui/skeleton";
-import { type AuditEventResponse, useAuditEvent } from "@/lib/api/audit";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
+import { type AuditEventDetail as AuditEventDetailData, useAuditEvent } from "@/lib/api/audit";
 import { getErrorMessage } from "@/lib/errors";
-import { formatDateTime } from "@/lib/utils";
+import { ACCORD_TIME_ZONE, formatDateInAccordTimeZone, parseApiDateTime } from "@/lib/utils";
 
-import { CommandBadge } from "./CommandBadge";
+const HIDDEN_DIFF_FIELDS = new Set([
+	"organization_id",
+	"created_at",
+	"updated_at",
+	"lock_version",
+	"version",
+]);
 
-function FieldRow({ label, value }: { label: string; value: ReactNode }) {
-	return (
-		<div className="grid grid-cols-[8rem_1fr] gap-2 text-sm">
-			<dt className="text-muted-foreground">{label}</dt>
-			<dd className="min-w-0 break-words text-foreground">{value ?? "—"}</dd>
-		</div>
-	);
+const timeFormatter = new Intl.DateTimeFormat("en-IN", {
+	timeZone: ACCORD_TIME_ZONE,
+	hour: "numeric",
+	minute: "2-digit",
+	hour12: true,
+});
+
+function humanize(value: string): string {
+	return value
+		.replaceAll("_", " ")
+		.replace(/([a-z])([A-Z])/g, "$1 $2")
+		.replace(/^./, (character) => character.toUpperCase());
 }
 
-function isFlatSummaryValue(value: unknown): value is string | number | boolean | null {
-	return (
-		value === null ||
-		typeof value === "string" ||
-		typeof value === "number" ||
-		typeof value === "boolean"
-	);
+function displayValue(value: unknown): string {
+	if (value === null || value === undefined || value === "") return "—";
+	if (typeof value === "boolean") return value ? "Yes" : "No";
+	if (typeof value === "string" || typeof value === "number") return String(value);
+	if (Array.isArray(value)) return value.map(displayValue).join(", ") || "—";
+	return "Structured value";
 }
 
-function formatSummaryValue(value: unknown): string {
-	if (value === null) return "null";
-	if (typeof value === "string") return value;
-	if (typeof value === "number" || typeof value === "boolean") return String(value);
-	try {
-		return JSON.stringify(value);
-	} catch {
-		return String(value);
-	}
-}
-
-function actorDisplay(event: AuditEventResponse): string {
+function actorDisplay(event: AuditEventDetailData): string {
 	if (!event.actor) return "System";
 	const name = event.actor.name?.trim();
 	const email = event.actor.email?.trim();
@@ -49,85 +50,139 @@ function actorDisplay(event: AuditEventResponse): string {
 	return name || email || "System";
 }
 
-function SummarySection({ summary }: { summary: AuditEventResponse["summary"] }) {
-	const [rawOpen, setRawOpen] = useState(false);
-	const entries = Object.entries(summary ?? {});
-	const flatEntries = entries.filter(([, value]) => isFlatSummaryValue(value));
-	const rawJson = JSON.stringify(summary ?? {}, null, 2);
+function EventMetadata({ event }: { event: AuditEventDetailData }) {
+	const date = parseApiDateTime(event.created_at);
+	return (
+		<dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+			<dt className="text-muted-foreground">Actor</dt>
+			<dd>{actorDisplay(event)}</dd>
+			<dt className="text-muted-foreground">Entity</dt>
+			<dd>{humanize(event.entity_type)}</dd>
+			<dt className="text-muted-foreground">Entity ID</dt>
+			<dd className="min-w-0 break-all font-mono text-xs">{event.entity_id}</dd>
+			<dt className="text-muted-foreground">Date</dt>
+			<dd>{formatDateInAccordTimeZone(event.created_at)}</dd>
+			<dt className="text-muted-foreground">Time</dt>
+			<dd>{date ? timeFormatter.format(date) : "—"}</dd>
+			{event.request_id ? (
+				<>
+					<dt className="text-muted-foreground">Request</dt>
+					<dd className="min-w-0 break-all font-mono text-xs">{event.request_id}</dd>
+				</>
+			) : null}
+		</dl>
+	);
+}
+
+function MutationDetail({ event }: { event: AuditEventDetailData }) {
+	const before = event.before_state ?? {};
+	const after = event.after_state ?? {};
+	const changedFields = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]))
+		.filter((key) => !HIDDEN_DIFF_FIELDS.has(key) && before[key] !== after[key])
+		.sort((left, right) => left.localeCompare(right));
+	const context = event.access_details ?? {};
+	const hasContext = Object.keys(context).length > 0;
 
 	return (
-		<div className="grid gap-3" data-testid="audit-event-summary">
-			{flatEntries.length > 0 ? (
-				<dl className="grid gap-2">
-					{flatEntries.map(([key, value]) => (
-						<FieldRow key={key} label={key} value={formatSummaryValue(value)} />
-					))}
-				</dl>
+		<div className="grid gap-5">
+			{hasContext ? (
+				<section className="grid gap-3">
+					<h3 className="text-sm font-semibold">Context</h3>
+					<KeyValueDetails values={context} />
+				</section>
+			) : null}
+			<section className="grid gap-3">
+				<h3 className="text-sm font-semibold">Changes</h3>
+				<Table containerClassName="shadow-none">
+					<TableHeader>
+						<TableRow className="hover:bg-transparent dark:hover:bg-transparent">
+							<TableHead>Field</TableHead>
+							<TableHead>Before</TableHead>
+							<TableHead>After</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{changedFields.map((field) => (
+							<TableRow key={field}>
+								<TableCell className="font-medium">{humanize(field)}</TableCell>
+								<TableCell className="max-w-64 whitespace-normal text-muted-foreground">
+									{displayValue(before[field])}
+								</TableCell>
+								<TableCell className="max-w-64 whitespace-normal">
+									{displayValue(after[field])}
+								</TableCell>
+							</TableRow>
+						))}
+					</TableBody>
+				</Table>
+			</section>
+		</div>
+	);
+}
+
+function KeyValueDetails({ values }: { values: Record<string, unknown> }) {
+	const entries = Object.entries(values).filter(
+		([key]) => !HIDDEN_DIFF_FIELDS.has(key) && key !== "object_key",
+	);
+	return (
+		<dl className="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+			{entries.map(([key, value]) => (
+				<div key={key} className="contents">
+					<dt className="text-muted-foreground">{humanize(key)}</dt>
+					<dd className="min-w-0 break-words">{displayValue(value)}</dd>
+				</div>
+			))}
+		</dl>
+	);
+}
+
+function AccessDetail({ event }: { event: AuditEventDetailData }) {
+	return (
+		<div className="grid gap-5">
+			<section className="grid gap-2">
+				<h3 className="text-sm font-semibold">Resource</h3>
+				<p className="text-sm">{event.entity_label}</p>
+			</section>
+			<section className="grid gap-3">
+				<h3 className="text-sm font-semibold">Access Details</h3>
+				<KeyValueDetails
+					values={{ ...(event.resource_state ?? {}), ...(event.access_details ?? {}) }}
+				/>
+			</section>
+		</div>
+	);
+}
+
+function AuditEventDetailBody({ event }: { event: AuditEventDetailData }) {
+	return (
+		<div className="grid gap-6" data-testid="audit-event-detail">
+			<EventMetadata event={event} />
+			{!event.has_structured_detail ? (
+				<p className="rounded-md border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+					Detailed changes were not recorded for this legacy event.
+				</p>
+			) : event.event_kind === "access" ? (
+				<AccessDetail event={event} />
 			) : (
-				<p className="text-sm text-muted-foreground">No flat summary fields.</p>
+				<MutationDetail event={event} />
 			)}
-
-			<Collapsible open={rawOpen} onOpenChange={setRawOpen}>
-				<CollapsibleTrigger
-					render={
-						<Button type="button" variant="ghost" className="h-8 w-full justify-between px-2" />
-					}
-				>
-					<span>Raw JSON</span>
-					<ChevronDown className="size-4 opacity-60" />
-				</CollapsibleTrigger>
-				<CollapsibleContent className="pt-2">
-					<pre
-						className="max-h-64 overflow-auto rounded-md bg-muted/40 p-3 text-xs whitespace-pre-wrap"
-						data-testid="audit-event-summary-raw"
-					>
-						{rawJson}
-					</pre>
-				</CollapsibleContent>
-			</Collapsible>
 		</div>
 	);
 }
 
-function AuditEventDetailBody({ event }: { event: AuditEventResponse }) {
-	return (
-		<div className="grid gap-4" data-testid="audit-event-detail">
-			<dl className="grid gap-3">
-				<FieldRow label="Actor" value={actorDisplay(event)} />
-				<FieldRow label="Command" value={<CommandBadge command={event.command} />} />
-				<FieldRow label="Entity" value={`${event.entity_type} · ${event.entity_id}`} />
-				<FieldRow label="Request ID" value={event.request_id ?? "—"} />
-				<FieldRow label="Created" value={formatDateTime(event.created_at)} />
-			</dl>
-
-			<div className="grid gap-2">
-				<h3 className="text-sm font-medium">Summary</h3>
-				<SummarySection summary={event.summary} />
-			</div>
-		</div>
-	);
-}
-
-export function AuditEventDetail({ eventId }: { eventId: string | null }) {
-	const detailQuery = useAuditEvent(eventId ?? undefined);
-
-	if (!eventId) {
-		return (
-			<EmptyState
-				icon={ClipboardList}
-				title="Select an event"
-				description="Choose an audit event from the list to inspect its details."
-			/>
-		);
-	}
+export function AuditEventDetail({ eventId }: { eventId: string }) {
+	const detailQuery = useAuditEvent(eventId);
 
 	if (detailQuery.isLoading) {
 		return (
-			<div className="grid gap-3" data-testid="audit-event-detail-loading">
-				<Skeleton className="h-4 w-40" />
-				<Skeleton className="h-4 w-56" />
-				<Skeleton className="h-4 w-48" />
-				<Skeleton className="h-24 w-full" />
+			<div className="grid gap-4" data-testid="audit-event-detail-loading">
+				<div className="grid grid-cols-[5rem_1fr] gap-3">
+					<Skeleton className="h-4 w-12" />
+					<Skeleton className="h-4 w-40" />
+					<Skeleton className="h-4 w-12" />
+					<Skeleton className="h-4 w-28" />
+				</div>
+				<Skeleton className="h-48 w-full" />
 			</div>
 		);
 	}
@@ -141,15 +196,5 @@ export function AuditEventDetail({ eventId }: { eventId: string | null }) {
 		);
 	}
 
-	if (!detailQuery.data) {
-		return (
-			<EmptyState
-				icon={ClipboardList}
-				title="Event not found"
-				description="This audit event could not be loaded."
-			/>
-		);
-	}
-
-	return <AuditEventDetailBody event={detailQuery.data} />;
+	return detailQuery.data ? <AuditEventDetailBody event={detailQuery.data} /> : null;
 }

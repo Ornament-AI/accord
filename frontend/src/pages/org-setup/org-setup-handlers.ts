@@ -7,8 +7,6 @@ import type {
 	OfficeCreate,
 	OfficeResponse,
 	OfficeUpdate,
-	OrganizationSettingsResponse,
-	OrganizationSettingsUpdate,
 	PayrollUnitCreate,
 	PayrollUnitResponse,
 	PayrollUnitUpdate,
@@ -22,11 +20,8 @@ export type OrgSetupHandlersOptions = {
 	payrollUnits?: PayrollUnitResponse[];
 	posts?: PostResponse[];
 	employeeGroups?: EmployeeGroupResponse[];
-	settings?: OrganizationSettingsResponse;
 	/** When set, POST create endpoints return this status/body (e.g. 409). */
 	createError?: { status: number; body: Record<string, unknown> };
-	/** When set, PATCH /api/organization-settings returns this status/body (e.g. 422). */
-	settingsUpdateError?: { status: number; body: Record<string, unknown> };
 };
 
 const NOW = "2026-01-15T10:00:00Z";
@@ -80,26 +75,11 @@ export function buildEmployeeGroup(
 	};
 }
 
-export function buildOrganizationSettings(
-	overrides: Partial<OrganizationSettingsResponse> = {},
-): OrganizationSettingsResponse {
-	return {
-		id: overrides.id ?? "org-settings-1",
-		locale: overrides.locale ?? "en-IN",
-		timezone: overrides.timezone ?? "Asia/Kolkata",
-		currency: overrides.currency ?? "INR",
-		financial_year_start_month: overrides.financial_year_start_month ?? 4,
-		created_at: overrides.created_at ?? NOW,
-		updated_at: overrides.updated_at ?? NOW,
-	};
-}
-
 export function createOrgSetupHandlers(options: OrgSetupHandlersOptions = {}) {
 	const offices = new Map<string, OfficeResponse>();
 	const payrollUnits = new Map<string, PayrollUnitResponse>();
 	const posts = new Map<string, PostResponse>();
 	const employeeGroups = new Map<string, EmployeeGroupResponse>();
-	let settings = options.settings ?? buildOrganizationSettings();
 
 	const seedOffices = options.offices ?? [
 		buildOffice({ id: "office-1", code: "HO", name: "Head Office", jurisdiction: "mumbai" }),
@@ -282,30 +262,10 @@ export function createOrgSetupHandlers(options: OrgSetupHandlersOptions = {}) {
 			employeeGroups.set(employeeGroupId, updated);
 			return HttpResponse.json(updated);
 		}),
-
-		http.get("/api/organization-settings", () => HttpResponse.json(settings)),
-		http.patch("/api/organization-settings", async ({ request }) => {
-			if (options.settingsUpdateError) {
-				return HttpResponse.json(options.settingsUpdateError.body, {
-					status: options.settingsUpdateError.status,
-				});
-			}
-			const body = (await request.json()) as OrganizationSettingsUpdate;
-			settings = {
-				...settings,
-				locale: body.locale ?? settings.locale,
-				timezone: body.timezone ?? settings.timezone,
-				currency: body.currency ?? settings.currency,
-				financial_year_start_month:
-					body.financial_year_start_month ?? settings.financial_year_start_month,
-				updated_at: NOW,
-			};
-			return HttpResponse.json(settings);
-		}),
 	];
 
 	return {
 		handlers,
-		stores: { offices, payrollUnits, posts, employeeGroups, getSettings: () => settings },
+		stores: { offices, payrollUnits, posts, employeeGroups },
 	};
 }

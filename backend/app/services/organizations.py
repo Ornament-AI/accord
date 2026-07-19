@@ -40,13 +40,13 @@ async def create_organization(
     current_session_id: UUID,
     user_agent_hash: str | None = None,
 ) -> tuple[Organization, str]:
-    """Create org + settings + admin membership; rotate session to the new org.
+    """Create an organization and its admin membership; rotate the active session.
 
     Ordering for forced RLS under ``accord_app``:
     1. insert Organization (no RLS)
     2. flush → id
     3. bind_tenant_context(org.id, user.id)
-    4. insert OrganizationSettings + OrganizationMembership
+    4. insert legacy OrganizationSettings compatibility row + membership
     5. rotate session
     6. commit
     """

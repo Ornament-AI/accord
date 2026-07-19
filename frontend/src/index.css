@@ -53,54 +53,51 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Custom Theme - Light Mode
- * From tweakcn.com/r/themes/cmksnhn02000204la69ed1i0k
- * "Delta (Warm Earthy)" - Exact exported values
- */
+/* shadcn preset b5dwprtdi — light mode. */
 :root {
-  --background: oklch(0.9895 0.0090 78.2827);
-  --foreground: oklch(0.2868 0.0084 75.2489);
-  --card: oklch(0.9945 0.0057 84.5658);
-  --card-foreground: oklch(0.2868 0.0084 75.2489);
-  --popover: oklch(0.9945 0.0057 84.5658);
-  --popover-foreground: oklch(0.2868 0.0084 75.2489);
-  --primary: oklch(0.7686 0.1647 70.0804);
-  --primary-foreground: oklch(0.2178 0 0);
-  --secondary: oklch(0.9568 0.0119 79.7842);
-  --secondary-foreground: oklch(0.3937 0.0107 67.5093);
-  --muted: oklch(0.9302 0.0074 80.7210);
-  --muted-foreground: oklch(0.4841 0.0141 79.7251);
-  --accent: oklch(0.9327 0.0120 79.7832);
-  --accent-foreground: oklch(0.3435 0.0138 76.4005);
-  --destructive: oklch(0.5162 0.1937 27.4389);
+  --background: oklch(0.985 0.003 186.391);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(0.997 0.001 186.391);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(0.998 0.001 186.391);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.54 0.088 186.391);
+  --primary-foreground: oklch(0.984 0.014 180.72);
+  --primary-text: oklch(0.54 0.088 186.391);
+  --icon-accent: oklch(0.42 0.07 186.391);
+  --secondary: oklch(0.958 0.004 186.391);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.951 0.003 186.391);
+  --muted-foreground: oklch(0.52 0 0);
+  --accent: oklch(0.944 0.006 186.391);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(1.0000 0 0);
-  --border: oklch(0.9050 0.0089 82.0420);
-  --input: oklch(0.8940 0.0094 81.9000);
-  --ring: oklch(0.56 0.018 75);
-  /* Chart tokens map to fixed domain concepts — see docs in
-   * components/overview/* configs. 1–4 are locked to funding sources
-   * (Equity / Debt / IDC / Agency Charges); 5–9 cover state and flow. */
-  --chart-1: oklch(0.72 0.13 65);   /* Equity — warm gold */
-  --chart-2: oklch(0.48 0.13 252);  /* Debt — deep navy */
-  --chart-3: oklch(0.62 0.09 200);  /* IDC / IDC Paid — muted teal */
-  --chart-4: oklch(0.55 0.13 320);  /* Agency Charges — dusty plum */
-  --chart-5: oklch(0.62 0.10 150);  /* Available cash — sage green */
+  --border: oklch(0.895 0.005 186.391);
+  --input: oklch(0.895 0.005 186.391);
+  --ring: oklch(0.655 0 0);
+  /* Preset teal ramp (1–5), followed by Accord's extended chart palette. */
+  --chart-1: oklch(0.855 0.138 181.071);
+  --chart-2: oklch(0.704 0.14 182.503);
+  --chart-3: oklch(0.6 0.118 184.704);
+  --chart-4: oklch(0.54 0.088 186.391);
+  --chart-5: oklch(0.47 0.076 188.216);
   --chart-6: oklch(0.55 0.15 28);   /* Bills / Expenditure — burnt sienna */
   --chart-7: oklch(0.62 0.10 110);  /* Mobilization advance — olive amber */
   --chart-8: oklch(0.62 0.04 75);   /* Aggregate Received — warm sand */
   --chart-9: oklch(0.60 0.17 8);    /* Pending Bills — rose coral */
-  --sidebar: oklch(0.9895 0.0090 78.2827);
-  --sidebar-foreground: oklch(0.2868 0.0084 75.2489);
-  --sidebar-primary: oklch(0.7686 0.1647 70.0804);
-  --sidebar-primary-foreground: oklch(0.2178 0 0);
-  --sidebar-accent: oklch(0.9470 0.0074 80.7208);
-  --sidebar-accent-foreground: oklch(0.4715 0.1440 41.3880);
-  --sidebar-border: oklch(0.9132 0.0100 87.4744);
-  --sidebar-ring: oklch(0.56 0.018 75);
-  --app-border-level-1: oklch(0.44 0.02 75 / 0.18);
-  --app-border-level-2: oklch(0.42 0.02 75 / 0.23);
-  --app-border-level-3: oklch(0.40 0.02 75 / 0.22);
-  --app-divider-soft: oklch(0.42 0.02 75 / 0.20);
+  --sidebar: oklch(0.962 0.005 186.391);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.54 0.088 186.391);
+  --sidebar-primary-foreground: oklch(0.984 0.014 180.72);
+  --sidebar-accent: oklch(0.925 0.007 186.391);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.875 0.006 186.391);
+  --sidebar-ring: oklch(0.655 0 0);
+  --app-border-level-1: oklch(0.44 0.006 186.391 / 0.18);
+  --app-border-level-2: oklch(0.42 0.006 186.391 / 0.23);
+  --app-border-level-3: oklch(0.40 0.006 186.391 / 0.22);
+  --app-divider-soft: oklch(0.42 0.006 186.391 / 0.20);
   --app-font-devanagari: "Noto Sans Devanagari", "Kohinoor Devanagari", "Devanagari Sangam MN", "ITF Devanagari", "Nirmala UI", "Mangal", sans-serif;
   --app-font-sans: "IBM Plex Sans", var(--app-font-devanagari), ui-sans-serif, system-ui, sans-serif;
   --app-font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
@@ -110,37 +107,37 @@
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
   --font-mono: var(--app-font-mono);
-  --radius: 0.5rem;
+  --radius: 0.75rem;
   /* Legacy/general shadow scale consumed by Tailwind shadow utilities. */
   --shadow-x: 0px;
   --shadow-y: 4px;
   --shadow-blur: 12px;
   --shadow-spread: 1px;
   --shadow-opacity: 0.15;
-  --shadow-color: #3D3831;
-  --shadow-2xs: 0px 1px 2px 0px oklch(0.32 0.012 75 / 0.08);
-  --shadow-xs: 0px 1px 2px 0px oklch(0.32 0.012 75 / 0.08);
-  --shadow-sm: 0px 4px 12px 1px hsl(35.0000 10.9091% 21.5686% / 0.15), 0px 1px 2px 0px hsl(35.0000 10.9091% 21.5686% / 0.15);
-  --shadow: 0px 4px 12px 1px hsl(35.0000 10.9091% 21.5686% / 0.15), 0px 1px 2px 0px hsl(35.0000 10.9091% 21.5686% / 0.15);
-  --shadow-md: 0px 4px 12px 1px hsl(35.0000 10.9091% 21.5686% / 0.15), 0px 2px 4px 0px hsl(35.0000 10.9091% 21.5686% / 0.15);
-  --shadow-lg: 0px 4px 12px 1px hsl(35.0000 10.9091% 21.5686% / 0.15), 0px 4px 6px 0px hsl(35.0000 10.9091% 21.5686% / 0.15);
-  --shadow-xl: 0px 4px 12px 1px hsl(35.0000 10.9091% 21.5686% / 0.15), 0px 8px 10px 0px hsl(35.0000 10.9091% 21.5686% / 0.15);
-  --shadow-2xl: 0px 4px 12px 1px hsl(35.0000 10.9091% 21.5686% / 0.38);
+  --shadow-color: oklch(0.32 0.004 186.391);
+  --shadow-2xs: 0px 1px 2px 0px oklch(0.32 0.004 186.391 / 0.08);
+  --shadow-xs: 0px 1px 2px 0px oklch(0.32 0.004 186.391 / 0.08);
+  --shadow-sm: 0px 4px 12px 1px oklch(0.32 0.004 186.391 / 0.15), 0px 1px 2px 0px oklch(0.32 0.004 186.391 / 0.15);
+  --shadow: 0px 4px 12px 1px oklch(0.32 0.004 186.391 / 0.15), 0px 1px 2px 0px oklch(0.32 0.004 186.391 / 0.15);
+  --shadow-md: 0px 4px 12px 1px oklch(0.32 0.004 186.391 / 0.15), 0px 2px 4px 0px oklch(0.32 0.004 186.391 / 0.15);
+  --shadow-lg: 0px 4px 12px 1px oklch(0.32 0.004 186.391 / 0.15), 0px 4px 6px 0px oklch(0.32 0.004 186.391 / 0.15);
+  --shadow-xl: 0px 4px 12px 1px oklch(0.32 0.004 186.391 / 0.15), 0px 8px 10px 0px oklch(0.32 0.004 186.391 / 0.15);
+  --shadow-2xl: 0px 4px 12px 1px oklch(0.32 0.004 186.391 / 0.38);
   /* Preferred Material token set for app surfaces and overlays. */
-  --app-material-shadow-1: 0px 1px 3px 0px hsl(35 11% 20% / 0.07), 0px 4px 12px -2px hsl(35 11% 20% / 0.09);
-  --app-material-shadow-2: 0px 1px 2px 0px hsl(35 11% 20% / 0.06), 0px 3px 8px -2px hsl(35 11% 20% / 0.07);
-  --app-material-shadow-3: 0px 1px 2px 0px hsl(35 11% 20% / 0.05), 0px 2px 6px -1px hsl(35 11% 20% / 0.06);
-  --app-material-overlay-shadow: 0px 0px 0px 1px oklch(0.42 0.012 75 / 0.16), 0px 10px 24px -18px oklch(0.24 0.010 75 / 0.28);
-  --app-material-overlay-shadow-elevated: 0px 0px 0px 1px oklch(0.42 0.012 75 / 0.20), 0px 14px 34px -20px oklch(0.22 0.010 75 / 0.34);
-  --app-material-inner: inset 0px 1px 0px hsl(35 16% 98% / 0.72), inset 0px -1px 0px hsl(35 11% 30% / 0.03);
-  --app-material-overlay-inner: inset 0px 1px 0px hsl(35 16% 98% / 0.82), inset 0px -1px 0px hsl(35 11% 30% / 0.10);
-  --app-table-shadow: 0px 2px 6px -1px hsl(35 11% 20% / 0.08);
-  --app-table-shadow-nested: 0px 1px 4px -1px hsl(35 11% 20% / 0.06);
+  --app-material-shadow-1: 0px 1px 3px 0px oklch(0.28 0.004 186.391 / 0.07), 0px 4px 12px -2px oklch(0.28 0.004 186.391 / 0.09);
+  --app-material-shadow-2: 0px 1px 2px 0px oklch(0.28 0.004 186.391 / 0.06), 0px 3px 8px -2px oklch(0.28 0.004 186.391 / 0.07);
+  --app-material-shadow-3: 0px 1px 2px 0px oklch(0.28 0.004 186.391 / 0.05), 0px 2px 6px -1px oklch(0.28 0.004 186.391 / 0.06);
+  --app-material-overlay-shadow: 0px 0px 0px 1px oklch(0.42 0.004 186.391 / 0.16), 0px 10px 24px -18px oklch(0.24 0.004 186.391 / 0.28);
+  --app-material-overlay-shadow-elevated: 0px 0px 0px 1px oklch(0.42 0.004 186.391 / 0.20), 0px 14px 34px -20px oklch(0.22 0.004 186.391 / 0.34);
+  --app-material-inner: inset 0px 1px 0px oklch(0.998 0.001 186.391 / 0.72), inset 0px -1px 0px oklch(0.3 0.004 186.391 / 0.03);
+  --app-material-overlay-inner: inset 0px 1px 0px oklch(0.998 0.001 186.391 / 0.82), inset 0px -1px 0px oklch(0.3 0.004 186.391 / 0.10);
+  --app-table-shadow: 0px 2px 6px -1px oklch(0.28 0.004 186.391 / 0.08);
+  --app-table-shadow-nested: 0px 1px 4px -1px oklch(0.28 0.004 186.391 / 0.06);
   --app-table-shadow-inner: 0 0 0 0 transparent;
   --app-table-shadow-inner-nested: 0 0 0 0 transparent;
-  --app-table-scroll-edge: oklch(0.9945 0.0057 84.5658 / 0.84);
-  --app-table-scroll-edge-soft: oklch(0.9945 0.0057 84.5658 / 0.38);
-  --app-table-scroll-rim: oklch(0.45 0.02 70 / 0.16);
+  --app-table-scroll-edge: oklch(0.997 0.001 186.391 / 0.84);
+  --app-table-scroll-edge-soft: oklch(0.997 0.001 186.391 / 0.38);
+  --app-table-scroll-rim: oklch(0.45 0.006 186.391 / 0.16);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
   --shadow-offset-x: 0px;
@@ -162,84 +159,82 @@
   --accord-motion-shake-overshoot: 4px;
 }
 
-/* Custom Theme - Dark Mode
- * From tweakcn.com/r/themes/cmksnhn02000204la69ed1i0k
- * "Delta (Warm Earthy)" - Exact exported values
- */
+/* shadcn preset b5dwprtdi — dark mode. */
 .dark {
-  --background: oklch(0.2354 0.0041 84.5865);
-  --foreground: oklch(0.9228 0.0075 80.7204);
-  --card: oklch(0.2741 0.0047 67.6302);
-  --card-foreground: oklch(0.9228 0.0075 80.7204);
-  --popover: oklch(0.2572 0.0063 78.2148);
-  --popover-foreground: oklch(0.9228 0.0075 80.7204);
-  --primary: oklch(0.7686 0.1647 70.0804);
-  --primary-foreground: oklch(0.2178 0 0);
-  --secondary: oklch(0.3417 0.0059 78.2501);
-  --secondary-foreground: oklch(0.9314 0.0058 84.5669);
-  --muted: oklch(0.3058 0.0063 78.2148);
-  --muted-foreground: oklch(0.7197 0.0123 84.5863);
-  --accent: oklch(0.3543 0.0107 67.5093);
-  --accent-foreground: oklch(0.9228 0.0075 80.7204);
-  --destructive: oklch(0.5054 0.1905 27.5181);
-  --destructive-foreground: oklch(1.0000 0 0);
-  --border: oklch(0.3600 0.0082 60.95);
-  --input: oklch(0.4039 0.0059 78.2441);
-  --ring: oklch(0.72 0.018 80);
-  /* Dark-mode chart tokens — same hue assignments as :root, lifted lightness
-   * for legible fills on the dark warm background. */
-  --chart-1: oklch(0.78 0.13 68);   /* Equity */
-  --chart-2: oklch(0.65 0.13 252);  /* Debt */
-  --chart-3: oklch(0.72 0.09 200);  /* IDC / IDC Paid */
-  --chart-4: oklch(0.68 0.13 320);  /* Agency Charges */
-  --chart-5: oklch(0.74 0.10 150);  /* Available cash */
+  --background: oklch(0.215 0.002 186.391);
+  --foreground: oklch(0.96 0 0);
+  --card: oklch(0.245 0.002 186.391);
+  --card-foreground: oklch(0.96 0 0);
+  --popover: oklch(0.265 0.003 186.391);
+  --popover-foreground: oklch(0.96 0 0);
+  --primary: oklch(0.47 0.076 188.216);
+  --primary-foreground: oklch(0.984 0.014 180.72);
+  --primary-text: oklch(0.78 0.13 182.503);
+  --icon-accent: oklch(0.78 0.13 182.503);
+  --secondary: oklch(0.3 0.003 186.391);
+  --secondary-foreground: oklch(0.96 0 0);
+  --muted: oklch(0.295 0.002 186.391);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.315 0.004 186.391);
+  --accent-foreground: oklch(0.96 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.145 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.556 0 0);
+  /* Preset teal ramp (1–5), followed by Accord's lifted extended palette. */
+  --chart-1: oklch(0.855 0.138 181.071);
+  --chart-2: oklch(0.704 0.14 182.503);
+  --chart-3: oklch(0.6 0.118 184.704);
+  --chart-4: oklch(0.54 0.088 186.391);
+  --chart-5: oklch(0.47 0.076 188.216);
   --chart-6: oklch(0.68 0.15 28);   /* Bills / Expenditure */
   --chart-7: oklch(0.74 0.10 110);  /* Mobilization advance */
   --chart-8: oklch(0.74 0.04 75);   /* Aggregate Received */
   --chart-9: oklch(0.72 0.14 8);    /* Pending Bills */
-  --sidebar: oklch(0.2138 0.0042 84.5889);
-  --sidebar-foreground: oklch(0.9158 0 0);
-  --sidebar-primary: oklch(0.7686 0.1647 70.0804);
-  --sidebar-primary-foreground: oklch(0.2178 0 0);
-  --sidebar-accent: oklch(0.3012 0 0);
-  --sidebar-accent-foreground: oklch(0.8369 0.1644 84.4286);
-  --sidebar-border: oklch(0.3600 0.0082 60.95);
-  --sidebar-ring: oklch(0.72 0.018 80);
-  --app-border-level-1: oklch(0.87 0.01 80 / 0.10);
-  --app-border-level-2: oklch(0.87 0.01 80 / 0.14);
-  --app-border-level-3: oklch(0.89 0.01 80 / 0.14);
-  --app-divider-soft: oklch(0.86 0.01 80 / 0.12);
-  --radius: 0.5rem;
+  --sidebar: oklch(0.26 0.003 186.391);
+  --sidebar-foreground: oklch(0.96 0 0);
+  --sidebar-primary: oklch(0.704 0.14 182.503);
+  --sidebar-primary-foreground: oklch(0.277 0.046 192.524);
+  --sidebar-accent: oklch(0.285 0.004 186.391);
+  --sidebar-accent-foreground: oklch(0.96 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --app-border-level-1: oklch(0.87 0.002 186.391 / 0.10);
+  --app-border-level-2: oklch(0.87 0.002 186.391 / 0.14);
+  --app-border-level-3: oklch(0.89 0.002 186.391 / 0.14);
+  --app-divider-soft: oklch(0.86 0.002 186.391 / 0.12);
+  --radius: 0.75rem;
   /* Legacy/general shadow scale consumed by Tailwind shadow utilities. */
   --shadow-x: 0px;
   --shadow-y: 4px;
   --shadow-blur: 12px;
   --shadow-spread: 1px;
   --shadow-opacity: 0.15;
-  --shadow-color: #1a1a1a;
-  --shadow-2xs: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.07);
-  --shadow-xs: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.07);
-  --shadow-sm: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.15), 0px 1px 2px 0px hsl(0 0% 10.1961% / 0.15);
-  --shadow: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.15), 0px 1px 2px 0px hsl(0 0% 10.1961% / 0.15);
-  --shadow-md: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.15), 0px 2px 4px 0px hsl(0 0% 10.1961% / 0.15);
-  --shadow-lg: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.15), 0px 4px 6px 0px hsl(0 0% 10.1961% / 0.15);
-  --shadow-xl: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.15), 0px 8px 10px 0px hsl(0 0% 10.1961% / 0.15);
-  --shadow-2xl: 0px 4px 12px 1px hsl(0 0% 10.1961% / 0.38);
+  --shadow-color: oklch(0 0 0);
+  --shadow-2xs: 0px 1px 2px 0px oklch(0 0 0 / 0.28);
+  --shadow-xs: 0px 1px 3px 0px oklch(0 0 0 / 0.30), 0px 3px 8px -4px oklch(0 0 0 / 0.34);
+  --shadow-sm: 0px 1px 2px 0px oklch(0 0 0 / 0.32), 0px 5px 14px -6px oklch(0 0 0 / 0.42);
+  --shadow: 0px 2px 4px -1px oklch(0 0 0 / 0.34), 0px 8px 20px -8px oklch(0 0 0 / 0.46);
+  --shadow-md: 0px 2px 5px -1px oklch(0 0 0 / 0.38), 0px 12px 26px -10px oklch(0 0 0 / 0.52);
+  --shadow-lg: 0px 3px 7px -2px oklch(0 0 0 / 0.40), 0px 16px 34px -12px oklch(0 0 0 / 0.58);
+  --shadow-xl: 0px 4px 9px -3px oklch(0 0 0 / 0.44), 0px 22px 44px -16px oklch(0 0 0 / 0.64);
+  --shadow-2xl: 0px 6px 12px -4px oklch(0 0 0 / 0.46), 0px 28px 58px -20px oklch(0 0 0 / 0.72);
   /* Preferred Material token set for app surfaces and overlays. */
-  --app-material-shadow-1: 0px 1px 3px 0px hsl(0 0% 0% / 0.18), 0px 4px 12px -2px hsl(0 0% 0% / 0.22);
-  --app-material-shadow-2: 0px 1px 2px 0px hsl(0 0% 0% / 0.16), 0px 3px 8px -2px hsl(0 0% 0% / 0.18);
-  --app-material-shadow-3: 0px 1px 2px 0px hsl(0 0% 0% / 0.14), 0px 2px 6px -1px hsl(0 0% 0% / 0.16);
-  --app-material-overlay-shadow: 0px 0px 0px 1px hsl(35 8% 90% / 0.22), 0px 6px 14px -8px hsl(0 0% 0% / 0.55), 0px 18px 34px -16px hsl(0 0% 0% / 0.82);
-  --app-material-overlay-shadow-elevated: 0px 0px 0px 1px hsl(35 8% 92% / 0.30), 0px 10px 20px -8px hsl(0 0% 0% / 0.62), 0px 24px 46px -18px hsl(0 0% 0% / 0.90);
-  --app-material-inner: 0 0 0 0 transparent;
-  --app-material-overlay-inner: inset 0px 1px 0px hsl(35 8% 90% / 0.10), inset 0px -1px 0px hsl(0 0% 0% / 0.24);
-  --app-table-shadow: 0px 2px 6px -1px hsl(0 0% 0% / 0.20);
-  --app-table-shadow-nested: 0px 1px 4px -1px hsl(0 0% 0% / 0.16);
+  --app-material-shadow-1: 0px 0px 0px 1px oklch(1 0 0 / 0.07), 0px 1px 2px 0px oklch(0 0 0 / 0.28), 0px 8px 18px -10px oklch(0 0 0 / 0.38);
+  --app-material-shadow-2: 0px 0px 0px 1px oklch(1 0 0 / 0.09), 0px 2px 4px -1px oklch(0 0 0 / 0.32), 0px 12px 26px -12px oklch(0 0 0 / 0.46);
+  --app-material-shadow-3: 0px 0px 0px 1px oklch(1 0 0 / 0.11), 0px 3px 6px -2px oklch(0 0 0 / 0.36), 0px 16px 34px -14px oklch(0 0 0 / 0.52);
+  --app-material-overlay-shadow: 0px 0px 0px 1px oklch(1 0 0 / 0.14), 0px 3px 7px -2px oklch(0 0 0 / 0.40), 0px 18px 40px -16px oklch(0 0 0 / 0.68);
+  --app-material-overlay-shadow-elevated: 0px 0px 0px 1px oklch(1 0 0 / 0.18), 0px 4px 9px -3px oklch(0 0 0 / 0.44), 0px 24px 52px -18px oklch(0 0 0 / 0.76);
+  --app-material-inner: inset 0px 1px 0px oklch(1 0 0 / 0.06), inset 0px -1px 0px oklch(0 0 0 / 0.18);
+  --app-material-overlay-inner: inset 0px 1px 0px oklch(1 0 0 / 0.08), inset 0px -1px 0px oklch(0 0 0 / 0.28);
+  --app-table-shadow: 0px 1px 3px 0px oklch(0 0 0 / 0.26), 0px 8px 18px -10px oklch(0 0 0 / 0.34);
+  --app-table-shadow-nested: 0px 1px 2px 0px oklch(0 0 0 / 0.22), 0px 5px 12px -8px oklch(0 0 0 / 0.28);
   --app-table-shadow-inner: 0 0 0 0 transparent;
   --app-table-shadow-inner-nested: 0 0 0 0 transparent;
-  --app-table-scroll-edge: oklch(0.2741 0.0047 67.6302 / 0.82);
-  --app-table-scroll-edge-soft: oklch(0.2741 0.0047 67.6302 / 0.40);
-  --app-table-scroll-rim: oklch(0.88 0.01 80 / 0.12);
+  --app-table-scroll-edge: oklch(0.245 0.002 186.391 / 0.82);
+  --app-table-scroll-edge-soft: oklch(0.245 0.002 186.391 / 0.40);
+  --app-table-scroll-rim: oklch(0.88 0.002 186.391 / 0.12);
   --shadow-offset-x: 0px;
   --shadow-offset-y: 4px;
   --letter-spacing: 0em;
@@ -255,6 +250,8 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-icon-accent: var(--icon-accent);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -301,7 +298,7 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
-  --radius: 0.5rem;
+  --radius: 0.75rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
   --tracking-wide: calc(var(--tracking-normal) + 0.025em);

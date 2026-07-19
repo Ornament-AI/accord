@@ -9,7 +9,7 @@
 
 ## Context
 
-Accord is a multi-tenant payroll system of record for Indian local-government / public-works salaried staff ([payroll-domain.md](../payroll-domain.md)). Every business mutation that changes tenant-owned state must leave an immutable evidence trail — who acted, what command ran, which entity changed, and a before/after summary — and must be able to notify downstream integrations without dual-write races.
+Accord is a multi-tenant payroll system of record for Indian local-government / public-works salaried staff ([payroll-domain.md](../payroll-domain.md)). Every business mutation that changes tenant-owned state must leave an immutable evidence trail — who acted, what command ran, which entity changed, and complete before/after entity snapshots — and must be able to notify downstream integrations without dual-write races.
 
 Two failure modes drive this ADR:
 
@@ -34,17 +34,21 @@ Every successful business mutation that changes tenant-owned state writes one or
 | --- | --- | --- |
 | `id` | `uuid` PK | Stable event id; consumers may later stream or reference this id. |
 | `organization_id` | `uuid` NOT NULL | Tenant scope; RLS applies. |
-| `actor_user_id` | `uuid` NULL | Authenticated user who performed the action; NULL only for system/job actors with `actor_type` set. |
-| `actor_type` | `text` NOT NULL | `user` \| `system` \| `worker` — interactive session vs automated job context. |
+| `actor_user_id` | `uuid` NULL | Authenticated user who performed the action; NULL for system-originated events. |
+| `actor_snapshot` | `jsonb` NULL | Immutable actor id, name, and email captured at event time. |
 | `entity_type` | `text` NOT NULL | Affected aggregate/entity kind, e.g. `payroll_run`, `export_artifact`, `employee`. |
 | `entity_id` | `uuid` NOT NULL | Primary key of the affected entity. |
+| `entity_label` | `text` NULL | Immutable human-readable label captured when the event is written; NULL on legacy rows. |
 | `command` | `text` NOT NULL | Action name aligned with ADR 0008 commands where applicable: `calculate`, `submit`, `approve`, `post`, `artifact.download`, etc. |
-| `before_state` | `jsonb` NULL | Summary or field-level diff of relevant fields before the mutation. |
-| `after_state` | `jsonb` NULL | Summary or field-level diff after the mutation. |
+| `event_kind` | `text` NULL | `mutation` or `access` for new rows; NULL identifies an immutable legacy event. |
+| `before_state` | `jsonb` NULL | Complete persisted scalar/JSON entity state immediately before a new mutation. |
+| `after_state` | `jsonb` NULL | Complete persisted scalar/JSON entity state immediately after a new mutation. |
 | `request_id` | `text` NULL | Correlation / tracing id from API middleware (e.g. `X-Request-Id`). |
 | `idempotency_key` | `text` NULL | Present when the mutation was driven by an idempotent command ([ADR 0008](0008-command-workflow-idempotency.md)). |
+| `changed_count` | `integer` NOT NULL DEFAULT `0` | Count of user-visible changed fields after technical bookkeeping fields are suppressed. |
 | `created_at` | `timestamptz` NOT NULL DEFAULT `now()` | Immutable event timestamp (transaction commit time semantics via insert-in-txn). |
-| `metadata` | `jsonb` NOT NULL DEFAULT `'{}'` | Small non-secret bag (IP hash, user-agent class, `job_id`) — never tokens, passwords, or full PAN/bank dumps. |
+| `metadata` | `jsonb` NOT NULL DEFAULT `'{}'` | Non-secret event context. Access events store the complete resource snapshot under `resource`. |
+| `summary` | `jsonb` NOT NULL | Legacy compatibility payload. New read contracts do not expose it. |
 
 **Indexes (normative intent):**
 
@@ -72,7 +76,9 @@ Rules:
 2. If the mutation rolls back, the audit row rolls back with it. There is **no** “audit of failed commits” in this table; failed attempts may be logged to application logs/metrics instead.
 3. Idempotent command **replays** ([ADR 0008](0008-command-workflow-idempotency.md)) must **not** insert a second audit row; they return the stored response without re-entering the mutation path.
 4. Ordinary read-only operations do not audit. **Exception:** `artifact.download` **does** insert an audit row ([ADR 0010](0010-jobs-object-storage.md)).
-5. `before_state` / `after_state` store **summaries or field-level diffs**, not necessarily full row dumps. For `post`, after-state must include at least: `status`, bound run version id, submission/content hash if used, `posted_at`, and key run totals needed for later reconciliation.
+5. New mutation events store complete persisted scalar/JSON fields belonging to the audited entity in `before_state` and `after_state`. Related-table expansion and binary contents are excluded. The history UI computes a changed-field diff and suppresses tenant ids, timestamps, and lock/version bookkeeping.
+6. Access events use `event_kind = 'access'`, leave Before/After NULL, and store a complete JSON-safe resource snapshot plus request context in `metadata`; they never manufacture a mutation.
+7. Existing rows remain byte-for-byte immutable. NULL `event_kind` marks them as legacy, and read clients show a minimal unavailable-detail message rather than exposing raw `summary` JSON.
 
 ### 2. No UPDATE or DELETE on `audit_events` for the runtime app role
 
@@ -201,15 +207,15 @@ Early phases may run a dispatcher that only logs and marks processed (no externa
 | Change | `audit_events` | `outbox_events` |
 | --- | --- | --- |
 | Payroll `calculate` | Always | Optional (usually no; calculation is internal) |
-| Payroll `validate` | Always | Optional / no |
+| Payroll `validate` | No (read-only validation) | No |
 | Payroll `submit` | Always | Yes — e.g. `payroll_run.submitted` (maker/checker notify) |
 | Payroll `approve` | Always | Yes — e.g. `payroll_run.approved` |
 | Payroll `reject` | Always | Yes — e.g. `payroll_run.rejected` |
 | Payroll `withdraw` | Always | Yes if integrations listen; else audit-only acceptable in Phase 0 |
 | Payroll `post` | Always | Yes — e.g. `payroll_run.posted` (downstream remittance/export triggers) |
 | Payroll `reverse` | Always | Yes — e.g. `payroll_run.reversed` |
-| Monthly exception / draft override edit | Yes (summary) | No |
-| Effective-dated master version append | Yes (summary) | No (unless a sync sink is added later) |
+| Monthly exception / draft override edit | Yes (full entity snapshot) | No |
+| Effective-dated master version append | Yes (full entity snapshot) | No (unless a sync sink is added later) |
 | Artifact finalized (export ready) | Always | Yes — `artifact.available` |
 | Artifact purged / expired | Always | Yes — `artifact.purged` |
 | Artifact download | Always (`command = artifact.download`) | No (unless a compliance sink is added later) |
@@ -231,7 +237,7 @@ Payroll lifecycle terms (`submit`, `approve`, `post`, `reverse`, maker/checker) 
 **Negative / costs:**
 
 - Operators must provision `accord_migrator` vs `accord_app` (and optional `accord_readonly`) in every environment (Compose and cloud); a single superuser DSN for the API is non-compliant with this ADR.
-- Audit and outbox table growth requires a later retention/archival policy (migrator-only); the application never deletes audit rows.
+- Complete snapshots increase audit storage and personal-data retention. Growth requires a later retention/archival policy (migrator-only); the application never deletes audit rows.
 - Every outbox consumer must implement idempotent handlers keyed by outbox id; accidental non-idempotent sinks will double-apply on retry.
 - Dispatcher is another process to monitor (lag, dead letters, lock expiry).
 

@@ -1,10 +1,12 @@
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react/dist/csr/CircleNotch";
+import { DownloadSimpleIcon as Download } from "@phosphor-icons/react/dist/csr/DownloadSimple";
+import { FilesIcon as FileStack } from "@phosphor-icons/react/dist/csr/Files";
 import {
 	type ColumnDef,
 	getCoreRowModel,
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Download, FileStack, Loader2 } from "lucide-react";
 import { useMemo } from "react";
 
 import {

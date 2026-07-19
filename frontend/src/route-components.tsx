@@ -9,11 +9,11 @@ import NoOrganizationPage from "@/pages/NoOrganizationPage";
 import {
 	EmployeeGroupsPage,
 	OfficesPage,
-	OrgSettingsPage,
 	OrgSetupIndexRedirect,
 	PayrollUnitsPage,
 	PostsPage,
 } from "@/pages/org-setup/OrgSetupPage";
+import SelectOrganizationPage from "@/pages/SelectOrganizationPage";
 
 const ProtectedShell = lazy(() =>
 	import("@/components/protected-shell").then((mod) => ({ default: mod.ProtectedShell })),
@@ -41,6 +41,10 @@ export function ProtectedLayout() {
 		);
 	}
 
+	if (activeOrganization === null) {
+		return <SelectOrganizationPage />;
+	}
+
 	return (
 		<AppShellProvider>
 			<Suspense fallback={<LoadingState />}>
@@ -48,6 +52,25 @@ export function ProtectedLayout() {
 			</Suspense>
 		</AppShellProvider>
 	);
+}
+
+export function AuthenticatedIndexRedirect() {
+	const { activeOrganization, hasCapability } = useAuth();
+
+	if (activeOrganization === null) {
+		return <SelectOrganizationPage />;
+	}
+
+	if (hasCapability("create_run")) {
+		return <Navigate to="/pay-runs" replace />;
+	}
+	if (hasCapability("view_master_data")) {
+		return <Navigate to="/employees" replace />;
+	}
+	if (hasCapability("generate_reports")) {
+		return <Navigate to="/reports" replace />;
+	}
+	return <Navigate to="/audit" replace />;
 }
 
 export function RouteErrorFallback() {
@@ -77,24 +100,16 @@ export function RouteErrorFallback() {
 }
 
 export const LoginPage = lazy(() => import("@/pages/LoginPage"));
-export const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 export const EmployeeListPage = lazy(() => import("@/pages/employees/EmployeeListPage"));
 export const EmployeeDetailPage = lazy(() => import("@/pages/employees/EmployeeDetailPage"));
 export const PayComponentsPage = lazy(() => import("@/pages/pay-components/PayComponentsPage"));
 export const PayComponentDetailPage = lazy(
 	() => import("@/pages/pay-components/PayComponentDetailPage"),
 );
-export {
-	EmployeeGroupsPage,
-	OfficesPage,
-	OrgSettingsPage,
-	OrgSetupIndexRedirect,
-	PayrollUnitsPage,
-	PostsPage,
-};
+export { EmployeeGroupsPage, OfficesPage, OrgSetupIndexRedirect, PayrollUnitsPage, PostsPage };
 export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsPage = lazy(() => import("@/pages/reports/ReportsPage"));
 export const AuditPage = lazy(() => import("@/pages/audit/AuditPage"));
-export { NoOrganizationPage };
+export { NoOrganizationPage, SelectOrganizationPage };
 export const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));

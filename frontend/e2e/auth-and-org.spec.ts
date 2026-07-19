@@ -3,12 +3,13 @@ import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 import {
-	ensureDashboard,
+	ensureAuthenticatedLanding,
 	ensureUniqueOrganization,
 	loginViaDevBypass,
 } from "./helpers/auth";
 import { AUTH_DIR, STORAGE_STATE_PATH } from "./helpers/paths";
 import { uniqueSlug, writeRunContext } from "./helpers/run-context";
+import { authenticatedLanding } from "./helpers/ui";
 
 /**
  * Setup project: establishes the single-run org and persists storageState for
@@ -17,15 +18,15 @@ import { uniqueSlug, writeRunContext } from "./helpers/run-context";
  */
 test.describe.configure({ mode: "serial" });
 
-test("dev-bypass login, create org, land on dashboard with switcher", async ({ page }) => {
+test("dev-bypass login, create org, land on worklist with switcher", async ({ page }) => {
 	const orgSlug = uniqueSlug("e2e-org");
 	const orgName = `E2E Org ${orgSlug}`;
 
 	await loginViaDevBypass(page);
 	await ensureUniqueOrganization(page, { name: orgName });
-	await ensureDashboard(page);
+	await ensureAuthenticatedLanding(page);
 
-	await expect(page.getByTestId("dashboard-page")).toBeVisible();
+	await expect(authenticatedLanding(page)).toBeVisible();
 
 	// Org switcher trigger shows the active organization name.
 	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();

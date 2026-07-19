@@ -18,7 +18,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import AccordError, ConflictError, NotFoundError
-from app.models.platform import AuditEvent, ExportArtifact
+from app.models.platform import ExportArtifact
+from app.services.audit_events import entity_snapshot, write_access_event
 from app.schemas.artifacts import ArtifactListPage, ArtifactResponse
 from app.schemas.pagination import page_count, page_offset
 from app.storage.protocol import ObjectStorage, ObjectStorageError, build_object_key
@@ -261,21 +262,23 @@ async def stream_download(
     )
     _assert_downloadable(artifact, now=now)
 
-    session.add(
-        AuditEvent(
-            organization_id=organization_id,
-            actor_user_id=actor_user_id,
-            command="artifact.download",
-            entity_type="export_artifact",
-            entity_id=artifact.id,
-            summary={
-                "report_type": artifact.report_type,
-                "template_version": artifact.template_version,
-                "checksum_sha256": artifact.checksum_sha256,
-                "size_bytes": artifact.size_bytes,
-                "content_type": artifact.content_type,
-            },
-        )
+    await write_access_event(
+        session,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="artifact.download",
+        entity_type="export_artifact",
+        entity_id=artifact.id,
+        entity_label=artifact.report_type.replace("_", " ").title(),
+        resource_state=entity_snapshot(artifact),
+        metadata={"accessed_at": now.isoformat()},
+        summary={
+            "report_type": artifact.report_type,
+            "template_version": artifact.template_version,
+            "checksum_sha256": artifact.checksum_sha256,
+            "size_bytes": artifact.size_bytes,
+            "content_type": artifact.content_type,
+        },
     )
     await session.commit()
 

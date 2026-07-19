@@ -38,16 +38,6 @@ async def test_create_organization_201_defaults_and_admin_capabilities(
     ).scalar_one()
     assert org.is_active is True
 
-    settings_row = (
-        await session.execute(
-            select(OrganizationSettings).where(OrganizationSettings.organization_id == org.id)
-        )
-    ).scalar_one()
-    assert settings_row.locale == "en-IN"
-    assert settings_row.timezone == "Asia/Kolkata"
-    assert settings_row.currency == "INR"
-    assert settings_row.financial_year_start_month == 4
-
     membership = (
         await session.execute(
             select(OrganizationMembership).where(
@@ -57,6 +47,18 @@ async def test_create_organization_201_defaults_and_admin_capabilities(
     ).scalar_one()
     assert membership.role == "organization_administrator"
     assert membership.is_active is True
+
+    compatibility_settings = (
+        await session.execute(
+            select(OrganizationSettings).where(
+                OrganizationSettings.organization_id == org.id,
+            )
+        )
+    ).scalar_one()
+    assert compatibility_settings.locale == "en-IN"
+    assert compatibility_settings.timezone == "Asia/Kolkata"
+    assert compatibility_settings.currency == "INR"
+    assert compatibility_settings.financial_year_start_month == 4
 
 
 @pytest.mark.asyncio

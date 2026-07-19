@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-import { clickUntilDialog } from "./ui";
+import { authenticatedLanding, clickUntilDialog } from "./ui";
 
 /**
  * Dev auth bypass (backend DevAuthAdapter): GET /api/auth/login establishes a
@@ -36,11 +36,11 @@ export async function loginViaDevBypass(page: Page): Promise<void> {
 }
 
 /**
- * Recover the dashboard if an interrupted navigation or stale retry starts on
- * another route. Normal login, org create, and org switch flows should already
- * stay on their matched route.
+ * Recover the capability-aware authenticated landing page if an interrupted
+ * navigation or stale retry starts on another route. Normal login, org create,
+ * and org switch flows should already stay on their matched route.
  */
-export async function ensureDashboard(page: Page): Promise<void> {
+export async function ensureAuthenticatedLanding(page: Page): Promise<void> {
 	const notFound = page.getByText("Page not found");
 	if (await notFound.isVisible().catch(() => false)) {
 		const home = page.getByRole("link", { name: "Return Home" });
@@ -54,15 +54,14 @@ export async function ensureDashboard(page: Page): Promise<void> {
 	}
 
 	if (
-		!(await page
-			.getByTestId("dashboard-page")
+		!(await authenticatedLanding(page)
 			.isVisible()
 			.catch(() => false))
 	) {
 		await page.goto("/");
 	}
 
-	await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 30_000 });
+	await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
 }
 
 export async function fillCreateOrganizationDialog(
@@ -77,40 +76,43 @@ export async function fillCreateOrganizationDialog(
 }
 
 /** Create org from the inline NoOrganizationPage form. */
-export async function createOrganization(
-	page: Page,
-	opts: { name: string },
-): Promise<void> {
+export async function createOrganization(page: Page, opts: { name: string }): Promise<void> {
 	await expect(page.getByTestId("no-organization-page")).toBeVisible();
 	await page.getByLabel("Organization Name").fill(opts.name);
 	await page.getByRole("button", { name: "Continue" }).click();
 }
 
-/** Create org from NoOrganizationPage, or from the org switcher if already a member. */
-export async function ensureUniqueOrganization(
-	page: Page,
-	opts: { name: string },
-): Promise<void> {
+/** Create an org from onboarding or the switcher, selecting a membership first if required. */
+export async function ensureUniqueOrganization(page: Page, opts: { name: string }): Promise<void> {
 	const noOrgPage = page.getByTestId("no-organization-page");
-	const dashboard = page.getByTestId("dashboard-page");
+	const selectionPage = page.getByTestId("organization-selection-page");
+	const landing = authenticatedLanding(page);
 
 	// Wait for /me + React to settle before branching — a non-waiting isVisible()
 	// right after login redirect races the no-org page and wrongly takes the
 	// "already has org" path.
-	await expect(noOrgPage.or(dashboard)).toBeVisible({ timeout: 30_000 });
+	await expect(noOrgPage.or(selectionPage).or(landing)).toBeVisible({ timeout: 30_000 });
 
 	if (await noOrgPage.isVisible()) {
 		await createOrganization(page, opts);
-		await ensureDashboard(page);
+		await ensureAuthenticatedLanding(page);
 		return;
 	}
 
+	if (await selectionPage.isVisible()) {
+		// Persistent E2E databases can accumulate memberships across runs. Select
+		// one deterministically so the switcher is available for creating this
+		// run's isolated organization.
+		await selectionPage.getByTestId("organization-option").first().click();
+		await expect(landing).toBeVisible({ timeout: 30_000 });
+	}
+
 	// Already authenticated into some org (e.g. retry after a prior create).
-	await ensureDashboard(page);
+	await ensureAuthenticatedLanding(page);
 	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();
 	await switcher.click();
 	const createMenuItem = page.getByRole("menuitem", { name: "Add" });
 	await clickUntilDialog(page, createMenuItem);
 	await fillCreateOrganizationDialog(page, opts);
-	await ensureDashboard(page);
+	await ensureAuthenticatedLanding(page);
 }

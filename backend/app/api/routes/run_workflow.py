@@ -89,6 +89,7 @@ async def submit_payroll_run(
             run_id=run_id,
             user_id=user_id,
             reason=reason,
+            idempotency_key=idempotency_key,
         )
 
     return await _maybe_idempotent(
@@ -125,6 +126,7 @@ async def withdraw_payroll_run(
             run_id=run_id,
             user_id=user_id,
             reason=reason,
+            idempotency_key=idempotency_key,
         )
 
     return await _maybe_idempotent(
@@ -161,6 +163,7 @@ async def approve_payroll_run(
             run_id=run_id,
             user_id=user_id,
             reason=reason,
+            idempotency_key=idempotency_key,
         )
 
     return await _maybe_idempotent(
@@ -197,6 +200,7 @@ async def reject_payroll_run(
             run_id=run_id,
             user_id=user_id,
             reason=reason,
+            idempotency_key=idempotency_key,
         )
 
     return await _maybe_idempotent(

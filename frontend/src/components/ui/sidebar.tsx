@@ -1,6 +1,6 @@
 import { useRender } from "@base-ui/react/use-render";
+import { SidebarSimpleIcon as PanelLeftIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { cva, type VariantProps } from "class-variance-authority";
-import { PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 import { use } from "react";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ const LEGACY_SIDEBAR_WIDTH_STORAGE_KEYS = [
 	"accord:sidebar:width:px",
 	"ornament:sidebar:width:px",
 ] as const;
-// Short nav labels (Dashboard, Employees, …) don't need the shadcn-default ~296px rail.
+// Short nav labels (Employees, Pay Runs, …) don't need the shadcn-default ~296px rail.
 const SIDEBAR_WIDTH = "14rem";
 const SIDEBAR_WIDTH_MOBILE = SIDEBAR_WIDTH;
 const SIDEBAR_WIDTH_ICON = "3rem";

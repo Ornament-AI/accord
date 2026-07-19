@@ -60,6 +60,16 @@ class AuditEvent(UUIDPrimaryKeyMixin, OrganizationOwnedMixin, table=True):
             "organization_id",
             "created_at",
         ),
+        Index(
+            "ix_audit_events_org_request_id",
+            "organization_id",
+            "request_id",
+            postgresql_where=text("request_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "event_kind IS NULL OR event_kind IN ('mutation','access')",
+            name="ck_audit_events_event_kind",
+        ),
     )
 
     id: uuid.UUID = _id_field()
@@ -82,7 +92,30 @@ class AuditEvent(UUIDPrimaryKeyMixin, OrganizationOwnedMixin, table=True):
     entity_id: uuid.UUID = Field(
         sa_column=Column(PG_UUID(as_uuid=True), nullable=False),
     )
-    # before/after digest for the mutation (field-level summaries, not full dumps).
+    event_kind: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    actor_snapshot: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
+    )
+    entity_label: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    before_state: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
+    )
+    after_state: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB, nullable=True),
+    )
+    metadata_: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column("metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    )
+    idempotency_key: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    changed_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default=text("0")),
+    )
+    # Retained for compatibility with immutable legacy rows and older consumers.
     summary: dict[str, Any] = Field(
         sa_column=Column(JSONB, nullable=False),
     )

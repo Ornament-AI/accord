@@ -5,7 +5,7 @@ All notable changes to Accord are summarized here. Dates are absolute.
 ## 0.1.0 (unreleased) — 2026-07-18
 
 First product cut of Accord: Atlas shell transplant plus Phase 0–5 payroll
-platform (tenancy through reports/dashboard/ops). Status relative to the
+platform (tenancy through reports and operations). Status relative to the
 release gate matrix is tracked in `docs/release-readiness.md` (not all gates
 are fully met).
 
@@ -46,7 +46,7 @@ are fully met).
 
 - Phase 3 effective-dated schema — migration `2f397740f38a` (`c63b7b8`).
 - Employee master-data API with shared effective-dating helpers (`bf15079`);
-  offices/units/posts/groups + settings API (`f6528ec`); pay-component catalog,
+  offices/units/posts/groups API (`f6528ec`); pay-component catalog,
   recurring instructions, advances, accommodation, report config (`e3a0381`).
 - Frontend: org-setup, employees, pay-components, employee payroll-setup tabs
   (`d328fa1`, `263fea3`, `3b7f9d2`, `58c12dc`, `fbcf761`).
@@ -96,8 +96,8 @@ are fully met).
 
 ### Dashboard / ops
 
-- Payroll dashboard summary API + router + real frontend dashboard
-  (`160fb5f`, `7a3a326`, `f0a459e`).
+- Removed the pre-release payroll dashboard API and frontend in favor of
+  capability-aware workflow landing pages.
 - Prometheus metrics, readiness depth, structured-log redaction (`282e2ef`).
 - Compose/nginx/MinIO/dev scripts/CI (`ea8098c`); release workflow, architecture
   doc, README quick start (`d228281`).

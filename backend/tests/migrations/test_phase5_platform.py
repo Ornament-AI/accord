@@ -7,7 +7,7 @@ import psycopg
 from .conftest import as_psycopg_url, diag, run_alembic
 
 INITIAL_REVISION = "021faa7dd776"
-HEAD_REVISION = "f4b7c1d9e205"
+HEAD_REVISION = "e6a8c4d2f901"
 
 PHASE5_TABLES = (
     "audit_events",

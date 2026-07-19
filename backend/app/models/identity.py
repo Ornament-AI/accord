@@ -8,6 +8,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    CHAR,
     CheckConstraint,
     Column,
     DateTime,
@@ -17,7 +18,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     text,
-    CHAR,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID as PG_UUID
 from sqlmodel import Field
@@ -202,7 +202,12 @@ class OrganizationSettings(
     OrganizationOwnedMixin,
     table=True,
 ):
-    """Per-organization configuration (one row per org)."""
+    """Legacy rollout-compatibility row for organization invariants.
+
+    The mutable settings API is retired. This mapping remains temporarily so a
+    migration-before-roll deployment can continue serving the previous API
+    binary until every instance has been replaced.
+    """
 
     __tablename__ = "organization_settings"
     __table_args__ = (
@@ -222,35 +227,19 @@ class OrganizationSettings(
     organization_id: uuid.UUID = _organization_id_field()
     locale: str = Field(
         default="en-IN",
-        sa_column=Column(
-            Text,
-            nullable=False,
-            server_default=text("'en-IN'"),
-        ),
+        sa_column=Column(Text, nullable=False, server_default=text("'en-IN'")),
     )
     timezone: str = Field(
         default="Asia/Kolkata",
-        sa_column=Column(
-            Text,
-            nullable=False,
-            server_default=text("'Asia/Kolkata'"),
-        ),
+        sa_column=Column(Text, nullable=False, server_default=text("'Asia/Kolkata'")),
     )
     currency: str = Field(
         default="INR",
-        sa_column=Column(
-            CHAR(3),
-            nullable=False,
-            server_default=text("'INR'"),
-        ),
+        sa_column=Column(CHAR(3), nullable=False, server_default=text("'INR'")),
     )
     financial_year_start_month: int = Field(
         default=4,
-        sa_column=Column(
-            Integer,
-            nullable=False,
-            server_default=text("4"),
-        ),
+        sa_column=Column(Integer, nullable=False, server_default=text("4")),
     )
 
 

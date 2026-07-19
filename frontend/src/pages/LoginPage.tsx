@@ -50,7 +50,7 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-white p-6 dark:bg-background md:p-10 [--ray-color:rgba(255,165,60,0.4)] dark:[--ray-color:rgba(255,158,11,0.2)]">
+		<div className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-background p-6 md:p-10 [--ray-color:oklch(0.704_0.14_182.503/0.12)] dark:[--ray-color:oklch(0.47_0.076_188.216/0.10)]">
 			<LightRays color="var(--ray-color)" count={8} blur={30} speed={12} length="75vh" />
 			<div className="absolute top-6 right-6 z-10">
 				<ThemeSwitcher />

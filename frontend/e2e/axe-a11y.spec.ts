@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
+import { authenticatedLanding } from "./helpers/ui";
+
 type AxeViolation = {
 	id: string;
 	impact?: string | null;
@@ -18,9 +20,7 @@ async function runAxe(page: Page, label: string): Promise<void> {
 	const moderate = violations.filter((v) => v.impact === "moderate");
 
 	if (moderate.length > 0) {
-		const summary = moderate
-			.map((v) => `${v.id} (${v.impact}): ${v.description}`)
-			.join("\n  - ");
+		const summary = moderate.map((v) => `${v.id} (${v.impact}): ${v.description}`).join("\n  - ");
 		console.log(`[axe:${label}] moderate violations (documented, non-failing):\n  - ${summary}`);
 	}
 
@@ -41,10 +41,10 @@ test.describe("axe a11y smoke", () => {
 		await context.close();
 	});
 
-	test("dashboard has no serious/critical violations", async ({ page }) => {
+	test("authenticated landing has no serious/critical violations", async ({ page }) => {
 		await page.goto("/");
-		await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 30_000 });
-		await runAxe(page, "dashboard");
+		await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
+		await runAxe(page, "authenticated-landing");
 	});
 
 	test("employees list has no serious/critical violations", async ({ page }) => {

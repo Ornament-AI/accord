@@ -7,7 +7,7 @@ import psycopg
 from .conftest import as_psycopg_url, diag, run_alembic
 
 INITIAL_REVISION = "b7e3c1a90f24"
-HEAD_REVISION = "f4b7c1d9e205"
+HEAD_REVISION = "e6a8c4d2f901"
 
 IDENTITY_TABLES = (
     "users",
@@ -87,7 +87,6 @@ def test_phase2_identity_tenancy_upgrade_downgrade(scratch_db: str) -> None:
     assert _alembic_version(scratch_db) == HEAD_REVISION
     for table in IDENTITY_TABLES:
         assert _table_exists(scratch_db, table), f"expected table {table}"
-
     for table in TENANT_RLS_TABLES:
         enabled, forced = _rls_flags(scratch_db, table)
         assert enabled is True, f"{table}: expected relrowsecurity"

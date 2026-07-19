@@ -1,4 +1,4 @@
-import { MoreVertical } from "lucide-react";
+import { DotsThreeVerticalIcon as MoreVertical } from "@phosphor-icons/react/dist/csr/DotsThreeVertical";
 
 import { Button } from "@/components/ui/button";
 import {

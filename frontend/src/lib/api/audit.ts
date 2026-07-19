@@ -5,9 +5,13 @@ import { shouldSetQueryParam } from "@/lib/api/query-utils";
 import type { components } from "@/types/api.generated";
 
 export type AuditActor = components["schemas"]["AuditActor"];
-export type AuditEventResponse = components["schemas"]["AuditEventResponse"];
+export type AuditEventListItem = components["schemas"]["AuditEventListItem"];
+export type AuditEventDetail = components["schemas"]["AuditEventDetailResponse"];
+/** @deprecated Use the compact list item or structured detail type explicitly. */
+export type AuditEventResponse = AuditEventListItem;
+export type AuditFilterOptions = components["schemas"]["AuditFilterOptionsResponse"];
 export type PaginatedAuditEventResponse =
-	components["schemas"]["PaginatedResponse_AuditEventResponse_"];
+	components["schemas"]["PaginatedResponse_AuditEventListItem_"];
 
 export type ListAuditEventsParams = {
 	entity_type?: string | null;
@@ -24,6 +28,7 @@ export const auditQueryKeys = {
 	all: () => ["audit-events"] as const,
 	list: (params: ListAuditEventsParams) => ["audit-events", "list", params] as const,
 	detail: (eventId: string) => ["audit-events", "detail", eventId] as const,
+	filterOptions: () => ["audit-events", "filter-options"] as const,
 };
 
 function buildQueryString(
@@ -38,7 +43,6 @@ function buildQueryString(
 	return qs ? `?${qs}` : "";
 }
 
-/** Format a local Date as an inclusive day-bound API datetime (naive). */
 export function toAuditDayBound(date: Date, bound: "start" | "end"): string {
 	const year = date.getFullYear();
 	const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -49,21 +53,16 @@ export function toAuditDayBound(date: Date, bound: "start" | "end"): string {
 }
 
 export function listAuditEvents(params: ListAuditEventsParams = {}) {
-	const qs = buildQueryString({
-		entity_type: params.entity_type,
-		entity_id: params.entity_id,
-		command: params.command,
-		actor_user_id: params.actor_user_id,
-		from: params.from,
-		to: params.to,
-		page: params.page,
-		page_size: params.page_size,
-	});
+	const qs = buildQueryString(params);
 	return fetchJson<PaginatedAuditEventResponse>(`/api/audit-events${qs}`);
 }
 
 export function getAuditEvent(eventId: string) {
-	return fetchJson<AuditEventResponse>(`/api/audit-events/${eventId}`);
+	return fetchJson<AuditEventDetail>(`/api/audit-events/${eventId}`);
+}
+
+export function getAuditFilterOptions() {
+	return fetchJson<AuditFilterOptions>("/api/audit-events/filter-options");
 }
 
 export function useAuditEventsList(params: ListAuditEventsParams) {
@@ -79,5 +78,13 @@ export function useAuditEvent(eventId: string | undefined) {
 		queryKey: auditQueryKeys.detail(eventId ?? ""),
 		queryFn: () => getAuditEvent(eventId!),
 		enabled: Boolean(eventId),
+	});
+}
+
+export function useAuditFilterOptions() {
+	return useQuery({
+		queryKey: auditQueryKeys.filterOptions(),
+		queryFn: getAuditFilterOptions,
+		staleTime: 60_000,
 	});
 }

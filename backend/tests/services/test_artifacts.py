@@ -152,6 +152,12 @@ async def test_stream_download_bytes_and_audit(session):
         )
     ).scalar_one()
     assert audit.actor_user_id == world["user_id"]
+    assert audit.event_kind == "access"
+    assert audit.before_state is None
+    assert audit.after_state is None
+    assert audit.changed_count == 0
+    assert audit.metadata_["resource"]["id"] == str(artifact_id)
+    assert audit.metadata_["resource"]["object_key"] == artifact.object_key
     assert audit.summary["checksum_sha256"] == checksum
 
 

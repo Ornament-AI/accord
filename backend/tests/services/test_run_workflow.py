@@ -328,6 +328,19 @@ async def test_happy_path_validate_submit_approve(session):
     assert submitted["status"] == "submitted"
     assert await _count_approvals(session, run_id=world["run_id"], action="submit") == 1
     assert await _count_audits(session, run_id=world["run_id"], command="submit") == 1
+    submit_audit = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.entity_id == world["run_id"], AuditEvent.command == "submit"
+            )
+        )
+    ).scalar_one()
+    assert submit_audit.event_kind == "mutation"
+    assert submit_audit.before_state is not None
+    assert submit_audit.before_state["status"] == "calculated"
+    assert submit_audit.after_state is not None
+    assert submit_audit.after_state["status"] == "submitted"
+    assert submit_audit.changed_count == 1
 
     await _bind(session, world["org_id"], approver_id)
     approved = await approve_run(

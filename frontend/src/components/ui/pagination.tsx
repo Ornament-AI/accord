@@ -1,6 +1,8 @@
 import { useRender } from "@base-ui/react/use-render";
+import { CaretLeftIcon as ChevronLeftIcon } from "@phosphor-icons/react/dist/csr/CaretLeft";
+import { CaretRightIcon as ChevronRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
+import { DotsThreeIcon as MoreHorizontalIcon } from "@phosphor-icons/react/dist/csr/DotsThree";
 import type { VariantProps } from "class-variance-authority";
-import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-react";
 import type * as React from "react";
 
 import { buttonVariants } from "@/components/ui/button-variants";

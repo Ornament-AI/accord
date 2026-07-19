@@ -1,10 +1,10 @@
+import { WalletIcon as Wallet } from "@phosphor-icons/react/dist/csr/Wallet";
 import {
 	type ColumnDef,
 	getCoreRowModel,
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Wallet } from "lucide-react";
 import { useState } from "react";
 
 import { AppLayout } from "@/components/app-layout";
@@ -123,13 +123,7 @@ export default function PayComponentsPage() {
 							icon={Wallet}
 							title="No pay components"
 							description="Create a pay component to get started."
-						>
-							{canManage ? (
-								<Button size="xs" onClick={() => setCreateOpen(true)}>
-									Add
-								</Button>
-							) : null}
-						</EmptyState>
+						/>
 					) : null}
 
 					{!listQuery.isLoading && !listQuery.isError && !isEmpty ? (

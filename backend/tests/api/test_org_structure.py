@@ -1,4 +1,4 @@
-"""Integration tests for org-structure master data and organization settings routes."""
+"""Integration tests for organization-structure master data routes."""
 
 from __future__ import annotations
 
@@ -163,46 +163,6 @@ async def test_update_missing_entity_404(client, session):
     assert resp.status_code == 404
 
 
-# --- Organization settings -------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_organization_settings_read_and_update(client, session):
-    await _create_org_as_admin(client)
-
-    current = await client.get("/api/organization-settings")
-    assert current.status_code == 200, current.text
-    body = current.json()
-    assert body["currency"] == "INR"
-    assert body["timezone"] == "Asia/Kolkata"
-
-    patched = await client.patch(
-        "/api/organization-settings",
-        json={"locale": "hi-IN", "financial_year_start_month": 4, "currency": "inr"},
-    )
-    assert patched.status_code == 200, patched.text
-    assert patched.json()["locale"] == "hi-IN"
-    assert patched.json()["currency"] == "INR"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"locale": "english"},
-        {"timezone": "Not/AZone"},
-        {"currency": "RUPEES"},
-        {"currency": "12"},
-        {"financial_year_start_month": 0},
-        {"financial_year_start_month": 13},
-    ],
-)
-async def test_organization_settings_validation_rejections(client, session, payload):
-    await _create_org_as_admin(client)
-    resp = await client.patch("/api/organization-settings", json=payload)
-    assert resp.status_code == 422, resp.text
-
-
 # --- Capability gates ------------------------------------------------------------
 
 
@@ -239,10 +199,6 @@ async def test_reviewer_reads_structure_but_cannot_write(client, dev_settings, s
     )
     assert write.status_code == 403
     assert write.json()["error"] == "urn:accord:capability:manage_master_data"
-
-    settings_read = await client.get("/api/organization-settings")
-    assert settings_read.status_code == 403
-    assert settings_read.json()["error"] == "urn:accord:capability:manage_organization"
 
 
 # --- Tenant isolation -------------------------------------------------------------

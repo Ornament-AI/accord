@@ -39,7 +39,8 @@ from app.models.payroll_runs import (
     payroll_result_lines,
     payroll_run_versions,
 )
-from app.models.platform import AuditEvent, PayrollApproval
+from app.models.platform import PayrollApproval
+from app.services.audit_events import entity_snapshot, write_mutation_event
 
 # Problem-detail ``error`` URNs for workflow conflicts (ADR 0008 HTTP mapping).
 URN_ILLEGAL_TRANSITION = "urn:accord:workflow:illegal_transition"
@@ -411,6 +412,9 @@ async def _write_approval_and_audit(
     to_status: str,
     version: Any,
     reason: str | None,
+    before_state: dict[str, Any],
+    after_state: dict[str, Any],
+    idempotency_key: str | None,
 ) -> None:
     db.add(
         PayrollApproval(
@@ -423,21 +427,29 @@ async def _write_approval_and_audit(
             reason=reason,
         )
     )
-    db.add(
-        AuditEvent(
-            organization_id=organization_id,
-            actor_user_id=user_id,
-            command=action,
-            entity_type="payroll_run",
-            entity_id=run.id,
-            summary={
-                "from_status": from_status,
-                "to_status": to_status,
-                "run_version_id": str(version["id"]),
-                "version_number": int(version["version_number"]),
-                "content_hash": str(version["content_hash"]),
-            },
-        )
+    period = await db.get(PayrollPeriod, run.period_id)
+    period_label = (
+        f"{period.period_year:04d}-{period.period_month:02d}" if period is not None else "Unknown"
+    )
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=user_id,
+        command=action,
+        entity_type="payroll_run",
+        entity_id=run.id,
+        entity_label=f"{period_label} {run.run_type.replace('_', ' ').title()} run",
+        before_state=before_state,
+        after_state=after_state,
+        summary={
+            "from_status": from_status,
+            "to_status": to_status,
+            "run_version_id": str(version["id"]),
+            "version_number": int(version["version_number"]),
+            "content_hash": str(version["content_hash"]),
+        },
+        metadata={"reason": reason} if reason else {},
+        idempotency_key=idempotency_key,
     )
 
 
@@ -498,6 +510,7 @@ async def submit_run(
     run_id: UUID,
     user_id: UUID,
     reason: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """calculated → submitted; bind current version + content_hash."""
     run = await _lock_run(db, organization_id=organization_id, run_id=run_id)
@@ -527,6 +540,8 @@ async def submit_run(
         )
 
     from_status = run.status
+    before_state = entity_snapshot(run)
+    await _transition(db, run=run, to_status="submitted")
     await _write_approval_and_audit(
         db,
         organization_id=organization_id,
@@ -537,8 +552,10 @@ async def submit_run(
         to_status="submitted",
         version=version,
         reason=reason,
+        before_state=before_state,
+        after_state=entity_snapshot(run),
+        idempotency_key=idempotency_key,
     )
-    await _transition(db, run=run, to_status="submitted")
     summary = await _run_summary(db, organization_id=organization_id, run=run)
     await db.commit()
     return summary
@@ -551,6 +568,7 @@ async def withdraw_run(
     run_id: UUID,
     user_id: UUID,
     reason: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """submitted → calculated; original submitter or organization_administrator."""
     run = await _lock_run(db, organization_id=organization_id, run_id=run_id)
@@ -596,6 +614,8 @@ async def withdraw_run(
         version_id=run.current_version_id,
     )
     from_status = run.status
+    before_state = entity_snapshot(run)
+    await _transition(db, run=run, to_status="calculated")
     await _write_approval_and_audit(
         db,
         organization_id=organization_id,
@@ -606,8 +626,10 @@ async def withdraw_run(
         to_status="calculated",
         version=version,
         reason=reason,
+        before_state=before_state,
+        after_state=entity_snapshot(run),
+        idempotency_key=idempotency_key,
     )
-    await _transition(db, run=run, to_status="calculated")
     summary = await _run_summary(db, organization_id=organization_id, run=run)
     await db.commit()
     return summary
@@ -620,6 +642,7 @@ async def approve_run(
     run_id: UUID,
     user_id: UUID,
     reason: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """submitted → approved; maker/checker + stale-version guard."""
     run = await _lock_run(db, organization_id=organization_id, run_id=run_id)
@@ -673,6 +696,8 @@ async def approve_run(
         )
 
     from_status = run.status
+    before_state = entity_snapshot(run)
+    await _transition(db, run=run, to_status="approved")
     await _write_approval_and_audit(
         db,
         organization_id=organization_id,
@@ -683,8 +708,10 @@ async def approve_run(
         to_status="approved",
         version=version,
         reason=reason,
+        before_state=before_state,
+        after_state=entity_snapshot(run),
+        idempotency_key=idempotency_key,
     )
-    await _transition(db, run=run, to_status="approved")
     summary = await _run_summary(db, organization_id=organization_id, run=run)
     await db.commit()
     return summary
@@ -697,6 +724,7 @@ async def reject_run(
     run_id: UUID,
     user_id: UUID,
     reason: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """submitted → rejected; approver ≠ submitter (same SoD as approve).
 
@@ -740,6 +768,8 @@ async def reject_run(
         version_id=run.current_version_id,
     )
     from_status = run.status
+    before_state = entity_snapshot(run)
+    await _transition(db, run=run, to_status="rejected")
     await _write_approval_and_audit(
         db,
         organization_id=organization_id,
@@ -750,8 +780,10 @@ async def reject_run(
         to_status="rejected",
         version=version,
         reason=reason,
+        before_state=before_state,
+        after_state=entity_snapshot(run),
+        idempotency_key=idempotency_key,
     )
-    await _transition(db, run=run, to_status="rejected")
     summary = await _run_summary(db, organization_id=organization_id, run=run)
     await db.commit()
     return summary

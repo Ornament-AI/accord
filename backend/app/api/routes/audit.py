@@ -12,7 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import Session, TenantCtx, require_capability
 from app.auth.principal import AuthPrincipal
-from app.schemas.audit import COMMAND_NAME_PATTERN, AuditEventListPage, AuditEventResponse
+from app.schemas.audit import (
+    COMMAND_NAME_PATTERN,
+    AuditEventDetailResponse,
+    AuditEventListPage,
+    AuditFilterOptionsResponse,
+)
 from app.services import audit_read as audit_read_service
 
 router = APIRouter(tags=["audit"])
@@ -74,13 +79,22 @@ async def list_audit_events(
     )
 
 
-@router.get("/audit-events/{event_id}", response_model=AuditEventResponse)
+@router.get("/audit-events/filter-options", response_model=AuditFilterOptionsResponse)
+async def get_audit_filter_options(
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("view_audit")),
+) -> AuditFilterOptionsResponse:
+    return await audit_read_service.get_filter_options(db, organization_id=_org_id(tenant))
+
+
+@router.get("/audit-events/{event_id}", response_model=AuditEventDetailResponse)
 async def get_audit_event(
     event_id: UUID,
     tenant: TenantCtx,
     db: Session,
     _: AuthPrincipal = Depends(require_capability("view_audit")),
-) -> AuditEventResponse:
+) -> AuditEventDetailResponse:
     return await audit_read_service.get_audit_event(
         db,
         organization_id=_org_id(tenant),

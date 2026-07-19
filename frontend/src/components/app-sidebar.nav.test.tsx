@@ -64,8 +64,9 @@ describe("capability-aware sidebar nav", () => {
 		renderSidebar("/organization/offices");
 
 		await waitFor(() => {
-			expect(screen.getByText("Dashboard")).toBeInTheDocument();
+			expect(screen.getByText(expectedTitles[0])).toBeInTheDocument();
 		});
+		expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
 
 		for (const title of expectedTitles) {
 			expect(screen.getByText(title)).toBeInTheDocument();
@@ -104,26 +105,10 @@ describe("capability-aware sidebar nav", () => {
 			"href",
 			"/organization/employee-groups",
 		);
-		expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
-			"href",
-			"/organization/settings",
-		);
+		expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 
 		const folderTrigger = screen.getByRole("button", { name: /^Organization$/i });
 		expect(folderTrigger).toHaveAttribute("data-active", "false");
 		expect(screen.getByRole("link", { name: "Offices" })).toHaveAttribute("data-active", "true");
-	});
-
-	it("hides Settings for roles without manage_organization", async () => {
-		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("payroll_reviewer") });
-		server.use(...handlers);
-
-		renderSidebar("/organization/offices");
-
-		await waitFor(() => {
-			expect(screen.getByText("Organization")).toBeInTheDocument();
-		});
-		expect(screen.getByRole("link", { name: "Offices" })).toBeInTheDocument();
-		expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
 	});
 });
