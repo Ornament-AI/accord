@@ -152,6 +152,15 @@ class PayComponentUpdate(BaseModel):
     employer_transfer: bool | None = None
     transfer_of: str | None = None
 
+    @field_validator("employer_transfer")
+    @classmethod
+    def _reject_null_employer_transfer(cls, value: bool | None) -> bool | None:
+        # Omitting the field is allowed (default None, not in model_fields_set),
+        # but an explicit ``null`` would assign None to the non-nullable column.
+        if value is None:
+            raise ValueError("employer_transfer must not be null")
+        return value
+
     @field_validator("transfer_of")
     @classmethod
     def _strip_optional_transfer_of(cls, value: str | None) -> str | None:
