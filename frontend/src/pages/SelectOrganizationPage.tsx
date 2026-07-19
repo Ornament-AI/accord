@@ -78,6 +78,7 @@ export default function SelectOrganizationPage() {
 						{organizations.map((organization) => (
 							<Button
 								key={organization.id}
+								data-testid="organization-option"
 								type="button"
 								variant="outline"
 								className="h-auto min-h-10 justify-start whitespace-normal py-2 text-left"

@@ -82,20 +82,29 @@ export async function createOrganization(page: Page, opts: { name: string }): Pr
 	await page.getByRole("button", { name: "Continue" }).click();
 }
 
-/** Create org from NoOrganizationPage, or from the org switcher if already a member. */
+/** Create an org from onboarding or the switcher, selecting a membership first if required. */
 export async function ensureUniqueOrganization(page: Page, opts: { name: string }): Promise<void> {
 	const noOrgPage = page.getByTestId("no-organization-page");
+	const selectionPage = page.getByTestId("organization-selection-page");
 	const landing = authenticatedLanding(page);
 
 	// Wait for /me + React to settle before branching — a non-waiting isVisible()
 	// right after login redirect races the no-org page and wrongly takes the
 	// "already has org" path.
-	await expect(noOrgPage.or(landing)).toBeVisible({ timeout: 30_000 });
+	await expect(noOrgPage.or(selectionPage).or(landing)).toBeVisible({ timeout: 30_000 });
 
 	if (await noOrgPage.isVisible()) {
 		await createOrganization(page, opts);
 		await ensureAuthenticatedLanding(page);
 		return;
+	}
+
+	if (await selectionPage.isVisible()) {
+		// Persistent E2E databases can accumulate memberships across runs. Select
+		// one deterministically so the switcher is available for creating this
+		// run's isolated organization.
+		await selectionPage.getByTestId("organization-option").first().click();
+		await ensureAuthenticatedLanding(page);
 	}
 
 	// Already authenticated into some org (e.g. retry after a prior create).
