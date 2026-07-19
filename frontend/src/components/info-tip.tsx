@@ -1,4 +1,5 @@
-import { Info, type LucideIcon } from "lucide-react";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { InfoIcon as Info } from "@phosphor-icons/react/dist/csr/Info";
 import type * as React from "react";
 import type { ReactNode } from "react";
 
@@ -12,7 +13,7 @@ type InfoTipProps = {
 	className?: string;
 	contentClassName?: string;
 	side?: React.ComponentProps<typeof TooltipContent>["side"];
-	icon?: LucideIcon;
+	icon?: PhosphorIcon;
 	"data-testid"?: string;
 };
 

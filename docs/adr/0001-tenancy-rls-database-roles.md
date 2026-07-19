@@ -56,13 +56,6 @@ CREATE TABLE organization_memberships (
   UNIQUE (organization_id, user_id)
 );
 
-CREATE TABLE organization_settings (
-  organization_id  uuid PRIMARY KEY REFERENCES organizations (id),
-  timezone         text NOT NULL DEFAULT 'Asia/Kolkata',
-  currency_code    text NOT NULL DEFAULT 'INR',
-  updated_at       timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE idempotency_keys (
   id               uuid PRIMARY KEY,
   organization_id  uuid NOT NULL REFERENCES organizations (id),
@@ -100,9 +93,6 @@ Every organization-owned table enables **and forces** RLS in its **first** migra
 ```sql
 ALTER TABLE organization_memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_memberships FORCE ROW LEVEL SECURITY;
-
-ALTER TABLE organization_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE organization_settings FORCE ROW LEVEL SECURITY;
 
 ALTER TABLE idempotency_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE idempotency_keys FORCE ROW LEVEL SECURITY;
@@ -285,12 +275,6 @@ erDiagram
     boolean is_active
   }
 
-  organization_settings {
-    uuid organization_id PK_FK
-    text timezone
-    text currency_code
-  }
-
   idempotency_keys {
     uuid id PK
     uuid organization_id FK
@@ -300,7 +284,6 @@ erDiagram
 
   users ||--o{ organization_memberships : "memberships"
   organizations ||--o{ organization_memberships : "has"
-  organizations ||--|| organization_settings : "settings"
   organizations ||--o{ idempotency_keys : "scoped by org"
 ```
 
@@ -308,6 +291,9 @@ Notes:
 
 - `users` has **no** `organization_id`; multi-org membership is only via `organization_memberships`.
 - `idempotency_keys` is per-organization with composite unique `(organization_id, idempotency_key)`.
+- India-specific locale, timezone, currency, and financial-year conventions are
+  application invariants, not tenant settings. The former
+  `organization_settings` table was retired in revision `d1c7a2e9f4b6`.
 
 ## Consequences
 

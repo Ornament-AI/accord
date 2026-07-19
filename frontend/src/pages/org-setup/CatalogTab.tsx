@@ -10,7 +10,6 @@ import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageToolbar } from "@/components/page-toolbar";
-import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -23,7 +22,6 @@ declare module "@tanstack/react-table" {
 
 type CatalogTabProps<T extends { id: string }> = {
 	title: string;
-	emptyDescription: string;
 	icon: React.ComponentType<{ className?: string }>;
 	columns: ColumnDef<T, unknown>[];
 	data: T[] | undefined;
@@ -32,7 +30,6 @@ type CatalogTabProps<T extends { id: string }> = {
 	error: unknown;
 	onRetry: () => void;
 	canManage: boolean;
-	onAdd: () => void;
 	onEdit: (row: T) => void;
 	toolbar?: ReactNode;
 	"data-testid"?: string;
@@ -40,7 +37,6 @@ type CatalogTabProps<T extends { id: string }> = {
 
 export function CatalogTab<T extends { id: string }>({
 	title,
-	emptyDescription,
 	icon: Icon,
 	columns,
 	data,
@@ -49,7 +45,6 @@ export function CatalogTab<T extends { id: string }>({
 	error,
 	onRetry,
 	canManage,
-	onAdd,
 	onEdit,
 	toolbar,
 	"data-testid": testId,
@@ -77,15 +72,7 @@ export function CatalogTab<T extends { id: string }>({
 				/>
 			) : null}
 
-			{isEmpty ? (
-				<EmptyState icon={Icon} title={`No ${title.toLowerCase()}`} description={emptyDescription}>
-					{canManage ? (
-						<Button size="xs" onClick={onAdd}>
-							Add
-						</Button>
-					) : null}
-				</EmptyState>
-			) : null}
+			{isEmpty ? <EmptyState icon={Icon} title={`No ${title.toLowerCase()}`} /> : null}
 
 			{!isLoading && !isError && !isEmpty ? (
 				<DataTableShell

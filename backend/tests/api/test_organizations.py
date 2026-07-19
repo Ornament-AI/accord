@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth.capabilities import CAPABILITIES
-from app.models.identity import Organization, OrganizationMembership, OrganizationSettings
+from app.models.identity import Organization, OrganizationMembership
 from tests.identity_helpers import login_dev, session_cookie_from_response
 
 
@@ -37,16 +37,6 @@ async def test_create_organization_201_defaults_and_admin_capabilities(
         await session.execute(select(Organization).where(Organization.slug == "acme-payroll"))
     ).scalar_one()
     assert org.is_active is True
-
-    settings_row = (
-        await session.execute(
-            select(OrganizationSettings).where(OrganizationSettings.organization_id == org.id)
-        )
-    ).scalar_one()
-    assert settings_row.locale == "en-IN"
-    assert settings_row.timezone == "Asia/Kolkata"
-    assert settings_row.currency == "INR"
-    assert settings_row.financial_year_start_month == 4
 
     membership = (
         await session.execute(

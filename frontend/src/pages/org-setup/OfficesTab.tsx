@@ -1,5 +1,5 @@
+import { BuildingsIcon as Building2 } from "@phosphor-icons/react/dist/csr/Buildings";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Building2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -80,7 +80,6 @@ export function OfficesTab({ canManage, createOpen, onCreateOpenChange }: Office
 		<>
 			<CatalogTab
 				title="Offices"
-				emptyDescription="Add an office to get started."
 				icon={Building2}
 				columns={columns}
 				data={listQuery.data}
@@ -89,7 +88,6 @@ export function OfficesTab({ canManage, createOpen, onCreateOpenChange }: Office
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
 				data-testid="offices-tab"
 			/>

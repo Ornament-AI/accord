@@ -7,19 +7,17 @@ import psycopg
 from .conftest import as_psycopg_url, diag, run_alembic
 
 INITIAL_REVISION = "b7e3c1a90f24"
-HEAD_REVISION = "f4b7c1d9e205"
+HEAD_REVISION = "d1c7a2e9f4b6"
 
 IDENTITY_TABLES = (
     "users",
     "organizations",
     "organization_memberships",
-    "organization_settings",
     "idempotency_keys",
     "sessions",
 )
 TENANT_RLS_TABLES = (
     "organization_memberships",
-    "organization_settings",
     "idempotency_keys",
 )
 NON_RLS_TABLES = ("users", "organizations", "sessions")
@@ -87,6 +85,7 @@ def test_phase2_identity_tenancy_upgrade_downgrade(scratch_db: str) -> None:
     assert _alembic_version(scratch_db) == HEAD_REVISION
     for table in IDENTITY_TABLES:
         assert _table_exists(scratch_db, table), f"expected table {table}"
+    assert not _table_exists(scratch_db, "organization_settings")
 
     for table in TENANT_RLS_TABLES:
         enabled, forced = _rls_flags(scratch_db, table)

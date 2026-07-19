@@ -1,10 +1,10 @@
+import { MoneyIcon as WalletCards } from "@phosphor-icons/react/dist/csr/Money";
 import {
 	type ColumnDef,
 	getCoreRowModel,
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { WalletCards } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -148,13 +148,7 @@ export default function PayRunsPage() {
 								icon={WalletCards}
 								title="No pay runs"
 								description="Create a period and pay run to get started."
-							>
-								{canCreateRun ? (
-									<Button size="xs" onClick={() => setCreateRunOpen(true)}>
-										Add
-									</Button>
-								) : null}
-							</EmptyState>
+							/>
 						) : null}
 
 						{!runsQuery.isLoading && !runsQuery.isError && !runsEmpty ? (

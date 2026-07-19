@@ -12,10 +12,10 @@ export function SiteHeader({ title, actions }: SiteHeaderProps) {
 
 	return (
 		<header className="flex h-auto min-h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:min-h-(--header-height)">
-			<div className="flex w-full min-w-0 items-center gap-1 px-3 py-2 sm:px-4 lg:gap-2 lg:px-6">
-				<SidebarTrigger className="-ml-1 shrink-0" />
+			<div className="flex w-full min-w-0 items-center gap-2 px-4 py-3 sm:py-2 lg:px-6">
+				<SidebarTrigger className="relative shrink-0 after:absolute after:-inset-2 after:content-[''] sm:-ml-1 sm:after:hidden" />
 				<Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
-				<div className="text-sm font-medium ml-2 flex min-w-0 flex-1 items-center gap-2 overflow-hidden [&>*]:min-w-0">
+				<div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-sm font-medium [&>*]:min-w-0">
 					{isPrimitiveTitle ? <span className="truncate">{title}</span> : title}
 				</div>
 				{actions ? (

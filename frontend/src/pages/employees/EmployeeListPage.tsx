@@ -1,10 +1,10 @@
+import { UsersThreeIcon as Users } from "@phosphor-icons/react/dist/csr/UsersThree";
 import {
 	type ColumnDef,
 	getCoreRowModel,
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -18,7 +18,6 @@ import { DataSearchControl } from "@/components/data-search-control";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
-import { FilterScrollRow } from "@/components/filter-scroll-row";
 import { PageShell } from "@/components/page-shell";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
@@ -148,19 +147,17 @@ export default function EmployeeListPage() {
 								setPage(1);
 							}}
 						/>
-						<FilterScrollRow>
-							<DatePicker
-								value={asOfDate}
-								onValueChange={(date) => {
-									if (date) {
-										setAsOf(toApiDate(date));
-										setPage(1);
-									}
-								}}
-								aria-label="As of Date"
-								placeholder="As of"
-							/>
-						</FilterScrollRow>
+						<DatePicker
+							value={asOfDate}
+							onValueChange={(date) => {
+								if (date) {
+									setAsOf(toApiDate(date));
+									setPage(1);
+								}
+							}}
+							aria-label="As of Date"
+							placeholder="As of"
+						/>
 						<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
 					</PageToolbar>
 
@@ -182,13 +179,7 @@ export default function EmployeeListPage() {
 									? "Try a different search term or as-of date."
 									: "Create an employee to get started."
 							}
-						>
-							{canManage ? (
-								<Button size="xs" onClick={() => setCreateOpen(true)}>
-									Add
-								</Button>
-							) : null}
-						</EmptyState>
+						/>
 					) : null}
 
 					{!listQuery.isLoading && !listQuery.isError && !isEmpty ? (

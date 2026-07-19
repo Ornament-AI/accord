@@ -2,14 +2,13 @@ import { createBrowserRouter, type RouteObject } from "react-router";
 
 import {
 	AuditPage,
-	DashboardPage,
+	AuthenticatedIndexRedirect,
 	EmployeeDetailPage,
 	EmployeeGroupsPage,
 	EmployeeListPage,
 	LoginPage,
 	NotFoundPage,
 	OfficesPage,
-	OrgSettingsPage,
 	OrgSetupIndexRedirect,
 	PayComponentDetailPage,
 	PayComponentsPage,
@@ -33,7 +32,7 @@ export const routes: RouteObject[] = [
 		element: <ProtectedLayout />,
 		errorElement: <RouteErrorFallback />,
 		children: [
-			{ index: true, element: <DashboardPage /> },
+			{ index: true, element: <AuthenticatedIndexRedirect /> },
 			{ path: "employees", element: <EmployeeListPage /> },
 			{ path: "employees/:employeeId", element: <EmployeeDetailPage /> },
 			{
@@ -44,7 +43,6 @@ export const routes: RouteObject[] = [
 					{ path: "payroll-units", element: <PayrollUnitsPage /> },
 					{ path: "posts", element: <PostsPage /> },
 					{ path: "employee-groups", element: <EmployeeGroupsPage /> },
-					{ path: "settings", element: <OrgSettingsPage /> },
 				],
 			},
 			{ path: "pay-components", element: <PayComponentsPage /> },

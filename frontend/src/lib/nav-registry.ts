@@ -1,13 +1,10 @@
-import type { LucideIcon } from "lucide-react";
-import {
-	Banknote,
-	Building2,
-	ClipboardList,
-	FileBarChart2,
-	LayoutDashboard,
-	Users,
-	WalletCards,
-} from "lucide-react";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { BuildingsIcon as Building2 } from "@phosphor-icons/react/dist/csr/Buildings";
+import { ChartBarIcon as FileBarChart2 } from "@phosphor-icons/react/dist/csr/ChartBar";
+import { ClipboardTextIcon as ClipboardList } from "@phosphor-icons/react/dist/csr/ClipboardText";
+import { MoneyIcon as Banknote } from "@phosphor-icons/react/dist/csr/Money";
+import { UsersThreeIcon as Users } from "@phosphor-icons/react/dist/csr/UsersThree";
+import { WalletIcon as WalletCards } from "@phosphor-icons/react/dist/csr/Wallet";
 
 import type { Capability } from "@/types/auth";
 
@@ -20,19 +17,15 @@ export type NavRegistryChild = {
 
 export type NavRegistryEntry = {
 	title: string;
-	icon: LucideIcon;
+	icon: PhosphorIcon;
 	path: string;
 	/** When set, the item is shown only if `hasCapability(capability)` is true. */
 	capability?: Capability;
 	children?: readonly NavRegistryChild[];
 };
 
-/**
- * Ordered primary navigation. Dashboard has no capability gate.
- * Other entries use the most direct capability from the frozen contract.
- */
+/** Ordered primary navigation using the most direct capability from the frozen contract. */
 export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
-	{ title: "Dashboard", icon: LayoutDashboard, path: "/" },
 	{ title: "Employees", icon: Users, path: "/employees", capability: "view_master_data" },
 	{
 		title: "Organization",
@@ -44,11 +37,6 @@ export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
 			{ title: "Payroll Units", path: "/organization/payroll-units" },
 			{ title: "Posts", path: "/organization/posts" },
 			{ title: "Employee Groups", path: "/organization/employee-groups" },
-			{
-				title: "Settings",
-				path: "/organization/settings",
-				capability: "manage_organization",
-			},
 		],
 	},
 	{

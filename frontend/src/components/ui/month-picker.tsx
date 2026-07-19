@@ -1,4 +1,6 @@
-import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarBlankIcon as CalendarIcon } from "@phosphor-icons/react/dist/csr/CalendarBlank";
+import { CaretLeftIcon as ChevronLeft } from "@phosphor-icons/react/dist/csr/CaretLeft";
+import { CaretRightIcon as ChevronRight } from "@phosphor-icons/react/dist/csr/CaretRight";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";

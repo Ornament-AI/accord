@@ -1,7 +1,7 @@
 """Accord SQLModel package.
 
 Phase 1 exports shared mixins and the RLS policy helper. Phase 2 adds identity
-and tenancy tables (users, organizations, memberships, settings, idempotency
+and tenancy tables (users, organizations, memberships, idempotency
 keys, sessions). Phase 3 adds org-structure, employee master data (header +
 version tables), pay components, recurring instructions, advances,
 accommodation, and report configurations. Phase 4 adds payroll run persistence
@@ -35,7 +35,6 @@ from app.models.identity import (
     IdempotencyKey,
     Organization,
     OrganizationMembership,
-    OrganizationSettings,
     Session,
     User,
 )
@@ -76,7 +75,6 @@ __all__ = [
     "Organization",
     "OrganizationMembership",
     "OrganizationOwnedMixin",
-    "OrganizationSettings",
     "OutboxEvent",
     "PayComponent",
     "PayrollApproval",

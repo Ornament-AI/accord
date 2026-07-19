@@ -1,10 +1,10 @@
+import { ClipboardTextIcon as ClipboardList } from "@phosphor-icons/react/dist/csr/ClipboardText";
 import {
 	type ColumnDef,
 	getCoreRowModel,
 	type RowData,
 	useReactTable,
 } from "@tanstack/react-table";
-import { ClipboardList } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 
@@ -13,7 +13,6 @@ import { CapabilityGate } from "@/components/capability-gate";
 import { DataTableShell } from "@/components/data-table-shell";
 import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
-import { FilterScrollRow } from "@/components/filter-scroll-row";
 import { PageShell } from "@/components/page-shell";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
@@ -137,6 +136,7 @@ export default function AuditPage() {
 
 	const totalPages = listQuery.data?.total_pages ?? 1;
 	const isEmpty = !listQuery.isLoading && (listQuery.data?.items.length ?? 0) === 0;
+	const hasEvents = !listQuery.isLoading && !listQuery.isError && !isEmpty;
 
 	const selectEvent = (event: AuditEventResponse) => {
 		setSelectedId(event.id);
@@ -145,71 +145,60 @@ export default function AuditPage() {
 		}
 	};
 
-	const datePresets = useMemo(() => {
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-		const last7 = new Date(today);
-		last7.setDate(last7.getDate() - 6);
-		const last30 = new Date(today);
-		last30.setDate(last30.getDate() - 29);
-		return [
-			{ label: "Last 7 Days", value: { from: last7, to: today } },
-			{ label: "Last 30 Days", value: { from: last30, to: today } },
-		];
-	}, []);
-
 	return (
 		<CapabilityGate capability="view_audit" title="Audit">
 			<AppLayout title="Audit">
 				<PageShell data-testid="audit-page">
 					<PageToolbar>
-						<FilterScrollRow>
-							<Input
-								value={command}
-								onChange={(event) => {
-									setCommand(event.target.value);
-									setPage(1);
-								}}
-								placeholder="Command…"
-								aria-label="Filter by Command"
-								style={filterWidthStyle([], "Command…")}
-							/>
-							<Input
-								value={entityType}
-								onChange={(event) => {
-									setEntityType(event.target.value);
-									setPage(1);
-								}}
-								placeholder="Entity type…"
-								aria-label="Filter by Entity Type"
-								style={filterWidthStyle([], "Entity type…")}
-							/>
-							<Input
-								value={entityId}
-								onChange={(event) => {
-									setEntityId(event.target.value);
-									setPage(1);
-								}}
-								placeholder="Entity ID…"
-								aria-label="Search by Entity ID"
-								style={filterWidthStyle([], "Entity ID…", { maxCh: 20 })}
-							/>
-							<DateRangePicker
-								value={dateRange}
-								onValueChange={(range) => {
-									setDateRange(range);
-									setPage(1);
-								}}
-								aria-label="Filter by Date Range"
-								placeholder="Date range"
-								numberOfMonths={isMobile ? 1 : 2}
-								presets={datePresets}
-								style={dateRangeFilterWidthStyle("Date range", Boolean(dateRange?.from))}
-							/>
-						</FilterScrollRow>
+						<Input
+							value={command}
+							onChange={(event) => {
+								setCommand(event.target.value);
+								setPage(1);
+							}}
+							placeholder="Command…"
+							aria-label="Filter by Command"
+							style={filterWidthStyle([], "Command…")}
+						/>
+						<Input
+							value={entityType}
+							onChange={(event) => {
+								setEntityType(event.target.value);
+								setPage(1);
+							}}
+							placeholder="Entity type…"
+							aria-label="Filter by Entity Type"
+							style={filterWidthStyle([], "Entity type…")}
+						/>
+						<Input
+							value={entityId}
+							onChange={(event) => {
+								setEntityId(event.target.value);
+								setPage(1);
+							}}
+							placeholder="Entity ID…"
+							aria-label="Search by Entity ID"
+							style={filterWidthStyle([], "Entity ID…", { maxCh: 20 })}
+						/>
+						<DateRangePicker
+							value={dateRange}
+							onValueChange={(range) => {
+								setDateRange(range);
+								setPage(1);
+							}}
+							aria-label="Filter by Date Range"
+							placeholder="Date range"
+							numberOfMonths={isMobile ? 1 : 2}
+							style={dateRangeFilterWidthStyle("Date range", Boolean(dateRange?.from))}
+						/>
 					</PageToolbar>
 
-					<div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
+					<div
+						className={cn(
+							"grid min-h-0 flex-1 gap-4",
+							hasEvents && "md:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]",
+						)}
+					>
 						<div className="min-w-0">
 							{listQuery.isLoading ? <DataTableSkeleton /> : null}
 
@@ -243,12 +232,14 @@ export default function AuditPage() {
 							) : null}
 						</div>
 
-						<aside
-							className="app-material-level-1 hidden min-h-0 rounded-lg border app-border-level-1 bg-card p-4 md:block"
-							data-testid="audit-detail-panel"
-						>
-							<AuditEventDetail eventId={selectedId} />
-						</aside>
+						{hasEvents ? (
+							<aside
+								className="hidden min-h-0 rounded-lg border app-border-level-1 bg-card p-4 md:block"
+								data-testid="audit-detail-panel"
+							>
+								<AuditEventDetail eventId={selectedId} />
+							</aside>
+						) : null}
 					</div>
 				</PageShell>
 

@@ -45,6 +45,30 @@ describe("AuthContext and protected shell", () => {
 		expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
 	});
 
+	it("lands payroll operators on Pay Runs instead of a dashboard", async () => {
+		const { handlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		server.use(...handlers);
+
+		const { router } = renderApp({ initialEntries: ["/"] });
+
+		await waitFor(() => {
+			expect(router.state.location.pathname).toBe("/pay-runs");
+		});
+	});
+
+	it("lands audit-only roles on Reports instead of an inaccessible worklist", async () => {
+		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("auditor") });
+		server.use(...handlers);
+
+		const { router } = renderApp({ initialEntries: ["/"] });
+
+		await waitFor(() => {
+			expect(router.state.location.pathname).toBe("/reports");
+		});
+	});
+
 	it("loads an authenticated org session and evaluates hasCapability strictly", async () => {
 		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("auditor") });
 		server.use(...handlers);

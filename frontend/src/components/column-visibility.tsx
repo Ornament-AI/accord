@@ -1,5 +1,5 @@
+import { ColumnsIcon as Columns3 } from "@phosphor-icons/react/dist/csr/Columns";
 import type { RowData, Table as TanstackTable, VisibilityState } from "@tanstack/react-table";
-import { Columns3 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -84,7 +84,7 @@ export function ColumnVisibilityToggle<TData>({
 				}
 			/>
 			<PopoverContent align="end" className="w-56 overflow-hidden p-0">
-				<div className="app-scrollbar max-h-96 overflow-y-auto scroll-fade p-2">
+				<div className="app-scrollbar max-h-96 overflow-y-auto scroll-fade p-1.5">
 					<div className="flex flex-col gap-0.5">
 						{hideableColumns.map((column) => {
 							const header = column.columnDef.header;
@@ -92,23 +92,25 @@ export function ColumnVisibilityToggle<TData>({
 								column.columnDef.meta?.label ?? (typeof header === "string" ? header : column.id);
 
 							return (
-								<div
+								// Base UI renders the visually hidden native checkbox inside this label.
+								// biome-ignore lint/a11y/noLabelWithoutControl: the input is injected by CheckboxPrimitive.Root
+								<label
 									key={column.id}
-									className="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-muted/50"
+									className="group flex min-h-10 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors hover:bg-muted/60 focus-within:bg-muted/60"
 								>
 									<Checkbox
 										aria-label={`Toggle ${columnLabel} column`}
 										checked={column.getIsVisible()}
+										className="size-[1.125rem] rounded-[5px]"
 										onCheckedChange={(checked) => column.toggleVisibility(!!checked)}
 									/>
-									<button
-										type="button"
-										className="flex-1 cursor-pointer rounded-sm text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-										onClick={() => column.toggleVisibility(!column.getIsVisible())}
+									<span
+										aria-hidden="true"
+										className="select-none text-foreground/90 group-hover:text-foreground"
 									>
 										{columnLabel}
-									</button>
-								</div>
+									</span>
+								</label>
 							);
 						})}
 					</div>

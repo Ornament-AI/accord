@@ -1,5 +1,5 @@
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
-import { XIcon } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -58,7 +58,10 @@ function SheetOverlay({
 	return (
 		<SheetPrimitive.Backdrop
 			data-slot="sheet-overlay"
-			className={cn("accord-motion-overlay fixed inset-0 z-50 bg-black/50", className)}
+			className={cn(
+				"accord-motion-overlay fixed inset-0 z-50 bg-black/62 backdrop-blur-[3px]",
+				className,
+			)}
 			{...props}
 		/>
 	);

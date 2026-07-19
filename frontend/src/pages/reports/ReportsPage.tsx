@@ -1,4 +1,4 @@
-import { WalletCards } from "lucide-react";
+import { ChartBarIcon as WalletCards } from "@phosphor-icons/react/dist/csr/ChartBar";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppLayout } from "@/components/app-layout";

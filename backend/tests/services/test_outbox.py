@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db import get_session_factory
 from app.exceptions import ValidationError
 from app.models.base import utcnow
-from app.models.identity import OrganizationSettings
+from app.models.identity import Organization
 from app.models.platform import OutboxEvent
 from app.services import outbox
 from tests.identity_helpers import seed_organization
@@ -63,13 +63,12 @@ async def test_emit_event_type_validation(session):
 
 @pytest.mark.asyncio
 async def test_emit_atomic_with_other_writes_commit_and_rollback(session):
-    org = await seed_organization(session, slug="outbox-atomic", with_settings=False)
+    org = await seed_organization(session, slug="outbox-atomic")
     await session.commit()
     org_id = org.id
 
-    # Commit path: outbox + settings land together.
-    settings = OrganizationSettings(organization_id=org_id, timezone="Asia/Kolkata")
-    session.add(settings)
+    # Commit path: outbox + domain write land together.
+    org.name = "Committed Name"
     event = await _emit(session, org_id, payload={"path": "commit"})
     await session.commit()
 
@@ -79,21 +78,15 @@ async def test_emit_atomic_with_other_writes_commit_and_rollback(session):
             await other.execute(select(OutboxEvent).where(OutboxEvent.id == event.id))
         ).scalar_one()
         assert loaded.payload == {"path": "commit"}
-        settings_row = (
-            await other.execute(
-                select(OrganizationSettings).where(OrganizationSettings.organization_id == org_id)
-            )
-        ).scalar_one()
-        assert settings_row.timezone == "Asia/Kolkata"
+        organization = await other.get(Organization, org_id)
+        assert organization is not None
+        assert organization.name == "Committed Name"
 
     # Rollback path: both writes disappear.
     async with factory() as db:
-        existing = (
-            await db.execute(
-                select(OrganizationSettings).where(OrganizationSettings.organization_id == org_id)
-            )
-        ).scalar_one()
-        existing.timezone = "UTC"
+        existing = await db.get(Organization, org_id)
+        assert existing is not None
+        existing.name = "Rolled Back Name"
         rolled = await outbox.emit_event(
             db,
             organization_id=org_id,
@@ -107,12 +100,9 @@ async def test_emit_atomic_with_other_writes_commit_and_rollback(session):
         assert (
             await other.execute(select(OutboxEvent).where(OutboxEvent.id == rolled_id))
         ).scalar_one_or_none() is None
-        settings_row = (
-            await other.execute(
-                select(OrganizationSettings).where(OrganizationSettings.organization_id == org_id)
-            )
-        ).scalar_one()
-        assert settings_row.timezone == "Asia/Kolkata"
+        organization = await other.get(Organization, org_id)
+        assert organization is not None
+        assert organization.name == "Committed Name"
 
 
 @pytest.mark.asyncio

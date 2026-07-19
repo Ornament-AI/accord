@@ -1,4 +1,4 @@
-import { ShieldOff } from "lucide-react";
+import { ShieldSlashIcon as ShieldOff } from "@phosphor-icons/react/dist/csr/ShieldSlash";
 import type { ReactNode } from "react";
 
 import { AppLayout } from "@/components/app-layout";

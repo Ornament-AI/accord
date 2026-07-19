@@ -1,6 +1,8 @@
 import { Toggle as TogglePrimitive } from "@base-ui/react/toggle";
 import { ToggleGroup as ToggleGroupPrimitive } from "@base-ui/react/toggle-group";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { DesktopIcon as Monitor } from "@phosphor-icons/react/dist/csr/Desktop";
+import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
+import { SunIcon as Sun } from "@phosphor-icons/react/dist/csr/Sun";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 import type { Theme } from "@/lib/ui/providers/theme-provider";
 import { useTheme } from "@/lib/ui/providers/theme-provider";

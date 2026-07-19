@@ -48,6 +48,8 @@ describe("Audit history page", () => {
 				{ timeout: PAGE_TIMEOUT },
 			);
 			expect(rows.length).toBe(20);
+			expect(screen.getByTestId("audit-detail-panel")).toBeInTheDocument();
+			expect(screen.getByText("Select an event")).toBeInTheDocument();
 			// Seed index 0 is newest and uses payroll_run.post.
 			expect(rows[0]).toHaveAccessibleName(/View audit event payroll_run\.post/);
 
@@ -64,7 +66,7 @@ describe("Audit history page", () => {
 	);
 
 	it(
-		"sends correct query params for each filter",
+		"sends text filter params and renders the date calendar without presets",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("auditor"),
@@ -103,17 +105,9 @@ describe("Audit history page", () => {
 			});
 
 			fireEvent.click(screen.getByLabelText("Filter by Date Range"));
-			fireEvent.click(await screen.findByRole("button", { name: "Last 7 Days" }));
-
-			await waitFor(() => {
-				const withDates = capturedListRequests.filter(
-					(params) => params.from !== null && params.to !== null,
-				);
-				expect(withDates.length).toBeGreaterThan(0);
-				const latest = withDates[withDates.length - 1];
-				expect(latest.from).toMatch(/T00:00:00$/);
-				expect(latest.to).toMatch(/T23:59:59$/);
-			});
+			expect(screen.getAllByRole("grid").length).toBeGreaterThan(0);
+			expect(screen.queryByRole("button", { name: "Last 7 Days" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Last 30 Days" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -241,6 +235,8 @@ describe("Audit history page", () => {
 				await screen.findByText("No audit events", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(screen.getByText("No events match the current filters.")).toBeInTheDocument();
+			expect(screen.queryByTestId("audit-detail-panel")).not.toBeInTheDocument();
+			expect(screen.queryByText("Select an event")).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);

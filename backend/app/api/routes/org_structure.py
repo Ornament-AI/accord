@@ -1,4 +1,4 @@
-"""Org-structure master data and organization settings routes (Phase 3)."""
+"""Organization-structure master data routes."""
 
 from __future__ import annotations
 
@@ -16,8 +16,6 @@ from app.schemas.org_structure import (
     OfficeCreate,
     OfficeResponse,
     OfficeUpdate,
-    OrganizationSettingsResponse,
-    OrganizationSettingsUpdate,
     PayrollUnitCreate,
     PayrollUnitResponse,
     PayrollUnitUpdate,
@@ -30,7 +28,6 @@ from app.services.org_structure import (
     create_office,
     create_payroll_unit,
     create_post,
-    get_organization_settings,
     list_employee_groups,
     list_offices,
     list_payroll_units,
@@ -38,7 +35,6 @@ from app.services.org_structure import (
     post_to_response,
     update_employee_group,
     update_office,
-    update_organization_settings,
     update_payroll_unit,
     update_post,
 )
@@ -220,30 +216,4 @@ async def update_employee_group_route(
         employee_group_id,
         name=body.name,
         code=body.code,
-    )
-
-
-@router.get("/organization-settings", response_model=OrganizationSettingsResponse)
-async def get_organization_settings_route(
-    ctx: TenantCtx,
-    db: Session,
-    _principal: Annotated[AuthPrincipal, Depends(require_capability("manage_organization"))],
-) -> OrganizationSettingsResponse:
-    return await get_organization_settings(db, UUID(ctx.organization_id))
-
-
-@router.patch("/organization-settings", response_model=OrganizationSettingsResponse)
-async def update_organization_settings_route(
-    body: OrganizationSettingsUpdate,
-    ctx: TenantCtx,
-    db: Session,
-    _principal: Annotated[AuthPrincipal, Depends(require_capability("manage_organization"))],
-) -> OrganizationSettingsResponse:
-    return await update_organization_settings(
-        db,
-        UUID(ctx.organization_id),
-        locale=body.locale,
-        timezone=body.timezone,
-        currency=body.currency,
-        financial_year_start_month=body.financial_year_start_month,
     )

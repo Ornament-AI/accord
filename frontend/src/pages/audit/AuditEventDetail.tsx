@@ -1,4 +1,5 @@
-import { ChevronDown, ClipboardList } from "lucide-react";
+import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { ClipboardTextIcon as ClipboardList } from "@phosphor-icons/react/dist/csr/ClipboardText";
 import { type ReactNode, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";

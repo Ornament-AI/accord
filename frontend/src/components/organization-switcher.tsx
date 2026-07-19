@@ -1,4 +1,5 @@
-import { Check, ChevronsUpDown } from "lucide-react";
+import { CaretUpDownIcon as ChevronsUpDown } from "@phosphor-icons/react/dist/csr/CaretUpDown";
+import { CheckIcon as Check } from "@phosphor-icons/react/dist/csr/Check";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -69,7 +70,7 @@ export function OrganizationSwitcher() {
 									{activeOrganization ? APP_SUBTITLE : APP_NAME}
 								</span>
 							</div>
-							<ChevronsUpDown className="ml-auto size-4 group-data-[collapsible=icon]:hidden" />
+							<ChevronsUpDown className="ml-auto size-4 text-muted-foreground! group-data-[collapsible=icon]:hidden" />
 						</DropdownMenuTrigger>
 						<DropdownMenuContent
 							className="w-(--anchor-width) min-w-56 rounded-lg"

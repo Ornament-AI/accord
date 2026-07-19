@@ -51,13 +51,13 @@ describe("LoginPage", () => {
 		const { handlers } = createAuthHandlers({ unauthenticated: true });
 		server.use(...handlers);
 
-		renderLogin("/login?returnTo=%2Fdashboard");
+		renderLogin("/login?returnTo=%2Fpay-runs");
 		await screen.findByRole("button", { name: "Sign in" });
 
 		fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
 		await waitFor(() => {
-			expect(assignSpy).toHaveBeenCalledWith("/api/auth/login?return_to=%2Fdashboard");
+			expect(assignSpy).toHaveBeenCalledWith("/api/auth/login?return_to=%2Fpay-runs");
 		});
 	});
 

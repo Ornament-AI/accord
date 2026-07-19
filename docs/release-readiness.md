@@ -123,7 +123,7 @@ Copied from [release-acceptance.md](release-acceptance.md); verdicts as of 2026-
 
 ## Known residual items (do not ship as “all green”)
 
-1. **Playwright headless create-org dialog** — still under debugging. Documented in `frontend/e2e/README.md` (Live-run status 2026-07-18): headless Chromium setup-spec dialog-open / portal timing is flaky; create-org → dashboard covered by `backend/tests/e2e/test_june_golden_e2e.py`, API reproduction, and frontend component tests (including `frontend/src/components/create-organization-dialog.test.tsx`).
+1. **Playwright headless create-org dialog** — still under debugging. Documented in `frontend/e2e/README.md` (Live-run status 2026-07-18): headless Chromium setup-spec dialog-open / portal timing is flaky; create-org → authenticated app covered by `backend/tests/e2e/test_june_golden_e2e.py`, API reproduction, and frontend component tests (including `frontend/src/components/create-organization-dialog.test.tsx`).
 2. **`docs/security-review.md` does not exist** — do not cite it. Use `docs/security.md` and `docs/threat-model.md`.
 3. **Acceptance-matrix path drift** — many `docs/testing.md` / `docs/release-acceptance.md` suite paths were never created; coverage lives under `domain/`, `services/`, `gate_d/`, `reports/`, `api/`, and `frontend/e2e/*.spec.ts` alternate names. Update contracts or add shims before treating named paths as CI entrypoints.
 4. **Missing security suites** — CSRF synchronizer tests, support break-glass tests, backup/restore RLS rehearsal, PII fixture CI guard script.
@@ -166,7 +166,6 @@ Copied from [release-acceptance.md](release-acceptance.md); verdicts as of 2026-
 | `d95528f` | feat(integration): assemble report platform — registry, app/worker wiring, reports UI routes |
 | `c9bcbb1` | test(e2e): June golden end-to-end through the full HTTP stack |
 | `84c075d` | test(e2e): Playwright critical-path suite with axe accessibility checks |
-| `f0a459e` | feat(frontend): real payroll dashboard |
 | `282e2ef` | feat(ops): Prometheus metrics, readiness depth, structured-log redaction |
 | `fec03ad` | fix(workflow): payroll input upsert 500 and idempotent-command RLS 404; auth-race guard |
 | `d228281` | feat(deploy): release workflow, architecture doc, README quick start |

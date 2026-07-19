@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { queryClient } from "@/lib/query-client";
@@ -102,6 +102,22 @@ describe("Org setup catalog pages", () => {
 	);
 
 	it(
+		"keeps the empty-state Add action in the page header only",
+		async () => {
+			await setupPage("/organization/employee-groups", "organization_administrator", {
+				employeeGroups: [],
+			});
+
+			expect(
+				await screen.findByText("No employee groups", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.getAllByRole("button", { name: /^Add$/i })).toHaveLength(1);
+			expect(screen.queryByText("Add an employee group to get started.")).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
 		"surfaces 409 create conflicts as a field error",
 		async () => {
 			await setupPage("/organization/offices", "organization_administrator", {
@@ -193,82 +209,6 @@ describe("Org setup capability gating", () => {
 			await setupPage("/organization");
 			expect(
 				await screen.findByTestId("offices-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-});
-
-describe("Org settings page", () => {
-	beforeEach(() => {
-		queryClient.clear();
-		vi.clearAllMocks();
-	});
-
-	it(
-		"updates settings on the happy path with a success toast",
-		async () => {
-			const { toast } = await import("sonner");
-			await setupPage("/organization/settings");
-			expect(
-				await screen.findByTestId("settings-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			expect(await screen.findByTestId("settings-tab")).toBeInTheDocument();
-			expect(screen.getByLabelText("Locale")).toHaveValue("en-IN");
-
-			fireEvent.change(screen.getByLabelText("Locale"), { target: { value: "en-GB" } });
-			fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "GBP" } });
-			fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
-
-			await waitFor(() => {
-				expect(toast.success).toHaveBeenCalledWith("Organization settings saved");
-			});
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"surfaces 422 validation errors on settings fields",
-		async () => {
-			await setupPage("/organization/settings", "organization_administrator", {
-				settingsUpdateError: {
-					status: 422,
-					body: {
-						detail: [
-							{
-								loc: ["body", "locale"],
-								msg: "Invalid locale",
-								type: "value_error",
-							},
-						],
-					},
-				},
-			});
-			expect(
-				await screen.findByTestId("settings-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			expect(await screen.findByTestId("settings-tab")).toBeInTheDocument();
-			fireEvent.change(screen.getByLabelText("Locale"), { target: { value: "nope" } });
-			fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
-
-			expect(await screen.findByText("Invalid locale")).toBeInTheDocument();
-			const localeField = screen.getByLabelText("Locale").closest("div");
-			expect(localeField).not.toBeNull();
-			expect(within(localeField as HTMLElement).getByText("Invalid locale")).toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"denies settings without manage_organization",
-		async () => {
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("payroll_reviewer"),
-			});
-			server.use(...authHandlers);
-			renderApp({ initialEntries: ["/organization/settings"] });
-			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,

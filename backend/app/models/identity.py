@@ -13,11 +13,9 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
-    Integer,
     Text,
     UniqueConstraint,
     text,
-    CHAR,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID as PG_UUID
 from sqlmodel import Field
@@ -192,64 +190,6 @@ class OrganizationMembership(
             Boolean,
             nullable=False,
             server_default=text("true"),
-        ),
-    )
-
-
-class OrganizationSettings(
-    UUIDPrimaryKeyMixin,
-    TimestampMixin,
-    OrganizationOwnedMixin,
-    table=True,
-):
-    """Per-organization configuration (one row per org)."""
-
-    __tablename__ = "organization_settings"
-    __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            name="uq_organization_settings_organization_id",
-        ),
-        CheckConstraint(
-            "financial_year_start_month BETWEEN 1 AND 12",
-            name="ck_organization_settings_financial_year_start_month",
-        ),
-    )
-
-    id: uuid.UUID = _id_field()
-    created_at: datetime = _created_at_field()
-    updated_at: datetime = _updated_at_field()
-    organization_id: uuid.UUID = _organization_id_field()
-    locale: str = Field(
-        default="en-IN",
-        sa_column=Column(
-            Text,
-            nullable=False,
-            server_default=text("'en-IN'"),
-        ),
-    )
-    timezone: str = Field(
-        default="Asia/Kolkata",
-        sa_column=Column(
-            Text,
-            nullable=False,
-            server_default=text("'Asia/Kolkata'"),
-        ),
-    )
-    currency: str = Field(
-        default="INR",
-        sa_column=Column(
-            CHAR(3),
-            nullable=False,
-            server_default=text("'INR'"),
-        ),
-    )
-    financial_year_start_month: int = Field(
-        default=4,
-        sa_column=Column(
-            Integer,
-            nullable=False,
-            server_default=text("4"),
         ),
     )
 

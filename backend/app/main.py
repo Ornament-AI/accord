@@ -22,7 +22,6 @@ from app.api.routes import (
     artifacts,
     audit,
     auth,
-    dashboard,
     employees,
     health,
     org_structure,
@@ -331,7 +330,6 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix="/api")
     app.include_router(artifacts.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
-    app.include_router(dashboard.router, prefix="/api")
 
     # Seed registry so readiness works when ASGI test clients skip lifespan.
     # Lifespan re-wires via wire_report_platform() on real process start.

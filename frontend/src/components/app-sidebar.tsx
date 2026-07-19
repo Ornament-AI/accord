@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { CaretRightIcon as ChevronRight } from "@phosphor-icons/react/dist/csr/CaretRight";
 import type * as React from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
@@ -84,7 +84,7 @@ function NavFolderItem({
 				<CollapsibleTrigger render={<SidebarMenuButton tooltip={item.title} isActive={false} />}>
 					<item.icon />
 					<span>{item.title}</span>
-					<ChevronRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90" />
+					<ChevronRight className="ml-auto text-muted-foreground! transition-transform group-data-[state=open]/collapsible:rotate-90" />
 				</CollapsibleTrigger>
 				<CollapsibleContent>
 					<SidebarMenuSub>

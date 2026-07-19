@@ -1,5 +1,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
+import { CaretRightIcon as ChevronRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
+import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
+import { CircleIcon } from "@phosphor-icons/react/dist/csr/Circle";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";

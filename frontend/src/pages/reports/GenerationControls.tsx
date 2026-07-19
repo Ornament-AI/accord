@@ -1,4 +1,6 @@
-import { Download, Loader2, RotateCcw } from "lucide-react";
+import { ArrowCounterClockwiseIcon as RotateCcw } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
+import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react/dist/csr/CircleNotch";
+import { DownloadSimpleIcon as Download } from "@phosphor-icons/react/dist/csr/DownloadSimple";
 
 import { Button } from "@/components/ui/button";
 import { isActiveJobStatus, type ReportCatalogEntry } from "@/lib/api/reports";

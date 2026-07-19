@@ -1,5 +1,7 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { CaretDownIcon as ChevronDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { CaretUpIcon as ChevronUpIcon } from "@phosphor-icons/react/dist/csr/CaretUp";
+import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";

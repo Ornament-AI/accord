@@ -1,5 +1,5 @@
+import { UsersThreeIcon as UsersRound } from "@phosphor-icons/react/dist/csr/UsersThree";
 import type { ColumnDef } from "@tanstack/react-table";
-import { UsersRound } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,6 @@ export function EmployeeGroupsTab({
 		<>
 			<CatalogTab
 				title="Employee Groups"
-				emptyDescription="Add an employee group to get started."
 				icon={UsersRound}
 				columns={columns}
 				data={listQuery.data}
@@ -61,7 +60,6 @@ export function EmployeeGroupsTab({
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
 				data-testid="employee-groups-tab"
 			/>

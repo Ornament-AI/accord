@@ -1,5 +1,5 @@
+import { BankIcon as Landmark } from "@phosphor-icons/react/dist/csr/Bank";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Landmark } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,6 @@ export function PayrollUnitsTab({
 		<>
 			<CatalogTab
 				title="Payroll Units"
-				emptyDescription="Add a payroll unit to get started."
 				icon={Landmark}
 				columns={columns}
 				data={listQuery.data}
@@ -61,7 +60,6 @@ export function PayrollUnitsTab({
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
 				data-testid="payroll-units-tab"
 			/>

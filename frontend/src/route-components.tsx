@@ -9,7 +9,6 @@ import NoOrganizationPage from "@/pages/NoOrganizationPage";
 import {
 	EmployeeGroupsPage,
 	OfficesPage,
-	OrgSettingsPage,
 	OrgSetupIndexRedirect,
 	PayrollUnitsPage,
 	PostsPage,
@@ -50,6 +49,21 @@ export function ProtectedLayout() {
 	);
 }
 
+export function AuthenticatedIndexRedirect() {
+	const { hasCapability } = useAuth();
+
+	if (hasCapability("create_run")) {
+		return <Navigate to="/pay-runs" replace />;
+	}
+	if (hasCapability("view_master_data")) {
+		return <Navigate to="/employees" replace />;
+	}
+	if (hasCapability("generate_reports")) {
+		return <Navigate to="/reports" replace />;
+	}
+	return <Navigate to="/audit" replace />;
+}
+
 export function RouteErrorFallback() {
 	const error = useRouteError();
 
@@ -77,21 +91,13 @@ export function RouteErrorFallback() {
 }
 
 export const LoginPage = lazy(() => import("@/pages/LoginPage"));
-export const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 export const EmployeeListPage = lazy(() => import("@/pages/employees/EmployeeListPage"));
 export const EmployeeDetailPage = lazy(() => import("@/pages/employees/EmployeeDetailPage"));
 export const PayComponentsPage = lazy(() => import("@/pages/pay-components/PayComponentsPage"));
 export const PayComponentDetailPage = lazy(
 	() => import("@/pages/pay-components/PayComponentDetailPage"),
 );
-export {
-	EmployeeGroupsPage,
-	OfficesPage,
-	OrgSettingsPage,
-	OrgSetupIndexRedirect,
-	PayrollUnitsPage,
-	PostsPage,
-};
+export { EmployeeGroupsPage, OfficesPage, OrgSetupIndexRedirect, PayrollUnitsPage, PostsPage };
 export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsPage = lazy(() => import("@/pages/reports/ReportsPage"));

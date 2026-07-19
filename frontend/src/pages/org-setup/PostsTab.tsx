@@ -1,5 +1,5 @@
+import { BriefcaseIcon as Briefcase } from "@phosphor-icons/react/dist/csr/Briefcase";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Briefcase } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,6 @@ export function PostsTab({ canManage, createOpen, onCreateOpenChange }: PostsTab
 		<>
 			<CatalogTab
 				title="Posts"
-				emptyDescription="Add a post to get started."
 				icon={Briefcase}
 				columns={columns}
 				data={listQuery.data}
@@ -57,7 +56,6 @@ export function PostsTab({ canManage, createOpen, onCreateOpenChange }: PostsTab
 				error={listQuery.error}
 				onRetry={() => void listQuery.refetch()}
 				canManage={canManage}
-				onAdd={() => onCreateOpenChange(true)}
 				onEdit={setEditing}
 				data-testid="posts-tab"
 			/>

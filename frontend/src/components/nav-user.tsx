@@ -1,4 +1,5 @@
-import { EllipsisVertical, LogOut } from "lucide-react";
+import { DotsThreeOutlineVerticalIcon as EllipsisVertical } from "@phosphor-icons/react/dist/csr/DotsThreeOutlineVertical";
+import { SignOutIcon as LogOut } from "@phosphor-icons/react/dist/csr/SignOut";
 import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {

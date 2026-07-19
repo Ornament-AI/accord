@@ -1,5 +1,7 @@
+import { InfoIcon as Info } from "@phosphor-icons/react/dist/csr/Info";
+import { WarningIcon as AlertTriangle } from "@phosphor-icons/react/dist/csr/Warning";
+import { WarningCircleIcon as AlertCircle } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import { cva, type VariantProps } from "class-variance-authority";
-import { AlertCircle, AlertTriangle, Info } from "lucide-react";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";

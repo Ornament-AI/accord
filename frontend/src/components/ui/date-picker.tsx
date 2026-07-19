@@ -1,4 +1,4 @@
-import { CalendarIcon } from "lucide-react";
+import { CalendarBlankIcon as CalendarIcon } from "@phosphor-icons/react/dist/csr/CalendarBlank";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";

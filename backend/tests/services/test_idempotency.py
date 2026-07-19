@@ -396,10 +396,6 @@ async def test_execute_claimed_rebinds_tenant_gucs_under_accord_app(
             "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
             (org_id, "Idem GUC Org", "idem-guc-rebind"),
         )
-        conn.execute(
-            "INSERT INTO organization_settings (organization_id) VALUES (%s)",
-            (org_id,),
-        )
         conn.commit()
 
     # NullPool returns/closes the connection on commit, which drops SET ROLE.
