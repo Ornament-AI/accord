@@ -17,7 +17,7 @@ export function PageToolbar({
 }: PageToolbarProps) {
 	return (
 		<div className={cn("flex items-center justify-between gap-4", className)}>
-			<div className="scroll-fade-x no-scrollbar -m-1 flex flex-nowrap items-center gap-2 overflow-x-auto p-1 [&>*]:shrink-0">
+			<div className="scroll-fade-x no-scrollbar -m-1 flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto p-1 [&>*]:shrink-0">
 				{children}
 			</div>
 			{trailing ? (
