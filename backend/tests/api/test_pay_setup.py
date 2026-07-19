@@ -163,6 +163,17 @@ async def test_pay_component_employer_transfer_metadata_is_validated_and_editabl
     assert patched.json()["employer_transfer"] is True
     assert patched.json()["transfer_of"] is None
 
+    null_flag = await client.patch(
+        f"/api/pay-components/{body['id']}",
+        json={"employer_transfer": None},
+    )
+    assert null_flag.status_code == 422, null_flag.text
+
+    unchanged = await client.get("/api/pay-components")
+    assert unchanged.status_code == 200, unchanged.text
+    saved = next(component for component in unchanged.json() if component["id"] == body["id"])
+    assert saved["employer_transfer"] is True
+
     invalid_class = await client.post(
         "/api/pay-components",
         json={
