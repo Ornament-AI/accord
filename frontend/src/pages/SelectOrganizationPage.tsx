@@ -42,25 +42,27 @@ export default function SelectOrganizationPage() {
 			className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-background p-6 md:p-10 [--ray-color:oklch(0.704_0.14_182.503/0.12)] dark:[--ray-color:oklch(0.47_0.076_188.216/0.10)]"
 		>
 			<LightRays color="var(--ray-color)" count={8} blur={30} speed={12} length="75vh" />
-			<div className="absolute top-6 left-6 z-20 flex items-center gap-2">
-				<span
-					className="flex h-8 max-w-[min(100vw-12rem,18rem)] items-center truncate rounded-full border app-border-level-1 bg-card/90 px-3 text-sm leading-none text-muted-foreground shadow-sm backdrop-blur-sm"
-					title={user?.email}
-				>
-					{user?.email}
-				</span>
-				<Button
-					type="button"
-					variant="outline"
-					size="sm"
-					className="h-8 rounded-full border app-border-level-1 bg-card/90 px-3 text-sm font-normal leading-none text-muted-foreground shadow-sm backdrop-blur-sm hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive dark:bg-card/90 dark:hover:bg-destructive/15 dark:hover:text-destructive"
-					onClick={() => void handleSignOut()}
-				>
-					Sign Out
-				</Button>
-			</div>
-			<div className="absolute top-6 right-6 z-20">
-				<ThemeSwitcher />
+			<div className="absolute top-6 right-6 left-6 z-20 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+				<div className="flex min-w-0 items-center gap-2">
+					<span
+						className="flex h-8 min-w-0 max-w-[min(100vw-12rem,18rem)] items-center truncate rounded-full border app-border-level-1 bg-card/90 px-3 text-sm leading-none text-muted-foreground shadow-sm backdrop-blur-sm"
+						title={user?.email}
+					>
+						{user?.email}
+					</span>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						className="h-8 shrink-0 rounded-full border app-border-level-1 bg-card/90 px-3 text-sm font-normal leading-none text-muted-foreground shadow-sm backdrop-blur-sm hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive dark:bg-card/90 dark:hover:bg-destructive/15 dark:hover:text-destructive"
+						onClick={() => void handleSignOut()}
+					>
+						Sign Out
+					</Button>
+				</div>
+				<div className="self-end sm:self-auto">
+					<ThemeSwitcher />
+				</div>
 			</div>
 
 			<div className="relative z-10 flex w-full max-w-sm flex-col gap-6">

@@ -104,7 +104,7 @@ export async function ensureUniqueOrganization(page: Page, opts: { name: string 
 		// one deterministically so the switcher is available for creating this
 		// run's isolated organization.
 		await selectionPage.getByTestId("organization-option").first().click();
-		await ensureAuthenticatedLanding(page);
+		await expect(landing).toBeVisible({ timeout: 30_000 });
 	}
 
 	// Already authenticated into some org (e.g. retry after a prior create).
