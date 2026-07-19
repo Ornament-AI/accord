@@ -136,10 +136,10 @@ A synthetic June 2026 fixture / test dataset **MUST** reproduce these aggregate 
 | Aggregate | Amount (INR) | Notes |
 | --- | --- | ---: |
 | Salary earnings | 5,073,200 | |
-| Employer share | 29,785 | See open question below |
+| Employer share | 29,785 | EPF employer only (gross-bill); see resolution below |
 | Gross bill | 5,102,985 | |
 | Total deductions | 1,264,890 | Includes employer transfer |
-| Net payable | 3,838,095 | |
+| Net payable | 3,838,095 | Treasury-face net; employee disbursement is 3,991,038 (see resolution) |
 | GPF | 280,000 | Mumbai 165,000 / Nagpur 115,000 |
 | Employer transfer | 182,728 | |
 | Employee contribution | 139,030 | |
@@ -164,34 +164,49 @@ A synthetic June 2026 fixture / test dataset **MUST** reproduce these aggregate 
 | Deduction detail rollup | GPF + employer transfer + employee contribution + HBA + income tax + GIS + accommodation + professional tax | **1,264,890** ✓ (280,000 + 182,728 + 139,030 + 72,723 + 550,700 + 22,440 + 11,669 + 5,600) |
 | Narrow employer share vs EPF employer | employer share 29,785 vs EPF employer 29,785 | **Equal** ✓ |
 
-### Open question — NPS employer vs narrow “employer share” / gross-bill pairing
+### Resolved — NPS employer treatment and “Net Payable” definition
 
-**Do not silently resolve this.**
+**Status: RESOLVED.** Department sign-off 18 July 2026 (Finance/Payroll). Source of
+truth: MSIDC *June 2026 Regular Staff* pay bill and its MTR-19 treasury face
+(`Pay Bill` and ` Face ` sheets). The three earlier candidate readings are settled as
+follows.
 
-Observed facts from the invariants:
+Confirmed facts from the reference bill:
 
-1. **Employer share** (29,785) equals **EPF employer only** (29,785).
-2. **Gross bill** is built as `salary_earnings + employer_share` using that narrow figure (NPS employer **152,943** is **not** in gross bill).
-3. **Employer transfer** (182,728) equals **NPS employer + EPF employer** (152,943 + 29,785).
-4. Therefore NPS employer appears in **total deductions / employer transfer** without a matching **employer_contribution** addition in **gross bill**.
+1. **Employer share** added into the gross bill is **EPF employer only** (29,785).
+   `Pay Bill!L208 = 29,785`, and the treasury face builds
+   `Gross Total = Total Pay + Employer Share` off exactly that cell.
+2. **NPS/DCPS employer (152,943) is off-bill**: it is **never** added to the gross
+   bill. It appears only on the remittance/deduction side (treasury-face line 47,
+   `8342 DCPS`) and is remitted separately.
+3. **Employer transfer** (182,728 = NPS employer 152,943 + EPF employer 29,785) is a
+   **wider remittance bucket** than gross-bill `employer_contribution`. Only the EPF
+   leg (29,785) has a paired gross-bill addition.
 
-Consequences for the Gross-to-net pairing identity:
+Resolution (lock these as engine behavior):
 
-- The pairing identity `sum(employer_contribution in gross_bill) = sum(paired transfer-outs for those additions)` holds cleanly for **EPF** (29,785 = 29,785).
-- It does **not** hold for the full **employer transfer** total (182,728), because 152,943 of that transfer has no corresponding gross-bill addition in these invariants.
-- Operational net identity `gross_bill − total_deductions = net_payable` still holds arithmetically with the published totals.
-- Expanded form `gross_bill − employee_deductions = net_payable + employer_transfer` also holds numerically (5,102,985 − 1,082,162 = 3,838,095 + 182,728 = 4,020,823) even though conceptually NPS employer is not a pass-through through gross bill in this fixture.
+- The gross-bill pairing identity
+  `sum(employer_contribution in gross_bill) = sum(paired transfer-outs)` applies to
+  **gross-bill employer_contribution only** — EPF in this fixture (29,785 = 29,785). It
+  must **not** be asserted over the full employer-transfer total. NPS employer is
+  tracked as a distinct **off-bill employer remittance** bucket, reconciled to the NPS
+  contribution schedule, and never paired to a gross addition.
+- **“Net Payable” (3,838,095) is the treasury-face / bill figure**:
+  `gross_bill − total_deductions`, where total deductions include NPS employer.
+- **Employee disbursement is a separate figure and is NOT asserted equal to Net
+  Payable.** Bank/RTGS advice and payslip nets reconcile to employee disbursement
+  (`salary_earnings − employee-side deductions = 5,073,200 − 1,082,162 = 3,991,038`),
+  which exceeds Net Payable by exactly the off-bill NPS employer amount
+  (3,991,038 − 3,838,095 = 152,943). These two totals are reconciled independently.
 
-**Open question (must be answered from historical workbooks / finance sign-off before locking engine behavior):**
+Implemented as `offbill_employer_remittance` and `disbursement` on the calculation
+result and the posted snapshot (`payroll_employee_results`, run-version `totals`).
+Bank/RTGS advice and payslip take-home reconcile to `disbursement`; the Pay Bill
+register, treasury face, and approval note continue to report `net_payable`.
+`fixtures/sanitized/june-2026/expected_totals.json` records both
+(`bank_rtgs_advice_sum` / `payslip_nets_sum` = 3,991,038).
 
-- Should NPS employer be included in **employer share** and **gross bill** (true pass-through), with employer transfer remaining 182,728? That would change gross bill and break the current gross/net invariant numbers unless other lines change.
-- Or is NPS employer intentionally **off-bill** (remitted/reported differently) while still listed under “employer transfer” in this fixture’s deduction taxonomy—meaning “employer transfer” is not identical to “transfer-out of gross-bill employer_contribution”?
-- Or is the fixture taxonomy using “employer share” in a narrow EPF-only reporting sense while “employer transfer” is a wider remittance bucket?
-
-Until resolved, implementations and tests must:
-
-1. Reproduce the table **exactly** as given; and  
-2. Treat NPS-employer-vs-employer-share gross-bill pairing as an **explicit open question**, not as a silent assumption that NPS employer is inside employer share.
+Run `./scripts/verify-disbursement.sh` to check the whole identity end to end.
 
 ---
 

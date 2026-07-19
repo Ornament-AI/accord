@@ -217,9 +217,46 @@ def _pay_component_response(component: PayComponent) -> dict[str, Any]:
         "classification": component.classification,
         "is_active": component.is_active,
         "display_order": component.display_order,
+        "employer_transfer": component.employer_transfer,
+        "transfer_of": component.transfer_of,
         "created_at": component.created_at,
         "updated_at": component.updated_at,
     }
+
+
+async def _validate_employer_transfer_metadata(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    code: str,
+    classification: str,
+    employer_transfer: bool,
+    transfer_of: str | None,
+) -> None:
+    if not employer_transfer:
+        if transfer_of is not None:
+            raise ValidationError("transfer_of requires employer_transfer=true")
+        return
+    if classification not in {"ag_deduction", "treasury_deduction", "external_recovery"}:
+        raise ValidationError("employer_transfer requires a deduction classification")
+    if transfer_of is None:
+        return
+    if transfer_of == code:
+        raise ValidationError("An employer transfer cannot reference itself.")
+    target = (
+        await db.execute(
+            sa.select(PayComponent).where(
+                PayComponent.organization_id == organization_id,
+                PayComponent.code == transfer_of,
+            )
+        )
+    ).scalar_one_or_none()
+    if target is None:
+        raise ValidationError(f"Unknown employer contribution code: {transfer_of}")
+    if target.classification != "employer_contribution":
+        raise ValidationError(
+            f"transfer_of must reference an employer_contribution component: {transfer_of}"
+        )
 
 
 async def create_pay_component(
@@ -228,12 +265,22 @@ async def create_pay_component(
     organization_id: UUID,
     body: PayComponentCreate,
 ) -> dict[str, Any]:
+    await _validate_employer_transfer_metadata(
+        db,
+        organization_id=organization_id,
+        code=body.code.strip(),
+        classification=body.classification.value,
+        employer_transfer=body.employer_transfer,
+        transfer_of=body.transfer_of,
+    )
     component = PayComponent(
         organization_id=organization_id,
         code=body.code.strip(),
         name=body.name.strip(),
         classification=body.classification.value,
         display_order=body.display_order,
+        employer_transfer=body.employer_transfer,
+        transfer_of=body.transfer_of,
         is_active=True,
     )
     db.add(component)
@@ -281,6 +328,24 @@ async def update_pay_component(
         component.display_order = body.display_order
     if body.is_active is not None:
         component.is_active = body.is_active
+    employer_transfer = (
+        body.employer_transfer
+        if "employer_transfer" in body.model_fields_set
+        else component.employer_transfer
+    )
+    transfer_of = (
+        body.transfer_of if "transfer_of" in body.model_fields_set else component.transfer_of
+    )
+    await _validate_employer_transfer_metadata(
+        db,
+        organization_id=organization_id,
+        code=component.code,
+        classification=component.classification,
+        employer_transfer=employer_transfer,
+        transfer_of=transfer_of,
+    )
+    component.employer_transfer = employer_transfer
+    component.transfer_of = transfer_of
     component.updated_at = datetime.now(tz=component.updated_at.tzinfo)
     try:
         await db.flush()

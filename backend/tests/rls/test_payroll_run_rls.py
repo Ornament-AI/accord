@@ -161,9 +161,10 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
             "INSERT INTO payroll_employee_results "
             "(id, organization_id, run_version_id, employee_id, employee_number, "
             "earnings_total, employer_contribution_total, gross_total, "
-            "deductions_total, net_payable) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s), "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "deductions_total, net_payable, offbill_employer_remittance, "
+            "disbursement) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s), "
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 result_a_id,
                 org_a_id,
@@ -175,6 +176,8 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
                 "1200.00",
                 "100.00",
                 "900.00",
+                "0.00",
+                "900.00",
                 result_b_id,
                 org_b_id,
                 version_b_id,
@@ -184,6 +187,8 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
                 "400.00",
                 "2400.00",
                 "200.00",
+                "1800.00",
+                "0.00",
                 "1800.00",
             ),
         )

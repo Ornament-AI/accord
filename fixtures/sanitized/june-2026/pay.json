@@ -1026,7 +1026,7 @@
           "amount": "21000",
           "pran": "900000000001",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1093,7 +1093,7 @@
           "amount": "16800",
           "pran": "900000000002",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1165,7 +1165,7 @@
           "amount": "15400",
           "pran": "900000000003",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1232,7 +1232,7 @@
           "amount": "14000",
           "pran": "900000000004",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1299,7 +1299,7 @@
           "amount": "13300",
           "pran": "900000000005",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1366,7 +1366,7 @@
           "amount": "12600",
           "pran": "900000000006",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1433,7 +1433,7 @@
           "amount": "11900",
           "pran": "900000000007",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1500,7 +1500,7 @@
           "amount": "11200",
           "pran": "900000000008",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1567,7 +1567,7 @@
           "amount": "10500",
           "pran": "900000000009",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "INCOME_TAX",
@@ -1634,7 +1634,7 @@
           "amount": "9800",
           "pran": "900000000010",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "PROFESSIONAL_TAX",
@@ -1696,7 +1696,7 @@
           "amount": "9100",
           "pran": "900000000011",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "PROFESSIONAL_TAX",
@@ -1758,7 +1758,7 @@
           "amount": "7343",
           "pran": "900000000012",
           "employer_transfer": true,
-          "transfer_of": "NPS_EMPLOYER"
+          "transfer_of": null
         },
         {
           "component_code": "PROFESSIONAL_TAX",

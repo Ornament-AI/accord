@@ -50,7 +50,7 @@ from app.domain.payroll.inputs import ComponentInput, EmployeeCalcInput, RunCalc
 from app.domain.payroll.money import Money
 from app.domain.payroll.results import CalculationTrace, EmployeeResult, RunResult
 
-ENGINE_VERSION: str = "accord-engine/1.0.0"
+ENGINE_VERSION: str = "accord-engine/1.1.0"
 
 
 class CalculationCycleError(ValueError):
@@ -171,6 +171,59 @@ def _aggregate_lines(
     )
 
 
+def _offbill_employer_remittance(
+    components: Sequence[ComponentInput],
+    rounded_by_code: Mapping[str, Money],
+) -> Money:
+    """Sum of employer-transfer deduction lines with no paired gross addition.
+
+    An ``employer_transfer`` deduction reverses an ``employer_contribution`` that
+    was added into gross. When the paired contribution (``transfer_of``) is
+    present as a non-excluded ``employer_contribution`` line for this employee,
+    the pair is a true pass-through (EPF) — already net-neutral, so it is **not**
+    counted here. When the paired contribution is absent, the transfer reduced
+    net without any gross addition (NPS employer is off-bill per
+    docs/payroll-domain.md) and must be added back to reach employee
+    disbursement.
+    """
+    contributions = {
+        comp.component_code: rounded_by_code[comp.component_code]
+        for comp in components
+        if not comp.is_excluded_from_aggregates() and comp.classification == "employer_contribution"
+    }
+    offbill: list[Money] = []
+    for comp in components:
+        if comp.is_excluded_from_aggregates():
+            continue
+        if not comp.employer_transfer:
+            continue
+        if comp.classification not in {
+            "AG_deduction",
+            "treasury_deduction",
+            "external_recovery",
+        }:
+            raise ValueError(
+                f"employer-transfer component {comp.component_code!r} must be a deduction"
+            )
+        transfer_amount = rounded_by_code[comp.component_code]
+        if comp.transfer_of is None:
+            offbill.append(transfer_amount)
+            continue
+        paired_amount = contributions.get(comp.transfer_of)
+        if paired_amount is None:
+            raise ValueError(
+                f"employer-transfer component {comp.component_code!r} references missing "
+                f"employer contribution {comp.transfer_of!r}"
+            )
+        if paired_amount != transfer_amount:
+            raise ValueError(
+                f"employer-transfer component {comp.component_code!r} amount "
+                f"{transfer_amount.to_canonical_str()} does not match {comp.transfer_of!r} "
+                f"amount {paired_amount.to_canonical_str()}"
+            )
+    return _money_sum(offbill)
+
+
 def calculate_employee(input: EmployeeCalcInput) -> EmployeeResult:
     """Calculate one employee: topo-order calculators, then aggregate."""
     components = input.components
@@ -197,6 +250,8 @@ def calculate_employee(input: EmployeeCalcInput) -> EmployeeResult:
             source_version_ids=comp.source_version_ids,
             calculator_kind=comp.calc_kind,
             engine_version=ENGINE_VERSION,
+            employer_transfer=comp.employer_transfer,
+            transfer_of=comp.transfer_of,
         )
 
     # Emit lines in original input order (deterministic audit order).
@@ -213,6 +268,9 @@ def calculate_employee(input: EmployeeCalcInput) -> EmployeeResult:
         net_payable,
     ) = _aggregate_lines(components, computed)
 
+    offbill_employer_remittance = _offbill_employer_remittance(components, computed)
+    disbursement = net_payable + offbill_employer_remittance
+
     return EmployeeResult(
         employee_ref=input.employee_ref,
         lines=lines,
@@ -225,6 +283,8 @@ def calculate_employee(input: EmployeeCalcInput) -> EmployeeResult:
         external_recovery_total=external_recovery_total,
         deductions_total=deductions_total,
         net_payable=net_payable,
+        offbill_employer_remittance=offbill_employer_remittance,
+        disbursement=disbursement,
     )
 
 
@@ -243,6 +303,8 @@ def _canonical_run_payload(
     external_recovery_total: Money,
     deductions_total: Money,
     net_payable: Money,
+    offbill_employer_remittance: Money,
+    disbursement: Money,
 ) -> str:
     """Build a canonical JSON string for content hashing.
 
@@ -264,10 +326,12 @@ def _canonical_run_payload(
                     "classification": line.classification,
                     "component": line.component,
                     "engine_version": line.engine_version,
+                    "employer_transfer": line.employer_transfer,
                     "rate": None if line.rate is None else line.rate.to_canonical_str(),
                     "rounded_value": line.rounded_value.to_canonical_str(),
                     "rounding_rule": line.rounding_rule,
                     "source_version_ids": list(line.source_version_ids),
+                    "transfer_of": line.transfer_of,
                     "unrounded_value": line.unrounded_value,
                 }
             )
@@ -283,6 +347,8 @@ def _canonical_run_payload(
                 "gross_total": emp.gross_total.to_canonical_str(),
                 "lines": line_payloads,
                 "net_payable": emp.net_payable.to_canonical_str(),
+                "offbill_employer_remittance": (emp.offbill_employer_remittance.to_canonical_str()),
+                "disbursement": emp.disbursement.to_canonical_str(),
                 "treasury_deduction_total": emp.treasury_deduction_total.to_canonical_str(),
             }
         )
@@ -298,6 +364,8 @@ def _canonical_run_payload(
         "gross_adjustment_total": gross_adjustment_total.to_canonical_str(),
         "gross_total": gross_total.to_canonical_str(),
         "net_payable": net_payable.to_canonical_str(),
+        "offbill_employer_remittance": offbill_employer_remittance.to_canonical_str(),
+        "disbursement": disbursement.to_canonical_str(),
         "org_ref": org_ref,
         "period": period,
         "treasury_deduction_total": treasury_deduction_total.to_canonical_str(),
@@ -320,6 +388,8 @@ def content_hash_for(
     external_recovery_total: Money,
     deductions_total: Money,
     net_payable: Money,
+    offbill_employer_remittance: Money,
+    disbursement: Money,
 ) -> str:
     """SHA-256 hex digest of the canonical run serialization."""
     canonical = _canonical_run_payload(
@@ -336,6 +406,8 @@ def content_hash_for(
         external_recovery_total=external_recovery_total,
         deductions_total=deductions_total,
         net_payable=net_payable,
+        offbill_employer_remittance=offbill_employer_remittance,
+        disbursement=disbursement,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -359,7 +431,12 @@ def calculate_run(input: RunCalcInput) -> RunResult:
     external_recovery_total = _money_sum([e.external_recovery_total for e in results])
     deductions_total = _money_sum([e.deductions_total for e in results])
     net_payable = _money_sum([e.net_payable for e in results])
+    offbill_employer_remittance = _money_sum([e.offbill_employer_remittance for e in results])
+    disbursement = _money_sum([e.disbursement for e in results])
 
+    # Payment-critical transfer metadata and resulting disbursement are part of
+    # the approval digest. Engine 1.1.0 intentionally changes the canonical hash
+    # shape; historical 1.0.0 digests remain stored and valid for old versions.
     digest = content_hash_for(
         period=input.period,
         org_ref=input.org_ref,
@@ -374,6 +451,8 @@ def calculate_run(input: RunCalcInput) -> RunResult:
         external_recovery_total=external_recovery_total,
         deductions_total=deductions_total,
         net_payable=net_payable,
+        offbill_employer_remittance=offbill_employer_remittance,
+        disbursement=disbursement,
     )
 
     return RunResult(
@@ -391,4 +470,6 @@ def calculate_run(input: RunCalcInput) -> RunResult:
         deductions_total=deductions_total,
         net_payable=net_payable,
         content_hash=digest,
+        offbill_employer_remittance=offbill_employer_remittance,
+        disbursement=disbursement,
     )

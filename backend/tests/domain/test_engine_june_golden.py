@@ -337,11 +337,38 @@ def test_per_employee_totals_match_pay_json_declared_totals(
         assert emp_result.net_payable == _money(declared["net_payable"])
 
 
-def test_sum_of_payslip_nets_equals_net_payable(run_result: RunResult) -> None:
+def test_sum_of_employee_net_payable_equals_run_net_payable(run_result: RunResult) -> None:
+    # Treasury-face net (has off-bill NPS employer subtracted). Unchanged figure.
     total = Money.zero()
     for emp_result in run_result.employees:
         total = total + emp_result.net_payable
     assert total == run_result.net_payable == _money("3838095")
+
+
+def test_sum_of_payslip_disbursements_equals_run_disbursement(run_result: RunResult) -> None:
+    # Payslip take-home / bank-RTGS credit = disbursement, reconciled SEPARATELY
+    # from Net Payable. Disbursement = net_payable + off-bill NPS employer.
+    # Department sign-off 18 Jul 2026; see docs/payroll-domain.md Resolved section.
+    total = Money.zero()
+    for emp_result in run_result.employees:
+        total = total + emp_result.disbursement
+    assert total == run_result.disbursement == _money("3991038")
+
+
+def test_disbursement_identity_and_offbill_remittance(run_result: RunResult) -> None:
+    # Off-bill remittance is NPS employer only (EPF employer is a true gross
+    # pass-through and is excluded); disbursement exceeds Net Payable by exactly
+    # that amount, and the two are intentionally not equal.
+    assert run_result.offbill_employer_remittance == _money("152943")
+    assert (
+        run_result.disbursement == run_result.net_payable + run_result.offbill_employer_remittance
+    )
+    assert run_result.disbursement - run_result.net_payable == _money("152943")
+    for emp_result in run_result.employees:
+        assert (
+            emp_result.disbursement
+            == emp_result.net_payable + emp_result.offbill_employer_remittance
+        )
 
 
 def test_content_hash_is_deterministic_across_two_runs(run_input: RunCalcInput) -> None:

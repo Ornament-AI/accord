@@ -204,6 +204,8 @@ async def _create_components(client: AsyncClient, fixture: JuneFixture) -> dict[
                 "name": comp.name,
                 "classification": comp.api_classification,
                 "display_order": display_order,
+                "employer_transfer": comp.employer_transfer,
+                "transfer_of": comp.transfer_of,
             },
         )
         assert resp.status_code == 201, (

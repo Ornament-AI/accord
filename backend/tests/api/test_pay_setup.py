@@ -128,6 +128,66 @@ async def test_pay_component_crud_and_rate_versioning(client, session):
 
 
 @pytest.mark.asyncio
+async def test_pay_component_employer_transfer_metadata_is_validated_and_editable(client, session):
+    await _admin_context(client, session)
+    contribution = await client.post(
+        "/api/pay-components",
+        json={
+            "code": "EPF_EMPLOYER",
+            "name": "EPF Employer",
+            "classification": "employer_contribution",
+        },
+    )
+    assert contribution.status_code == 201, contribution.text
+
+    transfer = await client.post(
+        "/api/pay-components",
+        json={
+            "code": "EPF_EMPLOYER_TRANSFER",
+            "name": "EPF Employer Transfer",
+            "classification": "ag_deduction",
+            "employer_transfer": True,
+            "transfer_of": "EPF_EMPLOYER",
+        },
+    )
+    assert transfer.status_code == 201, transfer.text
+    body = transfer.json()
+    assert body["employer_transfer"] is True
+    assert body["transfer_of"] == "EPF_EMPLOYER"
+
+    patched = await client.patch(
+        f"/api/pay-components/{body['id']}",
+        json={"transfer_of": None},
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["employer_transfer"] is True
+    assert patched.json()["transfer_of"] is None
+
+    invalid_class = await client.post(
+        "/api/pay-components",
+        json={
+            "code": "BAD_TRANSFER",
+            "name": "Bad Transfer",
+            "classification": "earning",
+            "employer_transfer": True,
+        },
+    )
+    assert invalid_class.status_code == 422, invalid_class.text
+
+    unknown_target = await client.post(
+        "/api/pay-components",
+        json={
+            "code": "UNKNOWN_TRANSFER",
+            "name": "Unknown Transfer",
+            "classification": "ag_deduction",
+            "employer_transfer": True,
+            "transfer_of": "DOES_NOT_EXIST",
+        },
+    )
+    assert unknown_target.status_code == 400, unknown_target.text
+
+
+@pytest.mark.asyncio
 async def test_recurring_instruction_crud_and_versioning(client, session):
     ctx = await _admin_context(client, session)
     component = await _create_component(client, code="SPECIAL")

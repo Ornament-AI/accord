@@ -106,6 +106,8 @@ def _trace_from_row(row: Any) -> CalculationTrace:
         source_version_ids=tuple(str(v) for v in (trace.get("source_version_ids") or ())),
         calculator_kind=str(trace.get("calculator_kind") or row["calc_kind"]),
         engine_version=str(trace.get("engine_version") or ""),
+        employer_transfer=bool(trace.get("employer_transfer", False)),
+        transfer_of=(None if trace.get("transfer_of") is None else str(trace["transfer_of"])),
     )
 
 
@@ -220,6 +222,8 @@ async def _reconstruct_run_result(
                 external_recovery_total=external,
                 deductions_total=_money_from_db(emp["deductions_total"]),
                 net_payable=_money_from_db(emp["net_payable"]),
+                offbill_employer_remittance=_money_from_db(emp["offbill_employer_remittance"]),
+                disbursement=_money_from_db(emp["disbursement"]),
             )
         )
 
@@ -292,6 +296,18 @@ async def _reconstruct_run_result(
         "net_payable",
         Money.sum(e.net_payable for e in employees_sorted) if employees_sorted else Money.zero(),
     )
+    offbill = _total(
+        "offbill_employer_remittance",
+        (
+            Money.sum(e.offbill_employer_remittance for e in employees_sorted)
+            if employees_sorted
+            else Money.zero()
+        ),
+    )
+    disbursement = _total(
+        "disbursement",
+        Money.sum(e.disbursement for e in employees_sorted) if employees_sorted else Money.zero(),
+    )
 
     return RunResult(
         period=f"{period.period_year:04d}-{period.period_month:02d}",
@@ -307,6 +323,8 @@ async def _reconstruct_run_result(
         external_recovery_total=external,
         deductions_total=deductions,
         net_payable=net,
+        offbill_employer_remittance=offbill,
+        disbursement=disbursement,
         content_hash=str(version["content_hash"]),
     )
 

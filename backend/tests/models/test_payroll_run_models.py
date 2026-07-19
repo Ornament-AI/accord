@@ -151,6 +151,8 @@ async def test_payroll_run_orm_roundtrip(scratch_db: str) -> None:
                     gross_total=Decimal("1434.56"),
                     deductions_total=Decimal("100.00"),
                     net_payable=Decimal("1134.56"),
+                    offbill_employer_remittance=Decimal("0.00"),
+                    disbursement=Decimal("1134.56"),
                 )
             )
             await session.execute(

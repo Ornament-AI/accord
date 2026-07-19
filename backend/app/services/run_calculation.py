@@ -38,7 +38,9 @@ Resolution scope (as-of the run period's calendar month-end date)
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import uuid
+from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -186,6 +188,10 @@ def _totals_payload(result: RunResult) -> dict[str, str]:
         "external_recovery_total": result.external_recovery_total.to_canonical_str(),
         "deductions_total": result.deductions_total.to_canonical_str(),
         "net_payable": result.net_payable.to_canonical_str(),
+        # Employee disbursement is reconciled separately from treasury-face
+        # net payable (docs/payroll-domain.md "Resolved").
+        "offbill_employer_remittance": result.offbill_employer_remittance.to_canonical_str(),
+        "disbursement": result.disbursement.to_canonical_str(),
     }
 
 
@@ -204,6 +210,8 @@ def _trace_payload(trace: CalculationTrace) -> dict[str, Any]:
         "source_version_ids": list(trace.source_version_ids),
         "calculator_kind": trace.calculator_kind,
         "engine_version": trace.engine_version,
+        "employer_transfer": trace.employer_transfer,
+        "transfer_of": trace.transfer_of,
     }
 
 
@@ -510,6 +518,8 @@ async def _resolve_employee_components(
         else:
             raise ValidationError(f"Unsupported run input_kind {row.input_kind!r}.")
 
+    by_code = _stamp_employer_transfer_metadata(by_code, catalog)
+
     # Stable audit order: BASIC first, then remaining codes sorted.
     ordered_codes = []
     if _BASIC_CODE in by_code:
@@ -522,6 +532,24 @@ async def _resolve_employee_components(
         retirement_regime=profile["retirement_regime"],
         gpf_jurisdiction=profile.get("gpf_jurisdiction"),
     )
+
+
+def _stamp_employer_transfer_metadata(
+    by_code: dict[str, ComponentInput],
+    catalog: Mapping[str, Any],
+) -> dict[str, ComponentInput]:
+    """Return component inputs carrying the catalog's transfer semantics."""
+    stamped = dict(by_code)
+    for code, comp in by_code.items():
+        catalog_row = catalog.get(code)
+        if catalog_row is None or not catalog_row.employer_transfer:
+            continue
+        stamped[code] = dataclasses.replace(
+            comp,
+            employer_transfer=True,
+            transfer_of=catalog_row.transfer_of,
+        )
+    return stamped
 
 
 async def _resolve_run_calc_input(
@@ -667,6 +695,8 @@ async def calculate_run_command(
                 gross_total=emp_result.gross_total.amount,
                 deductions_total=emp_result.deductions_total.amount,
                 net_payable=emp_result.net_payable.amount,
+                offbill_employer_remittance=emp_result.offbill_employer_remittance.amount,
+                disbursement=emp_result.disbursement.amount,
             )
         )
         line_rows: list[dict[str, Any]] = []

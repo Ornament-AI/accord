@@ -238,6 +238,8 @@ describe("Edit Pay Component dialog", () => {
 				name: "Basic Pay Revised",
 				display_order: 5,
 				is_active: true,
+				employer_transfer: false,
+				transfer_of: null,
 			},
 		});
 		expect(patches[0].body).not.toHaveProperty("code");

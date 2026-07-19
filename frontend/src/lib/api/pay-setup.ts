@@ -16,6 +16,8 @@ export type PayComponentUpdate = {
 	name?: string;
 	display_order?: number;
 	is_active?: boolean;
+	employer_transfer?: boolean;
+	transfer_of?: string | null;
 };
 
 export const CLASSIFICATIONS: Classification[] = [

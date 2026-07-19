@@ -51,6 +51,7 @@ def _zero_employee_result(
     lines: tuple[CalculationTrace, ...] = (),
 ) -> EmployeeResult:
     zero = Money.zero()
+    resolved_net = net_payable if net_payable is not None else zero
     return EmployeeResult(
         employee_ref=employee_ref,
         lines=lines,
@@ -70,7 +71,9 @@ def _zero_employee_result(
             external_recovery_total if external_recovery_total is not None else zero
         ),
         deductions_total=deductions_total if deductions_total is not None else zero,
-        net_payable=net_payable if net_payable is not None else zero,
+        net_payable=resolved_net,
+        offbill_employer_remittance=zero,
+        disbursement=resolved_net,
     )
 
 

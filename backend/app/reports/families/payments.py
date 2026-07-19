@@ -303,7 +303,7 @@ def _bank_advice_columns() -> tuple[ReportColumn, ...]:
         ReportColumn(key="name", header="Name", kind=ColumnKind.TEXT),
         ReportColumn(key="account_number", header="Account Number", kind=ColumnKind.TEXT),
         ReportColumn(key="ifsc", header="IFSC", kind=ColumnKind.TEXT),
-        ReportColumn(key="net_payable", header="Net Payable", kind=ColumnKind.MONEY),
+        ReportColumn(key="disbursement", header="Amount Credited", kind=ColumnKind.MONEY),
     )
 
 
@@ -323,6 +323,21 @@ def _posted_net_payable(version: Any) -> Decimal:
     return _money(totals["net_payable"])
 
 
+def _posted_disbursement(version: Any) -> Decimal:
+    """Employee disbursement for a posted run version.
+
+    This is what employees are actually credited, and it is **not** the same as
+    ``net_payable``: off-bill NPS employer is deducted from the treasury-face net
+    without a matching gross addition, so ``disbursement = net_payable +
+    offbill_employer_remittance``. Department sign-off 18 Jul 2026; see the
+    "Resolved" section of docs/payroll-domain.md.
+    """
+    totals = version["totals"] or {}
+    if "disbursement" not in totals:
+        raise ConflictError("Posted run version totals missing disbursement.")
+    return _money(totals["disbursement"])
+
+
 class BankAdviceBuilder:
     """Build Bank/RTGS advice DTO: one credit row per paid employee (net > 0).
 
@@ -339,7 +354,9 @@ class BankAdviceBuilder:
             run_version_id=version["id"],
         )
 
-        paid = [item for item in packed if _money(item["result"]["net_payable"]) > _ZERO]
+        # Credit-worthiness is judged on disbursement (what is actually paid),
+        # not on treasury-face net payable.
+        paid = [item for item in packed if _money(item["result"]["disbursement"]) > _ZERO]
 
         employee_ids = [item["result"]["employee_id"] for item in paid]
         number_by_id = {
@@ -374,25 +391,28 @@ class BankAdviceBuilder:
             )
             name = str(profile["name"]) if profile is not None else ""
             account = accounts[employee_id]
-            net = _money(result["net_payable"])
-            advice_total += net
+            credit = _money(result["disbursement"])
+            advice_total += credit
             rows.append(
                 (
                     str(result["employee_number"]),
                     name,
                     str(account["account_number"]),
                     str(account["ifsc"]),
-                    net,
+                    credit,
                 )
             )
 
         advice_total = _money(advice_total)
-        posted_net = _posted_net_payable(version)
-        # Defense in depth: advice credits must equal the posted run net payable.
+        posted_disbursement = _posted_disbursement(version)
+        # Defense in depth: advice credits must equal the posted run disbursement.
+        # NOTE: this is deliberately reconciled against disbursement, NOT against
+        # net payable — off-bill NPS employer makes those two differ, and they
+        # must never be asserted equal (docs/payroll-domain.md "Resolved").
         # Raise (not assert) so the invariant holds even under `python -O`.
-        if advice_total != posted_net:
+        if advice_total != posted_disbursement:
             raise ConflictError(
-                f"bank advice total {advice_total} != posted net payable {posted_net}"
+                f"bank advice total {advice_total} != posted disbursement {posted_disbursement}"
             )
 
         totals: tuple[Any, ...] = (
@@ -470,8 +490,11 @@ class PayslipBundleBuilder:
                 employee_id=employee_id,
                 as_of=as_of,
             )
+            # Payslip take-home is the disbursement (what reaches the bank
+            # account), not the treasury-face net payable.
             net = _money(result["net_payable"])
-            words = amount_in_words(net)
+            disbursement = _money(result["disbursement"])
+            words = amount_in_words(disbursement)
 
             rows: list[tuple[Any, ...]] = [
                 ("identity", "employee_number", employee_number, None),
@@ -491,7 +514,18 @@ class PayslipBundleBuilder:
                         _money(line["amount"]),
                     )
                 )
-            rows.append(("net", "net_payable", "Net payable", net))
+            offbill = _money(result["offbill_employer_remittance"])
+            rows.append(("net", "net_payable", "Net payable (treasury-face)", net))
+            if offbill > _ZERO:
+                rows.append(
+                    (
+                        "net",
+                        "offbill_employer_remittance",
+                        "Employer NPS share (off-bill; not withheld from pay)",
+                        offbill,
+                    )
+                )
+            rows.append(("net", "disbursement", "Amount credited", disbursement))
             rows.append(("net", "amount_in_words", words, None))
 
             sections.append(

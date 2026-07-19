@@ -19,11 +19,13 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
 	CLASSIFICATIONS,
 	type Classification,
 	classificationLabel,
 	useCreatePayComponent,
+	usePayComponentsList,
 } from "@/lib/api/pay-setup";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError } from "@/lib/errors";
@@ -38,6 +40,8 @@ type FormState = {
 	name: string;
 	classification: Classification;
 	display_order: string;
+	employer_transfer: boolean;
+	transfer_of: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -45,10 +49,15 @@ const emptyForm = (): FormState => ({
 	name: "",
 	classification: "earning",
 	display_order: "0",
+	employer_transfer: false,
+	transfer_of: "",
 });
+
+const OFF_BILL_VALUE = "__offbill__";
 
 export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayComponentDialogProps) {
 	const createComponent = useCreatePayComponent();
+	const componentsQuery = usePayComponentsList();
 	const [form, setForm] = useState<FormState>(emptyForm);
 	const [codeError, setCodeError] = useState<string | null>(null);
 	const [formError, setFormError] = useState<string | null>(null);
@@ -91,6 +100,8 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 				name: form.name.trim(),
 				classification: form.classification,
 				display_order: displayOrder,
+				employer_transfer: form.employer_transfer,
+				transfer_of: form.employer_transfer ? form.transfer_of || null : null,
 			});
 			onOpenChange(false);
 		} catch (error) {
@@ -103,6 +114,9 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 	};
 
 	const isSubmitting = createComponent.isPending;
+	const employerContributions = (componentsQuery.data ?? []).filter(
+		(component) => component.classification === "employer_contribution" && component.is_active,
+	);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -153,7 +167,27 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 							<Label htmlFor="create-pc-classification">Classification</Label>
 							<Select
 								value={form.classification}
-								onValueChange={(value) => setField("classification", value as Classification)}
+								onValueChange={(value) => {
+									const classification = value as Classification;
+									setForm((prev) => ({
+										...prev,
+										classification,
+										employer_transfer: [
+											"ag_deduction",
+											"treasury_deduction",
+											"external_recovery",
+										].includes(classification)
+											? prev.employer_transfer
+											: false,
+										transfer_of: [
+											"ag_deduction",
+											"treasury_deduction",
+											"external_recovery",
+										].includes(classification)
+											? prev.transfer_of
+											: "",
+									}));
+								}}
 								disabled={isSubmitting}
 							>
 								<SelectTrigger id="create-pc-classification" className="w-full">
@@ -183,6 +217,61 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 								disabled={isSubmitting}
 							/>
 						</div>
+
+						{["ag_deduction", "treasury_deduction", "external_recovery"].includes(
+							form.classification,
+						) ? (
+							<>
+								<div className="flex items-center justify-between gap-4">
+									<div className="grid gap-1">
+										<Label htmlFor="create-pc-employer-transfer">Employer transfer</Label>
+										<p className="text-xs text-muted-foreground">
+											Marks an employer-funded deduction.
+										</p>
+									</div>
+									<Switch
+										id="create-pc-employer-transfer"
+										checked={form.employer_transfer}
+										onCheckedChange={(checked) =>
+											setForm((prev) => ({
+												...prev,
+												employer_transfer: checked,
+												transfer_of: checked ? prev.transfer_of : "",
+											}))
+										}
+										disabled={isSubmitting}
+									/>
+								</div>
+
+								{form.employer_transfer ? (
+									<div className="grid gap-2">
+										<Label htmlFor="create-pc-transfer-of">Paired employer contribution</Label>
+										<Select
+											value={form.transfer_of || OFF_BILL_VALUE}
+											onValueChange={(value) =>
+												setField("transfer_of", value === OFF_BILL_VALUE ? "" : value)
+											}
+											disabled={isSubmitting}
+										>
+											<SelectTrigger id="create-pc-transfer-of" className="w-full">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value={OFF_BILL_VALUE}>None (off-bill)</SelectItem>
+												{employerContributions.map((component) => (
+													<SelectItem key={component.id} value={component.code}>
+														{component.name} ({component.code})
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+										<p className="text-xs text-muted-foreground">
+											Leave unpaired when the employer share is off-bill.
+										</p>
+									</div>
+								) : null}
+							</>
+						) : null}
 
 						{formError ? (
 							<p className="text-sm text-destructive" role="alert">

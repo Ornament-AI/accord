@@ -8,6 +8,8 @@
     "gross_bill": "5102985",
     "total_deductions": "1264890",
     "net_payable": "3838095",
+    "offbill_employer_remittance": "152943",
+    "employee_disbursement": "3991038",
     "gpf_total": "280000",
     "gpf_mumbai": "165000",
     "gpf_nagpur": "115000",
@@ -62,7 +64,7 @@
       "net_payable": "3838095",
       "equals_pay_bill": true
     },
-    "bank_rtgs_advice_sum": "3838095",
+    "bank_rtgs_advice_sum": "3991038",
     "gpf_mumbai_schedule": "165000",
     "gpf_nagpur_schedule": "115000",
     "nps_contribution_schedule": {
@@ -76,6 +78,12 @@
     "hba_schedule": "72723",
     "accommodation_mumbai_actual": "10419",
     "accommodation_worli_actual": "1250",
-    "payslip_nets_sum": "3838095"
+    "payslip_nets_sum": "3991038"
+  },
+  "disbursement": {
+    "net_payable_treasury_face": "3838095",
+    "offbill_employer_remittance": "152943",
+    "employee_disbursement": "3991038",
+    "note": "Employee disbursement (bank/RTGS credit, payslip take-home) = net_payable + off-bill NPS employer remittance. It is reconciled separately from treasury-face Net Payable and is NOT asserted equal to it. Department sign-off 18 Jul 2026; see docs/payroll-domain.md Resolved section."
   }
 }

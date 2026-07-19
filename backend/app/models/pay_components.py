@@ -51,6 +51,10 @@ class PayComponent(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, 
             "code",
             name="uq_pay_components_organization_id_code",
         ),
+        CheckConstraint(
+            "transfer_of IS NULL OR employer_transfer",
+            name="ck_pay_components_transfer_of_requires_employer_transfer",
+        ),
     )
 
     id: uuid.UUID = _id_field()
@@ -60,6 +64,22 @@ class PayComponent(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, 
     code: str = Field(sa_column=Column(Text, nullable=False))
     name: str = Field(sa_column=Column(Text, nullable=False))
     classification: str = Field(sa_column=Column(Text, nullable=False))
+    # Employer-transfer pairing drives off-bill remittance and therefore
+    # disbursement (docs/payroll-domain.md "Resolved"). ``transfer_of`` is the
+    # employer_contribution code this line reverses; NULL on an employer_transfer
+    # line means there is no gross-bill addition, i.e. off-bill (NPS employer).
+    employer_transfer: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean,
+            nullable=False,
+            server_default=text("false"),
+        ),
+    )
+    transfer_of: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
     is_active: bool = Field(
         default=True,
         sa_column=Column(

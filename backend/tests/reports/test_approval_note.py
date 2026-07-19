@@ -169,6 +169,8 @@ async def _seed_posted_june_world(
                 gross_total=Decimal("0.00"),
                 deductions_total=Decimal("0.00"),
                 net_payable=Decimal("0.00"),
+                offbill_employer_remittance=Decimal("0.00"),
+                disbursement=Decimal("0.00"),
             )
         )
 

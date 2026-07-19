@@ -310,6 +310,59 @@ def test_content_hash_changes_when_an_amount_changes() -> None:
     assert base.content_hash != changed.content_hash
 
 
+def test_content_hash_binds_employer_transfer_metadata_and_disbursement() -> None:
+    def run(*, employer_transfer: bool) -> object:
+        employee = EmployeeCalcInput(
+            employee_ref="E001",
+            components=(
+                ComponentInput(
+                    component_code="BASIC",
+                    classification="earning",
+                    calc_kind="fixed_recurring_amount",
+                    amount=Money.from_str("1000.00"),
+                ),
+                ComponentInput(
+                    component_code="NPS_EMPLOYER_TRANSFER",
+                    classification="AG_deduction",
+                    calc_kind="fixed_recurring_amount",
+                    amount=Money.from_str("100.00"),
+                    employer_transfer=employer_transfer,
+                ),
+            ),
+        )
+        return calculate_run(RunCalcInput(period="2026-06", org_ref="ORG", employees=(employee,)))
+
+    ordinary = run(employer_transfer=False)
+    offbill = run(employer_transfer=True)
+    assert ordinary.content_hash != offbill.content_hash
+    assert ordinary.disbursement == Money.from_str("900.00")
+    assert offbill.disbursement == Money.from_str("1000.00")
+
+
+def test_employer_transfer_requires_matching_contribution_amount() -> None:
+    employee = EmployeeCalcInput(
+        employee_ref="E001",
+        components=(
+            ComponentInput(
+                component_code="EPF_EMPLOYER",
+                classification="employer_contribution",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("100.00"),
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER_TRANSFER",
+                classification="AG_deduction",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("150.00"),
+                employer_transfer=True,
+                transfer_of="EPF_EMPLOYER",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="does not match"):
+        calculate_employee(employee)
+
+
 # --- negative gross_adjustment ------------------------------------------------
 
 

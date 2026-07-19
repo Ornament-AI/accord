@@ -67,6 +67,11 @@ class EmployeeResultSummary(BaseModel):
     gross_total: MoneyAmount
     deductions_total: MoneyAmount
     net_payable: MoneyAmount
+    # Employee disbursement is reconciled separately from treasury-face net
+    # payable: disbursement = net_payable + offbill_employer_remittance
+    # (docs/payroll-domain.md "Resolved").
+    offbill_employer_remittance: MoneyAmount
+    disbursement: MoneyAmount
 
 
 class RunResultsResponse(BaseModel):
@@ -93,4 +98,9 @@ class EmployeeResultDetail(BaseModel):
     gross_total: MoneyAmount
     deductions_total: MoneyAmount
     net_payable: MoneyAmount
+    # Employee disbursement is reconciled separately from treasury-face net
+    # payable: disbursement = net_payable + offbill_employer_remittance
+    # (docs/payroll-domain.md "Resolved").
+    offbill_employer_remittance: MoneyAmount
+    disbursement: MoneyAmount
     lines: list[ResultLine]
