@@ -119,9 +119,9 @@ jobs:
 
   # Cross-release Alembic upgrade path (previous v* → current tag).
   # Mirrors Atlas ci.yml migrations-release-upgrade; active here because Accord
-  # ships real alembic revisions under backend/migrations/. CI's migrations job
-  # uses the postgres superuser DSN and does not run create_roles.sql — same
-  # approach here (roles SQL is an ops bootstrap, not required for upgrade).
+  # ships real alembic revisions under backend/migrations/. Accord migrations
+  # create RLS policies for cluster roles that are provisioned out of band, so
+  # the scratch database must mirror CI and bootstrap those roles first.
   migrations-release-upgrade:
     name: Migrations release upgrade
     runs-on: ubuntu-latest
@@ -183,6 +183,12 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
           CREATE DATABASE release_upgrade;
           SQL
+
+      - name: Bootstrap ADR-0001 database roles
+        if: steps.prev.outputs.has_previous == 'true'
+        env:
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -h localhost -p 5432 -U postgres -d release_upgrade -f backend/scripts/create_roles.sql
 
       - name: Upgrade to previous release migration head
         if: steps.prev.outputs.has_previous == 'true'
