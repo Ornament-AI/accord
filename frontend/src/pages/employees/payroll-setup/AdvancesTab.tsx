@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, HISTORICAL_DATE_CALENDAR_PROPS } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -356,6 +356,7 @@ function AddAdvanceDialog({
 								disabled={isSubmitting}
 								className="w-full"
 								placeholder="Sanctioned On"
+								calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 							/>
 						</div>
 
@@ -388,6 +389,7 @@ function AddAdvanceDialog({
 									disabled={isSubmitting}
 									className="w-full"
 									placeholder="Effective From"
+									calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 								/>
 							</div>
 
@@ -576,6 +578,7 @@ function NewInstallmentVersionDialog({
 								disabled={isSubmitting}
 								className="w-full"
 								placeholder="Effective From"
+								calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 							/>
 						</div>
 
