@@ -145,7 +145,7 @@ export function ArtifactsSection({
 		<PageSection data-testid="artifacts-section" className="flex flex-col gap-3">
 			<div className="flex flex-wrap items-start justify-between gap-2">
 				<div>
-					<h2 className="text-base font-semibold tracking-tight">Recent artifacts</h2>
+					<h2 className="text-base font-semibold tracking-tight">Recent Artifacts</h2>
 					<p className="text-muted-foreground text-sm">
 						{selectedRunId
 							? "Artifacts for the selected posted run."

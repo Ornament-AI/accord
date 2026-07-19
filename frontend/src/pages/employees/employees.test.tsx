@@ -6,9 +6,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
+import {
+	buildEmployeeGroup,
+	buildOffice,
+	buildPayrollUnit,
+	buildPost,
+	createOrgSetupHandlers,
+} from "@/pages/org-setup/org-setup-handlers";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
-import { openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
+import { openBaseUiSelect, pickBaseUiOption, pickDateByLabel } from "@/test/helpers";
 import { server } from "@/test/msw-server";
 import { renderApp } from "@/test/render-app";
 import type { Capability } from "@/types/auth";
@@ -59,22 +66,15 @@ describe("Employee list page", () => {
 			expect(screen.getByText("Alice Example")).toBeInTheDocument();
 			expect(screen.getAllByText("GPF").length).toBeGreaterThan(0);
 
-			fireEvent.click(screen.getByRole("button", { name: "Search" }));
-			const searchInput = await screen.findByRole(
-				"textbox",
-				{ name: "Search employees" },
-				{ timeout: PAGE_TIMEOUT },
-			);
+			const searchInput = screen.getByRole("textbox", { name: "Search Employees" });
 			fireEvent.change(searchInput, { target: { value: "Alice" } });
-			fireEvent.submit(searchInput.closest("form")!);
 
 			await waitFor(() => {
 				expect(screen.getByText("Alice Example")).toBeInTheDocument();
 				expect(screen.queryByText("E-002")).not.toBeInTheDocument();
 			});
 
-			fireEvent.click(screen.getByRole("button", { name: "Search: Alice" }));
-			fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+			fireEvent.change(searchInput, { target: { value: "" } });
 
 			await waitFor(() => {
 				expect(screen.getByText("E-002")).toBeInTheDocument();
@@ -231,25 +231,26 @@ describe("CreateEmployeeDialog", () => {
 		server.use(...authHandlers, ...employeeHandlers);
 
 		renderCreateDialog();
-		await screen.findByRole("heading", { name: "New employee" });
+		await screen.findByRole("heading", { name: "New Employee" });
 
-		fireEvent.change(screen.getByLabelText("Employee number"), {
+		fireEvent.change(screen.getByLabelText("Employee Number"), {
 			target: { value: "E-DUP" },
 		});
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Bob" } });
 		fireEvent.change(screen.getByLabelText("Sevarth ID"), { target: { value: "SEV-9" } });
-		fireEvent.change(screen.getByLabelText("Date of birth"), {
-			target: { value: "1990-01-01" },
-		});
-		fireEvent.change(screen.getByLabelText("Date of joining"), {
-			target: { value: "2015-01-01" },
-		});
+		{
+			const now = new Date();
+			const dob = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-05`;
+			const doj = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-10`;
+			pickDateByLabel("Date of Birth", dob);
+			pickDateByLabel("Date of Joining", doj);
+		}
 
-		openBaseUiSelect(screen.getByLabelText("Retirement regime"));
+		openBaseUiSelect(screen.getByLabelText("Retirement Regime"));
 		pickBaseUiOption("GPF");
 
 		await waitFor(() => {
-			expect(screen.getByLabelText("GPF jurisdiction")).toBeInTheDocument();
+			expect(screen.getByLabelText("GPF Jurisdiction")).toBeInTheDocument();
 		});
 
 		fireEvent.click(screen.getByRole("button", { name: "Create employee" }));
@@ -257,11 +258,93 @@ describe("CreateEmployeeDialog", () => {
 			await screen.findByText("GPF jurisdiction is required when regime is GPF"),
 		).toBeInTheDocument();
 
-		openBaseUiSelect(screen.getByLabelText("GPF jurisdiction"));
+		openBaseUiSelect(screen.getByLabelText("GPF Jurisdiction"));
 		pickBaseUiOption("Mumbai");
 
 		fireEvent.click(screen.getByRole("button", { name: "Create employee" }));
 		expect(await screen.findByText("This employee number is already in use")).toBeInTheDocument();
+	});
+
+	it("shows named office / payroll unit / post selectors in posting section", async () => {
+		const officeId = "db4cb0bd-bd7f-45f7-986a-1acc0846f2f8";
+		const payrollUnitId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+		const postId = "f9e8d7c6-b5a4-3210-9876-543210fedcba";
+		const employeeGroupId = "11223344-5566-7788-99aa-bbccddeeff00";
+
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: employeeHandlers } = createEmployeeHandlers();
+		const { handlers: orgHandlers } = createOrgSetupHandlers({
+			offices: [
+				buildOffice({ id: officeId, code: "HO", name: "Head Office" }),
+				buildOffice({ id: "office-2", code: "RO", name: "Regional Office" }),
+			],
+			payrollUnits: [
+				buildPayrollUnit({ id: payrollUnitId, code: "PU-HQ", name: "HQ Payroll" }),
+				buildPayrollUnit({ id: "pu-2", code: "PU-REG", name: "Regional Payroll" }),
+			],
+			posts: [
+				buildPost({ id: postId, designation: "Clerk", class_name: "Class III" }),
+				buildPost({ id: "post-2", designation: "Officer", class_name: "Class I" }),
+			],
+			employeeGroups: [buildEmployeeGroup({ id: employeeGroupId, code: "GRP-A", name: "Group A" })],
+		});
+		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
+
+		renderCreateDialog();
+		await screen.findByRole("heading", { name: "New Employee" });
+
+		fireEvent.click(screen.getByRole("button", { name: "Posting" }));
+
+		expect(screen.getByText("Office")).toBeInTheDocument();
+		expect(screen.getByText("Payroll Unit")).toBeInTheDocument();
+		expect(screen.getByText("Post")).toBeInTheDocument();
+		expect(screen.getByText("Employee Group")).toBeInTheDocument();
+		expect(screen.queryByText("Office ID")).not.toBeInTheDocument();
+		expect(screen.queryByText("Payroll Unit ID")).not.toBeInTheDocument();
+		expect(screen.queryByText("Post ID")).not.toBeInTheDocument();
+
+		expect(await screen.findByRole("combobox", { name: "Office" })).toHaveTextContent(
+			"Select office",
+		);
+		expect(screen.getByRole("combobox", { name: "Payroll Unit" })).toHaveTextContent(
+			"Select payroll unit",
+		);
+		expect(screen.getByRole("combobox", { name: "Post" })).toHaveTextContent("Select post");
+		expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent("None");
+
+		openBaseUiSelect(screen.getByRole("combobox", { name: "Office" }));
+		expect(await screen.findByRole("option", { name: "Head Office (HO)" })).toBeInTheDocument();
+		expect(screen.getByRole("option", { name: "Regional Office (RO)" })).toBeInTheDocument();
+		pickBaseUiOption("Head Office (HO)");
+		await waitFor(() => {
+			expect(screen.getByRole("combobox", { name: "Office" })).toHaveTextContent(
+				"Head Office (HO)",
+			);
+		});
+
+		openBaseUiSelect(screen.getByRole("combobox", { name: "Payroll Unit" }));
+		pickBaseUiOption("HQ Payroll (PU-HQ)");
+		await waitFor(() => {
+			expect(screen.getByRole("combobox", { name: "Payroll Unit" })).toHaveTextContent(
+				"HQ Payroll (PU-HQ)",
+			);
+		});
+
+		openBaseUiSelect(screen.getByRole("combobox", { name: "Post" }));
+		pickBaseUiOption("Clerk");
+		await waitFor(() => {
+			expect(screen.getByRole("combobox", { name: "Post" })).toHaveTextContent("Clerk");
+		});
+
+		openBaseUiSelect(screen.getByRole("combobox", { name: "Employee Group" }));
+		pickBaseUiOption("Group A (GRP-A)");
+		await waitFor(() => {
+			expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent(
+				"Group A (GRP-A)",
+			);
+		});
 	});
 });
 
@@ -306,9 +389,97 @@ describe("ScheduleChangeDialog", () => {
 		expect(
 			await screen.findByRole("heading", { name: /Schedule profile change/i }),
 		).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "Schedule change" }));
+		fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
 		expect(await screen.findByRole("alert")).toHaveTextContent("Version periods overlap.");
+	});
+
+	it("shows named office / payroll unit / post selectors for posting changes", async () => {
+		const officeId = "db4cb0bd-bd7f-45f7-986a-1acc0846f2f8";
+		const payrollUnitId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+		const postId = "f9e8d7c6-b5a4-3210-9876-543210fedcba";
+		const employeeGroupId = "11223344-5566-7788-99aa-bbccddeeff00";
+
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: employeeHandlers } = createEmployeeHandlers();
+		const { handlers: orgHandlers } = createOrgSetupHandlers({
+			offices: [
+				buildOffice({ id: officeId, code: "HO", name: "Head Office" }),
+				buildOffice({ id: "office-2", code: "RO", name: "Regional Office" }),
+			],
+			payrollUnits: [
+				buildPayrollUnit({ id: payrollUnitId, code: "PU-HQ", name: "HQ Payroll" }),
+				buildPayrollUnit({ id: "pu-2", code: "PU-REG", name: "Regional Payroll" }),
+			],
+			posts: [
+				buildPost({ id: postId, designation: "Clerk", class_name: "Class III" }),
+				buildPost({ id: "post-2", designation: "Officer", class_name: "Class I" }),
+			],
+			employeeGroups: [buildEmployeeGroup({ id: employeeGroupId, code: "GRP-A", name: "Group A" })],
+		});
+		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
+
+		const posting = {
+			id: "posting-1",
+			effective_from: "2026-01-01",
+			effective_to: null,
+			office_id: officeId,
+			payroll_unit_id: payrollUnitId,
+			post_id: postId,
+			employee_group_id: employeeGroupId,
+			created_at: "2026-01-15T10:00:00Z",
+			created_by: "user-1",
+			change_reason: null,
+		};
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME_TEST">
+					<AuthProvider>
+						<ScheduleChangeDialog
+							open
+							onOpenChange={vi.fn()}
+							employeeId="emp-1"
+							kind="posting"
+							activePosting={posting}
+						/>
+					</AuthProvider>
+				</ThemeProvider>
+			</QueryClientProvider>,
+		);
+
+		expect(
+			await screen.findByRole("heading", { name: /Schedule posting change/i }),
+		).toBeInTheDocument();
+
+		expect(screen.getByText("Office")).toBeInTheDocument();
+		expect(screen.getByText("Payroll Unit")).toBeInTheDocument();
+		expect(screen.getByText("Post")).toBeInTheDocument();
+		expect(screen.queryByText("Office ID")).not.toBeInTheDocument();
+		expect(screen.queryByText("Payroll Unit ID")).not.toBeInTheDocument();
+		expect(screen.queryByText("Post ID")).not.toBeInTheDocument();
+
+		expect(await screen.findByRole("combobox", { name: "Office" })).toHaveTextContent(
+			"Head Office (HO)",
+		);
+		expect(screen.getByRole("combobox", { name: "Payroll Unit" })).toHaveTextContent(
+			"HQ Payroll (PU-HQ)",
+		);
+		expect(screen.getByRole("combobox", { name: "Post" })).toHaveTextContent("Clerk");
+		expect(screen.getByRole("combobox", { name: "Employee Group" })).toHaveTextContent(
+			"Group A (GRP-A)",
+		);
+
+		openBaseUiSelect(screen.getByRole("combobox", { name: "Office" }));
+		expect(await screen.findByRole("option", { name: "Regional Office (RO)" })).toBeInTheDocument();
+		pickBaseUiOption("Regional Office (RO)");
+		await waitFor(() => {
+			expect(screen.getByRole("combobox", { name: "Office" })).toHaveTextContent(
+				"Regional Office (RO)",
+			);
+		});
 	});
 });
 

@@ -100,7 +100,7 @@ export function EditPayComponentDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>Edit pay component</DialogTitle>
+					<DialogTitle>Edit Pay Component</DialogTitle>
 					<DialogDescription>
 						Update name, display order, or active status. Code and classification are fixed.
 					</DialogDescription>
@@ -138,7 +138,7 @@ export function EditPayComponentDialog({
 							</div>
 
 							<div className="grid gap-2">
-								<Label htmlFor="edit-pc-display-order">Display order</Label>
+								<Label htmlFor="edit-pc-display-order">Display Order</Label>
 								<Input
 									id="edit-pc-display-order"
 									type="number"

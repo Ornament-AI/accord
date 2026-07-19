@@ -7,9 +7,9 @@ import { useTheme } from "@/lib/ui/providers/theme-provider";
 import { cn } from "@/lib/utils";
 
 const themes = [
-	{ value: "system" as const, icon: Monitor, label: "System theme" },
-	{ value: "light" as const, icon: Sun, label: "Light theme" },
-	{ value: "dark" as const, icon: Moon, label: "Dark theme" },
+	{ value: "system" as const, icon: Monitor, label: "System Theme" },
+	{ value: "light" as const, icon: Sun, label: "Light Theme" },
+	{ value: "dark" as const, icon: Moon, label: "Dark Theme" },
 ];
 
 interface ThemeSwitcherProps {

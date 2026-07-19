@@ -47,7 +47,7 @@ const runColumns: ColumnDef<PayrollRunListItem>[] = [
 	},
 	{
 		accessorKey: "run_type",
-		header: "Run type",
+		header: "Run Type",
 		cell: ({ row }) => runTypeLabel(row.original.run_type),
 	},
 	{
@@ -100,7 +100,7 @@ export default function PayRunsPage() {
 				<PageShell data-testid="pay-runs-page">
 					<PageSection className="grid gap-3">
 						<div className="flex flex-wrap items-center justify-between gap-2">
-							<h2 className="text-sm font-medium">Payroll periods</h2>
+							<h2 className="text-sm font-medium">Payroll Periods</h2>
 						</div>
 
 						{periodsQuery.isLoading ? <DataTableSkeleton rows={3} /> : null}
@@ -131,7 +131,7 @@ export default function PayRunsPage() {
 
 					<PageSection className="grid gap-3">
 						<div className="flex flex-wrap items-center justify-between gap-2">
-							<h2 className="text-sm font-medium">Pay runs</h2>
+							<h2 className="text-sm font-medium">Pay Runs</h2>
 						</div>
 
 						{runsQuery.isLoading ? <DataTableSkeleton /> : null}

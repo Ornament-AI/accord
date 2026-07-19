@@ -42,8 +42,8 @@ const JURISDICTIONS: { value: OfficeJurisdiction; label: string }[] = [
 ];
 
 const columns: ColumnDef<OfficeResponse>[] = [
-	{ accessorKey: "code", header: "Code" },
 	{ accessorKey: "name", header: "Name" },
+	{ accessorKey: "code", header: "Code" },
 	{
 		accessorKey: "jurisdiction",
 		header: "Jurisdiction",
@@ -198,7 +198,7 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>{mode === "create" ? "Add office" : "Edit office"}</DialogTitle>
+					<DialogTitle>{mode === "create" ? "Add Office" : "Edit Office"}</DialogTitle>
 					<DialogDescription>
 						{mode === "create"
 							? "Create an office for this organization."

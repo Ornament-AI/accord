@@ -139,7 +139,7 @@ export function PaginationControls({
 						render={
 							<button
 								type="button"
-								aria-label="Go to previous page"
+								aria-label="Go to Previous Page"
 								disabled={disabled || current <= 1}
 								onClick={() => goToPage(current - 1)}
 							/>
@@ -188,7 +188,7 @@ export function PaginationControls({
 						render={
 							<button
 								type="button"
-								aria-label="Go to next page"
+								aria-label="Go to Next Page"
 								disabled={disabled || current >= total}
 								onClick={() => goToPage(current + 1)}
 							/>

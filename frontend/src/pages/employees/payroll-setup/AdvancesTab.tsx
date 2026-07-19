@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useState } from "react";
 
+import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -30,6 +32,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	ADVANCE_TYPES,
 	type AdvanceResponse,
@@ -49,6 +52,8 @@ type AdvancesTabProps = {
 	employeeId: string;
 	asOf: string;
 	canManage: boolean;
+	createOpen: boolean;
+	onCreateOpenChange: (open: boolean) => void;
 };
 
 function formatProgress(row: AdvanceResponse): string {
@@ -58,24 +63,20 @@ function formatProgress(row: AdvanceResponse): string {
 	return `${recovered}/${total}`;
 }
 
-export function AdvancesTab({ employeeId, asOf, canManage }: AdvancesTabProps) {
+export function AdvancesTab({
+	employeeId,
+	asOf,
+	canManage,
+	createOpen,
+	onCreateOpenChange,
+}: AdvancesTabProps) {
 	const advancesQuery = useAdvances(employeeId, asOf);
-	const [addOpen, setAddOpen] = useState(false);
 	const [versionTarget, setVersionTarget] = useState<AdvanceResponse | null>(null);
 
 	const rows = advancesQuery.data ?? [];
 
 	return (
 		<div className="grid gap-4" data-testid="advances-tab">
-			<div className="flex flex-wrap items-center justify-between gap-2">
-				<h3 className="text-sm font-medium">Advances</h3>
-				{canManage ? (
-					<Button size="xs" onClick={() => setAddOpen(true)}>
-						Add
-					</Button>
-				) : null}
-			</div>
-
 			{advancesQuery.isLoading ? (
 				<div className="grid gap-2">
 					<Skeleton className="h-10 w-full" />
@@ -98,28 +99,40 @@ export function AdvancesTab({ employeeId, asOf, canManage }: AdvancesTabProps) {
 						<TableHeader>
 							<TableRow>
 								<TableHead>Type</TableHead>
-								<TableHead>Principal</TableHead>
-								<TableHead>Sanctioned on</TableHead>
-								<TableHead>Installment</TableHead>
-								<TableHead>Progress</TableHead>
-								{canManage ? <TableHead className="text-right">Actions</TableHead> : null}
+								<TableHead className="text-right">Principal</TableHead>
+								<TableHead>Sanctioned On</TableHead>
+								<TableHead className="text-right">Installment</TableHead>
+								<TableHead className="text-right">Progress</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{rows.map((row) => (
-								<TableRow key={row.id}>
-									<TableCell>{advanceTypeLabel(row.advance_type)}</TableCell>
-									<TableCell>{row.principal}</TableCell>
+								<TableRow
+									key={row.id}
+									className={canManage ? "cursor-pointer" : undefined}
+									onClick={(event) => {
+										if (!canManage || isInteractiveRowTarget(event.target, event.currentTarget)) {
+											return;
+										}
+										setVersionTarget(row);
+									}}
+								>
+									<TableCell>
+										{canManage ? (
+											<button
+												type="button"
+												className="sr-only focus:not-sr-only focus:mb-1 focus:inline-flex focus:rounded-md focus:bg-background focus:px-2 focus:py-1 focus:ring-2 focus:ring-ring/35"
+												onClick={() => setVersionTarget(row)}
+											>
+												Update Installment
+											</button>
+										) : null}
+										{advanceTypeLabel(row.advance_type)}
+									</TableCell>
+									<TableCell className="text-right">{row.principal}</TableCell>
 									<TableCell>{formatDate(row.sanctioned_on)}</TableCell>
-									<TableCell>{row.installment_amount ?? "—"}</TableCell>
-									<TableCell>{formatProgress(row)}</TableCell>
-									{canManage ? (
-										<TableCell className="text-right">
-											<Button size="xs" variant="outline" onClick={() => setVersionTarget(row)}>
-												Add
-											</Button>
-										</TableCell>
-									) : null}
+									<TableCell className="text-right">{row.installment_amount ?? "—"}</TableCell>
+									<TableCell className="text-right">{formatProgress(row)}</TableCell>
 								</TableRow>
 							))}
 						</TableBody>
@@ -129,7 +142,11 @@ export function AdvancesTab({ employeeId, asOf, canManage }: AdvancesTabProps) {
 
 			{canManage ? (
 				<>
-					<AddAdvanceDialog open={addOpen} onOpenChange={setAddOpen} employeeId={employeeId} />
+					<AddAdvanceDialog
+						open={createOpen}
+						onOpenChange={onCreateOpenChange}
+						employeeId={employeeId}
+					/>
 					<NewInstallmentVersionDialog
 						open={Boolean(versionTarget)}
 						onOpenChange={(open) => {
@@ -153,7 +170,7 @@ function validateInstallmentFields(args: {
 	const principalError = validatePositiveMoney(args.principal, "Principal");
 	if (principalError) return principalError;
 
-	const installmentError = validatePositiveMoney(args.installmentAmount, "Installment amount");
+	const installmentError = validatePositiveMoney(args.installmentAmount, "Installment Amount");
 	if (installmentError) return installmentError;
 
 	const principal = parseMoneyString(args.principal.trim());
@@ -168,7 +185,7 @@ function validateInstallmentFields(args: {
 		return "Installments recovered opening must be a non-negative integer.";
 	}
 	if (!Number.isInteger(total) || total <= 0) {
-		return "Installments total must be a positive integer.";
+		return "Installments Total must be a positive integer.";
 	}
 	if (recovered > total) {
 		return "Installments recovered opening must be less than or equal to installments total.";
@@ -185,6 +202,7 @@ type AddAdvanceForm = {
 	installment_amount: string;
 	installments_recovered_opening: string;
 	installments_total: string;
+	change_reason: string;
 };
 
 const emptyAddForm = (): AddAdvanceForm => ({
@@ -196,6 +214,7 @@ const emptyAddForm = (): AddAdvanceForm => ({
 	installment_amount: "",
 	installments_recovered_opening: "0",
 	installments_total: "",
+	change_reason: "",
 });
 
 function AddAdvanceDialog({
@@ -271,7 +290,7 @@ function AddAdvanceDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>Add advance</DialogTitle>
+					<DialogTitle>Add Advance</DialogTitle>
 					<DialogDescription>
 						Record an advance and its first installment schedule for this employee.
 					</DialogDescription>
@@ -324,20 +343,24 @@ function AddAdvanceDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-adv-sanctioned-on">Sanctioned on</Label>
-							<Input
+							<Label htmlFor="add-adv-sanctioned-on">Sanctioned On</Label>
+							<DatePicker
 								id="add-adv-sanctioned-on"
-								type="date"
-								value={form.sanctioned_on}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, sanctioned_on: event.target.value }))
+								value={form.sanctioned_on ? parseApiDate(form.sanctioned_on) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({
+										...prev,
+										sanctioned_on: date ? toApiDate(date) : "",
+									}))
 								}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Sanctioned On"
 							/>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-adv-reference">Reference (optional)</Label>
+							<Label htmlFor="add-adv-reference">Reference (Optional)</Label>
 							<Input
 								id="add-adv-reference"
 								value={form.reference}
@@ -349,23 +372,27 @@ function AddAdvanceDialog({
 						</div>
 
 						<fieldset className="grid gap-3 rounded-md border p-3">
-							<legend className="px-1 text-sm font-medium">First installment</legend>
+							<legend className="px-1 text-sm font-medium">First Installment</legend>
 
 							<div className="grid gap-2">
-								<Label htmlFor="add-adv-inst-from">Effective from</Label>
-								<Input
+								<Label htmlFor="add-adv-inst-from">Effective From</Label>
+								<DatePicker
 									id="add-adv-inst-from"
-									type="date"
-									value={form.effective_from}
-									onChange={(event) =>
-										setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+									value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+									onValueChange={(date) =>
+										setForm((prev) => ({
+											...prev,
+											effective_from: date ? toApiDate(date) : "",
+										}))
 									}
 									disabled={isSubmitting}
+									className="w-full"
+									placeholder="Effective From"
 								/>
 							</div>
 
 							<div className="grid gap-2">
-								<Label htmlFor="add-adv-inst-amount">Installment amount</Label>
+								<Label htmlFor="add-adv-inst-amount">Installment Amount</Label>
 								<Input
 									id="add-adv-inst-amount"
 									inputMode="decimal"
@@ -379,7 +406,7 @@ function AddAdvanceDialog({
 							</div>
 
 							<div className="grid gap-2">
-								<Label htmlFor="add-adv-inst-recovered">Installments recovered (opening)</Label>
+								<Label htmlFor="add-adv-inst-recovered">Installments Recovered (Opening)</Label>
 								<Input
 									id="add-adv-inst-recovered"
 									type="number"
@@ -397,7 +424,7 @@ function AddAdvanceDialog({
 							</div>
 
 							<div className="grid gap-2">
-								<Label htmlFor="add-adv-inst-total">Installments total</Label>
+								<Label htmlFor="add-adv-inst-total">Installments Total</Label>
 								<Input
 									id="add-adv-inst-total"
 									type="number"
@@ -524,7 +551,7 @@ function NewInstallmentVersionDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New installment version</DialogTitle>
+					<DialogTitle>New Installment Version</DialogTitle>
 					<DialogDescription>
 						Schedule a new installment version for this advance.
 					</DialogDescription>
@@ -536,20 +563,24 @@ function NewInstallmentVersionDialog({
 				>
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="niv-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="niv-effective-from">Effective From</Label>
+							<DatePicker
 								id="niv-effective-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({
+										...prev,
+										effective_from: date ? toApiDate(date) : "",
+									}))
 								}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="niv-amount">Installment amount</Label>
+							<Label htmlFor="niv-amount">Installment Amount</Label>
 							<Input
 								id="niv-amount"
 								inputMode="decimal"
@@ -563,7 +594,7 @@ function NewInstallmentVersionDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="niv-recovered">Installments recovered (opening)</Label>
+							<Label htmlFor="niv-recovered">Installments Recovered (Opening)</Label>
 							<Input
 								id="niv-recovered"
 								type="number"
@@ -581,7 +612,7 @@ function NewInstallmentVersionDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="niv-total">Installments total</Label>
+							<Label htmlFor="niv-total">Installments Total</Label>
 							<Input
 								id="niv-total"
 								type="number"
@@ -596,7 +627,7 @@ function NewInstallmentVersionDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="niv-change-reason">Change reason (optional)</Label>
+							<Label htmlFor="niv-change-reason">Change Reason (Optional)</Label>
 							<Textarea
 								id="niv-change-reason"
 								value={form.change_reason}

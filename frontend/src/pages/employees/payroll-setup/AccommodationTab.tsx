@@ -1,7 +1,9 @@
 import { type FormEvent, useEffect, useState } from "react";
 
+import { InfoTip } from "@/components/info-tip";
+import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -22,7 +24,16 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	type AccommodationResponse,
 	QUARTERS_LOCATIONS,
@@ -37,34 +48,36 @@ import { ApiError, getErrorMessage } from "@/lib/errors";
 
 import { validateNonNegativeMoney, validatePositiveMoney } from "./money";
 
+const FOREGONE_HRA_INFO =
+	"Informational only — not a payroll charge. Shown for reference against the license fee.";
+const FOREGONE_HRA_FORM_INFO = "Informational only — not deducted as a charge.";
+
 type AccommodationTabProps = {
 	employeeId: string;
 	asOf: string;
 	canManage: boolean;
+	createOpen: boolean;
+	onCreateOpenChange: (open: boolean) => void;
 };
 
-export function AccommodationTab({ employeeId, asOf, canManage }: AccommodationTabProps) {
+export function AccommodationTab({
+	employeeId,
+	asOf,
+	canManage,
+	createOpen,
+	onCreateOpenChange,
+}: AccommodationTabProps) {
 	const accommodationQuery = useAccommodation(employeeId, asOf);
-	const [addOpen, setAddOpen] = useState(false);
 	const [versionTarget, setVersionTarget] = useState<AccommodationResponse | null>(null);
 
 	const rows = accommodationQuery.data ?? [];
 
 	return (
 		<div className="grid gap-4" data-testid="accommodation-tab">
-			<div className="flex flex-wrap items-center justify-between gap-2">
-				<h3 className="text-sm font-medium">Accommodation</h3>
-				{canManage ? (
-					<Button size="xs" onClick={() => setAddOpen(true)}>
-						Add
-					</Button>
-				) : null}
-			</div>
-
 			{accommodationQuery.isLoading ? (
 				<div className="grid gap-2">
-					<Skeleton className="h-24 w-full" />
-					<Skeleton className="h-24 w-full" />
+					<Skeleton className="h-10 w-full" />
+					<Skeleton className="h-10 w-full" />
 				</div>
 			) : null}
 
@@ -81,51 +94,64 @@ export function AccommodationTab({ employeeId, asOf, canManage }: AccommodationT
 						No accommodation assignments as of this date.
 					</p>
 				) : (
-					<div className="grid gap-3">
-						{rows.map((row) => (
-							<Card key={row.id} size="sm" data-testid={`accommodation-card-${row.id}`}>
-								<CardHeader className="border-b">
-									<CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
-										<span>
-											{quartersLocationLabel(row.quarters_location)} — {row.quarters_identifier}
-										</span>
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>Location</TableHead>
+								<TableHead className="text-right">License Fee</TableHead>
+								<TableHead className="text-right">
+									<span className="inline-flex items-center justify-end gap-1">
+										<span data-testid="accommodation-foregone-caption">Foregone HRA</span>
+										<InfoTip text={FOREGONE_HRA_INFO} ariaLabel="About Foregone HRA" />
+									</span>
+								</TableHead>
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{rows.map((row) => (
+								<TableRow
+									key={row.id}
+									data-testid={`accommodation-row-${row.id}`}
+									className={canManage ? "cursor-pointer" : undefined}
+									onClick={(event) => {
+										if (!canManage || isInteractiveRowTarget(event.target, event.currentTarget)) {
+											return;
+										}
+										setVersionTarget(row);
+									}}
+								>
+									<TableCell>
 										{canManage ? (
-											<Button size="xs" variant="outline" onClick={() => setVersionTarget(row)}>
-												Add
-											</Button>
+											<button
+												type="button"
+												className="sr-only focus:not-sr-only focus:mb-1 focus:inline-flex focus:rounded-md focus:bg-background focus:px-2 focus:py-1 focus:ring-2 focus:ring-ring/35"
+												onClick={() => setVersionTarget(row)}
+											>
+												Update Fee
+											</button>
 										) : null}
-									</CardTitle>
-								</CardHeader>
-								<CardContent className="grid gap-3 pt-4 text-sm">
-									<div className="grid grid-cols-[10rem_1fr] gap-2">
-										<dt className="text-muted-foreground">License fee</dt>
-										<dd data-testid="accommodation-license-fee">{row.license_fee ?? "—"}</dd>
-									</div>
-									<div className="grid gap-1">
-										<div className="grid grid-cols-[10rem_1fr] gap-2">
-											<dt className="text-muted-foreground">Foregone HRA</dt>
-											<dd data-testid="accommodation-foregone-hra">
-												{row.informational_hra_foregone ?? "—"}
-											</dd>
-										</div>
-										<p
-											className="text-xs text-muted-foreground"
-											data-testid="accommodation-foregone-caption"
-										>
-											Informational only — not a payroll charge. Shown for reference against the
-											license fee.
-										</p>
-									</div>
-								</CardContent>
-							</Card>
-						))}
-					</div>
+										{quartersLocationLabel(row.quarters_location)} — {row.quarters_identifier}
+									</TableCell>
+									<TableCell className="text-right" data-testid="accommodation-license-fee">
+										{row.license_fee ?? "—"}
+									</TableCell>
+									<TableCell className="text-right" data-testid="accommodation-foregone-hra">
+										{row.informational_hra_foregone ?? "—"}
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
 				)
 			) : null}
 
 			{canManage ? (
 				<>
-					<AddAssignmentDialog open={addOpen} onOpenChange={setAddOpen} employeeId={employeeId} />
+					<AddAssignmentDialog
+						open={createOpen}
+						onOpenChange={onCreateOpenChange}
+						employeeId={employeeId}
+					/>
 					<NewChargeVersionDialog
 						open={Boolean(versionTarget)}
 						onOpenChange={(open) => {
@@ -146,6 +172,7 @@ type AddAssignmentForm = {
 	effective_from: string;
 	license_fee: string;
 	informational_hra_foregone: string;
+	change_reason: string;
 };
 
 const emptyAddForm = (): AddAssignmentForm => ({
@@ -154,6 +181,7 @@ const emptyAddForm = (): AddAssignmentForm => ({
 	effective_from: "",
 	license_fee: "",
 	informational_hra_foregone: "",
+	change_reason: "",
 });
 
 function AddAssignmentDialog({
@@ -189,7 +217,7 @@ function AddAssignmentDialog({
 			return;
 		}
 
-		const licenseError = validatePositiveMoney(form.license_fee, "License fee");
+		const licenseError = validatePositiveMoney(form.license_fee, "License Fee");
 		if (licenseError) {
 			setFormError(licenseError);
 			return;
@@ -197,7 +225,7 @@ function AddAssignmentDialog({
 
 		const foregone = form.informational_hra_foregone.trim();
 		if (foregone) {
-			const foregoneError = validateNonNegativeMoney(foregone, "Informational foregone HRA");
+			const foregoneError = validateNonNegativeMoney(foregone, "Informational Foregone HRA");
 			if (foregoneError) {
 				setFormError(foregoneError);
 				return;
@@ -230,7 +258,7 @@ function AddAssignmentDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>Add assignment</DialogTitle>
+					<DialogTitle>Add Assignment</DialogTitle>
 					<DialogDescription>
 						Assign government quarters and the initial license fee charge.
 					</DialogDescription>
@@ -242,7 +270,7 @@ function AddAssignmentDialog({
 				>
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="add-acc-location">Quarters location</Label>
+							<Label htmlFor="add-acc-location">Quarters Location</Label>
 							<Select
 								value={form.quarters_location}
 								onValueChange={(value) =>
@@ -271,7 +299,7 @@ function AddAssignmentDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-acc-identifier">Quarters identifier</Label>
+							<Label htmlFor="add-acc-identifier">Quarters Identifier</Label>
 							<Input
 								id="add-acc-identifier"
 								value={form.quarters_identifier}
@@ -283,20 +311,24 @@ function AddAssignmentDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-acc-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="add-acc-effective-from">Effective From</Label>
+							<DatePicker
 								id="add-acc-effective-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({
+										...prev,
+										effective_from: date ? toApiDate(date) : "",
+									}))
 								}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-acc-license-fee">License fee</Label>
+							<Label htmlFor="add-acc-license-fee">License Fee</Label>
 							<Input
 								id="add-acc-license-fee"
 								inputMode="decimal"
@@ -310,7 +342,10 @@ function AddAssignmentDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="add-acc-foregone-hra">Informational foregone HRA (optional)</Label>
+							<div className="inline-flex items-center gap-1">
+								<Label htmlFor="add-acc-foregone-hra">Informational Foregone HRA (Optional)</Label>
+								<InfoTip text={FOREGONE_HRA_FORM_INFO} />
+							</div>
 							<Input
 								id="add-acc-foregone-hra"
 								inputMode="decimal"
@@ -324,9 +359,6 @@ function AddAssignmentDialog({
 								disabled={isSubmitting}
 								placeholder="0.00"
 							/>
-							<p className="text-xs text-muted-foreground">
-								Informational only — not deducted as a charge.
-							</p>
 						</div>
 
 						{formError ? (
@@ -401,7 +433,7 @@ function NewChargeVersionDialog({
 			return;
 		}
 
-		const licenseError = validatePositiveMoney(form.license_fee, "License fee");
+		const licenseError = validatePositiveMoney(form.license_fee, "License Fee");
 		if (licenseError) {
 			setFormError(licenseError);
 			return;
@@ -409,7 +441,7 @@ function NewChargeVersionDialog({
 
 		const foregone = form.informational_hra_foregone.trim();
 		if (foregone) {
-			const foregoneError = validateNonNegativeMoney(foregone, "Informational foregone HRA");
+			const foregoneError = validateNonNegativeMoney(foregone, "Informational Foregone HRA");
 			if (foregoneError) {
 				setFormError(foregoneError);
 				return;
@@ -442,7 +474,7 @@ function NewChargeVersionDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New charge version</DialogTitle>
+					<DialogTitle>New Charge Version</DialogTitle>
 					<DialogDescription>
 						Create a new license fee charge version for this assignment.
 					</DialogDescription>
@@ -454,20 +486,24 @@ function NewChargeVersionDialog({
 				>
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="ncv-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="ncv-effective-from">Effective From</Label>
+							<DatePicker
 								id="ncv-effective-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) =>
-									setForm((prev) => ({ ...prev, effective_from: event.target.value }))
+								value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+								onValueChange={(date) =>
+									setForm((prev) => ({
+										...prev,
+										effective_from: date ? toApiDate(date) : "",
+									}))
 								}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="ncv-license-fee">License fee</Label>
+							<Label htmlFor="ncv-license-fee">License Fee</Label>
 							<Input
 								id="ncv-license-fee"
 								inputMode="decimal"
@@ -481,7 +517,10 @@ function NewChargeVersionDialog({
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="ncv-foregone-hra">Informational foregone HRA (optional)</Label>
+							<div className="inline-flex items-center gap-1">
+								<Label htmlFor="ncv-foregone-hra">Informational Foregone HRA (Optional)</Label>
+								<InfoTip text={FOREGONE_HRA_FORM_INFO} />
+							</div>
 							<Input
 								id="ncv-foregone-hra"
 								inputMode="decimal"
@@ -495,13 +534,10 @@ function NewChargeVersionDialog({
 								disabled={isSubmitting}
 								placeholder="0.00"
 							/>
-							<p className="text-xs text-muted-foreground">
-								Informational only — not deducted as a charge.
-							</p>
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="ncv-change-reason">Change reason (optional)</Label>
+							<Label htmlFor="ncv-change-reason">Change Reason (Optional)</Label>
 							<Textarea
 								id="ncv-change-reason"
 								value={form.change_reason}

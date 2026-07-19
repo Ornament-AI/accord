@@ -93,9 +93,9 @@ export default function PayComponentsPage() {
 	};
 
 	return (
-		<CapabilityGate capability="view_master_data" title="Pay components">
+		<CapabilityGate capability="view_master_data" title="Pay Components">
 			<AppLayout
-				title="Pay components"
+				title="Pay Components"
 				actions={
 					canManage ? (
 						<Button size="xs" onClick={() => setCreateOpen(true)}>
@@ -136,7 +136,7 @@ export default function PayComponentsPage() {
 						<DataTableShell
 							table={table}
 							onRowClick={canManage ? openEdit : undefined}
-							getRowAriaLabel={(row) => `Edit pay component ${row.code}`}
+							getRowAriaLabel={(row) => `Edit Pay Component ${row.code}`}
 						/>
 					) : null}
 				</PageShell>

@@ -50,7 +50,7 @@ export function PipelineStrip({ data }: PipelineStripProps) {
 
 			<Card size="sm" data-testid="current-period-card">
 				<CardHeader className="border-b">
-					<CardTitle className="text-sm font-medium">Current period</CardTitle>
+					<CardTitle className="text-sm font-medium">Current Period</CardTitle>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-2">
 					{currentPeriod ? (

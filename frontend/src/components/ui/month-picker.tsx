@@ -216,7 +216,7 @@ function MonthPicker({
 								viewYear: clampYearToAvailable(displayYear - 1, bounds),
 							}))
 						}
-						aria-label="Previous year"
+						aria-label="Previous Year"
 					>
 						<ChevronLeft size={16} />
 					</Button>
@@ -231,7 +231,7 @@ function MonthPicker({
 								viewYear: clampYearToAvailable(displayYear + 1, bounds),
 							}))
 						}
-						aria-label="Next year"
+						aria-label="Next Year"
 					>
 						<ChevronRight size={16} />
 					</Button>

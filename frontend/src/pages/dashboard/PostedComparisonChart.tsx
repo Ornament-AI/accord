@@ -18,11 +18,11 @@ type PostedComparisonChartProps = {
 
 const chartConfig = {
 	latest: {
-		label: "Latest posted",
+		label: "Latest Posted",
 		color: "var(--chart-1)",
 	},
 	previous: {
-		label: "Previous posted",
+		label: "Previous Posted",
 		color: "var(--chart-2)",
 	},
 } satisfies ChartConfig;
@@ -71,7 +71,7 @@ export function PostedComparisonChart({ latest, previous }: PostedComparisonChar
 	return (
 		<Card data-testid="posted-comparison-chart">
 			<CardHeader className="border-b">
-				<CardTitle className="text-sm font-medium">Posted run comparison</CardTitle>
+				<CardTitle className="text-sm font-medium">Posted Run Comparison</CardTitle>
 				<CardDescription>
 					{previous
 						? `${latestLabel} vs ${previousLabel} — gross, deductions, and net`

@@ -73,8 +73,8 @@ function formatCompactDate(date: Date): string {
  * @example With presets
  * ```tsx
  * const presets: DateRangePreset[] = [
- *   { label: "Last 7 days", value: { from: subDays(new Date(), 7), to: new Date() } },
- *   { label: "Last 30 days", value: { from: subDays(new Date(), 30), to: new Date() } },
+ *   { label: "Last 7 Days", value: { from: subDays(new Date(), 7), to: new Date() } },
+ *   { label: "Last 30 Days", value: { from: subDays(new Date(), 30), to: new Date() } },
  * ]
  *
  * <DateRangePicker

@@ -74,14 +74,14 @@ declare module "@tanstack/react-table" {
 
 const TOTAL_LABELS: Array<{ key: keyof PayrollRunTotals; label: string }> = [
 	{ key: "earnings_total", label: "Earnings" },
-	{ key: "employer_contribution_total", label: "Employer contribution" },
-	{ key: "gross_adjustment_total", label: "Gross adjustment" },
+	{ key: "employer_contribution_total", label: "Employer Contribution" },
+	{ key: "gross_adjustment_total", label: "Gross Adjustment" },
 	{ key: "gross_total", label: "Gross" },
-	{ key: "ag_deduction_total", label: "AG deduction" },
-	{ key: "treasury_deduction_total", label: "Treasury deduction" },
-	{ key: "external_recovery_total", label: "External recovery" },
+	{ key: "ag_deduction_total", label: "AG Deduction" },
+	{ key: "treasury_deduction_total", label: "Treasury Deduction" },
+	{ key: "external_recovery_total", label: "External Recovery" },
 	{ key: "deductions_total", label: "Deductions" },
-	{ key: "net_payable", label: "Net payable" },
+	{ key: "net_payable", label: "Net Payable" },
 ];
 
 function PayRunBreadcrumb({ label }: { label: string }) {
@@ -89,7 +89,7 @@ function PayRunBreadcrumb({ label }: { label: string }) {
 		<Breadcrumb>
 			<BreadcrumbList>
 				<BreadcrumbItem>
-					<BreadcrumbLink render={<Link to="/pay-runs" />}>Pay runs</BreadcrumbLink>
+					<BreadcrumbLink render={<Link to="/pay-runs" />}>Pay Runs</BreadcrumbLink>
 				</BreadcrumbItem>
 				<BreadcrumbSeparator />
 				<BreadcrumbItem>
@@ -345,7 +345,7 @@ export default function PayRunDetailPage() {
 							onClick={() => void handleCalculate()}
 							disabled={!canCalculate || calculateMutation.isPending}
 							title={calculateReason ?? undefined}
-							aria-label="Calculate pay run"
+							aria-label="Calculate Pay Run"
 						>
 							{calculateMutation.isPending ? "Calculating…" : "Calculate"}
 						</Button>

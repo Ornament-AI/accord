@@ -1,6 +1,7 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DatePicker, HISTORICAL_DATE_CALENDAR_PROPS } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -27,12 +28,32 @@ import {
 	type PayVersionResponse,
 	type PostingVersionResponse,
 	type ProfileVersionResponse,
+	parseApiDate,
 	type RetirementRegime,
+	toApiDate,
 	todayApiDate,
 	useCreateEmployeeVersion,
 } from "@/lib/api/employees";
+import {
+	useEmployeeGroupsList,
+	useOfficesList,
+	usePayrollUnitsList,
+	usePostsList,
+} from "@/lib/api/org-structure";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
+import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
+
+const NONE_VALUE = "__none__";
+
+function labelForId(
+	id: string | null | undefined,
+	labels: Record<string, string>,
+	fallback = "Select…",
+): string {
+	if (!id) return fallback;
+	return labels[id] ?? fallback;
+}
 
 type ScheduleChangeDialogProps = {
 	open: boolean;
@@ -63,6 +84,33 @@ export function ScheduleChangeDialog({
 	activeBank,
 }: ScheduleChangeDialogProps) {
 	const createVersion = useCreateEmployeeVersion(employeeId);
+	const officesQuery = useOfficesList();
+	const payrollUnitsQuery = usePayrollUnitsList();
+	const postsQuery = usePostsList();
+	const employeeGroupsQuery = useEmployeeGroupsList();
+
+	const offices = officesQuery.data ?? [];
+	const payrollUnits = payrollUnitsQuery.data ?? [];
+	const posts = postsQuery.data ?? [];
+	const employeeGroups = employeeGroupsQuery.data ?? [];
+
+	const officeLabels = useMemo(
+		() => Object.fromEntries(offices.map((item) => [item.id, namedEntityLabel(item)])),
+		[offices],
+	);
+	const payrollUnitLabels = useMemo(
+		() => Object.fromEntries(payrollUnits.map((item) => [item.id, namedEntityLabel(item)])),
+		[payrollUnits],
+	);
+	const postLabels = useMemo(
+		() => Object.fromEntries(posts.map((item) => [item.id, postEntityLabel(item)])),
+		[posts],
+	);
+	const employeeGroupLabels = useMemo(
+		() => Object.fromEntries(employeeGroups.map((item) => [item.id, namedEntityLabel(item)])),
+		[employeeGroups],
+	);
+
 	const [effectiveFrom, setEffectiveFrom] = useState(todayApiDate());
 	const [changeReason, setChangeReason] = useState("");
 	const [overlapError, setOverlapError] = useState<string | null>(null);
@@ -107,15 +155,15 @@ export function ScheduleChangeDialog({
 
 		if (kind === "profile" && activeProfile) {
 			setName(activeProfile.name);
-			setSevarthId(activeProfile.sevarth_id);
+			setSevarthId(activeProfile.sevarth_id ?? "");
 			setRetirementRegime((activeProfile.retirement_regime as RetirementRegime) || "nps");
 			setGpfJurisdiction((activeProfile.gpf_jurisdiction as GpfJurisdiction) || "");
 			setPan(activeProfile.pan ?? "");
 			setPran(activeProfile.pran ?? "");
 			setGpfAccountNumber(activeProfile.gpf_account_number ?? "");
 			setEpfNumber(activeProfile.epf_number ?? "");
-			setDateOfBirth(activeProfile.date_of_birth);
-			setDateOfJoining(activeProfile.date_of_joining);
+			setDateOfBirth(activeProfile.date_of_birth ?? "");
+			setDateOfJoining(activeProfile.date_of_joining ?? "");
 		}
 		if (kind === "posting" && activePosting) {
 			setOfficeId(activePosting.office_id);
@@ -124,16 +172,23 @@ export function ScheduleChangeDialog({
 			setEmployeeGroupId(activePosting.employee_group_id ?? "");
 		}
 		if (kind === "pay" && activePay) {
-			setPayMatrixLevel(activePay.pay_matrix_level);
+			setPayMatrixLevel(activePay.pay_matrix_level ?? "");
 			setBasicPay(activePay.basic_pay);
 		}
 		if (kind === "bank" && activeBank) {
 			setAccountNumber(activeBank.account_number);
 			setIfsc(activeBank.ifsc);
 			setBankName(activeBank.bank_name);
-			setBranch(activeBank.branch);
+			setBranch(activeBank.branch ?? "");
 		}
 	}, [open, kind, activeProfile, activePosting, activePay, activeBank]);
+
+	const postingCatalogLoading =
+		kind === "posting" &&
+		(officesQuery.isLoading ||
+			payrollUnitsQuery.isLoading ||
+			postsQuery.isLoading ||
+			employeeGroupsQuery.isLoading);
 
 	const buildBody = (): Record<string, unknown> | null => {
 		const base = {
@@ -156,8 +211,8 @@ export function ScheduleChangeDialog({
 				pran: pran.trim() || null,
 				gpf_account_number: gpfAccountNumber.trim() || null,
 				epf_number: epfNumber.trim() || null,
-				date_of_birth: dateOfBirth,
-				date_of_joining: dateOfJoining,
+				date_of_birth: dateOfBirth.trim() || null,
+				date_of_joining: dateOfJoining.trim() || null,
 			};
 		}
 		if (kind === "posting") {
@@ -221,13 +276,14 @@ export function ScheduleChangeDialog({
 				<form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="schedule-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="schedule-effective-from">Effective From</Label>
+							<DatePicker
 								id="schedule-effective-from"
-								type="date"
-								value={effectiveFrom}
-								onChange={(event) => setEffectiveFrom(event.target.value)}
+								value={effectiveFrom ? parseApiDate(effectiveFrom) : undefined}
+								onValueChange={(date) => setEffectiveFrom(date ? toApiDate(date) : "")}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
@@ -252,7 +308,7 @@ export function ScheduleChangeDialog({
 									/>
 								</div>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-regime">Retirement regime</Label>
+									<Label htmlFor="schedule-regime">Retirement Regime</Label>
 									<Select
 										value={retirementRegime}
 										onValueChange={(value) => {
@@ -278,7 +334,7 @@ export function ScheduleChangeDialog({
 								</div>
 								{retirementRegime === "gpf" ? (
 									<div className="grid gap-2">
-										<Label htmlFor="schedule-gpf-jurisdiction">GPF jurisdiction</Label>
+										<Label htmlFor="schedule-gpf-jurisdiction">GPF Jurisdiction</Label>
 										<Select
 											value={gpfJurisdiction || null}
 											onValueChange={(value) => {
@@ -312,23 +368,27 @@ export function ScheduleChangeDialog({
 								) : null}
 								<div className="grid grid-cols-2 gap-3">
 									<div className="grid gap-2">
-										<Label htmlFor="schedule-dob">Date of birth</Label>
-										<Input
+										<Label htmlFor="schedule-dob">Date of Birth</Label>
+										<DatePicker
 											id="schedule-dob"
-											type="date"
-											value={dateOfBirth}
-											onChange={(event) => setDateOfBirth(event.target.value)}
+											value={dateOfBirth ? parseApiDate(dateOfBirth) : undefined}
+											onValueChange={(date) => setDateOfBirth(date ? toApiDate(date) : "")}
 											disabled={isSubmitting}
+											className="w-full"
+											placeholder="Date of Birth"
+											calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 										/>
 									</div>
 									<div className="grid gap-2">
-										<Label htmlFor="schedule-doj">Date of joining</Label>
-										<Input
+										<Label htmlFor="schedule-doj">Date of Joining</Label>
+										<DatePicker
 											id="schedule-doj"
-											type="date"
-											value={dateOfJoining}
-											onChange={(event) => setDateOfJoining(event.target.value)}
+											value={dateOfJoining ? parseApiDate(dateOfJoining) : undefined}
+											onValueChange={(date) => setDateOfJoining(date ? toApiDate(date) : "")}
 											disabled={isSubmitting}
+											className="w-full"
+											placeholder="Date of Joining"
+											calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 										/>
 									</div>
 								</div>
@@ -347,31 +407,97 @@ export function ScheduleChangeDialog({
 						{kind === "posting" ? (
 							<>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-office">Office ID</Label>
-									<Input
-										id="schedule-office"
-										value={officeId}
-										onChange={(event) => setOfficeId(event.target.value)}
-										disabled={isSubmitting}
-									/>
+									<Label htmlFor="schedule-office">Office</Label>
+									<Select
+										value={officeId || null}
+										onValueChange={(value) => setOfficeId(value ?? "")}
+										disabled={isSubmitting || postingCatalogLoading}
+									>
+										<SelectTrigger id="schedule-office" className="w-full">
+											<SelectValue placeholder="Select office">
+												{(value: string | null) => labelForId(value, officeLabels, "Select office")}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{offices.map((office) => (
+												<SelectItem key={office.id} value={office.id}>
+													{namedEntityLabel(office)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-payroll-unit">Payroll unit ID</Label>
-									<Input
-										id="schedule-payroll-unit"
-										value={payrollUnitId}
-										onChange={(event) => setPayrollUnitId(event.target.value)}
-										disabled={isSubmitting}
-									/>
+									<Label htmlFor="schedule-payroll-unit">Payroll Unit</Label>
+									<Select
+										value={payrollUnitId || null}
+										onValueChange={(value) => setPayrollUnitId(value ?? "")}
+										disabled={isSubmitting || postingCatalogLoading}
+									>
+										<SelectTrigger id="schedule-payroll-unit" className="w-full">
+											<SelectValue placeholder="Select payroll unit">
+												{(value: string | null) =>
+													labelForId(value, payrollUnitLabels, "Select payroll unit")
+												}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{payrollUnits.map((unit) => (
+												<SelectItem key={unit.id} value={unit.id}>
+													{namedEntityLabel(unit)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-post">Post ID</Label>
-									<Input
-										id="schedule-post"
-										value={postId}
-										onChange={(event) => setPostId(event.target.value)}
-										disabled={isSubmitting}
-									/>
+									<Label htmlFor="schedule-post">Post</Label>
+									<Select
+										value={postId || null}
+										onValueChange={(value) => setPostId(value ?? "")}
+										disabled={isSubmitting || postingCatalogLoading}
+									>
+										<SelectTrigger id="schedule-post" className="w-full">
+											<SelectValue placeholder="Select post">
+												{(value: string | null) => labelForId(value, postLabels, "Select post")}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{posts.map((post) => (
+												<SelectItem key={post.id} value={post.id}>
+													{postEntityLabel(post)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="schedule-employee-group">Employee Group</Label>
+									<Select
+										value={employeeGroupId || NONE_VALUE}
+										onValueChange={(value) =>
+											setEmployeeGroupId(!value || value === NONE_VALUE ? "" : value)
+										}
+										disabled={isSubmitting || postingCatalogLoading}
+									>
+										<SelectTrigger id="schedule-employee-group" className="w-full">
+											<SelectValue placeholder="None">
+												{(value: string | null) =>
+													!value || value === NONE_VALUE
+														? "None"
+														: labelForId(value, employeeGroupLabels, "None")
+												}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value={NONE_VALUE}>None</SelectItem>
+											{employeeGroups.map((group) => (
+												<SelectItem key={group.id} value={group.id}>
+													{namedEntityLabel(group)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
 							</>
 						) : null}
@@ -379,7 +505,7 @@ export function ScheduleChangeDialog({
 						{kind === "pay" ? (
 							<>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-pay-level">Pay matrix level</Label>
+									<Label htmlFor="schedule-pay-level">Pay Matrix Level</Label>
 									<Input
 										id="schedule-pay-level"
 										value={payMatrixLevel}
@@ -388,7 +514,7 @@ export function ScheduleChangeDialog({
 									/>
 								</div>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-basic-pay">Basic pay</Label>
+									<Label htmlFor="schedule-basic-pay">Basic Pay</Label>
 									<Input
 										id="schedule-basic-pay"
 										value={basicPay}
@@ -402,7 +528,7 @@ export function ScheduleChangeDialog({
 						{kind === "bank" ? (
 							<>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-account">Account number</Label>
+									<Label htmlFor="schedule-account">Account Number</Label>
 									<Input
 										id="schedule-account"
 										value={accountNumber}
@@ -420,7 +546,7 @@ export function ScheduleChangeDialog({
 									/>
 								</div>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-bank-name">Bank name</Label>
+									<Label htmlFor="schedule-bank-name">Bank Name</Label>
 									<Input
 										id="schedule-bank-name"
 										value={bankName}
@@ -441,7 +567,7 @@ export function ScheduleChangeDialog({
 						) : null}
 
 						<div className="grid gap-2">
-							<Label htmlFor="schedule-change-reason">Change reason</Label>
+							<Label htmlFor="schedule-change-reason">Change Reason</Label>
 							<Textarea
 								id="schedule-change-reason"
 								value={changeReason}
@@ -469,7 +595,7 @@ export function ScheduleChangeDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : "Schedule change"}
+							{isSubmitting ? "Submitting…" : "Submit"}
 						</Button>
 					</DialogFooter>
 				</form>

@@ -108,7 +108,7 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New pay component</DialogTitle>
+					<DialogTitle>New Pay Component</DialogTitle>
 					<DialogDescription>
 						Create a pay component. Code and classification cannot be changed later.
 					</DialogDescription>
@@ -174,7 +174,7 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="create-pc-display-order">Display order</Label>
+							<Label htmlFor="create-pc-display-order">Display Order</Label>
 							<Input
 								id="create-pc-display-order"
 								type="number"

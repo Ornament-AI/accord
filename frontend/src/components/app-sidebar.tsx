@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/sidebar";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { useAuth } from "@/contexts/AuthContext";
-import { type NavRegistryEntry, NAV_REGISTRY } from "@/lib/nav-registry";
+import { NAV_REGISTRY, type NavRegistryEntry } from "@/lib/nav-registry";
 import type { Capability } from "@/types/auth";
 
 function isPathActive(currentPath: string, itemPath: string) {
@@ -81,9 +81,7 @@ function NavFolderItem({
 	return (
 		<SidebarMenuItem>
 			<Collapsible open={open} onOpenChange={setOpen} className="group/collapsible">
-				<CollapsibleTrigger
-					render={<SidebarMenuButton tooltip={item.title} isActive={false} />}
-				>
+				<CollapsibleTrigger render={<SidebarMenuButton tooltip={item.title} isActive={false} />}>
 					<item.icon />
 					<span>{item.title}</span>
 					<ChevronRight className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90" />

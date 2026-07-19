@@ -19,9 +19,10 @@ type AuthHandlerOptions = {
 	unauthenticated?: boolean;
 	onSwitchOrganization?: (organizationId: string) => AuthMeResponse | ErrorResult;
 	/** Return an error, a me payload, or `undefined` to use the default create path. */
-	onCreateOrganization?: (
-		body: { name: string; slug: string },
-	) => AuthMeResponse | ErrorResult | undefined;
+	onCreateOrganization?: (body: {
+		name: string;
+		slug: string;
+	}) => AuthMeResponse | ErrorResult | undefined;
 	onLogout?: () => void;
 };
 

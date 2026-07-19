@@ -543,7 +543,7 @@ describe("Workflow 409 handling", () => {
 	);
 });
 
-describe("Validation findings panel", () => {
+describe("Validation Findings panel", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});
@@ -663,7 +663,7 @@ describe("Validation findings panel", () => {
 			fireEvent.click(screen.getByTestId("workflow-action-validate"));
 			expect(await screen.findByTestId("validation-findings-panel")).toBeInTheDocument();
 
-			fireEvent.click(screen.getByRole("button", { name: "Calculate pay run" }));
+			fireEvent.click(screen.getByRole("button", { name: "Calculate Pay Run" }));
 			await waitFor(() => {
 				expect(screen.queryByTestId("validation-findings-panel")).not.toBeInTheDocument();
 			});

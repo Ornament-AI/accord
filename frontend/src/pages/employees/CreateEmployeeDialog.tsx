@@ -1,9 +1,10 @@
 import { ChevronDown } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { DatePicker, HISTORICAL_DATE_CALENDAR_PROPS } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -25,12 +26,32 @@ import {
 import {
 	type CreateEmployeeRequest,
 	type GpfJurisdiction,
+	parseApiDate,
 	type RetirementRegime,
+	toApiDate,
 	todayApiDate,
 	useCreateEmployee,
 } from "@/lib/api/employees";
+import {
+	useEmployeeGroupsList,
+	useOfficesList,
+	usePayrollUnitsList,
+	usePostsList,
+} from "@/lib/api/org-structure";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
+import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
+
+const NONE_VALUE = "__none__";
+
+function labelForId(
+	id: string | null | undefined,
+	labels: Record<string, string>,
+	fallback = "Select…",
+): string {
+	if (!id) return fallback;
+	return labels[id] ?? fallback;
+}
 
 type CreateEmployeeDialogProps = {
 	open: boolean;
@@ -90,6 +111,33 @@ const emptyForm = (): FormState => ({
 export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialogProps) {
 	const navigate = useNavigate();
 	const createEmployee = useCreateEmployee();
+	const officesQuery = useOfficesList();
+	const payrollUnitsQuery = usePayrollUnitsList();
+	const postsQuery = usePostsList();
+	const employeeGroupsQuery = useEmployeeGroupsList();
+
+	const offices = officesQuery.data ?? [];
+	const payrollUnits = payrollUnitsQuery.data ?? [];
+	const posts = postsQuery.data ?? [];
+	const employeeGroups = employeeGroupsQuery.data ?? [];
+
+	const officeLabels = useMemo(
+		() => Object.fromEntries(offices.map((item) => [item.id, namedEntityLabel(item)])),
+		[offices],
+	);
+	const payrollUnitLabels = useMemo(
+		() => Object.fromEntries(payrollUnits.map((item) => [item.id, namedEntityLabel(item)])),
+		[payrollUnits],
+	);
+	const postLabels = useMemo(
+		() => Object.fromEntries(posts.map((item) => [item.id, postEntityLabel(item)])),
+		[posts],
+	);
+	const employeeGroupLabels = useMemo(
+		() => Object.fromEntries(employeeGroups.map((item) => [item.id, namedEntityLabel(item)])),
+		[employeeGroups],
+	);
+
 	const [form, setForm] = useState<FormState>(emptyForm);
 	const [postingOpen, setPostingOpen] = useState(false);
 	const [payOpen, setPayOpen] = useState(false);
@@ -113,6 +161,12 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 	const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
 		setForm((prev) => ({ ...prev, [key]: value }));
 	};
+
+	const postingCatalogLoading =
+		officesQuery.isLoading ||
+		payrollUnitsQuery.isLoading ||
+		postsQuery.isLoading ||
+		employeeGroupsQuery.isLoading;
 
 	const handleSubmit = async (event: FormEvent) => {
 		event.preventDefault();
@@ -205,7 +259,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>New employee</DialogTitle>
+					<DialogTitle>New Employee</DialogTitle>
 					<DialogDescription>
 						Create an employee header with an initial profile version.
 					</DialogDescription>
@@ -213,7 +267,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 				<form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
 					<DialogBody className="grid gap-4 pb-8">
 						<div className="grid gap-2">
-							<Label htmlFor="create-emp-number">Employee number</Label>
+							<Label htmlFor="create-emp-number">Employee Number</Label>
 							<Input
 								id="create-emp-number"
 								value={form.employee_number}
@@ -230,13 +284,14 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="create-emp-effective-from">Effective from</Label>
-							<Input
+							<Label htmlFor="create-emp-effective-from">Effective From</Label>
+							<DatePicker
 								id="create-emp-effective-from"
-								type="date"
-								value={form.effective_from}
-								onChange={(event) => setField("effective_from", event.target.value)}
+								value={form.effective_from ? parseApiDate(form.effective_from) : undefined}
+								onValueChange={(date) => setField("effective_from", date ? toApiDate(date) : "")}
 								disabled={isSubmitting}
+								className="w-full"
+								placeholder="Effective From"
 							/>
 						</div>
 
@@ -261,7 +316,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 						</div>
 
 						<div className="grid gap-2">
-							<Label htmlFor="create-emp-regime">Retirement regime</Label>
+							<Label htmlFor="create-emp-regime">Retirement Regime</Label>
 							<Select
 								value={form.retirement_regime}
 								onValueChange={(value) => {
@@ -288,7 +343,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
 						{form.retirement_regime === "gpf" ? (
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-gpf-jurisdiction">GPF jurisdiction</Label>
+								<Label htmlFor="create-emp-gpf-jurisdiction">GPF Jurisdiction</Label>
 								<Select
 									value={form.gpf_jurisdiction || null}
 									onValueChange={(value) => {
@@ -323,23 +378,27 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
 						<div className="grid grid-cols-2 gap-3">
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-dob">Date of birth</Label>
-								<Input
+								<Label htmlFor="create-emp-dob">Date of Birth</Label>
+								<DatePicker
 									id="create-emp-dob"
-									type="date"
-									value={form.date_of_birth}
-									onChange={(event) => setField("date_of_birth", event.target.value)}
+									value={form.date_of_birth ? parseApiDate(form.date_of_birth) : undefined}
+									onValueChange={(date) => setField("date_of_birth", date ? toApiDate(date) : "")}
 									disabled={isSubmitting}
+									className="w-full"
+									placeholder="Date of Birth"
+									calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 								/>
 							</div>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-doj">Date of joining</Label>
-								<Input
+								<Label htmlFor="create-emp-doj">Date of Joining</Label>
+								<DatePicker
 									id="create-emp-doj"
-									type="date"
-									value={form.date_of_joining}
-									onChange={(event) => setField("date_of_joining", event.target.value)}
+									value={form.date_of_joining ? parseApiDate(form.date_of_joining) : undefined}
+									onValueChange={(date) => setField("date_of_joining", date ? toApiDate(date) : "")}
 									disabled={isSubmitting}
+									className="w-full"
+									placeholder="Date of Joining"
+									calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 								/>
 							</div>
 						</div>
@@ -368,7 +427,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
 						{form.retirement_regime === "gpf" ? (
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-gpf-account">GPF account number</Label>
+								<Label htmlFor="create-emp-gpf-account">GPF Account Number</Label>
 								<Input
 									id="create-emp-gpf-account"
 									value={form.gpf_account_number}
@@ -380,7 +439,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
 						{form.retirement_regime === "epf" ? (
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-epf">EPF number</Label>
+								<Label htmlFor="create-emp-epf">EPF Number</Label>
 								<Input
 									id="create-emp-epf"
 									value={form.epf_number}
@@ -392,37 +451,103 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
 						<OptionalSection title="Posting" open={postingOpen} onOpenChange={setPostingOpen}>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-office">Office ID</Label>
-								<Input
-									id="create-emp-office"
-									value={form.office_id}
-									onChange={(event) => setField("office_id", event.target.value)}
-									disabled={isSubmitting}
-								/>
+								<Label htmlFor="create-emp-office">Office</Label>
+								<Select
+									value={form.office_id || null}
+									onValueChange={(value) => setField("office_id", value ?? "")}
+									disabled={isSubmitting || postingCatalogLoading}
+								>
+									<SelectTrigger id="create-emp-office" className="w-full">
+										<SelectValue placeholder="Select office">
+											{(value: string | null) => labelForId(value, officeLabels, "Select office")}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										{offices.map((office) => (
+											<SelectItem key={office.id} value={office.id}>
+												{namedEntityLabel(office)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-payroll-unit">Payroll unit ID</Label>
-								<Input
-									id="create-emp-payroll-unit"
-									value={form.payroll_unit_id}
-									onChange={(event) => setField("payroll_unit_id", event.target.value)}
-									disabled={isSubmitting}
-								/>
+								<Label htmlFor="create-emp-payroll-unit">Payroll Unit</Label>
+								<Select
+									value={form.payroll_unit_id || null}
+									onValueChange={(value) => setField("payroll_unit_id", value ?? "")}
+									disabled={isSubmitting || postingCatalogLoading}
+								>
+									<SelectTrigger id="create-emp-payroll-unit" className="w-full">
+										<SelectValue placeholder="Select payroll unit">
+											{(value: string | null) =>
+												labelForId(value, payrollUnitLabels, "Select payroll unit")
+											}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										{payrollUnits.map((unit) => (
+											<SelectItem key={unit.id} value={unit.id}>
+												{namedEntityLabel(unit)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-post">Post ID</Label>
-								<Input
-									id="create-emp-post"
-									value={form.post_id}
-									onChange={(event) => setField("post_id", event.target.value)}
-									disabled={isSubmitting}
-								/>
+								<Label htmlFor="create-emp-post">Post</Label>
+								<Select
+									value={form.post_id || null}
+									onValueChange={(value) => setField("post_id", value ?? "")}
+									disabled={isSubmitting || postingCatalogLoading}
+								>
+									<SelectTrigger id="create-emp-post" className="w-full">
+										<SelectValue placeholder="Select post">
+											{(value: string | null) => labelForId(value, postLabels, "Select post")}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										{posts.map((post) => (
+											<SelectItem key={post.id} value={post.id}>
+												{postEntityLabel(post)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div className="grid gap-2">
+								<Label htmlFor="create-emp-employee-group">Employee Group</Label>
+								<Select
+									value={form.employee_group_id || NONE_VALUE}
+									onValueChange={(value) =>
+										setField("employee_group_id", !value || value === NONE_VALUE ? "" : value)
+									}
+									disabled={isSubmitting || postingCatalogLoading}
+								>
+									<SelectTrigger id="create-emp-employee-group" className="w-full">
+										<SelectValue placeholder="None">
+											{(value: string | null) =>
+												!value || value === NONE_VALUE
+													? "None"
+													: labelForId(value, employeeGroupLabels, "None")
+											}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value={NONE_VALUE}>None</SelectItem>
+										{employeeGroups.map((group) => (
+											<SelectItem key={group.id} value={group.id}>
+												{namedEntityLabel(group)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 						</OptionalSection>
 
 						<OptionalSection title="Pay" open={payOpen} onOpenChange={setPayOpen}>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-pay-level">Pay matrix level</Label>
+								<Label htmlFor="create-emp-pay-level">Pay Matrix Level</Label>
 								<Input
 									id="create-emp-pay-level"
 									value={form.pay_matrix_level}
@@ -431,7 +556,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 								/>
 							</div>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-basic-pay">Basic pay</Label>
+								<Label htmlFor="create-emp-basic-pay">Basic Pay</Label>
 								<Input
 									id="create-emp-basic-pay"
 									value={form.basic_pay}
@@ -444,7 +569,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
 						<OptionalSection title="Bank" open={bankOpen} onOpenChange={setBankOpen}>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-account">Account number</Label>
+								<Label htmlFor="create-emp-account">Account Number</Label>
 								<Input
 									id="create-emp-account"
 									value={form.account_number}
@@ -462,7 +587,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 								/>
 							</div>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-bank-name">Bank name</Label>
+								<Label htmlFor="create-emp-bank-name">Bank Name</Label>
 								<Input
 									id="create-emp-bank-name"
 									value={form.bank_name}

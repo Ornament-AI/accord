@@ -70,9 +70,9 @@ export async function fillCreateOrganizationDialog(
 	opts: { name: string },
 ): Promise<void> {
 	const dialog = page.getByRole("dialog");
-	await expect(dialog.getByRole("heading", { name: "Create organization" })).toBeVisible();
+	await expect(dialog.getByRole("heading", { name: "Create Organization" })).toBeVisible();
 	await dialog.getByLabel("Name").fill(opts.name);
-	await dialog.getByRole("button", { name: "Create organization" }).click();
+	await dialog.getByRole("button", { name: "Create Organization" }).click();
 	await expect(dialog).toBeHidden({ timeout: 30_000 });
 }
 

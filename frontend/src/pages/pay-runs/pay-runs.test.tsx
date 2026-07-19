@@ -60,7 +60,7 @@ function renderDialog(ui: ReactElement) {
 	);
 }
 
-describe("Pay runs list page", () => {
+describe("Pay Runs list page", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});
@@ -116,7 +116,7 @@ describe("Pay runs list page", () => {
 			fireEvent.click(screen.getByRole("button", { name: /^Period$/i }));
 
 			expect(
-				await screen.findByRole("heading", { name: "New payroll period" }),
+				await screen.findByRole("heading", { name: "New Payroll Period" }),
 			).toBeInTheDocument();
 			fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2026" } });
 			fireEvent.change(screen.getByLabelText("Month"), { target: { value: "8" } });
@@ -124,7 +124,7 @@ describe("Pay runs list page", () => {
 
 			await waitFor(() => {
 				expect(
-					screen.queryByRole("heading", { name: "New payroll period" }),
+					screen.queryByRole("heading", { name: "New Payroll Period" }),
 				).not.toBeInTheDocument();
 			});
 			expect(await screen.findByText("2026-08")).toBeInTheDocument();
@@ -149,7 +149,7 @@ describe("Pay runs list page", () => {
 
 		renderDialog(<CreatePeriodDialog open onOpenChange={vi.fn()} />);
 
-		expect(await screen.findByRole("heading", { name: "New payroll period" })).toBeInTheDocument();
+		expect(await screen.findByRole("heading", { name: "New Payroll Period" })).toBeInTheDocument();
 		fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2026" } });
 		fireEvent.change(screen.getByLabelText("Month"), { target: { value: "7" } });
 		fireEvent.click(screen.getByRole("button", { name: "Create period" }));
@@ -186,16 +186,16 @@ describe("Pay runs list page", () => {
 			).toBeInTheDocument();
 			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
 
-			expect(await screen.findByRole("heading", { name: "New pay run" })).toBeInTheDocument();
+			expect(await screen.findByRole("heading", { name: "New Pay Run" })).toBeInTheDocument();
 			const dialog = screen.getByRole("dialog");
 			expect(within(dialog).getByLabelText("Period")).toHaveTextContent("2026-07");
-			expect(within(dialog).getByLabelText("Run type")).toHaveTextContent("Regular");
-			openBaseUiSelect(screen.getByLabelText("Run type"));
+			expect(within(dialog).getByLabelText("Run Type")).toHaveTextContent("Regular");
+			openBaseUiSelect(screen.getByLabelText("Run Type"));
 			pickBaseUiOption("Regular");
 			fireEvent.click(screen.getByRole("button", { name: "Create run" }));
 
 			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "New pay run" })).not.toBeInTheDocument();
+				expect(screen.queryByRole("heading", { name: "New Pay Run" })).not.toBeInTheDocument();
 			});
 			expect(await screen.findByText("Regular")).toBeInTheDocument();
 		},
@@ -277,7 +277,7 @@ describe("Pay run detail — calculate gating", () => {
 		"Calculate button for status %s (enabled=%s)",
 		async (status, enabled) => {
 			await renderDetailWithStatus(status);
-			const button = await screen.findByRole("button", { name: "Calculate pay run" });
+			const button = await screen.findByRole("button", { name: "Calculate Pay Run" });
 			if (enabled) {
 				expect(button).toBeEnabled();
 			} else {
@@ -334,14 +334,14 @@ describe("Pay run detail — calculate gating", () => {
 			).toBeInTheDocument();
 			expect(screen.queryByTestId("pay-run-totals")).not.toBeInTheDocument();
 
-			fireEvent.click(screen.getByRole("button", { name: "Calculate pay run" }));
+			fireEvent.click(screen.getByRole("button", { name: "Calculate Pay Run" }));
 
 			await waitFor(() => {
 				expect(toast.success).toHaveBeenCalledWith("Pay run calculated");
 			});
 
 			expect(await screen.findByTestId("pay-run-totals")).toBeInTheDocument();
-			expect(screen.getByText("Net payable")).toBeInTheDocument();
+			expect(screen.getByText("Net Payable")).toBeInTheDocument();
 			expect(screen.getByText("₹99,000.00")).toBeInTheDocument();
 			expect(await screen.findByText("Calculated")).toBeInTheDocument();
 			expect(screen.getByText("Engine engine-1.0.0")).toBeInTheDocument();
@@ -371,7 +371,7 @@ describe("Pay run detail — calculate gating", () => {
 			expect(
 				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: "Calculate pay run" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Calculate Pay Run" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -481,29 +481,29 @@ describe("Pay run detail — inputs and totals", () => {
 			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
 
 			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
-			expect(await screen.findByRole("heading", { name: "Add run input" })).toBeInTheDocument();
+			expect(await screen.findByRole("heading", { name: "Add Run Input" })).toBeInTheDocument();
 
 			await waitFor(() => {
 				expect(screen.getByLabelText("Employee")).toBeInTheDocument();
 			});
 			openBaseUiSelect(screen.getByLabelText("Employee"));
 			pickBaseUiOption(/E-001/);
-			fireEvent.change(screen.getByLabelText("Component code"), { target: { value: "HRA" } });
+			fireEvent.change(screen.getByLabelText("Component Code"), { target: { value: "HRA" } });
 			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2500.00" } });
 			fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Housing adjust" } });
 			fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
 
 			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "Add run input" })).not.toBeInTheDocument();
+				expect(screen.queryByRole("heading", { name: "Add Run Input" })).not.toBeInTheDocument();
 			});
 			expect(await screen.findByText("HRA")).toBeInTheDocument();
 
 			fireEvent.click(screen.getByRole("button", { name: /Edit input BASIC/i }));
-			expect(await screen.findByRole("heading", { name: "Edit run input" })).toBeInTheDocument();
+			expect(await screen.findByRole("heading", { name: "Edit Run Input" })).toBeInTheDocument();
 			fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Updated reason" } });
 			fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "Edit run input" })).not.toBeInTheDocument();
+				expect(screen.queryByRole("heading", { name: "Edit Run Input" })).not.toBeInTheDocument();
 			});
 			expect(await screen.findByText("Updated reason")).toBeInTheDocument();
 
@@ -562,7 +562,7 @@ describe("Pay run detail — inputs and totals", () => {
 	);
 });
 
-describe("Pay runs capability gate", () => {
+describe("Pay Runs capability gate", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});

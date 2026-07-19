@@ -48,9 +48,7 @@ function OrgCatalogPage({
 				title={title}
 				actions={canManage ? <CatalogAddButton onClick={() => setCreateOpen(true)} /> : undefined}
 			>
-				<PageShell data-testid={testId}>
-					{children({ createOpen, setCreateOpen })}
-				</PageShell>
+				<PageShell data-testid={testId}>{children({ createOpen, setCreateOpen })}</PageShell>
 			</AppLayout>
 		</CapabilityGate>
 	);
@@ -120,6 +118,8 @@ export function EmployeeGroupsPage() {
 	);
 }
 
+export default OfficesPage;
+
 export function OrgSettingsPage() {
 	return (
 		<CapabilityGate capability="manage_organization" title="Settings">
@@ -131,5 +131,3 @@ export function OrgSettingsPage() {
 		</CapabilityGate>
 	);
 }
-
-export default OfficesPage;

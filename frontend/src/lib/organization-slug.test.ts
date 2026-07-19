@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	organizationSlugCandidate,
-	suggestOrganizationSlug,
-} from "@/lib/organization-slug";
+import { organizationSlugCandidate, suggestOrganizationSlug } from "@/lib/organization-slug";
 
 describe("suggestOrganizationSlug", () => {
 	it("derives lowercase kebab-case from a display name", () => {

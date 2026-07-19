@@ -37,7 +37,7 @@ async function ensurePayrollPeriod(page: Page): Promise<void> {
 		page,
 		page.getByRole("button", { name: "New period" }).first(),
 	);
-	await expect(dialog.getByRole("heading", { name: "New payroll period" })).toBeVisible();
+	await expect(dialog.getByRole("heading", { name: "New Payroll Period" })).toBeVisible();
 	await dialog.getByLabel("Year").fill(year);
 	await dialog.getByLabel("Month").fill(month);
 	await dialog.getByRole("button", { name: "Create period" }).click();
@@ -67,14 +67,14 @@ async function createOrOpenPayRun(
 	const typeLabel = runType === "supplemental" ? "Supplemental" : "Regular";
 	const runDialog = await clickUntilDialog(
 		page,
-		page.locator("header").getByRole("button", { name: "New pay run" }),
+		page.locator("header").getByRole("button", { name: "New Pay Run" }),
 	);
-	await expect(runDialog.getByRole("heading", { name: "New pay run" })).toBeVisible();
+	await expect(runDialog.getByRole("heading", { name: "New Pay Run" })).toBeVisible();
 
 	if (runType !== "regular") {
-		await selectWithin(runDialog, "Run type", typeLabel);
+		await selectWithin(runDialog, "Run Type", typeLabel);
 		// Trigger accessible text is the raw enum value ("supplemental"), not the label.
-		await expect(runDialog.getByRole("combobox", { name: "Run type" })).toContainText(
+		await expect(runDialog.getByRole("combobox", { name: "Run Type" })).toContainText(
 			new RegExp(runType, "i"),
 		);
 	}
@@ -107,9 +107,9 @@ async function openNewestPayRun(page: Page): Promise<void> {
 }
 
 async function calculateAndValidate(page: Page): Promise<void> {
-	await page.getByRole("button", { name: "Calculate pay run" }).click();
+	await page.getByRole("button", { name: "Calculate Pay Run" }).click();
 	await expect(page.getByTestId("pay-run-totals")).toBeVisible({ timeout: 60_000 });
-	await expect(page.getByTestId("pay-run-totals")).toContainText(/Gross|Earnings|Net payable/i);
+	await expect(page.getByTestId("pay-run-totals")).toContainText(/Gross|Earnings|Net Payable/i);
 
 	await page.getByTestId("workflow-action-validate").click();
 	await expect(page.getByTestId("validation-findings-panel")).toBeVisible({ timeout: 30_000 });
@@ -129,7 +129,7 @@ test("add direct run input lists component after save", async ({ page }) => {
 	 * Backend: sqlalchemy.exc.InvalidRequestError: Could not refresh instance
 	 * '<PayrollRunInput>' after commit in
 	 * backend/app/services/payroll_runs.py upsert_run_input (~line 335).
-	 * UI: "An unexpected error occurred." in Add run input dialog.
+	 * UI: "An unexpected error occurred." in Add Run Input dialog.
 	 * Repro: open draft run → Add input → employee + component + amount + reason → Add input.
 	 */
 	const ctx = readRunContext();
@@ -155,11 +155,11 @@ test("add direct run input lists component after save", async ({ page }) => {
 	}
 
 	const inputDialog = await clickUntilDialog(page, page.getByRole("button", { name: "Add input" }));
-	await inputDialog.getByLabel("Search employees").fill(ctx.employeeNumber!);
+	await inputDialog.getByLabel("Search Employees").fill(ctx.employeeNumber!);
 	await page.waitForTimeout(500);
 	await selectWithin(inputDialog, "Employee", new RegExp(ctx.employeeNumber!));
-	await inputDialog.getByLabel("Component code").fill(ctx.componentCode!);
-	await selectWithin(inputDialog, "Input kind", "One Time");
+	await inputDialog.getByLabel("Component Code").fill(ctx.componentCode!);
+	await selectWithin(inputDialog, "Input Kind", "One Time");
 	await inputDialog.getByLabel("Amount").fill("1500.00");
 	await inputDialog.getByLabel("Reason").fill("E2E one-time adjustment");
 	await inputDialog.getByRole("button", { name: "Add input" }).click();

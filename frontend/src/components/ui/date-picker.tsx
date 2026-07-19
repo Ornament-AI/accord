@@ -34,6 +34,14 @@ interface DatePickerProps {
 	align?: "start" | "center" | "end";
 }
 
+/** Year/month dropdowns for historical dates (DOB, DOJ) without month-clicking. */
+const HISTORICAL_DATE_CALENDAR_PROPS: NonNullable<DatePickerProps["calendarProps"]> = {
+	captionLayout: "dropdown",
+	startMonth: new Date(1920, 0),
+	endMonth: new Date(new Date().getFullYear() + 1, 11),
+	reverseYears: true,
+};
+
 /**
  * DatePicker component for single date selection.
  *
@@ -80,7 +88,7 @@ function DatePicker({
 						aria-invalid={ariaInvalid}
 						aria-describedby={ariaDescribedBy}
 						className={cn(
-							"h-9 w-[200px] min-w-0 justify-start text-left font-normal",
+							"h-9 w-auto min-w-0 justify-start text-left font-normal",
 							toolbarOutlineClassName,
 							!value && "text-muted-foreground hover:text-muted-foreground",
 							className,
@@ -111,4 +119,4 @@ function DatePicker({
 	);
 }
 
-export { DatePicker, type DatePickerProps };
+export { DatePicker, type DatePickerProps, HISTORICAL_DATE_CALENDAR_PROPS };

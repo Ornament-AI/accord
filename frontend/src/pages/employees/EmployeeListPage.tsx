@@ -5,7 +5,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
@@ -52,7 +52,7 @@ function regimeLabel(regime: string | null | undefined): string {
 const columns: ColumnDef<EmployeeSummary>[] = [
 	{
 		accessorKey: "employee_number",
-		header: "Employee number",
+		header: "Employee Number",
 	},
 	{
 		accessorKey: "name",
@@ -81,6 +81,15 @@ const columns: ColumnDef<EmployeeSummary>[] = [
 	},
 ];
 
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+	const [debounced, setDebounced] = useState(value);
+	useEffect(() => {
+		const handle = window.setTimeout(() => setDebounced(value), delayMs);
+		return () => window.clearTimeout(handle);
+	}, [value, delayMs]);
+	return debounced;
+}
+
 export default function EmployeeListPage() {
 	const navigate = useNavigate();
 	const { hasCapability } = useAuth();
@@ -88,6 +97,7 @@ export default function EmployeeListPage() {
 
 	const [asOf, setAsOf] = useState(() => todayApiDate());
 	const [search, setSearch] = useState("");
+	const debouncedSearch = useDebouncedValue(search, 300);
 	const [page, setPage] = useState(1);
 	const [createOpen, setCreateOpen] = useState(false);
 	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
@@ -97,7 +107,7 @@ export default function EmployeeListPage() {
 
 	const listQuery = useEmployeesList({
 		as_of: asOf,
-		search: search.trim() || null,
+		search: debouncedSearch.trim() || null,
 		page,
 		size: 20,
 	});
@@ -130,10 +140,9 @@ export default function EmployeeListPage() {
 				<PageShell data-testid="employee-list-page">
 					<PageToolbar>
 						<DataSearchControl
-							search={search.trim() || undefined}
-							title="Search employees"
-							description="Search by employee number or name."
-							placeholder="Employee number or name…"
+							search={search || undefined}
+							title="Search Employees"
+							placeholder="Employee Number or Name…"
 							onSearchChange={(next) => {
 								setSearch(next ?? "");
 								setPage(1);
@@ -148,7 +157,7 @@ export default function EmployeeListPage() {
 										setPage(1);
 									}
 								}}
-								aria-label="As of date"
+								aria-label="As of Date"
 								placeholder="As of"
 							/>
 						</FilterScrollRow>

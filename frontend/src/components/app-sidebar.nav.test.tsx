@@ -100,6 +100,10 @@ describe("capability-aware sidebar nav", () => {
 			"href",
 			"/organization/payroll-units",
 		);
+		expect(screen.getByRole("link", { name: "Employee Groups" })).toHaveAttribute(
+			"href",
+			"/organization/employee-groups",
+		);
 		expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
 			"href",
 			"/organization/settings",

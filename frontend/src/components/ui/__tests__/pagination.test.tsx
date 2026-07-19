@@ -25,7 +25,7 @@ describe("Pagination", () => {
 			</Pagination>,
 		);
 
-		const previous = screen.getByRole("button", { name: "Go to previous page" });
+		const previous = screen.getByRole("button", { name: "Go to Previous Page" });
 		expect(previous).toBeDisabled();
 
 		fireEvent.click(previous);
@@ -45,7 +45,7 @@ describe("Pagination", () => {
 			</Pagination>,
 		);
 
-		fireEvent.click(screen.getByRole("button", { name: "Go to next page" }));
+		fireEvent.click(screen.getByRole("button", { name: "Go to Next Page" }));
 		expect(onNext).toHaveBeenCalledTimes(1);
 	});
 

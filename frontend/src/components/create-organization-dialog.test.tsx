@@ -35,9 +35,9 @@ describe("CreateOrganizationDialog", () => {
 		server.use(...handlers);
 
 		renderDialog();
-		await screen.findByRole("heading", { name: "Create organization" });
+		await screen.findByRole("heading", { name: "Create Organization" });
 
-		fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create Organization" }));
 
 		expect(await screen.findByText("Name is required.")).toBeInTheDocument();
 		expect(screen.queryByLabelText("Slug")).not.toBeInTheDocument();
@@ -60,7 +60,7 @@ describe("CreateOrganizationDialog", () => {
 		fireEvent.change(screen.getByLabelText("Name"), {
 			target: { value: "North Star" },
 		});
-		fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create Organization" }));
 
 		await waitFor(() => {
 			expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -93,7 +93,7 @@ describe("CreateOrganizationDialog", () => {
 		fireEvent.change(screen.getByLabelText("Name"), {
 			target: { value: "Taken Org" },
 		});
-		fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create Organization" }));
 
 		await waitFor(() => {
 			expect(onOpenChange).toHaveBeenCalledWith(false);

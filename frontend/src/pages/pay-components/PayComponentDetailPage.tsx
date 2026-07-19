@@ -56,7 +56,7 @@ function PayComponentBreadcrumb({ label }: { label: string }) {
 		<Breadcrumb>
 			<BreadcrumbList>
 				<BreadcrumbItem>
-					<BreadcrumbLink render={<Link to="/pay-components" />}>Pay components</BreadcrumbLink>
+					<BreadcrumbLink render={<Link to="/pay-components" />}>Pay Components</BreadcrumbLink>
 				</BreadcrumbItem>
 				<BreadcrumbSeparator />
 				<BreadcrumbItem>
@@ -82,22 +82,22 @@ function formatRateOrAmount(version: ComponentRateVersionResponse): string {
 const rateVersionColumns: ColumnDef<ComponentRateVersionResponse>[] = [
 	{
 		id: "effective_range",
-		header: "Effective range",
+		header: "Effective Range",
 		cell: ({ row }) => formatEffectiveRange(row.original),
 	},
 	{
 		accessorKey: "calc_kind",
-		header: "Calc kind",
+		header: "Calc Kind",
 		cell: ({ row }) => calcKindLabel(row.original.calc_kind),
 	},
 	{
 		id: "rate_or_amount",
-		header: "Rate / amount",
+		header: "Rate / Amount",
 		cell: ({ row }) => formatRateOrAmount(row.original),
 	},
 	{
 		accessorKey: "rounding_rule",
-		header: "Rounding rule",
+		header: "Rounding Rule",
 		cell: ({ row }) => roundingRuleLabel(row.original.rounding_rule),
 	},
 ];
@@ -189,7 +189,7 @@ export default function PayComponentDetailPage() {
 
 							<PageSection className="grid gap-3">
 								<div className="flex flex-wrap items-center justify-between gap-2">
-									<h3 className="text-sm font-medium">Rate version history</h3>
+									<h3 className="text-sm font-medium">Rate Version History</h3>
 									<ColumnVisibilityToggle
 										table={table}
 										iconOnly

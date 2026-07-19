@@ -63,7 +63,7 @@ export function DashboardContent() {
 							title="No employees yet"
 							description="Add employees to start building payroll headcount and pay runs."
 						>
-							<Button render={<Link to="/employees" />}>Go to employees</Button>
+							<Button render={<Link to="/employees" />}>Go to Employees</Button>
 						</EmptyState>
 					</CardContent>
 				</Card>
@@ -82,7 +82,7 @@ export function DashboardContent() {
 							title="No posted runs yet"
 							description="Post a pay run to see totals, variance, and comparison charts here."
 						>
-							<Button render={<Link to="/pay-runs" />}>Go to pay runs</Button>
+							<Button render={<Link to="/pay-runs" />}>Go to Pay Runs</Button>
 						</EmptyState>
 					</CardContent>
 				</Card>
