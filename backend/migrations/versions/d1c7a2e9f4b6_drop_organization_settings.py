@@ -92,4 +92,7 @@ def downgrade() -> None:
             name="ck_organization_settings_financial_year_start_month",
         ),
     )
+    op.execute(
+        sa.text("INSERT INTO organization_settings (organization_id) SELECT id FROM organizations")
+    )
     _apply_forced_rls("organization_settings")

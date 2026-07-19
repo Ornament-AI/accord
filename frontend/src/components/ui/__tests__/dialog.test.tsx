@@ -32,9 +32,14 @@ describe("Dialog", () => {
 		expect(footer).toHaveClass(
 			"flex-nowrap",
 			"justify-center",
+			"[&>button]:h-auto",
+			"[&>button]:min-h-9",
 			"[&>button]:flex-1",
+			"[&>button]:whitespace-normal",
 			"sm:justify-end",
+			"sm:[&>button]:h-9",
 			"sm:[&>button]:flex-none",
+			"sm:[&>button]:whitespace-nowrap",
 		);
 	});
 });

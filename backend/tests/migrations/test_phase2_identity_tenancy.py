@@ -8,6 +8,7 @@ from .conftest import as_psycopg_url, diag, run_alembic
 
 INITIAL_REVISION = "b7e3c1a90f24"
 HEAD_REVISION = "d1c7a2e9f4b6"
+PRE_SETTINGS_DROP_REVISION = "f4b7c1d9e205"
 
 IDENTITY_TABLES = (
     "users",
@@ -96,6 +97,29 @@ def test_phase2_identity_tenancy_upgrade_downgrade(scratch_db: str) -> None:
         enabled, forced = _rls_flags(scratch_db, table)
         assert enabled is False, f"{table}: unexpected relrowsecurity"
         assert forced is False, f"{table}: unexpected relforcerowsecurity"
+
+    with psycopg.connect(as_psycopg_url(scratch_db)) as conn:
+        organization_id = conn.execute(
+            "INSERT INTO organizations (name, slug) "
+            "VALUES ('Migration Downgrade Org', 'migration-downgrade-org') "
+            "RETURNING id"
+        ).fetchone()[0]
+
+    down_settings = run_alembic(scratch_db, "downgrade", PRE_SETTINGS_DROP_REVISION)
+    assert down_settings.returncode == 0, diag(
+        f"alembic downgrade {PRE_SETTINGS_DROP_REVISION}", down_settings
+    )
+    with psycopg.connect(as_psycopg_url(scratch_db)) as conn:
+        settings = conn.execute(
+            "SELECT locale, timezone, currency, financial_year_start_month "
+            "FROM organization_settings WHERE organization_id = %s",
+            (organization_id,),
+        ).fetchone()
+    assert settings == ("en-IN", "Asia/Kolkata", "INR", 4)
+
+    up_again = run_alembic(scratch_db, "upgrade", "head")
+    assert up_again.returncode == 0, diag("alembic re-upgrade head", up_again)
+    assert not _table_exists(scratch_db, "organization_settings")
 
     down = run_alembic(scratch_db, "downgrade", INITIAL_REVISION)
     assert down.returncode == 0, diag(f"alembic downgrade {INITIAL_REVISION}", down)

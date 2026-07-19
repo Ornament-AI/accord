@@ -137,7 +137,7 @@ function DialogFooter({
 		<div
 			data-slot="dialog-footer"
 			className={cn(
-				"flex shrink-0 flex-row flex-nowrap justify-center gap-3 bg-background [&>button]:min-w-0 [&>button]:flex-1 sm:justify-end sm:gap-2 sm:[&>button]:flex-none",
+				"flex shrink-0 flex-row flex-nowrap justify-center gap-3 bg-background [&>button]:h-auto [&>button]:min-h-9 [&>button]:min-w-0 [&>button]:flex-1 [&>button]:whitespace-normal sm:justify-end sm:gap-2 sm:[&>button]:h-9 sm:[&>button]:flex-none sm:[&>button]:whitespace-nowrap",
 				className,
 			)}
 			{...props}

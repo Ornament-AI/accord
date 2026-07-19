@@ -76,7 +76,7 @@ Config: `frontend/playwright.config.ts` — `baseURL` `http://127.0.0.1:5173`, `
 | `master-data.spec.ts` | Office, pay component, employee (+ regime), schedule pay change, masked PAN |
 | `payroll-flow.spec.ts` | Period → run → input → Calculate → Validate → Submit → self-approve blocked |
 | `reports.spec.ts` | Empty posted-run state; generate-report journey `test.skip` (see below) |
-| `axe-a11y.spec.ts` | axe-core smoke on login, dashboard, employees list |
+| `axe-a11y.spec.ts` | axe-core smoke on login, authenticated landing, employees list |
 
 Specs share one org per run via `storageState` and `e2e/.auth/run-context.json` (unique slug each process).
 
@@ -136,7 +136,8 @@ Three real defects were driven out and fixed:
   now snapshots and rebinds tenant GUCs across its mid-command commit.
 - **Fixed (harness)** — setup flakiness was a race in `ensureUniqueOrganization`:
   a non-waiting `isVisible()` during `/me` settling took the wrong branch. The
-  helper now waits for the no-org title *or* the dashboard before branching and
-  opens dialogs via `clickUntilDialog` (Base UI portal retry). payroll-flow is
+  helper now waits for the no-org title *or* the capability-aware authenticated
+  landing page before branching and opens dialogs via `clickUntilDialog` (Base
+  UI portal retry). payroll-flow is
   serial and retry-safe (shared regular draft; supplemental for the
   Idempotency-Key case).

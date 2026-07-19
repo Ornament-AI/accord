@@ -1,5 +1,12 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+/** Any capability-aware page the authenticated index route can choose. */
+export function authenticatedLanding(page: Page): Locator {
+	return page.locator(
+		'main [data-testid="pay-runs-page"], main [data-testid="employee-list-page"], main [data-testid="reports-page"], main [data-testid="audit-page"]',
+	);
+}
+
 /**
  * Click a trigger until a Base UI dialog portal is visible.
  * Retries briefly — the first click can land before React handlers attach.
@@ -52,7 +59,7 @@ export async function openNav(page: Page, title: string): Promise<void> {
 	const link = page.getByRole("link", { name: title });
 	if (!(await link.isVisible().catch(() => false))) {
 		await page.goto("/");
-		await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 30_000 });
+		await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
 	}
 	await link.click();
 }

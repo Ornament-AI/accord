@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { readRunContext, updateRunContext } from "./helpers/run-context";
-import { isoDate, openNav, pickDateWithin, selectWithin } from "./helpers/ui";
+import { authenticatedLanding, isoDate, openNav, pickDateWithin, selectWithin } from "./helpers/ui";
 
 test.describe.configure({ mode: "serial" });
 
@@ -12,7 +12,10 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 	const suffix = ctx.orgSlug.slice(-8);
 	const officeCode = `OFF-${suffix}`.slice(0, 32);
 	const officeName = `Office ${suffix}`;
-	const componentCode = `OT-${suffix}`.replace(/[^A-Z0-9_-]/gi, "").toUpperCase().slice(0, 32);
+	const componentCode = `OT-${suffix}`
+		.replace(/[^A-Z0-9_-]/gi, "")
+		.toUpperCase()
+		.slice(0, 32);
 	const componentName = `Overtime ${suffix}`;
 	const employeeNumber = `E-${suffix}`;
 	const employeeName = `Employee ${suffix}`;
@@ -20,7 +23,7 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 
 	// --- Office ---
 	await page.goto("/");
-	await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 30_000 });
+	await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
 	await page.goto("/organization/offices");
 	await expect(page.getByTestId("offices-page")).toBeVisible({ timeout: 30_000 });
 	await page.getByRole("button", { name: /^Add$/i }).click();
