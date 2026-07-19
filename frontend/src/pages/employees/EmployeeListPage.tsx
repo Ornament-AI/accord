@@ -137,7 +137,11 @@ export default function EmployeeListPage() {
 				}
 			>
 				<PageShell data-testid="employee-list-page">
-					<PageToolbar>
+					<PageToolbar
+						trailing={
+							<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
+						}
+					>
 						<DataSearchControl
 							search={search || undefined}
 							title="Search Employees"
@@ -158,7 +162,6 @@ export default function EmployeeListPage() {
 							aria-label="As of Date"
 							placeholder="As of"
 						/>
-						<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
 					</PageToolbar>
 
 					{listQuery.isLoading ? <DataTableSkeleton /> : null}
