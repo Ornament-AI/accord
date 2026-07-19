@@ -42,6 +42,14 @@ const HISTORICAL_DATE_CALENDAR_PROPS: NonNullable<DatePickerProps["calendarProps
 	reverseYears: true,
 };
 
+/** Year/month dropdowns for dates that may be recovered from the past or scheduled ahead. */
+const SCHEDULABLE_DATE_CALENDAR_PROPS: NonNullable<DatePickerProps["calendarProps"]> = {
+	captionLayout: "dropdown",
+	startMonth: new Date(new Date().getFullYear() - 10, 0),
+	endMonth: new Date(new Date().getFullYear() + 50, 11),
+	reverseYears: true,
+};
+
 /**
  * DatePicker component for single date selection.
  *
@@ -119,4 +127,9 @@ function DatePicker({
 	);
 }
 
-export { DatePicker, type DatePickerProps, HISTORICAL_DATE_CALENDAR_PROPS };
+export {
+	DatePicker,
+	type DatePickerProps,
+	HISTORICAL_DATE_CALENDAR_PROPS,
+	SCHEDULABLE_DATE_CALENDAR_PROPS,
+};
