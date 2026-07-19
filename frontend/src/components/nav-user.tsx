@@ -146,7 +146,7 @@ export function NavUser({
 							<DropdownMenuGroup>
 								<DropdownMenuItem
 									variant="destructive"
-									className="rounded-md text-destructive data-highlighted:bg-destructive data-highlighted:text-white data-highlighted:*:[svg]:!text-white"
+									className="rounded-md text-destructive data-highlighted:bg-destructive data-highlighted:text-destructive-foreground data-highlighted:*:[svg]:!text-destructive-foreground"
 									onClick={onSignOut}
 								>
 									<LogOut size={16} />

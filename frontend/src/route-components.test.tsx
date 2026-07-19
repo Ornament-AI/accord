@@ -40,7 +40,7 @@ describe("authenticated routing", () => {
 		renderApp();
 
 		expect(await screen.findByRole("heading", { name: "Select an organization" })).toBeVisible();
-		fireEvent.click(screen.getByRole("button", { name: "Beta Payroll" }));
+		fireEvent.click(screen.getByRole("button", { name: /Beta Payroll.*beta-payroll/ }));
 
 		await waitFor(() => {
 			expect(switchedTo).toBe("org-beta");

@@ -84,7 +84,14 @@ export default function SelectOrganizationPage() {
 								disabled={switchingId !== null}
 								onClick={() => void handleSwitch(organization.id)}
 							>
-								{switchingId === organization.id ? "Opening…" : organization.name}
+								<span className="flex min-w-0 flex-col items-start">
+									<span className="max-w-full truncate">
+										{switchingId === organization.id ? "Opening…" : organization.name}
+									</span>
+									<span className="max-w-full truncate text-xs font-normal text-muted-foreground">
+										{organization.slug}
+									</span>
+								</span>
 							</Button>
 						))}
 					</div>

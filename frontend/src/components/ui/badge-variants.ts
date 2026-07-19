@@ -12,7 +12,7 @@ export const badgeVariants = cva(
 				outline:
 					"border-border/38 text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground dark:border-border",
 				ghost: "hover:bg-muted hover:text-muted-foreground",
-				link: "text-primary underline-offset-4 hover:underline",
+				link: "text-primary-text underline-offset-4 hover:underline",
 				success: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 dark:bg-emerald-500/20",
 				warning: "bg-amber-500/15 text-amber-700 dark:text-amber-400 dark:bg-amber-500/20",
 				info: "bg-lime-500/15 text-lime-700 dark:text-lime-400 dark:bg-lime-500/20",

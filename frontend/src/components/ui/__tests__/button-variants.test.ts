@@ -9,4 +9,8 @@ describe("buttonVariants", () => {
 		expect(classes).toContain("hover:bg-primary");
 		expect(classes).not.toContain("hover:bg-primary/");
 	});
+
+	it("uses the semantic foreground for destructive buttons", () => {
+		expect(buttonVariants({ variant: "destructive" })).toContain("text-destructive-foreground");
+	});
 });
