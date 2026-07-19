@@ -163,11 +163,12 @@ async def test_pay_component_employer_transfer_metadata_is_validated_and_editabl
     assert patched.json()["employer_transfer"] is True
     assert patched.json()["transfer_of"] is None
 
-    null_flag = await client.patch(
-        f"/api/pay-components/{body['id']}",
-        json={"employer_transfer": None},
-    )
-    assert null_flag.status_code == 422, null_flag.text
+    for field in ("name", "display_order", "is_active", "employer_transfer"):
+        null_update = await client.patch(
+            f"/api/pay-components/{body['id']}",
+            json={field: None},
+        )
+        assert null_update.status_code == 422, (field, null_update.text)
 
     unchanged = await client.get("/api/pay-components")
     assert unchanged.status_code == 200, unchanged.text
