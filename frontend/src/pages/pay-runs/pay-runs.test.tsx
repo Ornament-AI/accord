@@ -600,3 +600,152 @@ describe("Pay Runs capability gate", () => {
 		PAGE_TIMEOUT,
 	);
 });
+
+describe("Pay run detail — roster integrity", () => {
+	beforeEach(() => {
+		queryClient.clear();
+	});
+
+	it(
+		"never shows the draft preview total for non-draft runs when results are unavailable",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			// Submitted run with no calculated version: the results endpoint 409s.
+			const { handlers: payHandlers } = createPayRunHandlers({
+				details: {
+					"run-1": buildRunDetail({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "submitted",
+						current_version: null,
+					}),
+				},
+				rosters: {
+					"run-1": [
+						buildRosterRow({
+							employee_id: "emp-1",
+							employee_number: "E-001",
+							employee_name: "Alice Example",
+							basic_pay: "50000.00",
+							payable_days: "31.00",
+							transport_amount: "3000.00",
+						}),
+					],
+				},
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+
+			expect(
+				await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			// The draft preview for these inputs would be prorated basic + transport
+			// (₹50,000.00 + ₹3,000.00 = ₹53,000.00); a non-draft run must render a
+			// blank total instead of surfacing that estimate. Basic Pay (₹50,000.00)
+			// is a factual column and is expected to remain visible.
+			expect(screen.queryByText("₹53,000.00", { selector: "td *" })).not.toBeInTheDocument();
+			const totalHeader = screen.getByRole("columnheader", { name: "Total" });
+			expect(totalHeader).toBeInTheDocument();
+			expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"surfaces ineligible saved employees: deselect-only, no editing, save blocked",
+		async () => {
+			const onReplaceRoster = vi.fn();
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				details: {
+					"run-1": buildRunDetail({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "draft",
+						roster_initialized: true,
+					}),
+				},
+				rosters: {
+					"run-1": [
+						buildRosterRow({
+							employee_id: "emp-1",
+							employee_number: "E-001",
+							employee_name: "Alice Example",
+							selected: true,
+						}),
+						buildRosterRow({
+							employee_id: "emp-2",
+							employee_number: "E-002",
+							employee_name: "Gone Employee",
+							selected: true,
+							eligible: false,
+						}),
+					],
+				},
+				onReplaceRoster,
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+
+			expect(
+				await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.getByText("No active profile")).toBeInTheDocument();
+
+			fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+			// Ineligible rows stay read-only even in edit mode.
+			expect(screen.getByLabelText("Paid Days for Gone Employee")).toBeDisabled();
+			expect(screen.getByLabelText("Paid Days for Alice Example")).toBeEnabled();
+
+			// Edit an eligible row to enable Save (dirty) without touching the
+			// ineligible one, which stays selected.
+			fireEvent.change(screen.getByLabelText("Paid Days for Alice Example"), {
+				target: { value: "29" },
+			});
+
+			// Saving while an ineligible employee is selected is blocked client-side.
+			// sonner is mocked in this suite, so assert on the toast spy rather than
+			// looking for the message in the DOM.
+			const { toast } = await import("sonner");
+			fireEvent.click(screen.getByRole("button", { name: "Save" }));
+			await waitFor(() =>
+				expect(toast.error).toHaveBeenCalledWith(
+					expect.stringContaining("no active profile for this period and must be deselected"),
+				),
+			);
+			expect(onReplaceRoster).not.toHaveBeenCalled();
+
+			// Deselecting is still allowed; once deselected the checkbox locks.
+			const goneCheckbox = screen.getByRole("checkbox", { name: "Include Gone Employee" });
+			expect(goneCheckbox).toBeEnabled();
+			fireEvent.click(goneCheckbox);
+			await waitFor(() =>
+				expect(screen.getByRole("checkbox", { name: "Include Gone Employee" })).not.toBeChecked(),
+			);
+			// Base UI marks a locked checkbox with aria-disabled rather than the
+			// native disabled attribute.
+			expect(screen.getByRole("checkbox", { name: "Include Gone Employee" })).toHaveAttribute(
+				"aria-disabled",
+				"true",
+			);
+
+			fireEvent.click(screen.getByRole("button", { name: "Save" }));
+			await waitFor(() =>
+				expect(onReplaceRoster).toHaveBeenCalledWith("run-1", {
+					employees: [expect.objectContaining({ employee_id: "emp-1" })],
+				}),
+			);
+		},
+		PAGE_TIMEOUT,
+	);
+});

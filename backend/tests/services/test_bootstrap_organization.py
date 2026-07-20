@@ -149,3 +149,51 @@ async def test_concurrent_provision_one_winner(clean_identity_tables):
     assert len(successes) == 1
     assert len(failures) == 1
     assert isinstance(failures[0], ConflictError)
+
+
+@pytest.mark.asyncio
+async def test_provision_organization_idempotent_mixed_case_admin_email(session):
+    """CITEXT contract: a differently cased admin email on rerun is the same
+    intent and must be an idempotent no-op."""
+    first = await provision_organization(
+        session,
+        name="Acme",
+        slug="acme",
+        admin_email="Admin@Example.COM",
+    )
+    second = await provision_organization(
+        session,
+        name="Acme",
+        slug="acme",
+        admin_email="admin@example.com",
+    )
+    assert first.created is True
+    assert second.created is False
+    orgs = (await session.execute(select(Organization))).scalars().all()
+    assert len(orgs) == 1
+    invites = (await session.execute(select(OrganizationInvitation))).scalars().all()
+    assert len(invites) == 1
+
+
+@pytest.mark.asyncio
+async def test_provision_member_mixed_case_email_matches_existing_user(session):
+    """CITEXT contract: provisioning with a differently cased email resolves
+    the existing user into a membership instead of minting an invitation."""
+    from app.services.members import provision_member
+
+    result = await provision_organization(
+        session,
+        name="Acme",
+        slug="acme",
+        admin_email="admin@example.com",
+    )
+    await seed_user(session, email="worker@example.com")
+    kind, _ = await provision_member(
+        session,
+        organization_id=result.organization.id,
+        email="Worker@Example.COM",
+        role="payroll_preparer",
+    )
+    assert kind == "membership"
+    invites = (await session.execute(select(OrganizationInvitation))).scalars().all()
+    assert [i.email for i in invites] == ["admin@example.com"]

@@ -162,6 +162,9 @@ export function buildRosterRow(
 		retirement_regime: overrides.retirement_regime ?? "nps",
 		basic_pay: overrides.basic_pay ?? "50000.00",
 		selected: overrides.selected ?? true,
+		eligible: overrides.eligible ?? true,
+		ineligible_reason:
+			overrides.ineligible_reason ?? (overrides.eligible === false ? "no_active_profile" : null),
 		payable_days: overrides.payable_days ?? "31.00",
 		da_percent: overrides.da_percent ?? null,
 		da_difference: overrides.da_difference ?? null,

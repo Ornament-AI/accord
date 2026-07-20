@@ -165,16 +165,18 @@ async def claim_pending_invitation(
     """
     await bind_tenant_context(db, organization_id=org.id, user_id=user.id)
 
+    # Activity-independent lookup: the (org, user) unique constraint is
+    # unconditional, so an inactive row must be reactivated via the invite
+    # rather than colliding with a blind INSERT below.
     existing = (
         await db.execute(
             select(OrganizationMembership).where(
                 OrganizationMembership.organization_id == org.id,
                 OrganizationMembership.user_id == user.id,
-                OrganizationMembership.is_active.is_(True),
             )
         )
     ).scalar_one_or_none()
-    if existing is not None:
+    if existing is not None and existing.is_active:
         return existing
 
     now = utcnow()
@@ -193,6 +195,15 @@ async def claim_pending_invitation(
     if claimed is None:
         return None
 
+    if existing is not None:
+        # Inactive membership + claimed invite: reactivate in place with the
+        # invitation role instead of inserting a duplicate (org, user) row.
+        existing.role = claimed.role
+        existing.is_active = True
+        existing.updated_at = now
+        await db.flush()
+        return existing
+
     # begin_nested() flushes pending state before opening the SAVEPOINT, so
     # the membership must be added inside the nested block or a uniqueness race
     # aborts the outer transaction and the recovery SELECT cannot run.
@@ -209,15 +220,22 @@ async def claim_pending_invitation(
     except IntegrityError:
         # Parallel claim created membership first — load it without aborting
         # the outer transaction (invite accept UPDATE must stay visible).
-        return (
+        # Activity-independent: if the winner's row is inactive (e.g. it was
+        # a racing reactivation path), idempotently reactivate it here.
+        winner = (
             await db.execute(
                 select(OrganizationMembership).where(
                     OrganizationMembership.organization_id == org.id,
                     OrganizationMembership.user_id == user.id,
-                    OrganizationMembership.is_active.is_(True),
                 )
             )
         ).scalar_one_or_none()
+        if winner is not None and not winner.is_active:
+            winner.role = claimed.role
+            winner.is_active = True
+            winner.updated_at = now
+            await db.flush()
+        return winner
     return membership
 
 

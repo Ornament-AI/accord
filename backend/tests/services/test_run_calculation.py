@@ -530,3 +530,56 @@ async def test_immutable_version_row_rejects_update(session):
             .values(engine_version="tampered")
         )
         await session.flush()
+
+
+@pytest.mark.asyncio
+async def test_calculate_rejects_empty_saved_roster(session):
+    """A saved-but-empty roster fails fast instead of producing a
+    zero-employee calculated version."""
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    await session.execute(
+        sa.delete(PayrollRunEmployee).where(
+            PayrollRunEmployee.run_id == world["run_id"],
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="roster is empty"):
+        await calculate_run_command(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_calculate_rejects_roster_member_without_active_profile(session):
+    """Every saved roster member must resolve to a month-end profile; silent
+    partial calculation is forbidden."""
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+
+    ghost = Employee(organization_id=world["org_id"], employee_number="E-CALC-GHOST")
+    session.add(ghost)
+    await session.flush()
+    session.add(
+        PayrollRunEmployee(
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            employee_id=ghost.id,
+            payable_days=Decimal("30.00"),
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="E-CALC-GHOST"):
+        await calculate_run_command(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )

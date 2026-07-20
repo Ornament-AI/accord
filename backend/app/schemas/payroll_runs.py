@@ -115,9 +115,13 @@ class PayrollRunEmployeeUpsert(BaseModel):
     employee_id: UUID
     payable_days: MoneyAmount = Field(ge=0, le=31)
     da_percent: RateValue | None = Field(default=None, ge=0, le=1000)
-    da_difference: MoneyAmount | None = None
+    # Signed by design: a gross adjustment that may recover a prior-period
+    # overpayment. Bounded to the Numeric(12, 2) storage contract.
+    da_difference: MoneyAmount | None = Field(
+        default=None, ge=Decimal("-99999999.99"), le=Decimal("99999999.99")
+    )
     hra_percent: RateValue | None = Field(default=None, ge=0, le=1000)
-    transport_amount: MoneyAmount | None = None
+    transport_amount: MoneyAmount | None = Field(default=None, ge=0, le=Decimal("99999999.99"))
 
 
 class PayrollRunRosterUpdate(BaseModel):
@@ -134,6 +138,8 @@ class PayrollRunEmployeeResponse(BaseModel):
     retirement_regime: str | None = None
     basic_pay: MoneyAmount | None = None
     selected: bool
+    eligible: bool = True
+    ineligible_reason: str | None = None
     payable_days: MoneyAmount
     da_percent: RateValue | None = None
     da_difference: MoneyAmount | None = None

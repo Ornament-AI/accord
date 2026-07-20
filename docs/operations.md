@@ -208,6 +208,34 @@ docker run --rm --network deploy_backend-net --entrypoint /bin/sh \
 
 `docker compose … down -v` deletes `pgdata` and `minio-data`.
 
+## Destructive migrations (legacy master-data removal)
+
+Two migrations irreversibly discard legacy master data:
+
+- `f9c2b4e6a813` drops `employee_groups` and
+  `employee_posting_versions.employee_group_id`.
+- `a0d4f8b2c615` drops `payroll_units` and
+  `employee_posting_versions.payroll_unit_id` (originally `NOT NULL`, i.e.
+  real posting assignments).
+
+Both refuse to run when legacy rows or references exist, reporting exact
+counts. To proceed on a deployment that still has legacy data:
+
+1. Take a verified backup (see "Backup / PITR / restore") and confirm a
+   scratch restore succeeds.
+2. If the legacy assignments are still needed for reporting, export them
+   first (`COPY employee_groups TO …`, `COPY payroll_units TO …`, and the
+   referencing `employee_posting_versions` columns).
+3. Decide explicitly that the data may be discarded, then re-run with
+   `ACCORD_ALLOW_LEGACY_DROP=1` in the migration environment. The discarded
+   row counts are logged.
+
+Rollback is forward-only once data existed: `a0d4f8b2c615` refuses to
+downgrade while `employee_posting_versions` has rows, because unit
+assignments cannot be reinvented — restore the pre-migration backup instead.
+With no posting rows, downgrade faithfully restores the original schema,
+including `payroll_unit_id NOT NULL`.
+
 ## Release / rollback (`.github/workflows/deploy.yml`)
 
 Tag-triggered pipeline (`push` of `v*`):

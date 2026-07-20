@@ -190,17 +190,19 @@ function buildRosterColumns({
 			},
 			cell: ({ row }) => {
 				const employeeLabel = row.original.employee_name || row.original.employee_number;
+				// Ineligible rows can only be deselected — never newly selected.
+				const canToggle = editable && (row.original.eligible || row.original.selected);
 				return (
 					<Checkbox
 						checked={row.original.selected}
-						disabled={!editable}
+						disabled={!canToggle}
 						aria-label={`Include ${employeeLabel}`}
 						onCheckedChange={
-							editable
+							canToggle
 								? (checked) =>
 										updateRow(row.original.employee_id, (current) => ({
 											...current,
-											selected: checked,
+											selected: row.original.eligible ? checked : false,
 										}))
 								: undefined
 						}
@@ -213,7 +215,12 @@ function buildRosterColumns({
 			accessorKey: "employee_name",
 			header: "Employee",
 			enableHiding: false,
-			cell: ({ row }) => row.original.employee_name || "Unnamed employee",
+			cell: ({ row }) => (
+				<span className="inline-flex items-center gap-2">
+					{row.original.employee_name || "Unnamed employee"}
+					{!row.original.eligible ? <Badge variant="destructive">No active profile</Badge> : null}
+				</span>
+			),
 		},
 		{
 			accessorKey: "sevarth_id",
@@ -250,7 +257,7 @@ function buildRosterColumns({
 					<PayrollGridInput
 						label={`Paid Days for ${employeeLabel}`}
 						value={row.original.payable_days}
-						disabled={!editable}
+						disabled={!editable || !row.original.eligible}
 						onChange={(value) => updateField(row.original.employee_id, "payable_days", value)}
 					/>
 				);
@@ -266,7 +273,7 @@ function buildRosterColumns({
 					<PayrollGridInput
 						label={`DA Percent for ${employeeLabel}`}
 						value={row.original.da_percent}
-						disabled={!editable}
+						disabled={!editable || !row.original.eligible}
 						placeholder="—"
 						onChange={(value) => updateField(row.original.employee_id, "da_percent", value)}
 					/>
@@ -283,7 +290,7 @@ function buildRosterColumns({
 					<PayrollGridInput
 						label={`DA Difference for ${employeeLabel}`}
 						value={row.original.da_difference}
-						disabled={!editable}
+						disabled={!editable || !row.original.eligible}
 						placeholder="—"
 						onChange={(value) => updateField(row.original.employee_id, "da_difference", value)}
 					/>
@@ -300,7 +307,7 @@ function buildRosterColumns({
 					<PayrollGridInput
 						label={`HRA Percent for ${employeeLabel}`}
 						value={row.original.hra_percent}
-						disabled={!editable}
+						disabled={!editable || !row.original.eligible}
 						placeholder="—"
 						onChange={(value) => updateField(row.original.employee_id, "hra_percent", value)}
 					/>
@@ -317,7 +324,7 @@ function buildRosterColumns({
 					<PayrollGridInput
 						label={`Transport Amount for ${employeeLabel}`}
 						value={row.original.transport_amount}
-						disabled={!editable}
+						disabled={!editable || !row.original.eligible}
 						placeholder="—"
 						onChange={(value) => updateField(row.original.employee_id, "transport_amount", value)}
 					/>
@@ -403,11 +410,18 @@ export const PayrollRunRosterTable = forwardRef<
 		);
 	}, [deferredSearch, rows]);
 
-	const visibleSelectedCount = visibleRows.reduce(
+	// Select-all reasons over calculable (eligible) rows only: ineligible rows
+	// can be deselected individually but never mass-selected.
+	const eligibleVisibleRows = useMemo(
+		() => visibleRows.filter((row) => row.eligible),
+		[visibleRows],
+	);
+	const visibleSelectedCount = eligibleVisibleRows.reduce(
 		(count, row) => count + (row.selected ? 1 : 0),
 		0,
 	);
-	const allSelected = visibleRows.length > 0 && visibleSelectedCount === visibleRows.length;
+	const allSelected =
+		eligibleVisibleRows.length > 0 && visibleSelectedCount === eligibleVisibleRows.length;
 
 	const updateRow = useCallback(
 		(employeeId: string, update: (row: EditableRosterRow) => EditableRosterRow) => {
@@ -428,13 +442,13 @@ export const PayrollRunRosterTable = forwardRef<
 
 	const setAllSelected = useCallback(
 		(selected: boolean) => {
-			const visibleIds = new Set(visibleRows.map((row) => row.employee_id));
+			const visibleIds = new Set(eligibleVisibleRows.map((row) => row.employee_id));
 			setRows((current) =>
 				current.map((row) => (visibleIds.has(row.employee_id) ? { ...row, selected } : row)),
 			);
 			setDirty(true);
 		},
-		[visibleRows],
+		[eligibleVisibleRows],
 	);
 
 	const periodDays = daysInPeriod(periodYear, periodMonth);
@@ -483,6 +497,14 @@ export const PayrollRunRosterTable = forwardRef<
 		const selectedRows = rows.filter((row) => row.selected);
 		if (selectedRows.length === 0) {
 			toast.error("Select at least one employee for this pay run.");
+			return false;
+		}
+		const blockedRows = selectedRows.filter((row) => !row.eligible);
+		if (blockedRows.length > 0) {
+			const labels = blockedRows.map((row) => row.employee_name || row.employee_number).join(", ");
+			toast.error(
+				`These employees have no active profile for this period and must be deselected: ${labels}`,
+			);
 			return false;
 		}
 		try {

@@ -377,6 +377,7 @@ def wipe_org_master_data(org_id: str, *, dsn_env: dict[str, str]) -> None:
 		"payroll_employee_results",
 		"payroll_approvals",
 		"payroll_run_inputs",
+		"payroll_run_employees",
 		"payroll_run_versions",
 		"payroll_runs",
 		"payroll_periods",

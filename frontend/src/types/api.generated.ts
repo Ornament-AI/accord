@@ -1907,6 +1907,11 @@ export interface components {
             /** Da Percent */
             da_percent?: string | null;
             /**
+             * Eligible
+             * @default true
+             */
+            eligible: boolean;
+            /**
              * Employee Id
              * Format: uuid
              */
@@ -1917,6 +1922,8 @@ export interface components {
             employee_number: string;
             /** Hra Percent */
             hra_percent?: string | null;
+            /** Ineligible Reason */
+            ineligible_reason?: string | null;
             /** Payable Days */
             payable_days: string;
             /** Retirement Regime */
