@@ -121,7 +121,11 @@ function resetAuthSession(message: string): never {
 	return new Promise<never>(() => {}) as never;
 }
 
-export async function fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
+async function fetchApiResponse(
+	url: string,
+	init: RequestInit | undefined,
+	redirectOnUnauthorized: boolean,
+): Promise<Response> {
 	let response: Response;
 	try {
 		const { credentials = "include", headers, ...rest } = init ?? {};
@@ -138,7 +142,7 @@ export async function fetchWithAuth(url: string, init?: RequestInit): Promise<Re
 	if (!response.ok) {
 		const errorBody = await readErrorBody(response);
 		const errorCode = extractErrorCode(errorBody.json);
-		if (response.status === 401) {
+		if (response.status === 401 && redirectOnUnauthorized) {
 			const message =
 				errorCode === "InvalidToken"
 					? "Your session expired. Please sign in again."
@@ -154,6 +158,14 @@ export async function fetchWithAuth(url: string, init?: RequestInit): Promise<Re
 	return response;
 }
 
+export function fetchWithAuth(url: string, init?: RequestInit): Promise<Response> {
+	return fetchApiResponse(url, init, true);
+}
+
+export function fetchPublic(url: string, init?: RequestInit): Promise<Response> {
+	return fetchApiResponse(url, init, false);
+}
+
 export async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
 	const response = await fetchWithAuth(input, init);
 	const text = await response.text();
@@ -164,6 +176,10 @@ export async function fetchJson<T>(input: string, init?: RequestInit): Promise<T
 
 export async function fetchVoid(input: string, init?: RequestInit): Promise<void> {
 	await fetchWithAuth(input, init);
+}
+
+export async function fetchPublicVoid(input: string, init?: RequestInit): Promise<void> {
+	await fetchPublic(input, init);
 }
 
 export async function fetchBlob(input: string, init?: RequestInit): Promise<Blob> {

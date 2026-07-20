@@ -2,7 +2,9 @@
 
 Allowlist is verified against route source (session-auth not required):
 - GET /api/healthz, GET /api/readyz — health.py (no deps)
-- GET /api/auth/login, GET /api/auth/callback — auth.py (public entry)
+- GET /api/auth/login, GET /api/auth/callback — auth.py (redirect/SSO entry)
+- POST /api/auth/login/password, POST /api/auth/magic-code,
+  POST /api/auth/login/magic-code — auth.py (headless WorkOS entry)
 - POST /api/auth/logout — auth.py (idempotent 204 without cookie)
 - POST /api/auth/webhooks/workos — auth.py (HMAC auth, not session cookie)
 
@@ -27,6 +29,9 @@ _PUBLIC_API_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/readyz"),
         ("GET", "/api/auth/login"),
         ("GET", "/api/auth/callback"),
+        ("POST", "/api/auth/login/password"),
+        ("POST", "/api/auth/magic-code"),
+        ("POST", "/api/auth/login/magic-code"),
         ("POST", "/api/auth/logout"),
         ("POST", "/api/auth/webhooks/workos"),
     }
@@ -99,6 +104,11 @@ async def test_public_api_allowlist_routes_do_not_require_session_cookie(client)
 
     callback = await client.get("/api/auth/callback", follow_redirects=False)
     assert callback.status_code == 302
+
+    # Missing bodies fail validation, not session authentication.
+    assert (await client.post("/api/auth/login/password")).status_code == 422
+    assert (await client.post("/api/auth/magic-code")).status_code == 422
+    assert (await client.post("/api/auth/login/magic-code")).status_code == 422
 
     logout = await client.post("/api/auth/logout")
     assert logout.status_code == 204

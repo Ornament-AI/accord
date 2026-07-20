@@ -26,6 +26,27 @@ class AuthExchangeError(AccordError):
     error_code = "AuthExchangeFailed"
 
 
+class InvalidAuthenticationError(AccordError):
+    """User-supplied credentials or one-time code were not accepted."""
+
+    status_code = 401
+    error_code = "InvalidAuthentication"
+
+
+class AuthProviderUnavailableError(AccordError):
+    """The configured identity provider could not complete authentication."""
+
+    status_code = 502
+    error_code = "AuthProviderUnavailable"
+
+
+class AuthChallengeRequiredError(AccordError):
+    """WorkOS requires a hosted continuation such as MFA, SSO, or Radar."""
+
+    status_code = 409
+    error_code = "AuthChallengeRequired"
+
+
 class OrganizationContextRequiredError(AccordError):
     """Authenticated but no active organization is selected for the request."""
 

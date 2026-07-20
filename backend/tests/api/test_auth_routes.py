@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth.adapters import AuthenticatedIdentity, DevAuthAdapter
-from app.auth.errors import AuthMisconfiguredError
+from app.auth.errors import AuthMisconfiguredError, InvalidAuthenticationError
 from app.auth.session import DatabaseSessionStore, sign_oauth_state
 from app.models.base import utcnow
 from app.models.identity import OrganizationInvitation, Session as SessionRow
@@ -171,6 +171,93 @@ async def test_callback_happy_path_with_mocked_workos_exchange(client, monkeypat
     assert user is not None
     assert str(user.id) == body["id"]
     clear_settings_cache()
+
+
+@pytest.mark.asyncio
+async def test_password_login_mints_accord_session_without_redirect(client, monkeypatch):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+    )
+    patch_get_settings(monkeypatch, value)
+    mock_adapter = MagicMock()
+    mock_adapter.authenticate_with_password = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="user_headless_password",
+            email="headless-password@example.com",
+            name="Headless Password",
+        )
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    response = await client.post(
+        "/api/auth/login/password",
+        json={"email": "headless-password@example.com", "password": "secret"},
+    )
+
+    assert response.status_code == 204
+    assert session_cookie_from_response(response)
+    mock_adapter.authenticate_with_password.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_password_login_returns_generic_401_for_invalid_credentials(client, monkeypatch):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+    )
+    patch_get_settings(monkeypatch, value)
+    mock_adapter = MagicMock()
+    mock_adapter.authenticate_with_password = AsyncMock(
+        side_effect=InvalidAuthenticationError("Invalid email or password.")
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    response = await client.post(
+        "/api/auth/login/password",
+        json={"email": "somebody@example.com", "password": "wrong"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "InvalidAuthentication"
+    assert response.json()["detail"] == "Invalid email or password."
+
+
+@pytest.mark.asyncio
+async def test_magic_code_flow_stays_on_accord_and_mints_session(client, monkeypatch):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+    )
+    patch_get_settings(monkeypatch, value)
+    mock_adapter = MagicMock()
+    mock_adapter.send_magic_code = AsyncMock(return_value=None)
+    mock_adapter.authenticate_with_magic_code = AsyncMock(
+        return_value=AuthenticatedIdentity(
+            subject_id="user_headless_magic",
+            email="headless-magic@example.com",
+            name="Headless Magic",
+        )
+    )
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    send_response = await client.post(
+        "/api/auth/magic-code",
+        json={"email": "headless-magic@example.com"},
+    )
+    login_response = await client.post(
+        "/api/auth/login/magic-code",
+        json={"email": "headless-magic@example.com", "code": "123456"},
+    )
+
+    assert send_response.status_code == 204
+    assert login_response.status_code == 204
+    assert session_cookie_from_response(login_response)
+    mock_adapter.send_magic_code.assert_awaited_once()
+    mock_adapter.authenticate_with_magic_code.assert_awaited_once()
 
 
 @pytest.mark.asyncio

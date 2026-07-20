@@ -1,13 +1,17 @@
 import { GrainGradient } from "@paper-design/shaders-react";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { useAuth } from "@/contexts/AuthContext";
+import { loginWithMagicCode, loginWithPassword, requestMagicCode } from "@/lib/api/auth";
 import { resolveApiUrl } from "@/lib/api-url";
 import { APP_NAME } from "@/lib/branding";
+import { ApiError } from "@/lib/errors";
 import { useReducedMotion } from "@/lib/motion";
 import { sanitizeReturnTo } from "@/lib/return-to";
 import { useTheme } from "@/lib/ui/providers/theme-provider";
@@ -89,7 +93,14 @@ export default function LoginPage() {
 	const [searchParams] = useSearchParams();
 	const returnTo = sanitizeReturnTo(searchParams.get("returnTo"));
 	const urlError = searchParams.get("error");
-	const [authError] = useState(() => resolveLoginError(urlError, consumeStoredError()));
+	const [authError, setAuthError] = useState(() =>
+		resolveLoginError(urlError, consumeStoredError()),
+	);
+	const [step, setStep] = useState<"password" | "request-code" | "verify-code">("password");
+	const [email, setEmail] = useState("");
+	const [password, setPassword] = useState("");
+	const [code, setCode] = useState("");
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	useEffect(() => {
 		if (!isLoading && user) {
@@ -97,10 +108,48 @@ export default function LoginPage() {
 		}
 	}, [user, isLoading, navigate, returnTo]);
 
-	const handleSignIn = () => {
-		const loginUrl = `${resolveApiUrl("/api/auth/login")}?return_to=${encodeURIComponent(returnTo)}`;
-		window.location.assign(loginUrl);
+	const completeSignIn = () => window.location.assign(returnTo);
+
+	const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		setAuthError(null);
+		setIsSubmitting(true);
+		try {
+			if (step === "password") {
+				await loginWithPassword({ email, password });
+				completeSignIn();
+			} else if (step === "request-code") {
+				await requestMagicCode({ email });
+				setStep("verify-code");
+			} else {
+				await loginWithMagicCode({ email, code });
+				completeSignIn();
+			}
+		} catch (error) {
+			if (error instanceof ApiError && error.code === "AuthChallengeRequired") {
+				const fallbackUrl = `${resolveApiUrl("/api/auth/login")}?return_to=${encodeURIComponent(returnTo)}`;
+				window.location.assign(fallbackUrl);
+				return;
+			}
+			setAuthError(error instanceof Error ? error.message : "Sign-in failed. Please try again.");
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
+
+	const switchStep = (nextStep: "password" | "request-code") => {
+		setStep(nextStep);
+		setAuthError(null);
+		setCode("");
+	};
+
+	const submitLabel = isSubmitting
+		? step === "password"
+			? "Signing in…"
+			: "Please wait…"
+		: step === "request-code"
+			? "Send code"
+			: "Sign In";
 
 	return (
 		<div className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-background p-6 md:p-10">
@@ -129,9 +178,67 @@ export default function LoginPage() {
 						</Alert>
 					) : null}
 
-					<Button type="button" className="w-full" onClick={handleSignIn}>
-						Sign In
-					</Button>
+					<form className="flex flex-col gap-4" onSubmit={handleSignIn}>
+						<fieldset
+							disabled={isSubmitting}
+							className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+						>
+							<div className="grid gap-2">
+								<Label htmlFor="login-email">Email</Label>
+								<Input
+									id="login-email"
+									type="email"
+									autoComplete="username"
+									autoCapitalize="none"
+									value={email}
+									onChange={(event) => setEmail(event.target.value)}
+									readOnly={step === "verify-code"}
+									required
+								/>
+							</div>
+							{step === "password" ? (
+								<div className="grid gap-2">
+									<Label htmlFor="login-password">Password</Label>
+									<Input
+										id="login-password"
+										type="password"
+										autoComplete="current-password"
+										value={password}
+										onChange={(event) => setPassword(event.target.value)}
+										required
+									/>
+								</div>
+							) : null}
+							{step === "verify-code" ? (
+								<>
+									<p className="text-sm text-muted-foreground" role="status">
+										Check your email for the one-time sign-in code.
+									</p>
+									<div className="grid gap-2">
+										<Label htmlFor="login-code">Sign-in code</Label>
+										<Input
+											id="login-code"
+											inputMode="numeric"
+											autoComplete="one-time-code"
+											value={code}
+											onChange={(event) => setCode(event.target.value)}
+											required
+										/>
+									</div>
+								</>
+							) : null}
+							<Button type="submit" className="w-full">
+								{submitLabel}
+							</Button>
+						</fieldset>
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => switchStep(step === "password" ? "request-code" : "password")}
+						>
+							{step === "password" ? "Email me a sign-in code" : "Use password instead"}
+						</Button>
+					</form>
 				</div>
 			</div>
 		</div>

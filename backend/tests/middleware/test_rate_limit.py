@@ -1,18 +1,26 @@
 from starlette.requests import Request
 
 from app.auth.principal import AuthPrincipal
-from app.middleware.rate_limit import _first_forwarded_ip, get_rate_limit_key
+from app.middleware.rate_limit import (
+    _first_forwarded_ip,
+    get_auth_client_ip,
+    get_auth_rate_limit_key,
+    get_rate_limit_key,
+)
 
 
 def _build_request(
     *,
     forwarded_for: str | None = None,
+    cloudflare_ip: str | None = None,
     client_host: str = "10.0.0.5",
     principal: AuthPrincipal | None = None,
 ) -> Request:
     headers: list[tuple[bytes, bytes]] = []
     if forwarded_for is not None:
         headers.append((b"x-forwarded-for", forwarded_for.encode()))
+    if cloudflare_ip is not None:
+        headers.append((b"cf-connecting-ip", cloudflare_ip.encode()))
     scope = {
         "type": "http",
         "method": "GET",
@@ -62,3 +70,41 @@ def test_rate_limit_key_falls_back_to_socket_peer_when_no_forwarded_ip() -> None
     request = _build_request(client_host="172.18.0.4")
 
     assert get_rate_limit_key(request) == "ip:172.18.0.4"
+
+
+def test_auth_rate_limit_ignores_forwarded_for_from_public_peer() -> None:
+    request = _build_request(
+        client_host="8.8.8.8",
+        forwarded_for="1.1.1.1",
+    )
+
+    assert get_auth_client_ip(request) == "8.8.8.8"
+    assert get_auth_rate_limit_key(request) == "auth-ip:8.8.8.8"
+
+
+def test_auth_rate_limit_ignores_unsanitized_cloudflare_header() -> None:
+    proxied = _build_request(
+        client_host="172.18.0.4",
+        cloudflare_ip="1.1.1.1",
+    )
+    direct = _build_request(
+        client_host="8.8.8.8",
+        cloudflare_ip="1.1.1.1",
+    )
+
+    assert get_auth_client_ip(proxied) == "172.18.0.4"
+    assert get_auth_client_ip(direct) == "8.8.8.8"
+
+
+def test_auth_rate_limit_accepts_nginx_sanitized_forwarded_ip() -> None:
+    request = _build_request(
+        client_host="172.18.0.4",
+        forwarded_for="1.1.1.1",
+    )
+    unsanitized_chain = _build_request(
+        client_host="172.18.0.4",
+        forwarded_for="1.1.1.1, 8.8.8.8",
+    )
+
+    assert get_auth_client_ip(request) == "1.1.1.1"
+    assert get_auth_client_ip(unsanitized_chain) == "172.18.0.4"
