@@ -27,12 +27,10 @@ import {
 	type PayVersionResponse,
 	type PostingVersionResponse,
 	type ProfileVersionResponse,
-	parseApiDate,
-	toApiDate,
-	todayApiDate,
 	useEmployeeDetail,
 } from "@/lib/api/employees";
 import { useOfficesList, usePostsList } from "@/lib/api/org-structure";
+import { parseApiDate, toApiDate, todayApiDate } from "@/lib/calendar-date";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/utils";

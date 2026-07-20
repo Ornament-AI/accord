@@ -6,20 +6,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
-import {
-	buildOffice,
-	buildPost,
-	createOrgSetupHandlers,
-} from "@/pages/org-setup/org-setup-handlers";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { openBaseUiSelect, pickBaseUiOption, pickDateByLabel } from "@/test/helpers";
+import { buildEmployeeDetail, createEmployeeHandlers } from "@/test/msw/employee-handlers";
+import { buildOffice, buildPost, createOrgSetupHandlers } from "@/test/msw/org-setup-handlers";
 import { server } from "@/test/msw-server";
 import { renderApp } from "@/test/render-app";
 import type { Capability } from "@/types/auth";
-
 import { CreateEmployeeDialog } from "./CreateEmployeeDialog";
-import { buildEmployeeDetail, createEmployeeHandlers } from "./employee-handlers";
 import { ScheduleChangeDialog } from "./ScheduleChangeDialog";
 
 // Warm the same modules the router lazy-loads so Suspense does not stall tests.

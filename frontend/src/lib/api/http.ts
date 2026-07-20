@@ -166,6 +166,22 @@ export function fetchPublic(url: string, init?: RequestInit): Promise<Response> 
 	return fetchApiResponse(url, init, false);
 }
 
+/**
+ * Build a RequestInit for a JSON-bodied request. Optional extra headers
+ * (e.g. `Idempotency-Key`) are merged over the content-type header.
+ */
+export function jsonRequest(
+	method: string,
+	body: unknown,
+	headers?: Record<string, string>,
+): RequestInit {
+	return {
+		method,
+		headers: { "Content-Type": "application/json", ...headers },
+		body: JSON.stringify(body),
+	};
+}
+
 export async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
 	const response = await fetchWithAuth(input, init);
 	const text = await response.text();

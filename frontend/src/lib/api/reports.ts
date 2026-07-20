@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchDownload, fetchJson } from "@/lib/api/http";
-import { shouldSetQueryParam } from "@/lib/api/query-utils";
+import { fetchDownload, fetchJson, jsonRequest } from "@/lib/api/http";
+import { buildQueryString, shouldSetQueryParam } from "@/lib/api/query-utils";
 import { downloadBlob } from "@/lib/download";
 import type { components } from "@/types/api.generated";
 
@@ -106,18 +106,6 @@ export const reportQueryKeys = {
 	artifactList: (params: ListArtifactsParams) => ["artifacts", "list", params] as const,
 };
 
-function buildQueryString(
-	params: Record<string, string | number | boolean | null | undefined>,
-): string {
-	const search = new URLSearchParams();
-	for (const [key, value] of Object.entries(params)) {
-		if (!shouldSetQueryParam(key, value)) continue;
-		search.set(key, String(value));
-	}
-	const qs = search.toString();
-	return qs ? `?${qs}` : "";
-}
-
 export function isActiveJobStatus(status: ReportJobStatus | undefined): boolean {
 	return status === "queued" || status === "running";
 }
@@ -144,24 +132,16 @@ export function listReportCatalog() {
 }
 
 export function getReportPreview(reportType: string, postedRunId: string) {
-	const qs = buildQueryString({ posted_run_id: postedRunId });
+	const qs = buildQueryString({ posted_run_id: postedRunId }, shouldSetQueryParam);
 	return fetchJson<ReportPreviewResponse>(`/api/reports/${reportType}/preview${qs}`);
 }
 
 export function generateReport(body: GenerateReportRequest) {
-	return fetchJson<GenerateReportResponse>("/api/reports/generate", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<GenerateReportResponse>("/api/reports/generate", jsonRequest("POST", body));
 }
 
 export function exportReports(body: ExportReportsRequest) {
-	return fetchJson<ExportReportsResponse>("/api/reports/export", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<ExportReportsResponse>("/api/reports/export", jsonRequest("POST", body));
 }
 
 export function getReportJob(jobId: string) {
@@ -169,13 +149,16 @@ export function getReportJob(jobId: string) {
 }
 
 export function listArtifacts(params: ListArtifactsParams = {}) {
-	const qs = buildQueryString({
-		report_type: params.report_type,
-		posted_run_id: params.posted_run_id,
-		status: params.status,
-		page: params.page,
-		page_size: params.page_size,
-	});
+	const qs = buildQueryString(
+		{
+			report_type: params.report_type,
+			posted_run_id: params.posted_run_id,
+			status: params.status,
+			page: params.page,
+			page_size: params.page_size,
+		},
+		shouldSetQueryParam,
+	);
 	return fetchJson<PaginatedArtifactResponse>(`/api/artifacts${qs}`);
 }
 

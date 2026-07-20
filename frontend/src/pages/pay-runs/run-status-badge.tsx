@@ -2,7 +2,7 @@ import type { VariantProps } from "class-variance-authority";
 
 import { Badge } from "@/components/ui/badge";
 import type { badgeVariants } from "@/components/ui/badge-variants";
-import { statusLabel } from "@/lib/api/payroll-runs";
+import { statusLabel } from "@/lib/payroll-display";
 
 type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
 

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchJson } from "@/lib/api/http";
-import { shouldSetQueryParam } from "@/lib/api/query-utils";
+import { buildQueryString, shouldSetQueryParam } from "@/lib/api/query-utils";
 import type { components } from "@/types/api.generated";
 
 export type AuditActor = components["schemas"]["AuditActor"];
@@ -31,18 +31,6 @@ export const auditQueryKeys = {
 	filterOptions: () => ["audit-events", "filter-options"] as const,
 };
 
-function buildQueryString(
-	params: Record<string, string | number | boolean | null | undefined>,
-): string {
-	const search = new URLSearchParams();
-	for (const [key, value] of Object.entries(params)) {
-		if (!shouldSetQueryParam(key, value)) continue;
-		search.set(key, String(value));
-	}
-	const qs = search.toString();
-	return qs ? `?${qs}` : "";
-}
-
 export function toAuditDayBound(date: Date, bound: "start" | "end"): string {
 	const year = date.getFullYear();
 	const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -53,7 +41,7 @@ export function toAuditDayBound(date: Date, bound: "start" | "end"): string {
 }
 
 export function listAuditEvents(params: ListAuditEventsParams = {}) {
-	const qs = buildQueryString(params);
+	const qs = buildQueryString(params, shouldSetQueryParam);
 	return fetchJson<PaginatedAuditEventResponse>(`/api/audit-events${qs}`);
 }
 

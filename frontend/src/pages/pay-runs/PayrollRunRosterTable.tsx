@@ -22,7 +22,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Input } from "@/components/ui/input";
 import {
-	formatCanonicalMoney,
 	isDraftStatus,
 	type PayrollRunEmployeeResponse,
 	usePayrollRunResults,
@@ -30,6 +29,7 @@ import {
 	useReplacePayrollRunRoster,
 } from "@/lib/api/payroll-runs";
 import { getErrorMessage } from "@/lib/errors";
+import { formatCanonicalMoney } from "@/lib/payroll-display";
 
 type EditableRosterRow = PayrollRunEmployeeResponse & {
 	payable_days: string;

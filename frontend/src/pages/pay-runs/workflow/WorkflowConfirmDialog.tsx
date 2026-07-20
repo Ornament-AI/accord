@@ -12,12 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-	formatCanonicalMoney,
-	type PayrollRunCalculateResult,
-	type PayrollRunTotals,
-} from "@/lib/api/payroll-runs";
+import type { PayrollRunCalculateResult, PayrollRunTotals } from "@/lib/api/payroll-runs";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
+import { formatCanonicalMoney } from "@/lib/payroll-display";
 
 import type { WorkflowActionId } from "./workflow-actions";
 

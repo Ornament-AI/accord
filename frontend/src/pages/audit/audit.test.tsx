@@ -5,12 +5,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { queryClient } from "@/lib/query-client";
 import { buildAuthMe, buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
+import { buildAuditEvent, createAuditHandlers } from "@/test/msw/audit-handlers";
 import { server } from "@/test/msw-server";
 import { renderWithAuthProviders } from "@/test/render-app";
 import type { Capability } from "@/types/auth";
-
 import AuditPage from "./AuditPage";
-import { buildAuditEvent, createAuditHandlers } from "./audit-handlers";
 
 const PAGE_TIMEOUT = 15_000;
 

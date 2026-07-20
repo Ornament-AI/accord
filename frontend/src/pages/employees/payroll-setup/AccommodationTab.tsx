@@ -33,7 +33,6 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	type AccommodationResponse,
 	QUARTERS_LOCATIONS,
@@ -42,7 +41,8 @@ import {
 	useAccommodation,
 	useCreateAccommodation,
 	useCreateAccommodationChargeVersion,
-} from "@/lib/api/pay-setup";
+} from "@/lib/api/employee-payroll-setup";
+import { parseApiDate, toApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError, getErrorMessage } from "@/lib/errors";
 

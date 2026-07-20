@@ -10,12 +10,9 @@ import type {
 	RecurringInstructionCreate,
 	RecurringInstructionResponse,
 	RecurringInstructionVersionCreate,
-} from "@/lib/api/pay-setup";
+} from "@/lib/api/employee-payroll-setup";
 
-import {
-	buildPayComponent,
-	createPayComponentHandlers,
-} from "@/pages/pay-components/pay-component-handlers";
+import { buildPayComponent, createPayComponentHandlers } from "@/test/msw/pay-component-handlers";
 
 export type PayrollSetupHandlersOptions = {
 	employeeId?: string;

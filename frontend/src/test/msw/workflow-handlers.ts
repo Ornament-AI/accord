@@ -1,12 +1,10 @@
 import { HttpResponse, http } from "msw";
-
 import type {
-	PayrollRunDetail,
-	PayrollRunListItem,
 	PayrollRunValidateResult,
 	PayrollRunWorkflowSummary,
 	ValidationFinding,
-} from "@/lib/api/payroll-runs";
+} from "@/lib/api/payroll-run-workflow";
+import type { PayrollRunDetail, PayrollRunListItem } from "@/lib/api/payroll-runs";
 
 export type WorkflowHandlersOptions = {
 	/** Mutable detail store shared with pay-run handlers when provided. */

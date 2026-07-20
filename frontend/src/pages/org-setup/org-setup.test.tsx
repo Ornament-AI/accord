@@ -5,10 +5,9 @@ import { queryClient } from "@/lib/query-client";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { mockToast, openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
+import { createOrgSetupHandlers } from "@/test/msw/org-setup-handlers";
 import { server } from "@/test/msw-server";
 import { renderApp } from "@/test/render-app";
-
-import { createOrgSetupHandlers } from "./org-setup-handlers";
 
 vi.mock("sonner", () => mockToast());
 

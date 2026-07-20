@@ -25,13 +25,8 @@ import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-	type EmployeeSummary,
-	parseApiDate,
-	toApiDate,
-	todayApiDate,
-	useEmployeesList,
-} from "@/lib/api/employees";
+import { type EmployeeSummary, useEmployeesList } from "@/lib/api/employees";
+import { parseApiDate, toApiDate, todayApiDate } from "@/lib/calendar-date";
 import { getErrorMessage } from "@/lib/errors";
 
 import { CreateEmployeeDialog } from "./CreateEmployeeDialog";

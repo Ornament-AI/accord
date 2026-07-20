@@ -21,7 +21,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { type PayrollRunListItem, periodLabel, usePayrollRuns } from "@/lib/api/payroll-runs";
+import { type PayrollRunListItem, usePayrollRuns } from "@/lib/api/payroll-runs";
 import {
 	isActiveJobStatus,
 	jobArtifactId,
@@ -33,6 +33,7 @@ import {
 	useReportJob,
 } from "@/lib/api/reports";
 import { getErrorMessage } from "@/lib/errors";
+import { periodLabel } from "@/lib/payroll-display";
 
 import { ArtifactsSection } from "./ArtifactsSection";
 

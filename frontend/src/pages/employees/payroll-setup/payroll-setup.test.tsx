@@ -1,21 +1,20 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { RecurringInstructionVersionCreate } from "@/lib/api/pay-setup";
+import type { RecurringInstructionVersionCreate } from "@/lib/api/employee-payroll-setup";
 import { queryClient } from "@/lib/query-client";
 import { buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { openBaseUiSelect, pickBaseUiOption, pickDateByLabel } from "@/test/helpers";
-import { server } from "@/test/msw-server";
-import { renderApp } from "@/test/render-app";
-
-import { buildEmployeeDetail, createEmployeeHandlers } from "../employee-handlers";
+import { buildEmployeeDetail, createEmployeeHandlers } from "@/test/msw/employee-handlers";
 import {
 	buildAccommodation,
 	buildAdvance,
 	buildRecurringInstruction,
 	createPayrollSetupHandlers,
-} from "./payroll-setup-handlers";
+} from "@/test/msw/payroll-setup-handlers";
+import { server } from "@/test/msw-server";
+import { renderApp } from "@/test/render-app";
 
 // Warm lazy-loaded modules so Suspense does not stall tests.
 import "@/pages/employees/EmployeeDetailPage";

@@ -9,19 +9,18 @@ import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { mockToast } from "@/test/helpers";
-import { server } from "@/test/msw-server";
-import type { Capability } from "@/types/auth";
-
-import PayRunDetailPage from "../PayRunDetailPage";
 import {
 	buildCurrentVersion,
 	buildRun,
 	buildRunDetail,
 	createPayRunHandlers,
-} from "../pay-run-handlers";
+} from "@/test/msw/pay-run-handlers";
+import { buildFinding, createWorkflowHandlers } from "@/test/msw/workflow-handlers";
+import { server } from "@/test/msw-server";
+import type { Capability } from "@/types/auth";
+import PayRunDetailPage from "../PayRunDetailPage";
 import { ValidationFindingsPanel } from "./ValidationFindingsPanel";
 import { WORKFLOW_ACTIONS } from "./workflow-actions";
-import { buildFinding, createWorkflowHandlers } from "./workflow-handlers";
 
 vi.mock("sonner", () => mockToast());
 

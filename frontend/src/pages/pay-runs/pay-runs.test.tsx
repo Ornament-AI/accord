@@ -10,11 +10,6 @@ import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { mockToast } from "@/test/helpers";
-import { server } from "@/test/msw-server";
-
-import { CreatePeriodDialog } from "./CreatePeriodDialog";
-import PayRunDetailPage from "./PayRunDetailPage";
-import PayRunsPage from "./PayRunsPage";
 import {
 	buildCurrentVersion,
 	buildPeriod,
@@ -22,7 +17,11 @@ import {
 	buildRun,
 	buildRunDetail,
 	createPayRunHandlers,
-} from "./pay-run-handlers";
+} from "@/test/msw/pay-run-handlers";
+import { server } from "@/test/msw-server";
+import { CreatePeriodDialog } from "./CreatePeriodDialog";
+import PayRunDetailPage from "./PayRunDetailPage";
+import PayRunsPage from "./PayRunsPage";
 
 vi.mock("sonner", () => mockToast());
 

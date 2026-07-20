@@ -27,19 +27,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { useAuth } from "@/contexts/AuthContext";
+import type { PayrollRunValidateResult } from "@/lib/api/payroll-run-workflow";
 import {
 	isCalculateAllowedStatus,
 	isDraftStatus,
 	type PayrollRunCalculateResult,
 	type PayrollRunRosterHistoryResponse,
-	type PayrollRunValidateResult,
 	parsePayrollRunVersion,
-	periodLabel,
 	useCalculatePayrollRun,
 	usePayrollRun,
 	usePayrollRunRosterHistory,
 } from "@/lib/api/payroll-runs";
 import { getErrorMessage } from "@/lib/errors";
+import { periodLabel } from "@/lib/payroll-display";
 import { formatDateTime } from "@/lib/utils";
 
 import { PayrollRunRosterTable, type PayrollRunRosterTableHandle } from "./PayrollRunRosterTable";
