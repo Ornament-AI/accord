@@ -170,6 +170,10 @@ jobs:
         if: steps.prev.outputs.has_previous == 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install backend dependencies (from current tag)
         if: steps.prev.outputs.has_previous == 'true'
