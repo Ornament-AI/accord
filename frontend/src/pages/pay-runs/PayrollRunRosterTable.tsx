@@ -395,8 +395,11 @@ export const PayrollRunRosterTable = forwardRef<
 		);
 	}, [deferredSearch, rows]);
 
-	const selectedCount = rows.reduce((count, row) => count + (row.selected ? 1 : 0), 0);
-	const allSelected = rows.length > 0 && selectedCount === rows.length;
+	const visibleSelectedCount = visibleRows.reduce(
+		(count, row) => count + (row.selected ? 1 : 0),
+		0,
+	);
+	const allSelected = visibleRows.length > 0 && visibleSelectedCount === visibleRows.length;
 
 	const updateRow = useCallback(
 		(employeeId: string, update: (row: EditableRosterRow) => EditableRosterRow) => {
@@ -415,10 +418,16 @@ export const PayrollRunRosterTable = forwardRef<
 		[updateRow],
 	);
 
-	const setAllSelected = useCallback((selected: boolean) => {
-		setRows((current) => current.map((row) => ({ ...row, selected })));
-		setDirty(true);
-	}, []);
+	const setAllSelected = useCallback(
+		(selected: boolean) => {
+			const visibleIds = new Set(visibleRows.map((row) => row.employee_id));
+			setRows((current) =>
+				current.map((row) => (visibleIds.has(row.employee_id) ? { ...row, selected } : row)),
+			);
+			setDirty(true);
+		},
+		[visibleRows],
+	);
 
 	const periodDays = daysInPeriod(periodYear, periodMonth);
 	const netPayableByEmployeeId = useMemo(() => {
