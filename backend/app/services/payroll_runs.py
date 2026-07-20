@@ -438,7 +438,11 @@ async def list_run_roster(
                 retirement_regime=(
                     profile.get("retirement_regime") if profile is not None else None
                 ),
-                basic_pay=Decimal(pay["basic_pay"]) if pay is not None else None,
+                basic_pay=(
+                    Decimal(pay["basic_pay"])
+                    if pay is not None and pay.get("basic_pay") is not None
+                    else None
+                ),
                 row=row,
                 period_days=period_days,
                 default_selected=not run.roster_initialized and run.status != "draft",

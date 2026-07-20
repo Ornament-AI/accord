@@ -75,16 +75,6 @@ def upgrade() -> None:
             "hra_percent IS NULL OR (hra_percent >= 0 AND hra_percent <= 1000)",
             name="ck_payroll_run_employees_hra_percent",
         ),
-        sa.CheckConstraint(
-            "transport_amount IS NULL OR transport_amount >= 0",
-            name="ck_payroll_run_employees_transport_amount",
-        ),
-        # da_difference is intentionally signed: it is a gross adjustment that
-        # may recover overpaid dearness allowance from a prior period.
-        sa.CheckConstraint(
-            "da_difference IS NULL OR (da_difference >= -99999999.99 AND da_difference <= 99999999.99)",
-            name="ck_payroll_run_employees_da_difference",
-        ),
         sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"]),
         sa.ForeignKeyConstraint(["run_id"], ["payroll_runs.id"]),
         sa.ForeignKeyConstraint(["employee_id"], ["employees.id"]),
@@ -95,13 +85,6 @@ def upgrade() -> None:
             "employee_id",
             name="uq_payroll_run_employees_org_run_employee",
         ),
-    )
-    # The composite unique (org, run, employee) cannot serve employee-only
-    # FK lookups (e.g. employee deletion); index employee_id directly.
-    op.create_index(
-        "ix_payroll_run_employees_employee_id",
-        "payroll_run_employees",
-        ["employee_id"],
     )
     _apply_forced_rls("payroll_run_employees")
 
