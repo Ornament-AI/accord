@@ -16,10 +16,10 @@ def _write_fake_docker(fake_bin: Path, docker_log: Path) -> None:
         'if [ "$1 $2" = "compose version" ]; then exit 0; fi\n'
         'if [ "$1 $2" = "volume inspect" ]; then\n'
         '  case "$3" in\n'
-        '    deploy_pgdata|deploy_minio-data)\n'
+        "    deploy_pgdata|deploy_minio-data)\n"
         '      if [ "${FAKE_LEGACY_VOLUMES:-true}" = true ]; then exit 0; fi\n'
-        '      ;;\n'
-        '  esac\n'
+        "      ;;\n"
+        "  esac\n"
         "  exit 1\n"
         "fi\n"
         "exit 0\n"
