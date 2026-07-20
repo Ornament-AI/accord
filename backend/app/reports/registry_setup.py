@@ -4,9 +4,9 @@ Every report family registers here exactly once; API and worker processes
 share this single construction path so the catalog can never diverge
 between them.
 
-``PRODUCT_REPORT_SHEETS`` is the canonical product-surface allowlist (13
-sheets). Payslips and advance_schedule remain registered for later work
-but are excluded from catalog product sheets and consolidated export.
+``PRODUCT_REPORT_SHEETS`` is the canonical 18-sheet product-surface allowlist.
+Generic variant infrastructure such as ``component_schedule`` remains
+registered but is excluded from the fixed pack and consolidated export.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ PRODUCT_REPORT_SHEETS: tuple[str, ...] = (
     "pay_bill",
     "treasury_face",
     "bank_rtgs_advice",
+    "payslips",
     "gpf_mumbai_schedule",
     "gpf_nagpur_schedule",
     "nps_contribution_schedule",
@@ -32,6 +33,10 @@ PRODUCT_REPORT_SHEETS: tuple[str, ...] = (
     "professional_tax_schedule",
     "gis_schedule",
     "hba_schedule",
+    "gpf_advance_schedule",
+    "motor_car_advance_schedule",
+    "motorcycle_advance_schedule",
+    "festival_advance_schedule",
     "accommodation_mumbai_schedule",
     "accommodation_worli_schedule",
     "approval_note",
@@ -41,6 +46,7 @@ PRODUCT_REPORT_SHEET_TITLES: dict[str, str] = {
     "pay_bill": "Pay Bill",
     "treasury_face": "Treasury Face",
     "bank_rtgs_advice": "Bank RTGS Advice",
+    "payslips": "Payslips",
     "gpf_mumbai_schedule": "GPF Mumbai Schedule",
     "gpf_nagpur_schedule": "GPF Nagpur Schedule",
     "nps_contribution_schedule": "NPS Contribution Schedule",
@@ -48,6 +54,10 @@ PRODUCT_REPORT_SHEET_TITLES: dict[str, str] = {
     "professional_tax_schedule": "Professional Tax Schedule",
     "gis_schedule": "GIS Schedule",
     "hba_schedule": "HBA Schedule",
+    "gpf_advance_schedule": "GPF Advance Schedule",
+    "motor_car_advance_schedule": "Motor Car Advance Schedule",
+    "motorcycle_advance_schedule": "Motorcycle Advance Schedule",
+    "festival_advance_schedule": "Festival Advance Schedule",
     "accommodation_mumbai_schedule": "Accommodation Mumbai Schedule",
     "accommodation_worli_schedule": "Accommodation Worli Schedule",
     "approval_note": "Approval Note",

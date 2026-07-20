@@ -18,6 +18,7 @@ export const PRODUCT_REPORT_SHEETS: readonly ProductReportSheet[] = [
 		slug: "bank-rtgs-advice",
 		title: "Bank RTGS Advice",
 	},
+	{ reportType: "payslips", slug: "payslips", title: "Payslips" },
 	{
 		reportType: "gpf_mumbai_schedule",
 		slug: "gpf-mumbai-schedule",
@@ -45,6 +46,26 @@ export const PRODUCT_REPORT_SHEETS: readonly ProductReportSheet[] = [
 	},
 	{ reportType: "gis_schedule", slug: "gis-schedule", title: "GIS Schedule" },
 	{ reportType: "hba_schedule", slug: "hba-schedule", title: "HBA Schedule" },
+	{
+		reportType: "gpf_advance_schedule",
+		slug: "gpf-advance-schedule",
+		title: "GPF Advance Schedule",
+	},
+	{
+		reportType: "motor_car_advance_schedule",
+		slug: "motor-car-advance-schedule",
+		title: "Motor Car Advance Schedule",
+	},
+	{
+		reportType: "motorcycle_advance_schedule",
+		slug: "motorcycle-advance-schedule",
+		title: "Motorcycle Advance Schedule",
+	},
+	{
+		reportType: "festival_advance_schedule",
+		slug: "festival-advance-schedule",
+		title: "Festival Advance Schedule",
+	},
 	{
 		reportType: "accommodation_mumbai_schedule",
 		slug: "accommodation-mumbai-schedule",

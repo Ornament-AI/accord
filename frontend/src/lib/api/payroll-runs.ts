@@ -17,6 +17,8 @@ export type PayrollRunRosterHistoryResponse =
 export type PayrollRunResults = components["schemas"]["RunResultsResponse"];
 export type PayrollEmployeeResult = components["schemas"]["EmployeeResultSummary"];
 export type InputKind = components["schemas"]["InputKind"];
+export type PayrollRunReportMetadata = components["schemas"]["PayrollRunReportMetadata"];
+export type ReportReadinessResponse = components["schemas"]["ReportReadinessResponse"];
 
 export const INPUT_KINDS: InputKind[] = ["exception", "override", "one_time"];
 
@@ -76,6 +78,7 @@ export const payrollRunQueryKeys = {
 	roster: (runId: string) => ["payroll-run-roster", runId] as const,
 	rosterHistory: (runId: string) => ["payroll-run-roster-history", runId] as const,
 	results: (runId: string) => ["payroll-run-results", runId] as const,
+	reportReadiness: (runId: string) => ["payroll-run-report-readiness", runId] as const,
 };
 
 export function periodLabel(year: number, month: number): string {
@@ -231,6 +234,18 @@ export function getPayrollRun(runId: string) {
 	return fetchJson<PayrollRunDetail>(`/api/payroll-runs/${runId}`);
 }
 
+export function updatePayrollRunReportMetadata(runId: string, body: PayrollRunReportMetadata) {
+	return fetchJson<PayrollRunReportMetadata>(`/api/payroll-runs/${runId}/report-metadata`, {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
+export function getPayrollRunReportReadiness(runId: string) {
+	return fetchJson<ReportReadinessResponse>(`/api/payroll-runs/${runId}/report-readiness`);
+}
+
 export function listPayrollRunInputs(runId: string) {
 	return fetchJson<PayrollRunInputResponse[]>(`/api/payroll-runs/${runId}/inputs`);
 }
@@ -322,6 +337,25 @@ export function usePayrollRun(runId: string | undefined) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.run(runId ?? ""),
 		queryFn: () => getPayrollRun(runId!),
+		enabled: Boolean(runId),
+	});
+}
+
+export function useUpdatePayrollRunReportMetadata(runId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (body: PayrollRunReportMetadata) => updatePayrollRunReportMetadata(runId, body),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.run(runId) });
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.reportReadiness(runId) });
+		},
+	});
+}
+
+export function usePayrollRunReportReadiness(runId: string | undefined) {
+	return useQuery({
+		queryKey: payrollRunQueryKeys.reportReadiness(runId ?? ""),
+		queryFn: () => getPayrollRunReportReadiness(runId!),
 		enabled: Boolean(runId),
 	});
 }

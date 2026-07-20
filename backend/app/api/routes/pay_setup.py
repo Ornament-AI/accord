@@ -27,6 +27,8 @@ from app.schemas.pay_setup import (
     ComponentRateVersionResponse,
     PayComponentCreate,
     PayComponentResponse,
+    PayrollExportProfile,
+    PayrollExportProfileResponse,
     PayComponentUpdate,
     RecurringInstructionCreate,
     RecurringInstructionResponse,
@@ -369,4 +371,30 @@ async def upsert_report_configuration(
         organization_id=_org_id(tenant),
         key=key,
         value=body.value,
+    )
+
+
+@router.get("/report-profile", response_model=PayrollExportProfileResponse)
+async def get_payroll_export_profile(
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+) -> dict[str, Any]:
+    return await pay_setup_service.get_payroll_export_profile(
+        db,
+        organization_id=_org_id(tenant),
+    )
+
+
+@router.put("/report-profile", response_model=PayrollExportProfileResponse)
+async def upsert_payroll_export_profile(
+    body: PayrollExportProfile,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("manage_organization")),
+) -> dict[str, Any]:
+    return await pay_setup_service.upsert_payroll_export_profile(
+        db,
+        organization_id=_org_id(tenant),
+        profile=body,
     )

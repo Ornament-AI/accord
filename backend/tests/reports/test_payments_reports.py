@@ -774,8 +774,8 @@ async def test_payslip_pdf_contains_employee_and_net(session):
     assert payload["report_type"] == REPORT_TYPE_PAYSLIPS
     assert len(payload["sections"]) == 32
 
-    with pytest.raises(NotImplementedError, match="intentionally skipped"):
-        payslip_to_excel(dto)
+    workbook = load_workbook(BytesIO(payslip_to_excel(dto)))
+    assert len(workbook.sheetnames) == 32
 
 
 @pytest.mark.asyncio

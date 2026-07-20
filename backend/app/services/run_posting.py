@@ -6,6 +6,8 @@ OutboxEvent commit together or not at all.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -23,11 +25,14 @@ from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
     payroll_employee_results,
+    payroll_report_snapshots,
     payroll_result_lines,
     payroll_run_versions,
 )
+from app.models.identity import Organization
 from app.models.platform import OutboxEvent, PayrollApproval
 from app.services.audit_events import entity_snapshot, write_mutation_event
+from app.schemas.payroll_runs import PayrollRunReportMetadata
 
 # ADR 0008 §4: maker/checker SoD is submitter ≠ approver only. Poster may equal
 # approver (report_releaser posts; payroll_approver approves). Poster ≠ submitter
@@ -341,6 +346,51 @@ async def post_run(
     content_hash = version["content_hash"]
     version_id = version["id"]
     now = datetime.now(timezone.utc)
+
+    organization = await db.get(Organization, organization_id)
+    if organization is None:
+        raise NotFoundError("Organization not found.")
+    inputs_snapshot = version["inputs_snapshot"] or {}
+    component_catalog = inputs_snapshot.get("component_catalog")
+    employee_identity = inputs_snapshot.get("employee_identity")
+    report_profile = inputs_snapshot.get("report_profile")
+    recovery_sources = inputs_snapshot.get("recovery_sources")
+    if (
+        not isinstance(component_catalog, list)
+        or not isinstance(employee_identity, dict)
+        or not isinstance(report_profile, dict)
+        or not isinstance(recovery_sources, dict)
+    ):
+        raise ConflictError(
+            "Payroll run was calculated before immutable report snapshots were supported. "
+            "Recalculate and approve the run again before posting.",
+            details={"error_code": "report_snapshot_inputs_missing"},
+        )
+    report_metadata = PayrollRunReportMetadata.model_validate(run.report_metadata or {})
+    report_snapshot = {
+        "component_catalog": list(component_catalog),
+        "employee_identity": dict(employee_identity),
+        "organization": {"id": str(organization.id), "name": organization.name},
+        "report_profile": report_profile,
+        "recovery_sources": recovery_sources,
+        "run_metadata": report_metadata.model_dump(mode="json"),
+    }
+    report_snapshot_json = json.dumps(
+        report_snapshot,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    await db.execute(
+        sa.insert(payroll_report_snapshots).values(
+            organization_id=organization_id,
+            run_version_id=version_id,
+            snapshot=report_snapshot,
+            provenance="posting",
+            source_checksum=hashlib.sha256(report_snapshot_json.encode("utf-8")).hexdigest(),
+            created_by=user_id,
+        )
+    )
 
     db.add(
         PayrollApproval(

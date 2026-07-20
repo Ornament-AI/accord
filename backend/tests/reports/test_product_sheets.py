@@ -145,11 +145,10 @@ async def _seed_posted_run(session: AsyncSession) -> dict[str, UUID]:
 
 def test_product_report_sheets_allowlist_consistency() -> None:
     registry = build_report_registry()
-    assert len(PRODUCT_REPORT_SHEETS) == 13
-    assert "payslips" not in PRODUCT_REPORT_SHEETS
+    assert len(PRODUCT_REPORT_SHEETS) == 18
+    assert "payslips" in PRODUCT_REPORT_SHEETS
     assert "advance_schedule" not in PRODUCT_REPORT_SHEETS
-    # Still registered for later; excluded from product surface only.
-    assert "payslips" in registry
+    # Generic custom variant infrastructure stays outside the fixed workbook pack.
     assert "advance_schedule" in registry
 
     for report_type in PRODUCT_REPORT_SHEETS:
@@ -187,14 +186,14 @@ def test_list_reports_marks_product_sheets() -> None:
     items = {item.report_type: item for item in list_registered_reports(registry)}
     product = [rt for rt, item in items.items() if item.product_sheet]
     assert sorted(product) == sorted(PRODUCT_REPORT_SHEETS)
-    assert items["payslips"].product_sheet is False
+    assert items["payslips"].product_sheet is True
     assert items["advance_schedule"].product_sheet is False
     assert items["pay_bill"].title == "Pay Bill"
     assert "excel" in items["pay_bill"].formats
 
 
 @pytest.mark.asyncio
-async def test_consolidated_export_zip_has_thirteen_entries(session) -> None:
+async def test_consolidated_export_zip_has_eighteen_entries(session) -> None:
     world = await _seed_posted_run(session)
     registry = _product_fake_registry()
     storage = InMemoryObjectStorage()
@@ -232,9 +231,9 @@ async def test_consolidated_export_zip_has_thirteen_entries(session) -> None:
     blob = await storage.get(artifact.object_key)
     with zipfile.ZipFile(io.BytesIO(blob), "r") as archive:
         names = sorted(archive.namelist())
-    assert len(names) == 13
-    assert not any("payslip" in n.lower() for n in names)
-    assert not any("advance" in n.lower() for n in names)
+    assert len(names) == 18
+    assert any("payslip" in n.lower() for n in names)
+    assert any("advance" in n.lower() for n in names)
     for title in PRODUCT_REPORT_SHEET_TITLES.values():
         assert any(name.startswith(f"{title} - ") and name.endswith(".xlsx") for name in names)
 

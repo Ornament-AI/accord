@@ -440,11 +440,16 @@ async def _june_world(session: AsyncSession) -> dict:
     return _CACHED_WORLD
 
 
-def _ctx(world: dict, *, run_id: UUID | None = None) -> ReportContext:
+def _ctx(
+    world: dict,
+    *,
+    run_id: UUID | None = None,
+    template_version: str = TEMPLATE_VERSION,
+) -> ReportContext:
     return ReportContext(
         organization_id=world["org_id"],
         posted_run_id=run_id or world["run_id"],
-        template_version=TEMPLATE_VERSION,
+        template_version=template_version,
         generated_at=datetime.now(UTC),
         engine_version=str(world["engine_version"]),
     )
@@ -556,6 +561,52 @@ async def test_pay_bill_rows_reconcile_to_db_results(session):
             "EPF_EMPLOYER_TRANSFER", _ZERO
         )
         assert _dec(row[_col_index(register, "transfers")]) == transfers
+
+
+@pytest.mark.asyncio
+async def test_pay_bill_v2_dynamic_columns_reconcile_and_excel_uses_formulas(session):
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    dto = await pay_bill_builder.build(session, _ctx(world, template_version="v2"))
+    register = _section_by_title(dto, "Register")
+
+    keys = [column.key for column in register.columns]
+    assert len(keys) == len(set(keys))
+    assert "component:EPF_EMPLOYER" in keys
+    assert "pan" in keys
+    assert "gpf_account_number" in keys
+    assert register.formulas
+
+    earning_keys = [
+        column.key
+        for column in register.columns
+        if column.key.startswith("component:")
+        and column.key
+        in {
+            "component:BASIC",
+            "component:DA",
+            "component:HRA",
+            "component:TRANSPORT",
+            "component:OTHER_ALLOWANCE",
+        }
+    ]
+    for row in register.rows:
+        visible_earnings = sum(
+            (row[_col_index(register, key)] for key in earning_keys),
+            _ZERO,
+        )
+        assert _dec(visible_earnings) == _dec(row[_col_index(register, "earnings_total")])
+        assert _dec(row[_col_index(register, "gross_bill")]) - _dec(
+            row[_col_index(register, "deductions_total")]
+        ) == _dec(row[_col_index(register, "net_payable")])
+
+    workbook = load_workbook(BytesIO(pay_bill_to_excel(dto)), data_only=False)
+    sheet = workbook["Register"]
+    header_to_col = {sheet.cell(5, col).value: col for col in range(1, sheet.max_column + 1)}
+    first_data_row = 6
+    assert str(sheet.cell(first_data_row, header_to_col["Earnings Total"]).value).startswith("=")
+    assert str(sheet.cell(first_data_row, header_to_col["Gross Bill"]).value).startswith("=")
+    assert str(sheet.cell(first_data_row, header_to_col["Net Payable"]).value).startswith("=")
 
 
 @pytest.mark.asyncio

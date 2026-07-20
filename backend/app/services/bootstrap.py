@@ -19,6 +19,7 @@ from app.models.identity import (
     User,
 )
 from app.services.organizations import validate_slug
+from app.services.default_catalog import ensure_standard_components
 from app.tenancy import bind_tenant_context
 
 
@@ -112,6 +113,9 @@ async def provision_organization(
             and existing.slug == slug
             and await _admin_intent_matches(db, existing, admin_email=cleaned_email)
         ):
+            await bind_tenant_context(db, organization_id=existing.id)
+            await ensure_standard_components(db, organization_id=existing.id)
+            await db.commit()
             return BootstrapResult(organization=existing, created=False)
         raise ConflictError(
             "Organization already exists with different name, slug, or admin. "
@@ -133,6 +137,7 @@ async def provision_organization(
 
     await bind_tenant_context(db, organization_id=org.id)
     db.add(OrganizationSettings(organization_id=org.id))
+    await ensure_standard_components(db, organization_id=org.id)
 
     user = (await db.execute(select(User).where(User.email == cleaned_email))).scalar_one_or_none()
     if user is not None:

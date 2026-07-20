@@ -103,6 +103,7 @@ async def create_artifact(
     content_type: str,
     requested_by: UUID,
     posted_run_id: UUID | None = None,
+    variant_key: str | None = None,
     engine_version: str | None = None,
     retention_days: int | None = None,
 ) -> ExportArtifact:
@@ -128,6 +129,7 @@ async def create_artifact(
         organization_id=organization_id,
         posted_run_id=posted_run_id,
         report_type=report_type,
+        variant_key=variant_key,
         template_version=template_version,
         engine_version=engine_version,
         object_key=object_key,

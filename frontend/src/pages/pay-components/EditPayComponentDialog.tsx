@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import {
 	classificationLabel,
 	type PayComponentResponse,
+	type ScheduleKind,
 	usePayComponentsList,
 	useUpdatePayComponent,
 } from "@/lib/api/pay-setup";
@@ -41,6 +42,9 @@ type FormState = {
 	is_active: boolean;
 	employer_transfer: boolean;
 	transfer_of: string;
+	schedule_kind: ScheduleKind | "";
+	schedule_title: string;
+	schedule_account_head: string;
 };
 
 const OFF_BILL_VALUE = "__offbill__";
@@ -58,6 +62,9 @@ export function EditPayComponentDialog({
 		is_active: true,
 		employer_transfer: false,
 		transfer_of: "",
+		schedule_kind: "",
+		schedule_title: "",
+		schedule_account_head: "",
 	});
 	const [formError, setFormError] = useState<string | null>(null);
 
@@ -69,6 +76,9 @@ export function EditPayComponentDialog({
 				is_active: component.is_active,
 				employer_transfer: component.employer_transfer,
 				transfer_of: component.transfer_of ?? "",
+				schedule_kind: (component.schedule_kind as ScheduleKind | null) ?? "",
+				schedule_title: component.schedule_title ?? "",
+				schedule_account_head: component.schedule_account_head ?? "",
 			});
 			setFormError(null);
 		}
@@ -96,9 +106,14 @@ export function EditPayComponentDialog({
 				body: {
 					name: form.name.trim(),
 					display_order: displayOrder,
-					is_active: form.is_active,
+					...(component.is_standard ? {} : { is_active: form.is_active }),
 					employer_transfer: form.employer_transfer,
 					transfer_of: form.employer_transfer ? form.transfer_of || null : null,
+					schedule_kind: form.schedule_kind || null,
+					schedule_title: form.schedule_kind ? form.schedule_title.trim() || null : null,
+					schedule_account_head: form.schedule_kind
+						? form.schedule_account_head.trim() || null
+						: null,
 				},
 			});
 			onOpenChange(false);
@@ -124,7 +139,7 @@ export function EditPayComponentDialog({
 				<DialogHeader className="px-6 pt-5 pb-3">
 					<DialogTitle>Edit Pay Component</DialogTitle>
 					<DialogDescription>
-						Update name, display order, or active status. Code and classification are fixed.
+						Update presentation and export settings. Code and classification are fixed.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -138,6 +153,25 @@ export function EditPayComponentDialog({
 								<Label htmlFor="edit-pc-code">Code</Label>
 								<Input id="edit-pc-code" value={component.code} readOnly disabled />
 							</div>
+
+							{!component.is_standard ? (
+								<div className="flex items-center justify-between gap-4">
+									<div className="grid gap-1">
+										<Label htmlFor="edit-pc-active">Active</Label>
+										<p className="text-xs text-muted-foreground">
+											Inactive components are hidden from new payroll setup.
+										</p>
+									</div>
+									<Switch
+										id="edit-pc-active"
+										checked={form.is_active}
+										onCheckedChange={(checked) =>
+											setForm((prev) => ({ ...prev, is_active: checked }))
+										}
+										disabled={isSubmitting}
+									/>
+								</div>
+							) : null}
 
 							<div className="grid gap-2">
 								<Label htmlFor="edit-pc-classification">Classification</Label>
@@ -172,17 +206,61 @@ export function EditPayComponentDialog({
 								/>
 							</div>
 
-							<div className="flex items-center justify-between gap-4">
-								<Label htmlFor="edit-pc-is-active">Active</Label>
-								<Switch
-									id="edit-pc-is-active"
-									checked={form.is_active}
-									onCheckedChange={(checked) =>
-										setForm((prev) => ({ ...prev, is_active: checked }))
+							<div className="grid gap-2">
+								<Label htmlFor="edit-pc-schedule-kind">Export Schedule</Label>
+								<Select
+									value={form.schedule_kind || "none"}
+									onValueChange={(value) =>
+										setForm((prev) => ({
+											...prev,
+											schedule_kind: value === "none" ? "" : (value as ScheduleKind),
+										}))
 									}
 									disabled={isSubmitting}
-								/>
+								>
+									<SelectTrigger id="edit-pc-schedule-kind" className="w-full">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="none">No separate schedule</SelectItem>
+										<SelectItem value="simple_component">Component schedule</SelectItem>
+										<SelectItem value="loan_installment">Loan installment schedule</SelectItem>
+									</SelectContent>
+								</Select>
 							</div>
+
+							{form.schedule_kind ? (
+								<>
+									<div className="grid gap-2">
+										<Label htmlFor="edit-pc-schedule-title">Schedule Title</Label>
+										<Input
+											id="edit-pc-schedule-title"
+											value={form.schedule_title}
+											onChange={(event) =>
+												setForm((prev) => ({
+													...prev,
+													schedule_title: event.target.value,
+												}))
+											}
+											disabled={isSubmitting || component.is_standard}
+										/>
+									</div>
+									<div className="grid gap-2">
+										<Label htmlFor="edit-pc-schedule-account-head">Account Head</Label>
+										<Input
+											id="edit-pc-schedule-account-head"
+											value={form.schedule_account_head}
+											onChange={(event) =>
+												setForm((prev) => ({
+													...prev,
+													schedule_account_head: event.target.value,
+												}))
+											}
+											disabled={isSubmitting}
+										/>
+									</div>
+								</>
+							) : null}
 
 							{["ag_deduction", "treasury_deduction", "external_recovery"].includes(
 								component.classification,
@@ -220,7 +298,7 @@ export function EditPayComponentDialog({
 														transfer_of: value === OFF_BILL_VALUE ? "" : value,
 													}))
 												}
-												disabled={isSubmitting}
+												disabled={isSubmitting || component.is_standard}
 											>
 												<SelectTrigger id="edit-pc-transfer-of" className="w-full">
 													<SelectValue />

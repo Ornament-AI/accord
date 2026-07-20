@@ -19,6 +19,7 @@ class ArtifactResponse(BaseModel):
     organization_id: UUID
     posted_run_id: UUID | None = None
     report_type: str
+    variant_key: str | None = None
     template_version: str
     engine_version: str | None = None
     checksum_sha256: str

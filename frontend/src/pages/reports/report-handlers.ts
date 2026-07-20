@@ -37,7 +37,7 @@ export function buildCatalogEntry(
 		title: overrides.title,
 		formats: overrides.formats ?? ["excel", "pdf", "json"],
 		product_sheet: overrides.product_sheet ?? false,
-		template_version: overrides.template_version ?? "v1",
+		template_version: overrides.template_version ?? "v2",
 	};
 }
 
@@ -51,7 +51,7 @@ export function buildArtifact(
 		report_type: overrides.report_type,
 		posted_run_id: overrides.posted_run_id ?? null,
 		status: overrides.status ?? "ready",
-		template_version: overrides.template_version ?? "v1",
+		template_version: overrides.template_version ?? "v2",
 		content_type:
 			overrides.content_type ?? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		size_bytes: overrides.size_bytes ?? 12_345,
@@ -78,12 +78,6 @@ export function defaultReportCatalog(): ReportCatalogEntry[] {
 	return [
 		...product,
 		buildCatalogEntry({
-			report_type: "payslips",
-			title: "Payslips",
-			product_sheet: false,
-			formats: ["pdf", "json"],
-		}),
-		buildCatalogEntry({
 			report_type: "advance_schedule",
 			title: "Advance Schedule",
 			product_sheet: false,
@@ -94,7 +88,7 @@ export function defaultReportCatalog(): ReportCatalogEntry[] {
 export function defaultPreview(reportType: string, _postedRunId: string): ReportPreviewResponse {
 	return {
 		report_type: reportType,
-		template_version: "v1",
+		template_version: "v2",
 		title: PRODUCT_REPORT_SHEETS.find((s) => s.reportType === reportType)?.title ?? reportType,
 		organization_name: "Acme Payroll",
 		subtitle: "June 2026",

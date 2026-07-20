@@ -31,7 +31,9 @@ PROFESSIONAL_TAX_DEFAULT = 200
 COMPONENT_SPECS: list[tuple[str, str, str]] = [
 	("BASIC", "Basic Pay", "earning"),
 	("DA", "Dearness Allowance", "earning"),
+	("CLA", "City Compensatory Allowance", "earning"),
 	("HRA", "House Rent Allowance", "earning"),
+	("WASH_ALLOWANCE", "Wash Allowance", "earning"),
 	("TRANSPORT", "Transport / PTA", "earning"),
 	("OTHER_ALLOWANCE", "Other Allowances", "earning"),
 	("GPF_SUBSCRIPTION", "GPF Subscription", "ag_deduction"),
@@ -598,12 +600,13 @@ def seed(base_url: str, xlsx: Path, *, pg: dict[str, str]) -> None:
 			)
 			employee_id = UUID(body["id"])
 
-			other_allowance = emp.cla + emp.wash + emp.other
 			recurring: list[tuple[str, int]] = [
 				("DA", emp.da),
+				("CLA", emp.cla),
 				("HRA", emp.hra),
+				("WASH_ALLOWANCE", emp.wash),
 				("TRANSPORT", emp.ta),
-				("OTHER_ALLOWANCE", other_allowance),
+				("OTHER_ALLOWANCE", emp.other),
 				("INCOME_TAX", emp.income_tax),
 				("PROFESSIONAL_TAX", emp.professional_tax),
 				("GIS", emp.gis),

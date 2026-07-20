@@ -67,6 +67,7 @@ class Classification(StrEnum):
     TREASURY_DEDUCTION = "treasury_deduction"
     GROSS_ADJUSTMENT = "gross_adjustment"
     EXTERNAL_RECOVERY = "external_recovery"
+    INFORMATIONAL = "informational"
 
 
 class CalcKind(StrEnum):
@@ -100,6 +101,11 @@ class QuartersLocation(StrEnum):
     OTHER = "other"
 
 
+class ScheduleKind(StrEnum):
+    SIMPLE_COMPONENT = "simple_component"
+    LOAN_INSTALLMENT = "loan_installment"
+
+
 class PayComponentCreate(BaseModel):
     code: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -111,6 +117,9 @@ class PayComponentCreate(BaseModel):
     # employer-transfer line to mark the transfer as off-bill (NPS employer).
     employer_transfer: bool = False
     transfer_of: str | None = None
+    schedule_kind: ScheduleKind | None = None
+    schedule_title: str | None = Field(default=None, min_length=1)
+    schedule_account_head: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _transfer_of_requires_employer_transfer(self) -> "PayComponentCreate":
@@ -151,6 +160,9 @@ class PayComponentUpdate(BaseModel):
     is_active: bool | None = None
     employer_transfer: bool | None = None
     transfer_of: str | None = None
+    schedule_kind: ScheduleKind | None = None
+    schedule_title: str | None = Field(default=None, min_length=1)
+    schedule_account_head: str | None = Field(default=None, min_length=1)
 
     @field_validator("name", "display_order", "is_active", "employer_transfer")
     @classmethod
@@ -189,6 +201,10 @@ class PayComponentResponse(BaseModel):
     display_order: int
     employer_transfer: bool
     transfer_of: str | None
+    is_standard: bool
+    schedule_kind: str | None
+    schedule_title: str | None
+    schedule_account_head: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -406,3 +422,52 @@ class ReportConfigurationResponse(BaseModel):
 
 class ReportConfigurationUpsert(BaseModel):
     value: Any
+
+
+class HeadOfAccount(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    demand_number: str | None = None
+    major_head: str | None = None
+    sub_head: str | None = None
+    detailed_head: str | None = None
+
+
+class BankAdviceRecipient(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bank_name: str | None = None
+    branch: str | None = None
+    address_lines: list[str] = Field(default_factory=list)
+
+
+class ReportSignatory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    name: str
+    designation: str
+
+
+class PayrollExportProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    legal_name: str | None = None
+    office_name: str | None = None
+    address_lines: list[str] = Field(default_factory=list)
+    cin: str | None = None
+    phone: str | None = None
+    website: str | None = None
+    ddo_name: str | None = None
+    ddo_code: str | None = None
+    department_code: str | None = None
+    treasury_code: str | None = None
+    head_of_account: HeadOfAccount = Field(default_factory=HeadOfAccount)
+    bank_advice_recipient: BankAdviceRecipient = Field(default_factory=BankAdviceRecipient)
+    salary_reference_prefix: str | None = None
+    signatories: list[ReportSignatory] = Field(default_factory=list)
+
+
+class PayrollExportProfileResponse(BaseModel):
+    value: PayrollExportProfile
+    updated_at: datetime | None = None

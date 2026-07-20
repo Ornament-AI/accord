@@ -30,7 +30,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.reports.base import CellValue, ColumnKind, ReportDTO, TableSection
+from app.reports.base import CellValue, ColumnKind, FormulaScope, ReportDTO, TableSection
 
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
 _UNSAFE_LEADING_CHARS = frozenset({"\t", "\r", "\n", "\0"})
@@ -127,15 +127,21 @@ def _safe_sheet_title(title: str, used: set[str]) -> str:
 
 
 def _write_section(ws: Worksheet, dto: ReportDTO, section: TableSection) -> None:
-    ws["A1"] = dto.title
+    ws["A1"] = sanitize_excel_text(dto.title)
     ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = f"{dto.organization_name} — {dto.subtitle}"
-    ws["A3"] = f"{section.title} | {dto.report_type} | template {dto.template_version}"
+    ws["A2"] = sanitize_excel_text(f"{dto.organization_name} — {dto.subtitle}")
+    ws["A3"] = sanitize_excel_text(
+        f"{section.title} | {dto.report_type} | template {dto.template_version}"
+    )
 
     header_row = 5
     col_count = len(section.columns)
     for col_idx, column in enumerate(section.columns, start=1):
-        cell = ws.cell(row=header_row, column=col_idx, value=column.header)
+        cell = ws.cell(
+            row=header_row,
+            column=col_idx,
+            value=sanitize_excel_text(column.header),
+        )
         cell.number_format = TEXT_FORMAT
     _style_header_row(ws, header_row, col_count)
 
@@ -173,6 +179,73 @@ def _write_section(ws: Worksheet, dto: ReportDTO, section: TableSection) -> None
             if number_format is not None:
                 cell.number_format = number_format
 
+    column_by_key = {column.key: index for index, column in enumerate(section.columns, start=1)}
+
+    # A populated money footer is a trusted column aggregate. Keep exported
+    # totals live unless the builder supplied a more specific relationship.
+    if dto.template_version == "v2" and section.totals is not None:
+        explicit_total_targets = {
+            spec.target_key
+            for spec in section.formulas
+            if spec.scope in {FormulaScope.TOTALS, FormulaScope.COLUMN_TOTAL}
+        }
+        totals_row = data_start + len(section.rows)
+        for col_idx, (column, value) in enumerate(
+            zip(section.columns, section.totals, strict=True), start=1
+        ):
+            if (
+                column.kind is ColumnKind.MONEY
+                and value is not None
+                and column.key not in explicit_total_targets
+            ):
+                letter = get_column_letter(col_idx)
+                formula = (
+                    f"=SUM({letter}{data_start}:{letter}{totals_row - 1})" if section.rows else "=0"
+                )
+                ws.cell(row=totals_row, column=col_idx).value = formula
+
+    def expression(
+        row_index: int, add_keys: tuple[str, ...], subtract_keys: tuple[str, ...]
+    ) -> str:
+        add_refs = [f"{get_column_letter(column_by_key[key])}{row_index}" for key in add_keys]
+        subtract_refs = [
+            f"{get_column_letter(column_by_key[key])}{row_index}" for key in subtract_keys
+        ]
+        value = "+".join(add_refs) if add_refs else "0"
+        if subtract_refs:
+            value += "-" + "-".join(subtract_refs)
+        return f"={value}"
+
+    for spec in section.formulas:
+        if spec.target_key not in column_by_key:
+            raise ValueError(f"Unknown formula target column: {spec.target_key}")
+        unknown = (set(spec.add_keys) | set(spec.subtract_keys)) - set(column_by_key)
+        if unknown:
+            raise ValueError(f"Unknown formula source columns: {sorted(unknown)}")
+        target_col = column_by_key[spec.target_key]
+        if spec.scope is FormulaScope.ROWS:
+            for row_index in range(data_start, data_start + len(section.rows)):
+                ws.cell(row=row_index, column=target_col).value = expression(
+                    row_index, spec.add_keys, spec.subtract_keys
+                )
+        elif spec.scope is FormulaScope.TOTALS:
+            if section.totals is None:
+                raise ValueError("Totals formula requires a totals row")
+            row_index = data_start + len(section.rows)
+            ws.cell(row=row_index, column=target_col).value = expression(
+                row_index, spec.add_keys, spec.subtract_keys
+            )
+        elif spec.scope is FormulaScope.COLUMN_TOTAL:
+            if section.totals is None:
+                raise ValueError("Column-total formula requires a totals row")
+            totals_row = data_start + len(section.rows)
+            letter = get_column_letter(target_col)
+            if section.rows:
+                formula = f"=SUM({letter}{data_start}:{letter}{totals_row - 1})"
+            else:
+                formula = "=0"
+            ws.cell(row=totals_row, column=target_col).value = formula
+
     for col_idx, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(col_idx)].width = width
 
@@ -192,6 +265,9 @@ def to_excel(dto: ReportDTO) -> bytes:
 
     wb.properties.title = dto.title
     wb.properties.created = datetime.now(timezone.utc).replace(tzinfo=None)
+    wb.calculation.calcMode = "auto"
+    wb.calculation.fullCalcOnLoad = True
+    wb.calculation.forceFullCalc = True
 
     buffer = BytesIO()
     wb.save(buffer)

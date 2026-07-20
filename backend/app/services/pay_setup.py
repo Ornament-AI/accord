@@ -31,6 +31,7 @@ from app.schemas.pay_setup import (
     ComponentRateVersionCreate,
     PayComponentCreate,
     PayComponentUpdate,
+    PayrollExportProfile,
     RecurringInstructionCreate,
     RecurringInstructionVersionCreate,
     REPORT_CONFIG_KEY_RE,
@@ -219,6 +220,10 @@ def _pay_component_response(component: PayComponent) -> dict[str, Any]:
         "display_order": component.display_order,
         "employer_transfer": component.employer_transfer,
         "transfer_of": component.transfer_of,
+        "is_standard": component.is_standard,
+        "schedule_kind": component.schedule_kind,
+        "schedule_title": component.schedule_title,
+        "schedule_account_head": component.schedule_account_head,
         "created_at": component.created_at,
         "updated_at": component.updated_at,
     }
@@ -281,6 +286,9 @@ async def create_pay_component(
         display_order=body.display_order,
         employer_transfer=body.employer_transfer,
         transfer_of=body.transfer_of,
+        schedule_kind=None if body.schedule_kind is None else body.schedule_kind.value,
+        schedule_title=body.schedule_title,
+        schedule_account_head=body.schedule_account_head,
         is_active=True,
     )
     db.add(component)
@@ -327,7 +335,23 @@ async def update_pay_component(
     if body.display_order is not None:
         component.display_order = body.display_order
     if body.is_active is not None:
+        if component.is_standard and body.is_active is False:
+            raise ConflictError("Standard pay components cannot be deactivated.")
         component.is_active = body.is_active
+    if component.is_standard:
+        if (
+            "employer_transfer" in body.model_fields_set
+            and body.employer_transfer != component.employer_transfer
+        ) or ("transfer_of" in body.model_fields_set and body.transfer_of != component.transfer_of):
+            raise ConflictError(
+                "Standard pay-component transfer rules are application-owned and cannot be changed."
+            )
+    if "schedule_kind" in body.model_fields_set:
+        component.schedule_kind = None if body.schedule_kind is None else body.schedule_kind.value
+    if "schedule_title" in body.model_fields_set:
+        component.schedule_title = body.schedule_title
+    if "schedule_account_head" in body.model_fields_set:
+        component.schedule_account_head = body.schedule_account_head
     employer_transfer = (
         body.employer_transfer
         if "employer_transfer" in body.model_fields_set
@@ -938,7 +962,7 @@ def validate_report_config_key(key: str) -> None:
         )
 
 
-async def upsert_report_configuration(
+async def _upsert_report_configuration(
     db: AsyncSession,
     *,
     organization_id: UUID,
@@ -975,3 +999,56 @@ async def upsert_report_configuration(
         "value": row.value,
         "updated_at": row.updated_at,
     }
+
+
+async def upsert_report_configuration(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    key: str,
+    value: Any,
+) -> dict[str, Any]:
+    if key == "payroll_export_profile":
+        raise ValidationError(
+            "payroll_export_profile is reserved; use the typed /api/report-profile endpoint."
+        )
+    return await _upsert_report_configuration(
+        db,
+        organization_id=organization_id,
+        key=key,
+        value=value,
+    )
+
+
+async def get_payroll_export_profile(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            sa.select(ReportConfiguration).where(
+                ReportConfiguration.organization_id == organization_id,
+                ReportConfiguration.key == "payroll_export_profile",
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return {"value": PayrollExportProfile().model_dump(mode="json"), "updated_at": None}
+    value = PayrollExportProfile.model_validate(row.value)
+    return {"value": value.model_dump(mode="json"), "updated_at": row.updated_at}
+
+
+async def upsert_payroll_export_profile(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    profile: PayrollExportProfile,
+) -> dict[str, Any]:
+    row = await _upsert_report_configuration(
+        db,
+        organization_id=organization_id,
+        key="payroll_export_profile",
+        value=profile.model_dump(mode="json"),
+    )
+    return {"value": row["value"], "updated_at": row["updated_at"]}

@@ -33,6 +33,7 @@ ROW_H_MM = 6.0
 HEADER_ROW_H_MM = 7.0
 BODY_FONT_PT = 8.0
 TABLE_HEADER_FONT_PT = 7.5
+MAX_COLUMNS_PER_TABLE = 12
 
 
 def _resolve_font_path(font_path: Path | None) -> tuple[str, Path | None]:
@@ -206,6 +207,40 @@ def _render_section(pdf: _TabularReportPDF, section: TableSection) -> None:
         _draw_row(pdf, section, totals, widths, bold=True)
 
 
+def _split_wide_section(section: TableSection) -> tuple[TableSection, ...]:
+    """Split wide registers into readable horizontal blocks for PDF only."""
+    if len(section.columns) <= MAX_COLUMNS_PER_TABLE:
+        return (section,)
+    repeat_count = 0
+    for column in section.columns:
+        if column.kind is ColumnKind.MONEY:
+            break
+        repeat_count += 1
+    repeat_count = min(repeat_count, 5)
+    repeated = tuple(range(repeat_count))
+    remaining = tuple(range(repeat_count, len(section.columns)))
+    chunk_size = MAX_COLUMNS_PER_TABLE - repeat_count
+    chunks = [
+        remaining[index : index + chunk_size] for index in range(0, len(remaining), chunk_size)
+    ]
+    out: list[TableSection] = []
+    for index, chunk in enumerate(chunks, start=1):
+        selected = repeated + chunk
+        out.append(
+            TableSection(
+                title=f"{section.title} ({index}/{len(chunks)})",
+                columns=tuple(section.columns[position] for position in selected),
+                rows=tuple(tuple(row[position] for position in selected) for row in section.rows),
+                totals=(
+                    None
+                    if section.totals is None
+                    else tuple(section.totals[position] for position in selected)
+                ),
+            )
+        )
+    return tuple(out)
+
+
 def to_pdf(dto: ReportDTO, *, font_path: Path | None = None) -> bytes:
     """Render a tabular report DTO to paginated landscape A4 PDF bytes."""
     font_family, resolved_path = _resolve_font_path(font_path)
@@ -238,7 +273,10 @@ def to_pdf(dto: ReportDTO, *, font_path: Path | None = None) -> bytes:
     doc.set_margins(MARGIN_MM, MARGIN_MM + 4, MARGIN_MM)
     doc.add_page()
 
-    sections = dto.sections or (TableSection(title=dto.title, columns=(), rows=()),)
+    source_sections = dto.sections or (TableSection(title=dto.title, columns=(), rows=()),)
+    sections = tuple(
+        projected for section in source_sections for projected in _split_wide_section(section)
+    )
     for index, section in enumerate(sections):
         if index > 0:
             doc.add_page()

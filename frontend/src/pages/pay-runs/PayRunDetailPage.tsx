@@ -43,6 +43,7 @@ import { getErrorMessage } from "@/lib/errors";
 import { formatDateTime } from "@/lib/utils";
 
 import { PayrollRunRosterTable, type PayrollRunRosterTableHandle } from "./PayrollRunRosterTable";
+import { ReportMetadataSection } from "./ReportMetadataSection";
 import { RunStatusBadge } from "./run-status-badge";
 import { ValidationFindingsPanel, WorkflowActionBar } from "./workflow";
 
@@ -308,7 +309,13 @@ export default function PayRunDetailPage() {
 								/>
 							</PageSection>
 
-							<PageSection className="grid gap-3">
+							<ReportMetadataSection
+								runId={run.id}
+								metadata={run.report_metadata ?? {}}
+								editable={["draft", "calculated"].includes(run.status)}
+							/>
+
+							<PageSection className="gap-3">
 								<h2 className="text-base font-semibold">Change History</h2>
 
 								{rosterHistoryQuery.isLoading ? <PageSkeleton /> : null}

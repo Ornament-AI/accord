@@ -1,3 +1,4 @@
+import { UsersThreeIcon as Users } from "@phosphor-icons/react/dist/csr/UsersThree";
 import { type ColumnDef, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import {
 	forwardRef,
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 import { usePersistedColumnVisibility } from "@/components/column-visibility";
 import { DataSearchControl } from "@/components/data-search-control";
 import { DataTableShell } from "@/components/data-table-shell";
+import { EmptyState } from "@/components/empty-state";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
@@ -567,7 +569,7 @@ export const PayrollRunRosterTable = forwardRef<
 			</PageToolbar>
 
 			{visibleRows.length === 0 ? (
-				<p className="text-sm text-muted-foreground">No employees found.</p>
+				<EmptyState className="min-h-48" icon={Users} title="No Employees Found" />
 			) : (
 				<DataTableShell table={table} tableClassName="min-w-[70rem]" />
 			)}

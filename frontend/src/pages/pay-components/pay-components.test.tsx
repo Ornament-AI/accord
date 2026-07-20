@@ -81,6 +81,7 @@ describe("Pay Components list page", () => {
 			).toBeInTheDocument();
 			expect(screen.getByText("House Rent Allowance")).toBeInTheDocument();
 			expect(screen.queryByRole("columnheader", { name: "Code" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("columnheader", { name: "Active" })).not.toBeInTheDocument();
 			expect(screen.getAllByText("Earning").length).toBeGreaterThan(0);
 		},
 		PAGE_TIMEOUT,
@@ -202,6 +203,7 @@ describe("Edit Pay Component dialog", () => {
 			classification: "earning",
 			display_order: 1,
 			is_active: true,
+			is_standard: true,
 		});
 		const { handlers: authHandlers } = createAuthHandlers({
 			me: buildRoleAuthMe("organization_administrator"),
@@ -224,6 +226,7 @@ describe("Edit Pay Component dialog", () => {
 		expect(codeInput).toHaveAttribute("readonly");
 		expect(classificationInput).toBeDisabled();
 		expect(classificationInput).toHaveAttribute("readonly");
+		expect(screen.queryByLabelText("Active")).not.toBeInTheDocument();
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Basic Pay Revised" } });
 		fireEvent.change(screen.getByLabelText("Display Order"), { target: { value: "5" } });
@@ -237,13 +240,16 @@ describe("Edit Pay Component dialog", () => {
 			body: {
 				name: "Basic Pay Revised",
 				display_order: 5,
-				is_active: true,
 				employer_transfer: false,
 				transfer_of: null,
+				schedule_kind: null,
+				schedule_title: null,
+				schedule_account_head: null,
 			},
 		});
 		expect(patches[0].body).not.toHaveProperty("code");
 		expect(patches[0].body).not.toHaveProperty("classification");
+		expect(patches[0].body).not.toHaveProperty("is_active");
 	});
 });
 

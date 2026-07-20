@@ -34,6 +34,10 @@ export function buildPayComponent(
 		employer_transfer: overrides.employer_transfer ?? false,
 		transfer_of: overrides.transfer_of ?? null,
 		is_active: overrides.is_active ?? true,
+		is_standard: overrides.is_standard ?? false,
+		schedule_kind: overrides.schedule_kind ?? null,
+		schedule_title: overrides.schedule_title ?? null,
+		schedule_account_head: overrides.schedule_account_head ?? null,
 		created_at: overrides.created_at ?? now,
 		updated_at: overrides.updated_at ?? now,
 	};

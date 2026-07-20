@@ -9,7 +9,7 @@ import psycopg
 from .conftest import as_psycopg_url, diag, run_alembic
 
 INITIAL_REVISION = "c8d4e2f1a9b7"
-HEAD_REVISION = "c9f2e4a8b013"
+HEAD_REVISION = "f2a7c9d4e601"
 
 PHASE3_TABLES = (
     "offices",

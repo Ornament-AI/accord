@@ -6,7 +6,8 @@ import psycopg
 
 from .conftest import as_psycopg_url, diag, run_alembic
 
-HEAD_REVISION = "c9f2e4a8b013"
+HEAD_REVISION = "f2a7c9d4e601"
+PREVIOUS_REVISION = "c9f2e4a8b013"
 
 
 def _alembic_version(database_url: str) -> str | None:
@@ -79,3 +80,35 @@ def test_initial_migration_upgrade_downgrade_upgrade_roundtrip(scratch_db: str) 
 
     check = run_alembic(scratch_db, "check")
     assert check.returncode == 0, diag("alembic check after roundtrip", check)
+
+
+def test_report_export_migration_backfills_existing_organization_catalog(
+    scratch_db: str,
+) -> None:
+    up = run_alembic(scratch_db, "upgrade", PREVIOUS_REVISION)
+    assert up.returncode == 0, diag(f"upgrade {PREVIOUS_REVISION}", up)
+
+    with psycopg.connect(as_psycopg_url(scratch_db)) as conn:
+        organization_id = conn.execute(
+            "INSERT INTO organizations (name, slug) VALUES (%s, %s) RETURNING id",
+            ("Existing Organization", "existing-org"),
+        ).fetchone()[0]
+
+    head = run_alembic(scratch_db, "upgrade", "head")
+    assert head.returncode == 0, diag("upgrade report export migration", head)
+
+    with psycopg.connect(as_psycopg_url(scratch_db)) as conn:
+        rows = conn.execute(
+            "SELECT code, classification, is_standard, schedule_kind "
+            "FROM pay_components WHERE organization_id = %s",
+            (organization_id,),
+        ).fetchall()
+    catalog = {row[0]: row[1:] for row in rows}
+    assert len(catalog) == 25
+    assert catalog["CLA"] == ("earning", True, None)
+    assert catalog["FOREGONE_HRA"] == ("informational", True, None)
+    assert catalog["MOTOR_CAR_ADVANCE_INSTALLMENT"] == (
+        "external_recovery",
+        True,
+        "loan_installment",
+    )

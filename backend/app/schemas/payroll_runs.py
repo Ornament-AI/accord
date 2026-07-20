@@ -93,6 +93,22 @@ class PayrollRunListItem(BaseModel):
     updated_at: datetime
 
 
+class PayrollRunReportMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bill_number: str | None = None
+    bill_date: date | None = None
+    payment_date: date | None = None
+    demand_number: str | None = None
+    major_head: str | None = None
+    sub_head: str | None = None
+    detailed_head: str | None = None
+    bank_advice_number: str | None = None
+    bank_advice_date: date | None = None
+    approval_note_number: str | None = None
+    approval_note_date: date | None = None
+
+
 class PayrollRunDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -105,8 +121,20 @@ class PayrollRunDetail(BaseModel):
     current_version: CurrentVersion | None = None
     lock_version: int
     roster_initialized: bool = False
+    report_metadata: PayrollRunReportMetadata = Field(default_factory=PayrollRunReportMetadata)
     created_at: datetime
     updated_at: datetime
+
+
+class ReportReadinessIssue(BaseModel):
+    report_type: str
+    code: str
+    message: str
+
+
+class ReportReadinessResponse(BaseModel):
+    ready: bool
+    issues: list[ReportReadinessIssue]
 
 
 class PayrollRunEmployeeUpsert(BaseModel):

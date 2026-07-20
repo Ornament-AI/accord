@@ -24,6 +24,8 @@ from app.schemas.payroll_runs import (
     PayrollRunEmployeeResponse,
     PayrollRunRosterHistoryResponse,
     PayrollRunRosterUpdate,
+    PayrollRunReportMetadata,
+    ReportReadinessResponse,
     PayrollRunListItem,
 )
 from app.services import payroll_runs as payroll_runs_service
@@ -131,6 +133,59 @@ async def get_payroll_run(
     ),
 ) -> dict[str, Any]:
     return await payroll_runs_service.get_run(
+        db,
+        organization_id=_org_id(tenant),
+        run_id=run_id,
+    )
+
+
+@router.get(
+    "/payroll-runs/{run_id}/report-metadata",
+    response_model=PayrollRunReportMetadata,
+)
+async def get_payroll_run_report_metadata(
+    run_id: UUID,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+) -> dict[str, Any]:
+    return await payroll_runs_service.get_run_report_metadata(
+        db,
+        organization_id=_org_id(tenant),
+        run_id=run_id,
+    )
+
+
+@router.put(
+    "/payroll-runs/{run_id}/report-metadata",
+    response_model=PayrollRunReportMetadata,
+)
+async def update_payroll_run_report_metadata(
+    run_id: UUID,
+    body: PayrollRunReportMetadata,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("create_run")),
+) -> dict[str, Any]:
+    return await payroll_runs_service.update_run_report_metadata(
+        db,
+        organization_id=_org_id(tenant),
+        run_id=run_id,
+        body=body,
+    )
+
+
+@router.get(
+    "/payroll-runs/{run_id}/report-readiness",
+    response_model=ReportReadinessResponse,
+)
+async def get_payroll_run_report_readiness(
+    run_id: UUID,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+) -> dict[str, Any]:
+    return await payroll_runs_service.get_report_readiness(
         db,
         organization_id=_org_id(tenant),
         run_id=run_id,
