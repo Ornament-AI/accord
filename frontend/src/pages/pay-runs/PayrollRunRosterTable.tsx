@@ -148,6 +148,11 @@ function PayrollGridInput({
 type RosterColumnsArgs = {
 	editable: boolean;
 	periodDays: number;
+	/**
+	 * True once a run has advanced past draft: Total must only ever show immutable
+	 * calculated results, never the draft preview (which omits deductions).
+	 */
+	showCalculatedTotals: boolean;
 	/** When set, Total shows immutable calculated net payable instead of draft preview. */
 	netPayableByEmployeeId: Map<string, string> | null;
 	allSelected: boolean;
@@ -159,6 +164,7 @@ type RosterColumnsArgs = {
 function buildRosterColumns({
 	editable,
 	periodDays,
+	showCalculatedTotals,
 	netPayableByEmployeeId,
 	allSelected,
 	setAllSelected,
@@ -324,11 +330,13 @@ function buildRosterColumns({
 			header: "Total",
 			enableHiding: false,
 			cell: ({ row }) => {
-				const calculated = netPayableByEmployeeId?.get(row.original.employee_id) ?? null;
-				const value =
-					netPayableByEmployeeId !== null
-						? calculated
-						: computeRosterPreviewTotal(row.original, periodDays);
+				// Non-draft runs must never fall back to the draft preview: it omits
+				// deductions, so showing it for calculated/submitted/posted runs would
+				// present an estimate as a final total. Keep the cell blank ("—") until
+				// immutable engine results are available.
+				const value = showCalculatedTotals
+					? (netPayableByEmployeeId?.get(row.original.employee_id) ?? null)
+					: computeRosterPreviewTotal(row.original, periodDays);
 				return (
 					<span className="font-mono font-medium tabular-nums">{formatTotalMoney(value)}</span>
 				);
@@ -442,6 +450,7 @@ export const PayrollRunRosterTable = forwardRef<
 			buildRosterColumns({
 				editable: editable && editing,
 				periodDays,
+				showCalculatedTotals,
 				netPayableByEmployeeId,
 				allSelected,
 				setAllSelected,
@@ -455,6 +464,7 @@ export const PayrollRunRosterTable = forwardRef<
 			netPayableByEmployeeId,
 			periodDays,
 			setAllSelected,
+			showCalculatedTotals,
 			updateField,
 			updateRow,
 		],
