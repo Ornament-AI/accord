@@ -1,4 +1,4 @@
-"""Payroll run calculate command: resolve master data → engine → immutable version.
+"""Resolution of master data into typed engine inputs.
 
 Resolution scope (as-of the run period's calendar month-end date)
 -----------------------------------------------------------------
@@ -39,9 +39,8 @@ from __future__ import annotations
 
 import calendar
 import dataclasses
-import uuid
 from collections.abc import Mapping
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -49,40 +48,38 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.payroll.engine import calculate_run
 from app.domain.payroll.inputs import ComponentInput, EmployeeCalcInput, RunCalcInput
 from app.domain.payroll.money import Money
 from app.domain.payroll.rates import Rate
-from app.domain.payroll.results import CalculationTrace, RunResult
 from app.domain.payroll.rounding import ROUND_HALF_UP_PAISE, ROUND_NONE, apply as apply_rounding
-from app.exceptions import ConflictError, NotFoundError, ValidationError
+from app.exceptions import ConflictError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
-from app.models.effective import effective_on
 from app.models.employees import (
     Employee,
-    employee_bank_account_versions,
     employee_pay_versions,
-    employee_posting_versions,
     employee_profile_versions,
 )
-from app.models.org_structure import Office, Post
 from app.models.pay_components import PayComponent, component_rate_versions
-from app.models.reports import ReportConfiguration
 from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
     PayrollRunEmployee,
     PayrollRunInput,
-    payroll_employee_results,
-    payroll_result_lines,
-    payroll_run_versions,
 )
 from app.models.recurring_instructions import (
     RecurringInstruction,
     recurring_instruction_versions,
 )
 from app.services import versioning
+from app.services.run_calculation._convert import (
+    basis_tuple,
+    money_or_none,
+    month_end,
+    period_label,
+    rate_or_none,
+    to_domain_classification,
+)
 
 _BASIC_CODE = "BASIC"
 _ACCOMMODATION_LICENSE_FEE_CODE = "ACCOMMODATION_LICENSE_FEE"
@@ -97,318 +94,8 @@ _ADVANCE_COMPONENT_CODES: dict[str, str] = {
     "other": "OTHER_ADVANCE_INSTALLMENT",
 }
 
-_ALLOWED_CALCULATE_STATUSES = frozenset({"draft", "calculated"})
 
-
-def _month_end(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
-
-
-def _to_domain_classification(db_classification: str) -> str:
-    if db_classification == "ag_deduction":
-        return "AG_deduction"
-    return db_classification
-
-
-def _to_db_classification(domain_classification: str) -> str:
-    if domain_classification == "AG_deduction":
-        return "ag_deduction"
-    # Informational lines remain explicitly classified in their immutable
-    # trace payload but use the legacy result-line bucket for DB compatibility.
-    if domain_classification == "informational":
-        return "earning"
-    return domain_classification
-
-
-def _money_or_none(value: Decimal | None) -> Money | None:
-    if value is None:
-        return None
-    return Money.from_decimal(Decimal(value))
-
-
-def _rate_or_none(value: Decimal | None) -> Rate | None:
-    if value is None:
-        return None
-    return Rate(amount=Decimal(value))
-
-
-def _basis_tuple(value: Any) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if isinstance(value, (list, tuple)):
-        return tuple(str(item) for item in value)
-    return ()
-
-
-def _period_label(year: int, month: int) -> str:
-    return f"{year:04d}-{month:02d}"
-
-
-def _serialize_component_input(comp: ComponentInput) -> dict[str, Any]:
-    return {
-        "component_code": comp.component_code,
-        "classification": comp.classification,
-        "calc_kind": comp.calc_kind,
-        "amount": None if comp.amount is None else comp.amount.to_canonical_str(),
-        "rate": None if comp.rate is None else comp.rate.to_canonical_str(),
-        "basis": list(comp.basis),
-        "rounding_rule": comp.rounding_rule,
-        "source_version_ids": list(comp.source_version_ids),
-        "informational": comp.informational,
-        "excluded_from_totals": comp.excluded_from_totals,
-        "gpf_jurisdiction": comp.gpf_jurisdiction,
-        "accommodation_location": comp.accommodation_location,
-        "employer_transfer": comp.employer_transfer,
-        "transfer_of": comp.transfer_of,
-        "service_period": comp.service_period,
-        "reason": comp.reason,
-    }
-
-
-def _serialize_run_calc_input(run_input: RunCalcInput) -> dict[str, Any]:
-    employees: list[dict[str, Any]] = []
-    for emp in sorted(run_input.employees, key=lambda e: e.employee_ref):
-        employees.append(
-            {
-                "employee_ref": emp.employee_ref,
-                "retirement_regime": emp.retirement_regime,
-                "gpf_jurisdiction": emp.gpf_jurisdiction,
-                "components": [_serialize_component_input(c) for c in emp.components],
-            }
-        )
-    return {
-        "period": run_input.period,
-        "org_ref": run_input.org_ref,
-        "employees": employees,
-    }
-
-
-def _serialize_catalog(catalog: Mapping[str, PayComponent]) -> list[dict[str, Any]]:
-    return [
-        {
-            "code": row.code,
-            "name": row.name,
-            "classification": row.classification,
-            "display_order": row.display_order,
-            "is_standard": row.is_standard,
-            "schedule_kind": row.schedule_kind,
-            "schedule_title": row.schedule_title,
-            "schedule_account_head": row.schedule_account_head,
-        }
-        for row in sorted(catalog.values(), key=lambda item: (item.display_order, item.code))
-        if row.is_standard or row.is_active
-    ]
-
-
-async def _employee_report_identity_snapshot(
-    db: AsyncSession,
-    *,
-    organization_id: UUID,
-    employee_by_ref: Mapping[str, Employee],
-    on_date: date,
-) -> dict[str, dict[str, Any]]:
-    employee_ids = [employee.id for employee in employee_by_ref.values()]
-    profiles = await versioning.get_active_versions_map(
-        db,
-        employee_profile_versions,
-        header_ids=employee_ids,
-        organization_id=organization_id,
-        on_date=on_date,
-    )
-    postings = await versioning.get_active_versions_map(
-        db,
-        employee_posting_versions,
-        header_ids=employee_ids,
-        organization_id=organization_id,
-        on_date=on_date,
-    )
-    bank_rows = (
-        (
-            await db.execute(
-                sa.select(employee_bank_account_versions).where(
-                    employee_bank_account_versions.c.organization_id == organization_id,
-                    employee_bank_account_versions.c.header_id.in_(employee_ids),
-                    effective_on(employee_bank_account_versions.c.validity, on_date),
-                    employee_bank_account_versions.c.is_primary_salary.is_(True),
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
-    banks = {row["header_id"]: row for row in bank_rows}
-    post_ids = {posting["post_id"] for posting in postings.values()}
-    office_ids = {posting["office_id"] for posting in postings.values()}
-    posts = (
-        {
-            post.id: post
-            for post in (await db.execute(sa.select(Post).where(Post.id.in_(post_ids)))).scalars()
-        }
-        if post_ids
-        else {}
-    )
-    offices = (
-        {
-            office.id: office
-            for office in (
-                await db.execute(sa.select(Office).where(Office.id.in_(office_ids)))
-            ).scalars()
-        }
-        if office_ids
-        else {}
-    )
-
-    snapshot: dict[str, dict[str, Any]] = {}
-    for employee in employee_by_ref.values():
-        profile = profiles.get(employee.id)
-        posting = postings.get(employee.id)
-        bank = banks.get(employee.id)
-        post = None if posting is None else posts.get(posting["post_id"])
-        office = None if posting is None else offices.get(posting["office_id"])
-        snapshot[str(employee.id)] = {
-            "employee_number": employee.employee_number,
-            "name": None if profile is None else profile.get("name"),
-            "designation": None if post is None else post.designation,
-            "pan": None if profile is None else profile.get("pan"),
-            "sevarth_id": None if profile is None else profile.get("sevarth_id"),
-            "pran": None if profile is None else profile.get("pran"),
-            "gpf_account_number": (None if profile is None else profile.get("gpf_account_number")),
-            "gpf_jurisdiction": (None if profile is None else profile.get("gpf_jurisdiction")),
-            "pension_account": None if profile is None else profile.get("pension_account"),
-            "retirement_regime": (None if profile is None else profile.get("retirement_regime")),
-            "office_name": None if office is None else office.name,
-            "office_jurisdiction": None if office is None else office.jurisdiction,
-            "bank_account_number": None if bank is None else bank.get("account_number"),
-            "bank_ifsc": None if bank is None else bank.get("ifsc"),
-            "bank_name": None if bank is None else bank.get("bank_name"),
-            "bank_branch": None if bank is None else bank.get("branch"),
-        }
-    return snapshot
-
-
-async def _report_profile_snapshot(db: AsyncSession, *, organization_id: UUID) -> dict[str, Any]:
-    row = (
-        await db.execute(
-            sa.select(ReportConfiguration).where(
-                ReportConfiguration.organization_id == organization_id,
-                ReportConfiguration.key == "payroll_export_profile",
-            )
-        )
-    ).scalar_one_or_none()
-    return dict(row.value) if row is not None and isinstance(row.value, dict) else {}
-
-
-async def _recovery_sources_snapshot(
-    db: AsyncSession,
-    *,
-    organization_id: UUID,
-    result: RunResult,
-) -> dict[str, dict[str, Any]]:
-    source_ids = {
-        UUID(source_id)
-        for employee in result.employees
-        for line in employee.lines
-        for source_id in line.source_version_ids
-    }
-    if not source_ids:
-        return {"advance_installments": {}, "accommodation_charges": {}}
-
-    advance_rows = (
-        await db.execute(
-            sa.select(
-                advance_installment_versions.c.id,
-                advance_installment_versions.c.installments_total,
-                advance_installment_versions.c.installments_recovered_opening,
-                AdvanceAccount.advance_type,
-                AdvanceAccount.principal,
-                AdvanceAccount.reference,
-            )
-            .join(AdvanceAccount, AdvanceAccount.id == advance_installment_versions.c.header_id)
-            .where(
-                advance_installment_versions.c.organization_id == organization_id,
-                AdvanceAccount.organization_id == organization_id,
-                advance_installment_versions.c.id.in_(source_ids),
-            )
-        )
-    ).mappings()
-    accommodation_rows = (
-        await db.execute(
-            sa.select(
-                accommodation_charge_versions.c.id,
-                AccommodationAssignment.quarters_location,
-                AccommodationAssignment.quarters_identifier,
-            )
-            .join(
-                AccommodationAssignment,
-                AccommodationAssignment.id == accommodation_charge_versions.c.header_id,
-            )
-            .where(
-                accommodation_charge_versions.c.organization_id == organization_id,
-                AccommodationAssignment.organization_id == organization_id,
-                accommodation_charge_versions.c.id.in_(source_ids),
-            )
-        )
-    ).mappings()
-    return {
-        "advance_installments": {
-            str(row["id"]): {
-                "advance_type": row["advance_type"],
-                "principal": str(row["principal"]),
-                "reference": row["reference"],
-                "installments_total": row["installments_total"],
-                "installments_recovered_opening": row["installments_recovered_opening"],
-            }
-            for row in advance_rows
-        },
-        "accommodation_charges": {
-            str(row["id"]): {
-                "quarters_location": row["quarters_location"],
-                "quarters_identifier": row["quarters_identifier"],
-            }
-            for row in accommodation_rows
-        },
-    }
-
-
-def _totals_payload(result: RunResult) -> dict[str, str]:
-    return {
-        "earnings_total": result.earnings_total.to_canonical_str(),
-        "employer_contribution_total": result.employer_contribution_total.to_canonical_str(),
-        "gross_adjustment_total": result.gross_adjustment_total.to_canonical_str(),
-        "gross_total": result.gross_total.to_canonical_str(),
-        "ag_deduction_total": result.ag_deduction_total.to_canonical_str(),
-        "treasury_deduction_total": result.treasury_deduction_total.to_canonical_str(),
-        "external_recovery_total": result.external_recovery_total.to_canonical_str(),
-        "deductions_total": result.deductions_total.to_canonical_str(),
-        "net_payable": result.net_payable.to_canonical_str(),
-        # Employee disbursement is reconciled separately from treasury-face
-        # net payable (docs/payroll-domain.md "Resolved").
-        "offbill_employer_remittance": result.offbill_employer_remittance.to_canonical_str(),
-        "disbursement": result.disbursement.to_canonical_str(),
-    }
-
-
-def _trace_payload(trace: CalculationTrace) -> dict[str, Any]:
-    return {
-        "component": trace.component,
-        "classification": trace.classification,
-        "basis": list(trace.basis),
-        "basis_total": (
-            None if trace.basis_total is None else trace.basis_total.to_canonical_str()
-        ),
-        "rate": None if trace.rate is None else trace.rate.to_canonical_str(),
-        "unrounded_value": trace.unrounded_value,
-        "rounding_rule": trace.rounding_rule,
-        "rounded_value": trace.rounded_value.to_canonical_str(),
-        "source_version_ids": list(trace.source_version_ids),
-        "calculator_kind": trace.calculator_kind,
-        "engine_version": trace.engine_version,
-        "employer_transfer": trace.employer_transfer,
-        "transfer_of": trace.transfer_of,
-    }
-
-
-async def _load_component_catalog(
+async def load_component_catalog(
     db: AsyncSession,
     *,
     organization_id: UUID,
@@ -472,7 +159,7 @@ async def _resolve_employee_components(
     if pay is not None:
         basic_comp = catalog.get(_BASIC_CODE)
         classification = (
-            _to_domain_classification(basic_comp.classification)
+            to_domain_classification(basic_comp.classification)
             if basic_comp is not None
             else "earning"
         )
@@ -526,22 +213,22 @@ async def _resolve_employee_components(
             raise ValidationError(
                 f"No active component rate version for {component.code!r} on {on_date.isoformat()}."
             )
-        amount = _money_or_none(ri_version["amount"])
-        rate = _rate_or_none(ri_version["rate"])
+        amount = money_or_none(ri_version["amount"])
+        rate = rate_or_none(ri_version["rate"])
         if amount is None:
-            amount = _money_or_none(rate_row["amount"])
+            amount = money_or_none(rate_row["amount"])
         if rate is None:
-            rate = _rate_or_none(rate_row["rate"])
+            rate = rate_or_none(rate_row["rate"])
         source_ids = (str(ri_version["id"]), str(rate_row["id"]))
         _put_component(
             by_code,
             ComponentInput(
                 component_code=component.code,
-                classification=_to_domain_classification(component.classification),
+                classification=to_domain_classification(component.classification),
                 calc_kind=rate_row["calc_kind"],
                 amount=amount,
                 rate=rate,
-                basis=_basis_tuple(rate_row["basis"]),
+                basis=basis_tuple(rate_row["basis"]),
                 rounding_rule=rate_row["rounding_rule"] or ROUND_NONE,
                 source_version_ids=source_ids,
                 reason=ri_version.get("reason"),
@@ -577,7 +264,7 @@ async def _resolve_employee_components(
             by_code,
             ComponentInput(
                 component_code=code,
-                classification=_to_domain_classification(catalog_row.classification),
+                classification=to_domain_classification(catalog_row.classification),
                 calc_kind="loan_installment_recovery",
                 amount=Money.from_decimal(Decimal(inst["installment_amount"])),
                 rounding_rule=ROUND_NONE,
@@ -603,7 +290,7 @@ async def _resolve_employee_components(
             continue
         license_comp = catalog.get(_ACCOMMODATION_LICENSE_FEE_CODE)
         license_classification = (
-            _to_domain_classification(license_comp.classification)
+            to_domain_classification(license_comp.classification)
             if license_comp is not None
             else "external_recovery"
         )
@@ -651,7 +338,7 @@ async def _resolve_employee_components(
                     classification=(
                         existing.classification
                         if existing is not None
-                        else _to_domain_classification(catalog_row.classification)
+                        else to_domain_classification(catalog_row.classification)
                         if catalog_row is not None
                         else "earning"
                     ),
@@ -680,7 +367,7 @@ async def _resolve_employee_components(
                 ComponentInput(
                     component_code=code,
                     classification=(
-                        _to_domain_classification(catalog_row.classification)
+                        to_domain_classification(catalog_row.classification)
                         if catalog_row is not None
                         else "gross_adjustment"
                     ),
@@ -703,7 +390,7 @@ async def _resolve_employee_components(
                     classification=(
                         existing.classification
                         if existing is not None
-                        else _to_domain_classification(catalog_row.classification)
+                        else to_domain_classification(catalog_row.classification)
                         if catalog_row is not None
                         else "earning"
                     ),
@@ -722,7 +409,7 @@ async def _resolve_employee_components(
     for row in sorted(run_inputs, key=lambda r: (r.component_code, r.input_kind, str(r.id))):
         catalog_row = catalog.get(row.component_code)
         classification = (
-            _to_domain_classification(catalog_row.classification)
+            to_domain_classification(catalog_row.classification)
             if catalog_row is not None
             else "gross_adjustment"
         )
@@ -739,10 +426,10 @@ async def _resolve_employee_components(
                         component_code=existing.component_code,
                         classification=existing.classification,
                         calc_kind=existing.calc_kind,
-                        amount=_money_or_none(row.amount)
+                        amount=money_or_none(row.amount)
                         if row.amount is not None
                         else existing.amount,
-                        rate=_rate_or_none(row.rate) if row.rate is not None else existing.rate,
+                        rate=rate_or_none(row.rate) if row.rate is not None else existing.rate,
                         basis=existing.basis,
                         rounding_rule=existing.rounding_rule,
                         source_version_ids=merged_sources,
@@ -764,8 +451,8 @@ async def _resolve_employee_components(
                         component_code=row.component_code,
                         classification=classification,
                         calc_kind="direct_monthly_amount",
-                        amount=_money_or_none(row.amount),
-                        rate=_rate_or_none(row.rate),
+                        amount=money_or_none(row.amount),
+                        rate=rate_or_none(row.rate),
                         rounding_rule=ROUND_NONE,
                         source_version_ids=source_ids_extra,
                         reason=row.reason,
@@ -778,8 +465,8 @@ async def _resolve_employee_components(
                     component_code=row.component_code,
                     classification=classification,
                     calc_kind="direct_monthly_amount",
-                    amount=_money_or_none(row.amount),
-                    rate=_rate_or_none(row.rate),
+                    amount=money_or_none(row.amount),
+                    rate=rate_or_none(row.rate),
                     rounding_rule=ROUND_NONE,
                     source_version_ids=source_ids_extra,
                     reason=row.reason,
@@ -792,8 +479,8 @@ async def _resolve_employee_components(
                     component_code=row.component_code,
                     classification=classification,
                     calc_kind="one_time_adjustment",
-                    amount=_money_or_none(row.amount),
-                    rate=_rate_or_none(row.rate),
+                    amount=money_or_none(row.amount),
+                    rate=rate_or_none(row.rate),
                     rounding_rule=ROUND_NONE,
                     source_version_ids=source_ids_extra,
                     reason=row.reason,
@@ -836,15 +523,15 @@ def _stamp_employer_transfer_metadata(
     return stamped
 
 
-async def _resolve_run_calc_input(
+async def resolve_run_calc_input(
     db: AsyncSession,
     *,
     organization_id: UUID,
     period: PayrollPeriod,
     run_id: UUID,
 ) -> tuple[RunCalcInput, dict[str, Employee]]:
-    on_date = _month_end(period.period_year, period.period_month)
-    catalog = await _load_component_catalog(db, organization_id=organization_id)
+    on_date = month_end(period.period_year, period.period_month)
+    catalog = await load_component_catalog(db, organization_id=organization_id)
 
     emp_stmt = (
         sa.select(Employee)
@@ -909,14 +596,14 @@ async def _resolve_run_calc_input(
         employee_by_ref[str(employee.id)] = employee
 
     run_input = RunCalcInput(
-        period=_period_label(period.period_year, period.period_month),
+        period=period_label(period.period_year, period.period_month),
         org_ref=str(organization_id),
         employees=tuple(employees),
     )
     return run_input, employee_by_ref
 
 
-async def _assert_roster_calculable(
+async def assert_roster_calculable(
     db: AsyncSession,
     *,
     organization_id: UUID,
@@ -970,161 +657,3 @@ async def _assert_roster_calculable(
             f"{on_date.isoformat()} and cannot be calculated: "
             f"{', '.join(numbers)}. Remove them from the roster and save again."
         )
-
-
-async def calculate_run_command(
-    db: AsyncSession,
-    *,
-    organization_id: UUID,
-    run_id: UUID,
-    user_id: UUID,
-) -> dict[str, Any]:
-    """Resolve inputs, run the engine, and append an immutable run version."""
-    stmt = (
-        sa.select(PayrollRun)
-        .where(PayrollRun.id == run_id)
-        .where(PayrollRun.organization_id == organization_id)
-        .with_for_update()
-    )
-    run = (await db.execute(stmt)).scalar_one_or_none()
-    if run is None:
-        raise NotFoundError("Payroll run not found.")
-    if run.status not in _ALLOWED_CALCULATE_STATUSES:
-        raise ConflictError(
-            f"Payroll run cannot be calculated from status {run.status!r}; "
-            "allowed statuses are draft and calculated."
-        )
-    # Draft runs require an explicit saved roster. Legacy non-draft runs may still
-    # recalculate with roster_initialized=false (pre-roster migration), which
-    # falls back to all organization employees in _resolve_run_calc_input.
-    if run.status == "draft" and not run.roster_initialized:
-        raise ConflictError("Payroll run roster must be saved before calculation.")
-
-    period = await db.get(PayrollPeriod, run.period_id)
-    if period is None or period.organization_id != organization_id:
-        raise NotFoundError("Payroll period not found.")
-
-    # Roster-to-calculation integrity: every saved roster member must resolve
-    # to an active profile at period month-end, before the status transition
-    # or any version row is created. This turns silent partial calculations
-    # into explicit failures the operator can act on.
-    if run.roster_initialized:
-        await _assert_roster_calculable(
-            db, organization_id=organization_id, run_id=run.id, period=period
-        )
-
-    run.status = "calculating"
-    await db.flush()
-
-    run_input, employee_by_ref = await _resolve_run_calc_input(
-        db,
-        organization_id=organization_id,
-        period=period,
-        run_id=run.id,
-    )
-    if not run_input.employees:
-        # Covers the legacy roster_initialized=false fallback; the roster path
-        # is already guarded by _assert_roster_calculable above. The raised
-        # error rolls back the transaction, restoring the pre-call status.
-        raise ConflictError("No calculable employees resolved for this run; nothing to calculate.")
-    result = calculate_run(run_input)
-
-    max_version_stmt = sa.select(
-        sa.func.coalesce(sa.func.max(payroll_run_versions.c.version_number), 0)
-    ).where(
-        payroll_run_versions.c.organization_id == organization_id,
-        payroll_run_versions.c.run_id == run.id,
-    )
-    next_version = int((await db.execute(max_version_stmt)).scalar_one()) + 1
-    version_id = uuid.uuid4()
-    calculated_at = datetime.now(timezone.utc)
-    inputs_snapshot = _serialize_run_calc_input(run_input)
-    catalog = await _load_component_catalog(db, organization_id=organization_id)
-    inputs_snapshot["component_catalog"] = _serialize_catalog(catalog)
-    inputs_snapshot["employee_identity"] = await _employee_report_identity_snapshot(
-        db,
-        organization_id=organization_id,
-        employee_by_ref=employee_by_ref,
-        on_date=_month_end(period.period_year, period.period_month),
-    )
-    inputs_snapshot["report_profile"] = await _report_profile_snapshot(
-        db, organization_id=organization_id
-    )
-    inputs_snapshot["recovery_sources"] = await _recovery_sources_snapshot(
-        db,
-        organization_id=organization_id,
-        result=result,
-    )
-    totals = _totals_payload(result)
-
-    await db.execute(
-        sa.insert(payroll_run_versions).values(
-            id=version_id,
-            organization_id=organization_id,
-            run_id=run.id,
-            version_number=next_version,
-            engine_version=result.engine_version,
-            content_hash=result.content_hash,
-            calculated_at=calculated_at,
-            calculated_by=user_id,
-            inputs_snapshot=inputs_snapshot,
-            totals=totals,
-        )
-    )
-
-    for emp_result in result.employees:
-        employee = employee_by_ref.get(emp_result.employee_ref)
-        if employee is None:
-            raise ValidationError(
-                f"Engine returned unknown employee_ref {emp_result.employee_ref!r}."
-            )
-        employee_result_id = uuid.uuid4()
-        await db.execute(
-            sa.insert(payroll_employee_results).values(
-                id=employee_result_id,
-                organization_id=organization_id,
-                run_version_id=version_id,
-                employee_id=employee.id,
-                employee_number=employee.employee_number,
-                earnings_total=emp_result.earnings_total.amount,
-                employer_contribution_total=emp_result.employer_contribution_total.amount,
-                gross_total=emp_result.gross_total.amount,
-                deductions_total=emp_result.deductions_total.amount,
-                net_payable=emp_result.net_payable.amount,
-                offbill_employer_remittance=emp_result.offbill_employer_remittance.amount,
-                disbursement=emp_result.disbursement.amount,
-            )
-        )
-        line_rows: list[dict[str, Any]] = []
-        for sequence, trace in enumerate(emp_result.lines, start=1):
-            line_rows.append(
-                {
-                    "id": uuid.uuid4(),
-                    "organization_id": organization_id,
-                    "employee_result_id": employee_result_id,
-                    "component_code": trace.component,
-                    "classification": _to_db_classification(trace.classification),
-                    "calc_kind": trace.calculator_kind,
-                    "amount": trace.rounded_value.amount,
-                    "sequence": sequence,
-                    "trace": _trace_payload(trace),
-                }
-            )
-        if line_rows:
-            await db.execute(sa.insert(payroll_result_lines).values(line_rows))
-
-    run.current_version_id = version_id
-    run.status = "calculated"
-    run.lock_version = run.lock_version + 1
-    run.updated_at = datetime.now(timezone.utc)
-    await db.flush()
-    await db.commit()
-
-    return {
-        "run_id": run.id,
-        "version_id": version_id,
-        "version_number": next_version,
-        "content_hash": result.content_hash,
-        "engine_version": result.engine_version,
-        "totals": totals,
-    }
