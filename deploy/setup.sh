@@ -36,9 +36,9 @@ safe_source_env() {
 				value="${value:1:${#value}-2}"
 			fi
 		fi
-		[[ "$value" != *'$'* && "$value" != *'`'* && "$value" != *'('* \
-			&& "$value" != *')'* && "$value" != *';'* ]] \
-			|| die ".env line $lineno contains unsafe shell metacharacters"
+		# Values are assigned literally (no eval/source), so shell
+		# metacharacters cannot be interpreted here. Rejecting them would
+		# break strong auto-generated secrets (e.g. containing $, (, ), ;).
 		export "$key=$value"
 	done <"$envfile"
 }
@@ -199,8 +199,16 @@ info "Backend, worker, and web are pinned to $ACCORD_TAG with matching revision 
 
 docker compose --env-file .env run --rm --no-deps migrations alembic current \
 	| grep -q '(head)' || die "Alembic is not at head"
-docker compose --env-file .env logs worker 2>&1 | grep -q 'worker_started' \
-	|| die "Worker startup proof is missing"
+info "Waiting for worker startup proof..."
+WORKER_READY=false
+for _ in $(seq 1 15); do
+	if docker compose --env-file .env logs worker 2>&1 | grep -q 'worker_started'; then
+		WORKER_READY=true
+		break
+	fi
+	sleep 2
+done
+$WORKER_READY || die "Worker startup proof is missing"
 
 ACCORD_SMOKE_REQUIRE_DOCKER=true \
 	bash "$ROOT/scripts/smoke-test.sh" "http://127.0.0.1:${ACCORD_WEB_PORT:-8085}"
