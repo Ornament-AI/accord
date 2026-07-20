@@ -231,14 +231,19 @@ async def _employee_report_identity_snapshot(
     post_ids = {posting["post_id"] for posting in postings.values()}
     office_ids = {posting["office_id"] for posting in postings.values()}
     posts = (
-        {post.id: post for post in (await db.execute(sa.select(Post).where(Post.id.in_(post_ids)))).scalars()}
+        {
+            post.id: post
+            for post in (await db.execute(sa.select(Post).where(Post.id.in_(post_ids)))).scalars()
+        }
         if post_ids
         else {}
     )
     offices = (
         {
             office.id: office
-            for office in (await db.execute(sa.select(Office).where(Office.id.in_(office_ids)))).scalars()
+            for office in (
+                await db.execute(sa.select(Office).where(Office.id.in_(office_ids)))
+            ).scalars()
         }
         if office_ids
         else {}
