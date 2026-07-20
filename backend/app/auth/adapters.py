@@ -154,7 +154,7 @@ class WorkOSAuthAdapter:
         ip_address: str | None,
         user_agent: str | None,
     ) -> None:
-        from workos import BadRequestError, NotFoundError, WorkOSError
+        from workos import NotFoundError, WorkOSError
 
         try:
             await asyncio.to_thread(
@@ -163,8 +163,11 @@ class WorkOSAuthAdapter:
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-        except (BadRequestError, NotFoundError):
-            # Deliberately return the same response for unknown and known accounts.
+        except NotFoundError:
+            # Unknown account: return the same 204 as a known account so the
+            # email-code screen cannot be used to enumerate registered users.
+            # Other 4xx/config failures (BadRequestError, etc.) fall through to
+            # WorkOSError below so we never advance the UI when no email was sent.
             return
         except WorkOSError as exc:
             raise AuthProviderUnavailableError("Email sign-in is temporarily unavailable.") from exc
