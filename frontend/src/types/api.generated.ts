@@ -180,6 +180,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/login/magic-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login With Magic Code
+         * @description Authenticate an emailed one-time code in Accord's own login screen.
+         */
+        post: operations["login_with_magic_code_api_auth_login_magic_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login With Password
+         * @description Authenticate in Accord's UI while keeping WorkOS credentials server-side.
+         */
+        post: operations["login_with_password_api_auth_login_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -194,6 +234,26 @@ export interface paths {
          * @description Revoke DB session if present and clear cookie. Idempotent.
          */
         post: operations["logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/magic-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Magic Code
+         * @description Send an email sign-in code without revealing whether an account exists.
+         */
+        post: operations["request_magic_code_api_auth_magic_code_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1784,6 +1844,18 @@ export interface components {
          * @enum {string}
          */
         InputKind: "exception" | "override" | "one_time";
+        /** MagicCodeLoginRequest */
+        MagicCodeLoginRequest: {
+            /** Code */
+            code: string;
+            /** Email */
+            email: string;
+        };
+        /** MagicCodeRequest */
+        MagicCodeRequest: {
+            /** Email */
+            email: string;
+        };
         /** OfficeCreate */
         OfficeCreate: {
             /**
@@ -1861,6 +1933,16 @@ export interface components {
             total: number;
             /** Total Pages */
             total_pages: number;
+        };
+        /** PasswordLoginRequest */
+        PasswordLoginRequest: {
+            /** Email */
+            email: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
         };
         /** PayComponentCreate */
         PayComponentCreate: {
@@ -3048,6 +3130,68 @@ export interface operations {
             };
         };
     };
+    login_with_magic_code_api_auth_login_magic_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MagicCodeLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_with_password_api_auth_login_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     logout_api_auth_logout_post: {
         parameters: {
             query?: never;
@@ -3064,6 +3208,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    request_magic_code_api_auth_magic_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MagicCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

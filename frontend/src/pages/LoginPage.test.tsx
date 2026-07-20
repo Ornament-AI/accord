@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,7 +42,7 @@ describe("LoginPage", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("navigates to the auth login endpoint with return_to on Sign in", async () => {
+	it("signs in with Accord's password form and preserves returnTo", async () => {
 		const assignSpy = vi.fn();
 		vi.stubGlobal("location", {
 			...window.location,
@@ -53,12 +54,80 @@ describe("LoginPage", () => {
 		});
 
 		const { handlers } = createAuthHandlers({ unauthenticated: true });
-		server.use(...handlers);
+		server.use(
+			...handlers,
+			http.post("/api/auth/login/password", async ({ request }) => {
+				expect(await request.json()).toEqual({
+					email: "hello@ornament.systems",
+					password: "correct horse battery staple",
+				});
+				return new HttpResponse(null, { status: 204 });
+			}),
+		);
 
 		renderLogin("/login?returnTo=%2Fpay-runs");
-		await screen.findByRole("button", { name: "Sign In" });
+		fireEvent.change(await screen.findByLabelText("Email"), {
+			target: { value: "hello@ornament.systems" },
+		});
+		fireEvent.change(screen.getByLabelText("Password"), {
+			target: { value: "correct horse battery staple" },
+		});
 		expect(screen.getByTestId("grain-gradient")).toBeInTheDocument();
 
+		fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+		await waitFor(() => {
+			expect(assignSpy).toHaveBeenCalledWith("/pay-runs");
+		});
+	});
+
+	it("requests and submits an email sign-in code without leaving Accord", async () => {
+		const assignSpy = vi.fn();
+		vi.stubGlobal("location", { ...window.location, assign: assignSpy });
+		const { handlers } = createAuthHandlers({ unauthenticated: true });
+		server.use(
+			...handlers,
+			http.post("/api/auth/magic-code", () => new HttpResponse(null, { status: 204 })),
+			http.post("/api/auth/login/magic-code", () => new HttpResponse(null, { status: 204 })),
+		);
+
+		renderLogin();
+		fireEvent.click(await screen.findByRole("button", { name: "Email me a sign-in code" }));
+		fireEvent.change(screen.getByLabelText("Email"), {
+			target: { value: "hello@ornament.systems" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+		expect(
+			await screen.findByText("Check your email for the one-time sign-in code."),
+		).toBeVisible();
+		fireEvent.change(screen.getByLabelText("Sign-in code"), { target: { value: "123456" } });
+		fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+		await waitFor(() => expect(assignSpy).toHaveBeenCalledWith("/"));
+	});
+
+	it("uses the safe hosted continuation only when WorkOS requires a challenge", async () => {
+		const assignSpy = vi.fn();
+		vi.stubGlobal("location", { ...window.location, assign: assignSpy });
+		const { handlers } = createAuthHandlers({ unauthenticated: true });
+		server.use(
+			...handlers,
+			http.post("/api/auth/login/password", () =>
+				HttpResponse.json(
+					{
+						detail: "Additional verification is required to finish signing in.",
+						error: "AuthChallengeRequired",
+					},
+					{ status: 409 },
+				),
+			),
+		);
+
+		renderLogin("/login?returnTo=%2Fpay-runs");
+		fireEvent.change(await screen.findByLabelText("Email"), {
+			target: { value: "hello@ornament.systems" },
+		});
+		fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
 		fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 
 		await waitFor(() => {

@@ -42,4 +42,32 @@ def get_rate_limit_key(request: Request) -> str:
     return f"ip:{client_host or '127.0.0.1'}"
 
 
+def get_auth_client_ip(request: Request) -> str:
+    """Resolve an auth-attempt IP without trusting user-supplied X-Forwarded-For.
+
+    Accord's nginx accepts traffic only from trusted local/tunnel peers and
+    replaces ``X-Forwarded-For`` with one validated client address. Accept that
+    single proxy-owned value only from a private/loopback peer. Do not trust
+    ``CF-Connecting-IP`` here because nginx does not rewrite that header.
+    """
+    peer = request.client.host if request.client else "127.0.0.1"
+    try:
+        peer_ip = ip_address(peer)
+    except ValueError:
+        return peer
+
+    if peer_ip.is_private or peer_ip.is_loopback:
+        candidate = request.headers.get("x-forwarded-for")
+        if candidate and "," not in candidate:
+            try:
+                return str(ip_address(candidate.strip()))
+            except ValueError:
+                pass
+    return str(peer_ip)
+
+
+def get_auth_rate_limit_key(request: Request) -> str:
+    return f"auth-ip:{get_auth_client_ip(request)}"
+
+
 limiter = Limiter(key_func=get_rate_limit_key)

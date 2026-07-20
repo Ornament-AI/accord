@@ -9,7 +9,11 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.api.deps import Session
 from app.api.responses import problem_response
-from app.auth.adapters import DevAuthAdapter, get_auth_adapter
+from app.auth.adapters import (
+    AuthenticatedIdentity,
+    DevAuthAdapter,
+    get_auth_adapter,
+)
 from app.auth.errors import (
     AuthExchangeError,
     AuthMisconfiguredError,
@@ -19,6 +23,8 @@ from app.auth.session import get_session_store, sign_oauth_state, verify_oauth_s
 from app.auth.webhooks import handle_workos_event, verify_workos_webhook
 from app.config import get_settings
 from app.models.identity import User
+from app.middleware.rate_limit import get_auth_client_ip, get_auth_rate_limit_key, limiter
+from app.schemas.identity import MagicCodeLoginRequest, MagicCodeRequest, PasswordLoginRequest
 from app.services.identity import (
     build_me_payload,
     establish_session_for_identity,
@@ -87,6 +93,23 @@ def _user_agent_hash(request: Request) -> str | None:
     return hashlib.sha256(ua.encode("utf-8")).hexdigest()
 
 
+async def _complete_headless_login(
+    request: Request,
+    db: Session,
+    identity: AuthenticatedIdentity,
+) -> Response:
+    settings = get_settings()
+    _, cookie_value = await establish_session_for_identity(
+        db,
+        settings,
+        identity,
+        user_agent_hash=_user_agent_hash(request),
+    )
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    get_session_store(settings, db).apply_session_cookie(response, cookie_value)
+    return response
+
+
 @router.get("/login")
 async def login(
     request: Request,
@@ -128,6 +151,59 @@ async def login(
         redirect_uri=settings.workos_redirect_uri,
     )
     return RedirectResponse(url=authorization_url, status_code=status.HTTP_302_FOUND)
+
+
+@router.post("/login/password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute", key_func=get_auth_rate_limit_key)
+async def login_with_password(
+    request: Request,
+    body: PasswordLoginRequest,
+    db: Session,
+) -> Response:
+    """Authenticate in Accord's UI while keeping WorkOS credentials server-side."""
+    settings = get_settings()
+    adapter = get_auth_adapter(settings)
+    identity = await adapter.authenticate_with_password(
+        email=body.email,
+        password=body.password.get_secret_value(),
+        ip_address=get_auth_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return await _complete_headless_login(request, db, identity)
+
+
+@router.post("/magic-code", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/10minutes", key_func=get_auth_rate_limit_key)
+async def request_magic_code(
+    request: Request,
+    body: MagicCodeRequest,
+) -> Response:
+    """Send an email sign-in code without revealing whether an account exists."""
+    adapter = get_auth_adapter(get_settings())
+    await adapter.send_magic_code(
+        email=body.email,
+        ip_address=get_auth_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/login/magic-code", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute", key_func=get_auth_rate_limit_key)
+async def login_with_magic_code(
+    request: Request,
+    body: MagicCodeLoginRequest,
+    db: Session,
+) -> Response:
+    """Authenticate an emailed one-time code in Accord's own login screen."""
+    adapter = get_auth_adapter(get_settings())
+    identity = await adapter.authenticate_with_magic_code(
+        email=body.email,
+        code=body.code,
+        ip_address=get_auth_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return await _complete_headless_login(request, db, identity)
 
 
 @router.get("/callback")

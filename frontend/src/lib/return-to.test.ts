@@ -13,6 +13,8 @@ describe("sanitizeReturnTo", () => {
 		expect(sanitizeReturnTo("//evil.example")).toBe("/");
 		expect(sanitizeReturnTo("https://evil.example")).toBe("/");
 		expect(sanitizeReturnTo("http://evil.example/path")).toBe("/");
+		expect(sanitizeReturnTo("/\\evil.example")).toBe("/");
+		expect(sanitizeReturnTo("/employees\nhttps://evil.example")).toBe("/");
 		expect(sanitizeReturnTo(null)).toBe("/");
 	});
 });
