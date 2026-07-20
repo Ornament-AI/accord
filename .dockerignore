@@ -1,0 +1,61 @@
+# Root build context is used only by the web image (deploy/Dockerfile.web,
+# `context: .`). It needs package.json, pnpm-lock.yaml, pnpm-workspace.yaml,
+# frontend/, and deploy/nginx/. Everything below is excluded so the daemon does
+# not upload it as build context (smaller/faster uploads, better cache hits).
+# The backend image builds from `context: backend`, so this file does not
+# affect it.
+
+# VCS and CI metadata
+.git
+.gitignore
+.github
+
+# Dependencies and build outputs (rebuilt inside the image)
+node_modules
+**/node_modules
+frontend/dist
+.pnpm-store
+dist
+build
+*.egg-info
+
+# Tooling / test caches
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.eslintcache
+.turbo
+**/__pycache__
+*.py[cod]
+*.tsbuildinfo
+coverage
+htmlcov
+.coverage
+playwright-report
+test-results
+
+# Paths not needed by the web image
+backend
+docs
+fixtures
+scripts
+deploy/object-storage
+deploy/docker-compose.yml
+deploy/*.sh
+
+# Secrets and local state — must never enter an image
+.env
+.env.*
+!.env.example
+.accord-dev
+uploads
+tmp
+backups
+minio-data
+postgres-data
+
+# Editor / OS cruft
+.DS_Store
+.idea
+.vscode
+*.swp
