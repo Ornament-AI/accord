@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError, StaleRowError, ValidationError
+from app.models.base import utcnow
 from app.models.employees import Employee, employee_pay_versions, employee_profile_versions
 from app.models.platform import AuditEvent
 from app.models.payroll_runs import PayrollPeriod, PayrollRun, PayrollRunEmployee, PayrollRunInput
@@ -91,6 +92,9 @@ def _run_list_item(run: PayrollRun, period: PayrollPeriod) -> dict[str, Any]:
     }
 
 
+INELIGIBLE_NO_PROFILE = "no_active_profile"
+
+
 def _roster_response(
     employee: Employee,
     *,
@@ -101,6 +105,7 @@ def _roster_response(
     row: PayrollRunEmployee | None,
     period_days: int,
     default_selected: bool = False,
+    eligible: bool = True,
 ) -> dict[str, Any]:
     return {
         "employee_id": employee.id,
@@ -110,6 +115,8 @@ def _roster_response(
         "retirement_regime": retirement_regime,
         "basic_pay": _serialize_optional_money(basic_pay),
         "selected": row is not None or default_selected,
+        "eligible": eligible,
+        "ineligible_reason": None if eligible else INELIGIBLE_NO_PROFILE,
         "payable_days": _serialize_money(row.payable_days if row else Decimal(period_days)),
         "da_percent": _serialize_optional_rate(row.da_percent if row else None),
         "da_difference": _serialize_optional_money(row.da_difference if row else None),
@@ -399,34 +406,43 @@ async def list_run_roster(
     )
     roster_by_employee = {row.employee_id: row for row in roster_rows}
 
+    employee_ids = [employee.id for employee in employees]
+    profiles = await versioning.get_active_versions_map(
+        db,
+        employee_profile_versions,
+        header_ids=employee_ids,
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    pays = await versioning.get_active_versions_map(
+        db,
+        employee_pay_versions,
+        header_ids=employee_ids,
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+
     result: list[dict[str, Any]] = []
     for employee in employees:
-        profile = await versioning.get_active_version(
-            db,
-            employee_profile_versions,
-            header_id=employee.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
-        if profile is None:
+        profile = profiles.get(employee.id)
+        row = roster_by_employee.get(employee.id)
+        if profile is None and row is None:
+            # Never selectable and nothing saved to surface — omit entirely.
             continue
-        pay = await versioning.get_active_version(
-            db,
-            employee_pay_versions,
-            header_id=employee.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
+        pay = pays.get(employee.id)
         result.append(
             _roster_response(
                 employee,
-                name=profile.get("name"),
-                sevarth_id=profile.get("sevarth_id"),
-                retirement_regime=profile.get("retirement_regime"),
+                name=profile.get("name") if profile is not None else None,
+                sevarth_id=profile.get("sevarth_id") if profile is not None else None,
+                retirement_regime=(
+                    profile.get("retirement_regime") if profile is not None else None
+                ),
                 basic_pay=Decimal(pay["basic_pay"]) if pay is not None else None,
-                row=roster_by_employee.get(employee.id),
+                row=row,
                 period_days=period_days,
                 default_selected=not run.roster_initialized and run.status != "draft",
+                eligible=profile is not None,
             )
         )
     return result
@@ -468,6 +484,35 @@ async def replace_run_roster(
         if valid_ids != set(employee_ids):
             raise NotFoundError("One or more employees were not found.")
 
+    # Reject saves containing employees with no active profile at month-end:
+    # they would be silently dropped from calculation (see run_calculation).
+    on_date = date(period.period_year, period.period_month, period_days)
+    profiles = await versioning.get_active_versions_map(
+        db,
+        employee_profile_versions,
+        header_ids=employee_ids,
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    ineligible_ids = [eid for eid in employee_ids if eid not in profiles]
+    if ineligible_ids:
+        numbers = (
+            (
+                await db.execute(
+                    sa.select(Employee.employee_number)
+                    .where(Employee.id.in_(ineligible_ids))
+                    .order_by(Employee.employee_number)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        raise ValidationError(
+            "These employees have no active profile on "
+            f"{on_date.isoformat()} and cannot be part of this pay run: "
+            f"{', '.join(numbers)}. Remove them from the roster."
+        )
+
     existing_rows = list(
         (
             await db.execute(
@@ -483,24 +528,50 @@ async def replace_run_roster(
     after = [_roster_snapshot_item(item) for item in body.employees]
     changed_employees, changed_fields = _roster_change_summary(before, after)
 
-    await db.execute(
-        sa.delete(PayrollRunEmployee)
-        .where(PayrollRunEmployee.organization_id == organization_id)
-        .where(PayrollRunEmployee.run_id == run_id)
-    )
+    # Semantic no-op: a save that changes nothing must not mint new row ids,
+    # bump lock_version, write audit history, or perturb calculation hashes.
+    # (Decimal comparison in _roster_change_summary is numeric, so 31 == 31.00.)
+    if was_initialized and changed_employees == 0:
+        response = await list_run_roster(db, organization_id=organization_id, run_id=run_id)
+        await db.commit()
+        return response
+
+    # Apply as a diff: update retained rows in place (preserving row UUIDs),
+    # insert new selections, delete removals.
+    existing_by_employee = {row.employee_id: row for row in existing_rows}
+    submitted_ids = set(employee_ids)
+    for row in existing_rows:
+        if row.employee_id not in submitted_ids:
+            await db.delete(row)
     for item in body.employees:
-        db.add(
-            PayrollRunEmployee(
-                organization_id=organization_id,
-                run_id=run_id,
-                employee_id=item.employee_id,
-                payable_days=item.payable_days,
-                da_percent=item.da_percent,
-                da_difference=item.da_difference,
-                hra_percent=item.hra_percent,
-                transport_amount=item.transport_amount,
+        row = existing_by_employee.get(item.employee_id)
+        if row is None:
+            db.add(
+                PayrollRunEmployee(
+                    organization_id=organization_id,
+                    run_id=run_id,
+                    employee_id=item.employee_id,
+                    payable_days=item.payable_days,
+                    da_percent=item.da_percent,
+                    da_difference=item.da_difference,
+                    hra_percent=item.hra_percent,
+                    transport_amount=item.transport_amount,
+                )
             )
-        )
+            continue
+        if (
+            row.payable_days != item.payable_days
+            or row.da_percent != item.da_percent
+            or row.da_difference != item.da_difference
+            or row.hra_percent != item.hra_percent
+            or row.transport_amount != item.transport_amount
+        ):
+            row.payable_days = item.payable_days
+            row.da_percent = item.da_percent
+            row.da_difference = item.da_difference
+            row.hra_percent = item.hra_percent
+            row.transport_amount = item.transport_amount
+            row.updated_at = utcnow()
     run.roster_initialized = True
     run.lock_version += 1
     if changed_employees > 0:

@@ -43,10 +43,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError
-from app.models.effective import select_active_version
+from app.models.effective import effective_on, select_active_version
 
 __all__ = [
     "get_active_version",
+    "get_active_versions_map",
     "insert_version",
     "list_versions",
 ]
@@ -203,6 +204,33 @@ async def get_active_version(
     )
     result = await session.execute(stmt)
     return result.mappings().first()
+
+
+async def get_active_versions_map(
+    session: AsyncSession,
+    version_table: sa.Table,
+    *,
+    header_ids: Sequence[UUID],
+    organization_id: UUID,
+    on_date: date,
+) -> dict[UUID, RowMapping]:
+    """Batch variant of :func:`get_active_version`.
+
+    Returns ``{header_id: active version row}`` for every header in
+    ``header_ids`` that has a version active on ``on_date``. Headers without
+    an active version are absent from the map. One query regardless of the
+    number of headers (GiST EXCLUDE guarantees at most one row per header).
+    """
+    if not header_ids:
+        return {}
+    stmt = (
+        sa.select(version_table)
+        .where(version_table.c.organization_id == organization_id)
+        .where(version_table.c.header_id.in_(list(header_ids)))
+        .where(effective_on(version_table.c.validity, on_date))
+    )
+    result = await session.execute(stmt)
+    return {row["header_id"]: row for row in result.mappings().all()}
 
 
 async def list_versions(

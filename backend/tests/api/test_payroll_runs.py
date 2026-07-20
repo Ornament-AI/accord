@@ -495,3 +495,155 @@ async def test_unprovisioned_user_fail_closed_on_runs(client, session, dev_setti
 
     detail = await client.get(f"/api/payroll-runs/{run['id']}")
     assert detail.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_run_roster_rejects_ineligible_and_surfaces_saved_ineligible_rows(client, session):
+    """Employees with no active profile at month-end cannot be saved; a saved
+    member who later loses their profile stays visible with eligible=false."""
+
+    from app.models.payroll_runs import PayrollRunEmployee
+
+    ctx = await _admin_context(client, session)
+    await _seed_employee_versions(
+        session, org_id=ctx["org_id"], user_id=ctx["user_id"], employee_id=ctx["employee_id"]
+    )
+    # Second employee with NO profile version at all.
+    bare_id = await _seed_employee(
+        session, org_id=ctx["org_id"], user_id=ctx["user_id"], number="E002"
+    )
+    period = await _create_period(client, year=2026, month=6)
+    run = await _create_run(client, period_id=period["id"])
+
+    # Never-selectable employees without saved rows are omitted from the roster.
+    initial = await client.get(f"/api/payroll-runs/{run['id']}/roster")
+    assert initial.status_code == 200, initial.text
+    assert [row["employee_id"] for row in initial.json()] == [str(ctx["employee_id"])]
+    assert initial.json()[0]["eligible"] is True
+
+    # Saving an ineligible employee is rejected with an actionable message.
+    rejected = await client.put(
+        f"/api/payroll-runs/{run['id']}/roster",
+        json={
+            "employees": [
+                {"employee_id": str(ctx["employee_id"]), "payable_days": "30.00"},
+                {"employee_id": str(bare_id), "payable_days": "30.00"},
+            ]
+        },
+    )
+    assert rejected.status_code == 400, rejected.text
+    assert "E002" in rejected.json()["detail"]
+    assert "no active profile" in rejected.json()["detail"].lower()
+
+    # Simulate a saved member whose profile later ends: insert the roster row
+    # directly, then confirm it is surfaced as ineligible instead of hidden.
+    async with session.begin():
+        await bind_tenant_context(session, organization_id=ctx["org_id"], user_id=ctx["user_id"])
+        session.add(
+            PayrollRunEmployee(
+                organization_id=ctx["org_id"],
+                run_id=UUID(run["id"]),
+                employee_id=bare_id,
+                payable_days=Decimal("30.00"),
+            )
+        )
+    await session.commit()
+
+    listed = await client.get(f"/api/payroll-runs/{run['id']}/roster")
+    assert listed.status_code == 200, listed.text
+    by_id = {row["employee_id"]: row for row in listed.json()}
+    stale = by_id[str(bare_id)]
+    assert stale["selected"] is True
+    assert stale["eligible"] is False
+    assert stale["ineligible_reason"] == "no_active_profile"
+    assert by_id[str(ctx["employee_id"])]["eligible"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_roster_noop_save_preserves_rows_lock_version_and_history(client, session):
+    """A semantically identical save must not mint row UUIDs, bump
+    lock_version, or append audit history."""
+    from sqlalchemy import select as sa_select
+
+    from app.models.payroll_runs import PayrollRunEmployee
+
+    ctx = await _admin_context(client, session)
+    await _seed_employee_versions(
+        session, org_id=ctx["org_id"], user_id=ctx["user_id"], employee_id=ctx["employee_id"]
+    )
+    period = await _create_period(client, year=2026, month=6)
+    run = await _create_run(client, period_id=period["id"])
+
+    payload = {
+        "employees": [
+            {
+                "employee_id": str(ctx["employee_id"]),
+                "payable_days": "28.00",
+                "da_percent": "55.0000",
+                "transport_amount": "1800.00",
+            }
+        ]
+    }
+    first = await client.put(f"/api/payroll-runs/{run['id']}/roster", json=payload)
+    assert first.status_code == 200, first.text
+
+    async def snapshot():
+        await bind_tenant_context(session, organization_id=ctx["org_id"], user_id=ctx["user_id"])
+        rows = (
+            (
+                await session.execute(
+                    sa_select(PayrollRunEmployee).where(
+                        PayrollRunEmployee.run_id == UUID(run["id"])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        detail = await client.get(f"/api/payroll-runs/{run['id']}")
+        history = await client.get(f"/api/payroll-runs/{run['id']}/roster-history")
+        return (
+            sorted(str(r.id) for r in rows),
+            detail.json()["lock_version"],
+            len(history.json()),
+        )
+
+    ids_before, lock_before, history_before = await snapshot()
+
+    # Cosmetically different but numerically identical values (28 == 28.00).
+    noop_payload = {
+        "employees": [
+            {
+                "employee_id": str(ctx["employee_id"]),
+                "payable_days": "28",
+                "da_percent": "55.00",
+                "transport_amount": "1800.0",
+            }
+        ]
+    }
+    second = await client.put(f"/api/payroll-runs/{run['id']}/roster", json=noop_payload)
+    assert second.status_code == 200, second.text
+
+    ids_after, lock_after, history_after = await snapshot()
+    assert ids_after == ids_before
+    assert lock_after == lock_before
+    assert history_after == history_before
+
+    # A real change still bumps lock_version, preserves the retained row id,
+    # and appends history.
+    changed_payload = {
+        "employees": [
+            {
+                "employee_id": str(ctx["employee_id"]),
+                "payable_days": "27.00",
+                "da_percent": "55.0000",
+                "transport_amount": "1800.00",
+            }
+        ]
+    }
+    third = await client.put(f"/api/payroll-runs/{run['id']}/roster", json=changed_payload)
+    assert third.status_code == 200, third.text
+    ids_changed, lock_changed, history_changed = await snapshot()
+    assert ids_changed == ids_before
+    assert lock_changed == lock_before + 1
+    assert history_changed == history_before + 1

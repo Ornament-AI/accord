@@ -724,6 +724,62 @@ async def _resolve_run_calc_input(
     return run_input, employee_by_ref
 
 
+async def _assert_roster_calculable(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+    period: PayrollPeriod,
+) -> None:
+    """Fail fast unless every saved roster member is calculable at month-end.
+
+    Enforces: non-empty roster, and resolved-profile count == saved roster
+    count (no silent partial calculations).
+    """
+    roster_ids = list(
+        (
+            await db.execute(
+                sa.select(PayrollRunEmployee.employee_id)
+                .where(PayrollRunEmployee.organization_id == organization_id)
+                .where(PayrollRunEmployee.run_id == run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not roster_ids:
+        raise ConflictError(
+            "The saved roster is empty. Add at least one employee before calculating."
+        )
+    period_days = calendar.monthrange(period.period_year, period.period_month)[1]
+    on_date = date(period.period_year, period.period_month, period_days)
+    profiles = await versioning.get_active_versions_map(
+        db,
+        employee_profile_versions,
+        header_ids=roster_ids,
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    missing = [eid for eid in roster_ids if eid not in profiles]
+    if missing:
+        numbers = (
+            (
+                await db.execute(
+                    sa.select(Employee.employee_number)
+                    .where(Employee.id.in_(missing))
+                    .order_by(Employee.employee_number)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        raise ConflictError(
+            "These roster employees have no active profile on "
+            f"{on_date.isoformat()} and cannot be calculated: "
+            f"{', '.join(numbers)}. Remove them from the roster and save again."
+        )
+
+
 async def calculate_run_command(
     db: AsyncSession,
     *,
@@ -756,6 +812,15 @@ async def calculate_run_command(
     if period is None or period.organization_id != organization_id:
         raise NotFoundError("Payroll period not found.")
 
+    # Roster-to-calculation integrity: every saved roster member must resolve
+    # to an active profile at period month-end, before the status transition
+    # or any version row is created. This turns silent partial calculations
+    # into explicit failures the operator can act on.
+    if run.roster_initialized:
+        await _assert_roster_calculable(
+            db, organization_id=organization_id, run_id=run.id, period=period
+        )
+
     run.status = "calculating"
     await db.flush()
 
@@ -765,6 +830,11 @@ async def calculate_run_command(
         period=period,
         run_id=run.id,
     )
+    if not run_input.employees:
+        # Covers the legacy roster_initialized=false fallback; the roster path
+        # is already guarded by _assert_roster_calculable above. The raised
+        # error rolls back the transaction, restoring the pre-call status.
+        raise ConflictError("No calculable employees resolved for this run; nothing to calculate.")
     result = calculate_run(run_input)
 
     max_version_stmt = sa.select(
