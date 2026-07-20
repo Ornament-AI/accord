@@ -42,14 +42,16 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError
+from app.exceptions import ConflictError, ValidationError
 from app.models.effective import effective_on, select_active_version
+from app.services.db_errors import raise_integrity_error
 
 __all__ = [
     "get_active_version",
     "get_active_versions_map",
     "insert_version",
     "list_versions",
+    "terminate_open_version",
 ]
 
 
@@ -185,6 +187,47 @@ async def insert_version(
             current = current.__cause__ or getattr(current, "orig", None)
         # Non-exclusion integrity failures (FK, check, etc.) propagate unchanged.
         raise
+
+
+async def terminate_open_version(
+    session: AsyncSession,
+    version_table: sa.Table,
+    *,
+    organization_id: UUID,
+    header_id: UUID,
+    end_on: date,
+) -> Mapping[str, Any]:
+    """Close the open version at ``end_on`` without inserting a successor.
+
+    Used for soft-ending an effective-dated series (e.g. ending a recurring
+    instruction). Returns the clipped row. Raises ``ConflictError`` when no
+    open version exists and ``ValidationError`` when ``end_on`` does not fall
+    after the open version's start.
+    """
+    open_row = await _fetch_open_version(
+        session,
+        version_table,
+        organization_id=organization_id,
+        header_id=header_id,
+    )
+    if open_row is None:
+        raise ConflictError("No open version exists to terminate.")
+    old_lower = _validity_lower(open_row["validity"])
+    if end_on <= old_lower:
+        raise ValidationError("end_on must be after the open version start.")
+    try:
+        result = await session.execute(
+            sa.update(version_table)
+            .where(version_table.c.id == open_row["id"])
+            .values(validity=Range(old_lower, end_on, bounds="[)"))
+            .returning(version_table)
+        )
+    except IntegrityError as exc:
+        await session.rollback()
+        raise_integrity_error(exc)
+    row = result.mappings().one()
+    await session.flush()
+    return row
 
 
 async def get_active_version(

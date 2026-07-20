@@ -12,7 +12,7 @@ from pydantic import ValidationError as PydanticValidationError
 from app.exceptions import ConflictError, ValidationError
 from app.models.pay_components import PayComponent, component_rate_versions
 from app.schemas.pay_setup import ComponentRateVersionCreate
-from app.services.pay_setup import _insert_version, _terminate_open_version
+from app.services.versioning import insert_version, terminate_open_version
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_organization, seed_user
 
@@ -45,23 +45,25 @@ async def test_insert_version_clip_and_insert_happy_path(session):
         await session.flush()
         header_id = component.id
 
-        first = await _insert_version(
+        first = await insert_version(
             session,
             component_rate_versions,
             organization_id=org.id,
             header_id=header_id,
             effective_from=date(2026, 1, 1),
             created_by=user.id,
-            payload=_rate_payload(),
+            values=_rate_payload(),
+            change_reason=None,
         )
-        second = await _insert_version(
+        second = await insert_version(
             session,
             component_rate_versions,
             organization_id=org.id,
             header_id=header_id,
             effective_from=date(2026, 4, 1),
             created_by=user.id,
-            payload=_rate_payload(amount="1200.00"),
+            values=_rate_payload(amount="1200.00"),
+            change_reason=None,
         )
 
     stmt = (
@@ -102,25 +104,27 @@ async def test_insert_version_conflict_when_effective_from_not_after_open_lower(
         session.add(component)
         await session.flush()
 
-        await _insert_version(
+        await insert_version(
             session,
             component_rate_versions,
             organization_id=org.id,
             header_id=component.id,
             effective_from=date(2026, 1, 1),
             created_by=user.id,
-            payload=_rate_payload(),
+            values=_rate_payload(),
+            change_reason=None,
         )
 
         with pytest.raises(ConflictError, match="effective_from must be after"):
-            await _insert_version(
+            await insert_version(
                 session,
                 component_rate_versions,
                 organization_id=org.id,
                 header_id=component.id,
                 effective_from=date(2026, 1, 1),
                 created_by=user.id,
-                payload=_rate_payload(amount="1100.00"),
+                values=_rate_payload(amount="1100.00"),
+                change_reason=None,
             )
 
 
@@ -141,16 +145,17 @@ async def test_terminate_open_version_clips_without_insert(session):
         session.add(component)
         await session.flush()
 
-        await _insert_version(
+        await insert_version(
             session,
             component_rate_versions,
             organization_id=org.id,
             header_id=component.id,
             effective_from=date(2026, 1, 1),
             created_by=user.id,
-            payload=_rate_payload(),
+            values=_rate_payload(),
+            change_reason=None,
         )
-        terminated = await _terminate_open_version(
+        terminated = await terminate_open_version(
             session,
             component_rate_versions,
             organization_id=org.id,
@@ -188,7 +193,7 @@ async def test_terminate_open_version_conflict_when_no_open_version(session):
         await session.flush()
 
         with pytest.raises(ConflictError, match="No open version exists"):
-            await _terminate_open_version(
+            await terminate_open_version(
                 session,
                 component_rate_versions,
                 organization_id=org.id,
@@ -214,18 +219,19 @@ async def test_terminate_open_version_validation_when_end_on_not_after_start(ses
         session.add(component)
         await session.flush()
 
-        await _insert_version(
+        await insert_version(
             session,
             component_rate_versions,
             organization_id=org.id,
             header_id=component.id,
             effective_from=date(2026, 1, 1),
             created_by=user.id,
-            payload=_rate_payload(),
+            values=_rate_payload(),
+            change_reason=None,
         )
 
         with pytest.raises(ValidationError, match="end_on must be after"):
-            await _terminate_open_version(
+            await terminate_open_version(
                 session,
                 component_rate_versions,
                 organization_id=org.id,
