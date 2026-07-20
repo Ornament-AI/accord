@@ -38,8 +38,8 @@ function PreviewSectionTable({ section }: { section: ReportPreviewSection }) {
 								</TableCell>
 							</TableRow>
 						) : (
-							rows.map((row, rowIndex) => (
-								<TableRow key={rowIndex}>
+							rows.map((row) => (
+								<TableRow key={columns.map((column) => cellText(row[column.key])).join("\u0001")}>
 									{columns.map((column) => (
 										<TableCell
 											key={column.key}

@@ -1,15 +1,13 @@
+import { FileXIcon as FileX } from "@phosphor-icons/react/dist/csr/FileX";
 import { useOutletContext, useParams } from "react-router";
-
 import { EmptyState } from "@/components/empty-state";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { useReportPreview } from "@/lib/api/reports";
 import { getErrorMessage } from "@/lib/errors";
-import { FileXIcon as FileX } from "@phosphor-icons/react/dist/csr/FileX";
-
+import { productSheetBySlug } from "@/lib/reports/report-registry";
 import { ReportPreviewTables } from "./ReportPreviewTables";
 import type { ReportsOutletContext } from "./ReportsLayout";
-import { productSheetBySlug } from "@/lib/reports/report-registry";
 
 export default function ReportSheetPage() {
 	const { reportSlug = "" } = useParams<{ reportSlug: string }>();

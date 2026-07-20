@@ -13,7 +13,6 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import {
 	Select,
 	SelectContent,
@@ -21,6 +20,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	type CreateEmployeeRequest,
@@ -330,11 +330,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 													onChange={(event) => setField("sevarth_id", event.target.value)}
 												/>
 											</DataEntryField>
-											<DataEntryField
-												label="Date of Birth"
-												htmlFor="create-emp-dob"
-												required
-											>
+											<DataEntryField label="Date of Birth" htmlFor="create-emp-dob" required>
 												<DatePicker
 													id="create-emp-dob"
 													value={form.date_of_birth ? parseApiDate(form.date_of_birth) : undefined}
@@ -346,11 +342,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 													calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 												/>
 											</DataEntryField>
-											<DataEntryField
-												label="Date of Joining"
-												htmlFor="create-emp-doj"
-												required
-											>
+											<DataEntryField label="Date of Joining" htmlFor="create-emp-doj" required>
 												<DatePicker
 													id="create-emp-doj"
 													value={
@@ -450,16 +442,11 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 												</DataEntryField>
 											) : null}
 											{form.retirement_regime === "gpf" ? (
-												<DataEntryField
-													label="GPF Account Number"
-													htmlFor="create-emp-gpf-account"
-												>
+												<DataEntryField label="GPF Account Number" htmlFor="create-emp-gpf-account">
 													<Input
 														id="create-emp-gpf-account"
 														value={form.gpf_account_number}
-														onChange={(event) =>
-															setField("gpf_account_number", event.target.value)
-														}
+														onChange={(event) => setField("gpf_account_number", event.target.value)}
 													/>
 												</DataEntryField>
 											) : null}

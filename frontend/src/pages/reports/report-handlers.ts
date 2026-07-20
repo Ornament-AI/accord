@@ -16,7 +16,9 @@ import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
 export type ReportHandlersOptions = {
 	catalog?: ReportCatalogEntry[];
 	artifacts?: ArtifactResponse[];
-	preview?: ReportPreviewResponse | ((reportType: string, postedRunId: string) => ReportPreviewResponse);
+	preview?:
+		| ReportPreviewResponse
+		| ((reportType: string, postedRunId: string) => ReportPreviewResponse);
 	/** Ordered statuses returned by successive GET /api/reports/jobs/:id polls. */
 	jobStatusSequence?: ReportJobStatus[];
 	/** Error message when the terminal status is failed/dead_letter. */
@@ -89,10 +91,7 @@ export function defaultReportCatalog(): ReportCatalogEntry[] {
 	];
 }
 
-export function defaultPreview(
-	reportType: string,
-	postedRunId: string,
-): ReportPreviewResponse {
+export function defaultPreview(reportType: string, _postedRunId: string): ReportPreviewResponse {
 	return {
 		report_type: reportType,
 		template_version: "v1",

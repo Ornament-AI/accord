@@ -6,22 +6,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, AuthShellBoundary } from "@/contexts/AuthContext";
 import { NAV_REGISTRY } from "@/lib/nav-registry";
 import { queryClient } from "@/lib/query-client";
+import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildPeriod, buildRun, createPayRunHandlers } from "@/pages/pay-runs/pay-run-handlers";
 import { buildAuthMe, buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
 import { server } from "@/test/msw-server";
-
+import ReportSheetPage from "./ReportSheetPage";
 import ReportsIndexRedirect from "./ReportsIndexRedirect";
 import ReportsLayout from "./ReportsLayout";
-import ReportSheetPage from "./ReportSheetPage";
-import {
-	buildArtifact,
-	createReportHandlers,
-	defaultReportCatalog,
-} from "./report-handlers";
-import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
+import { buildArtifact, createReportHandlers, defaultReportCatalog } from "./report-handlers";
 
 vi.mock("@/lib/download", () => ({
 	downloadBlob: vi.fn(),
@@ -210,7 +205,9 @@ describe("Reports page", () => {
 				},
 				{ timeout: PAGE_TIMEOUT },
 			);
-			expect(within(screen.getByTestId("artifacts-section")).getByText("pay_bill")).toBeInTheDocument();
+			expect(
+				within(screen.getByTestId("artifacts-section")).getByText("pay_bill"),
+			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
