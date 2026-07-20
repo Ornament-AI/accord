@@ -723,9 +723,7 @@ describe("Pay run detail — roster integrity", () => {
 			fireEvent.click(screen.getByRole("button", { name: "Save" }));
 			await waitFor(() =>
 				expect(onReplaceRoster).toHaveBeenCalledWith("run-1", {
-					employees: [
-						expect.objectContaining({ employee_id: "emp-1" }),
-					],
+					employees: [expect.objectContaining({ employee_id: "emp-1" })],
 				}),
 			);
 		},

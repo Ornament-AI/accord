@@ -191,8 +191,7 @@ function buildRosterColumns({
 			cell: ({ row }) => {
 				const employeeLabel = row.original.employee_name || row.original.employee_number;
 				// Ineligible rows can only be deselected — never newly selected.
-				const canToggle =
-					editable && (row.original.eligible || row.original.selected);
+				const canToggle = editable && (row.original.eligible || row.original.selected);
 				return (
 					<Checkbox
 						checked={row.original.selected}
@@ -219,9 +218,7 @@ function buildRosterColumns({
 			cell: ({ row }) => (
 				<span className="inline-flex items-center gap-2">
 					{row.original.employee_name || "Unnamed employee"}
-					{!row.original.eligible ? (
-						<Badge variant="destructive">No active profile</Badge>
-					) : null}
+					{!row.original.eligible ? <Badge variant="destructive">No active profile</Badge> : null}
 				</span>
 			),
 		},
@@ -504,9 +501,7 @@ export const PayrollRunRosterTable = forwardRef<
 		}
 		const blockedRows = selectedRows.filter((row) => !row.eligible);
 		if (blockedRows.length > 0) {
-			const labels = blockedRows
-				.map((row) => row.employee_name || row.employee_number)
-				.join(", ");
+			const labels = blockedRows.map((row) => row.employee_name || row.employee_number).join(", ");
 			toast.error(
 				`These employees have no active profile for this period and must be deselected: ${labels}`,
 			);
