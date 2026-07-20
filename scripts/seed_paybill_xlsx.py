@@ -375,6 +375,7 @@ def wipe_org_master_data(org_id: str, *, dsn_env: dict[str, str]) -> None:
 	# Validate before any SQL construction; psql :'org_id' quotes the bound value.
 	org_uuid = str(UUID(org_id))
 	tables = [
+		"payroll_report_snapshots",
 		"payroll_result_lines",
 		"payroll_employee_results",
 		"payroll_approvals",

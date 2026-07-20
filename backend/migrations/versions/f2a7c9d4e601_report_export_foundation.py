@@ -279,6 +279,14 @@ def upgrade() -> None:
           EXECUTE FUNCTION accord_forbid_update_delete();
         """
     )
+    # ADR-0009 grant/revoke backstop (see b33a3a7b5f84): the append-only trigger
+    # alone is bypassable via SET LOCAL accord.allow_immutable_ddl, so revoke
+    # UPDATE/DELETE/TRUNCATE from runtime roles. These frozen snapshots carry
+    # payroll identity and bank data; INSERT + SELECT remain (insert-then-immutable).
+    op.execute(
+        "REVOKE UPDATE, DELETE, TRUNCATE ON TABLE payroll_report_snapshots "
+        "FROM accord_app, accord_worker"
+    )
 
 
 def downgrade() -> None:
