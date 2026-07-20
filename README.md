@@ -86,14 +86,14 @@ docker compose -f deploy/docker-compose.yml up --build
 ```
 
 Images: `ghcr.io/ornament-ai/accord/backend` and
-`ghcr.io/ornament-ai/accord/web`. Local default web port is `8082`
+`ghcr.io/ornament-ai/accord/web`. Local default web port is `8085`
 (see Compose `web` service / `scripts/smoke-test.sh`).
 
 ## Verification
 
 ```bash
 ./scripts/verify.sh          # lint, typecheck, unit tests (skips missing lanes)
-./scripts/smoke-test.sh      # health checks against a running deploy (default http://127.0.0.1:8082)
+./scripts/smoke-test.sh      # health checks against a running deploy (default http://127.0.0.1:8085)
 ```
 
 ## Current status

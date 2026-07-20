@@ -17,7 +17,7 @@ Use `deploy/docker-compose.yml` for a single-host stack:
 | `migrations` | One-shot `alembic upgrade head` (ADR migrator role) |
 | `api` | FastAPI backend image |
 | `worker` | `python worker.py` durable-job loop |
-| `web` | nginx + SPA; publishes `127.0.0.1:8082` |
+| `web` | nginx + SPA; publishes `127.0.0.1:${ACCORD_WEB_PORT:-8085}` |
 
 First boot runs `deploy/object-storage/postgres-init-roles.sh`, which applies
 `backend/scripts/create_roles.sql` and sets passwords for `accord_migrator`,
@@ -71,18 +71,18 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v
 ```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env ps -a
 # postgres healthy; minio healthy; migrations Exited (0);
-# minio-init Exited (0); api healthy; worker Up; web Up on 127.0.0.1:8082
+# minio-init Exited (0); api healthy; worker Up; web Up on 127.0.0.1:8085
 
-curl -sS -w '\nHTTP %{http_code}\n' http://127.0.0.1:8082/api/healthz
+curl -sS -w '\nHTTP %{http_code}\n' http://127.0.0.1:8085/api/healthz
 # {"status":"ok"} / HTTP 200
 
-curl -sS -w '\nHTTP %{http_code}\n' http://127.0.0.1:8082/api/readyz
+curl -sS -w '\nHTTP %{http_code}\n' http://127.0.0.1:8085/api/readyz
 # see contract below / HTTP 200
 
-curl -sS -D - http://127.0.0.1:8082/ -o /tmp/accord-index.html | head
+curl -sS -D - http://127.0.0.1:8085/ -o /tmp/accord-index.html | head
 # SPA index.html (title Accord, <div id="root">)
 
-docker logs deploy-worker-1 2>&1 | tail
+docker logs accord-worker-1 2>&1 | tail
 # worker_entrypoint_starting / worker_started
 
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm --no-deps \
@@ -133,7 +133,7 @@ Rehearsal (row counts before/after = **3** on `rehearsal_probe`):
 export ACCORD_DB_PASSWORD='…'   # same as deploy/.env
 
 # Optional: seed a countable table for rehearsal
-docker exec -i -e PGPASSWORD="$ACCORD_DB_PASSWORD" deploy-postgres-1 \
+docker exec -i -e PGPASSWORD="$ACCORD_DB_PASSWORD" accord-postgres-1 \
   psql -U accord -d accord -v ON_ERROR_STOP=1 <<'SQL'
 CREATE TABLE IF NOT EXISTS rehearsal_probe (
   id serial PRIMARY KEY,
@@ -145,17 +145,17 @@ INSERT INTO rehearsal_probe (label) VALUES ('alpha'), ('beta'), ('gamma');
 SQL
 
 ./scripts/backup-restore.sh verify-counts \
-  --container deploy-postgres-1 --db accord --user accord \
+  --container accord-postgres-1 --db accord --user accord \
   --password "$ACCORD_DB_PASSWORD" --verify-table rehearsal_probe
 # [verify] … row_count=3
 
 ./scripts/backup-restore.sh backup \
-  --container deploy-postgres-1 --db accord --user accord \
+  --container accord-postgres-1 --db accord --user accord \
   --password "$ACCORD_DB_PASSWORD" --out /tmp/accord-rehearsal.dump \
   --verify-table rehearsal_probe
 
 ./scripts/backup-restore.sh restore-scratch \
-  --container deploy-postgres-1 --db accord --user accord \
+  --container accord-postgres-1 --db accord --user accord \
   --password "$ACCORD_DB_PASSWORD" --dump /tmp/accord-rehearsal.dump \
   --scratch accord_restore_scratch --verify-table rehearsal_probe
 # row_count_before=3 → row_count_after=3
@@ -190,7 +190,7 @@ Named volume `minio-data` survives `docker compose restart`. Rehearsal:
 ```bash
 # put
 echo 'accord-rehearsal-object-v1' > /tmp/accord-minio-probe.txt
-docker run --rm --network deploy_backend-net --entrypoint /bin/sh \
+docker run --rm --network accord_backend-net --entrypoint /bin/sh \
   -e MC_CONFIG_DIR=/tmp/mc -e HOME=/tmp \
   -v /tmp/accord-minio-probe.txt:/probe.txt:ro \
   minio/mc:RELEASE.2025-04-16T18-13-26Z \
@@ -199,7 +199,7 @@ docker run --rm --network deploy_backend-net --entrypoint /bin/sh \
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env restart
 
 # get (after /api/readyz is 200 again)
-docker run --rm --network deploy_backend-net --entrypoint /bin/sh \
+docker run --rm --network accord_backend-net --entrypoint /bin/sh \
   -e MC_CONFIG_DIR=/tmp/mc -e HOME=/tmp \
   minio/mc:RELEASE.2025-04-16T18-13-26Z \
   -c 'mc alias set a http://minio:9000 minioadmin minioadmin && mc cat a/accord-artifacts/rehearsal/probe.txt'
@@ -254,23 +254,33 @@ Tag-triggered pipeline (`push` of `v*`):
 1. Ensure CI is green on the commit to ship.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. Wait for Deploy workflow success (images + migration replay).
-4. On the host: set `ACCORD_TAG` to `vX.Y.Z` or `sha-<full-sha>` in
-   `deploy/.env` (prefer immutable `sha-…` in production).
-5. Pull/build and roll:
+4. On the host, set `ACCORD_TAG=sha-<full-sha>` in `deploy/.env`.
+5. Deploy the exact release commit from a trusted checkout:
 
    ```bash
-   docker compose -f deploy/docker-compose.yml --env-file deploy/.env pull
-   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+   MSIDC_SSH_TARGET=msidcadmin@msidcacct ./scripts/deploy.sh <full-sha>
    ```
 
-   Local rehearsal used `up -d --build` with `ACCORD_TAG=latest` instead of
-   registry pulls.
-6. Run the smoke-test checklist.
+   The script syncs only the deploy bundle (never `.env`), then `setup.sh`
+   validates the production/WorkOS settings, pulls immutable images, starts
+   with `--no-build`, and runs VM-local smoke proof.
+6. Route `accord.innovastra.app` through the MSIDC Cloudflare Tunnel to
+   `http://localhost:8085`, then run the public smoke checks.
+
+On a first shared-host install, `setup.sh` refuses to proceed when legacy
+`deploy_pgdata` or `deploy_minio-data` volumes exist but Accord's isolated
+volumes do not. Migrate them if they belong to an earlier Accord install. Set
+`ACCORD_CONFIRMED_FRESH_INSTALL=true` on the one deploy command only after
+proving they belong to another application; do not store this acknowledgment
+in `.env`. The MSIDC first install was audited on that basis.
 
 ### Rollback
 
-1. Set `ACCORD_TAG` to the previous known-good tag or `sha-…`.
-2. `docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d`.
+1. Identify the previous known-good full Git SHA and review migration
+   compatibility before changing the running app.
+2. Set `ACCORD_TAG=sha-<previous-full-sha>` in the host `.env`, then run
+   `./scripts/deploy.sh <previous-full-sha>` from a trusted checkout. This keeps
+   rollback on the same pull, no-build, revision-label, and smoke-proof path.
 3. **Do not** auto-downgrade Alembic. If the new release’s migrations already
    applied and are incompatible with the old app, restore the database from
    backup/PITR to a pre-migration point, then start the old images — or forward

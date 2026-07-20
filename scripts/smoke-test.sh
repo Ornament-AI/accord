@@ -2,11 +2,11 @@
 # Accord Smoke Test — verifies a running deployment is healthy.
 #
 # Usage:
-#   ./scripts/smoke-test.sh                       # default: http://127.0.0.1:8082
+#   ./scripts/smoke-test.sh                       # default: http://127.0.0.1:${ACCORD_WEB_PORT:-8085}
 #   ./scripts/smoke-test.sh http://10.0.0.5:8080   # custom base URL
 #
 # Adapted from Atlas deploy/smoke-test.sh (v1.1.0): default target points at
-# the local deploy/docker-compose.yml `web` port (127.0.0.1:8082) instead of
+# the local deploy/docker-compose.yml `web` port (127.0.0.1:8085) instead of
 # a fixed production domain; Docker service names renamed db/backend/web ->
 # postgres/api/web; the Atlas-domain auth-probe path (/api/bills) is replaced
 # with a generic readyz-based check since Accord has no such route yet — full
@@ -28,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ---- Base URL ---------------------------------------------------------------
-BASE_URL="${1:-http://127.0.0.1:8082}"
+BASE_URL="${1:-http://127.0.0.1:${ACCORD_WEB_PORT:-8085}}"
 # Strip trailing slash
 BASE_URL="${BASE_URL%/}"
 

@@ -7,16 +7,16 @@
 #
 # Usage (from repo root):
 #   ./scripts/backup-restore.sh backup \
-#     --container deploy-postgres-1 --db accord --user accord \
+#     --container accord-postgres-1 --db accord --user accord \
 #     --password "$ACCORD_DB_PASSWORD" --out /tmp/accord.dump
 #
 #   ./scripts/backup-restore.sh restore-scratch \
-#     --container deploy-postgres-1 --db accord --user accord \
+#     --container accord-postgres-1 --db accord --user accord \
 #     --password "$ACCORD_DB_PASSWORD" --dump /tmp/accord.dump \
 #     --scratch accord_restore_scratch --verify-table rehearsal_probe
 #
 #   ./scripts/backup-restore.sh verify-counts \
-#     --container deploy-postgres-1 --db accord --user accord \
+#     --container accord-postgres-1 --db accord --user accord \
 #     --password "$ACCORD_DB_PASSWORD" --verify-table rehearsal_probe
 #
 set -euo pipefail
@@ -47,7 +47,7 @@ if [[ -z "$COMMAND" || "$COMMAND" == "-h" || "$COMMAND" == "--help" ]]; then
 fi
 shift
 
-CONTAINER="${ACCORD_PG_CONTAINER:-deploy-postgres-1}"
+CONTAINER="${ACCORD_PG_CONTAINER:-accord-postgres-1}"
 DB_NAME="${ACCORD_DB_NAME:-accord}"
 DB_USER="${ACCORD_DB_USER:-accord}"
 DB_PASSWORD="${ACCORD_DB_PASSWORD:-}"

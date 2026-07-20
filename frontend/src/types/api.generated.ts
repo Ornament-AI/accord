@@ -903,6 +903,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Reports */
+        post: operations["export_reports_api_reports_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/generate": {
         parameters: {
             query?: never;
@@ -929,6 +946,26 @@ export interface paths {
         };
         /** Get Report Job */
         get: operations["get_report_job_api_reports_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reports/{report_type}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Report
+         * @description Sync JSON preview. Declared after static ``/reports/...`` paths.
+         */
+        get: operations["preview_report_api_reports__report_type__preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1610,6 +1647,24 @@ export interface components {
             /** Sevarth Id */
             sevarth_id?: string | null;
         };
+        /** ExportReportsRequest */
+        ExportReportsRequest: {
+            /**
+             * Posted Run Id
+             * Format: uuid
+             */
+            posted_run_id: string;
+        };
+        /** ExportReportsResponse */
+        ExportReportsResponse: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Status */
+            status: string;
+        };
         /** GenerateReportRequest */
         GenerateReportRequest: {
             /**
@@ -1938,7 +1993,7 @@ export interface components {
         /** PayrollRunEmployeeUpsert */
         PayrollRunEmployeeUpsert: {
             /** Da Difference */
-            da_difference?: number | string | null;
+            da_difference?: (number | string) | null;
             /** Da Percent */
             da_percent?: (number | string) | null;
             /**
@@ -1951,7 +2006,7 @@ export interface components {
             /** Payable Days */
             payable_days: number | string;
             /** Transport Amount */
-            transport_amount?: number | string | null;
+            transport_amount?: (number | string) | null;
         };
         /** PayrollRunInputResponse */
         PayrollRunInputResponse: {
@@ -2388,14 +2443,43 @@ export interface components {
             status: string;
         };
         /**
+         * ReportPreviewResponse
+         * @description Synchronous JSON preview of a report (``to_json`` shape).
+         */
+        ReportPreviewResponse: {
+            /** Organization Name */
+            organization_name: string;
+            /** Report Type */
+            report_type: string;
+            /** Sections */
+            sections: {
+                [key: string]: unknown;
+            }[];
+            /** Subtitle */
+            subtitle: string;
+            /** Template Version */
+            template_version: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * ReportTypeItem
          * @description One registered report type and the formats it supports.
          */
         ReportTypeItem: {
             /** Formats */
             formats: string[];
+            /**
+             * Product Sheet
+             * @default false
+             */
+            product_sheet: boolean;
             /** Report Type */
             report_type: string;
+            /** Template Version */
+            template_version?: string | null;
+            /** Title */
+            title?: string | null;
         };
         /** ReportTypeListResponse */
         ReportTypeListResponse: {
@@ -4509,6 +4593,41 @@ export interface operations {
             };
         };
     };
+    export_reports_api_reports_export_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportReportsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportReportsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_report_api_reports_generate_post: {
         parameters: {
             query?: never;
@@ -4562,6 +4681,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_report_api_reports__report_type__preview_get: {
+        parameters: {
+            query: {
+                posted_run_id: string;
+            };
+            header?: never;
+            path: {
+                report_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportPreviewResponse"];
                 };
             };
             /** @description Validation Error */

@@ -10,6 +10,11 @@
 # Image pulls use ghcr.io/ornament-ai/accord/{backend,web}:${ACCORD_TAG:-latest}
 # (registry org assumption — confirm with orchestrator).
 
+# Never inherit the generic directory name `deploy` as the Compose project on
+# a shared host. The explicit project name isolates containers, networks, and
+# volumes from the other MSIDC applications.
+name: accord
+
 services:
   postgres:
     image: postgres:18.4-alpine
@@ -19,7 +24,7 @@ services:
       POSTGRES_USER: ${ACCORD_DB_USER:-accord}
       POSTGRES_PASSWORD: ${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}
       # Password applied to ADR roles on first boot (see postgres-init-roles.sh).
-      ACCORD_ROLE_PASSWORD: ${ACCORD_ROLE_PASSWORD:-${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}}
+      ACCORD_ROLE_PASSWORD: ${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}
     volumes:
       # Postgres 18+ images store data under /var/lib/postgresql/<major>/…;
       # mounting …/data breaks init (docker-library/postgres#1259).
@@ -58,9 +63,6 @@ services:
     environment:
       MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -158,9 +160,9 @@ services:
       SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?SESSION_SECRET_KEY is required}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-accord_session}
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8082}
-      BASE_URL: ${BASE_URL:-${PUBLIC_APP_URL:-http://127.0.0.1:8082}}
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${BASE_URL:-http://127.0.0.1:8082}}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8085}
+      BASE_URL: ${BASE_URL:-${PUBLIC_APP_URL:-http://127.0.0.1:8085}}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${BASE_URL:-http://127.0.0.1:8085}}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
@@ -221,9 +223,9 @@ services:
       SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?SESSION_SECRET_KEY is required}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-accord_session}
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8082}
-      BASE_URL: ${BASE_URL:-${PUBLIC_APP_URL:-http://127.0.0.1:8082}}
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${BASE_URL:-http://127.0.0.1:8082}}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8085}
+      BASE_URL: ${BASE_URL:-${PUBLIC_APP_URL:-http://127.0.0.1:8085}}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-${BASE_URL:-http://127.0.0.1:8085}}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
@@ -256,7 +258,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8082:80"
+      - "127.0.0.1:${ACCORD_WEB_PORT:-8085}:80"
     security_opt:
       - no-new-privileges:true
     cap_drop:
