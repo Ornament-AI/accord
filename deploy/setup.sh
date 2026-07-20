@@ -81,6 +81,7 @@ guard_persistent_volume_ownership() {
 		die "Legacy deploy_* volumes exist while Accord volumes do not. Migrate a prior Accord install, or set ACCORD_CONFIRMED_FRESH_INSTALL=true only after proving those volumes belong to another app."
 	fi
 	$legacy_found && warn "Leaving unrelated legacy deploy_* volumes untouched for this confirmed fresh install"
+	return 0
 }
 
 command -v docker >/dev/null 2>&1 || die "Docker is not installed"
