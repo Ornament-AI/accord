@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from app.reports.base import ReportRegistry
 from app.reports.families import payroll_register
+from app.reports.posted_run import DEFAULT_CONTENT_TYPES
 from app.reports.families.approval_note import register as register_approval_note
 from app.reports.families.payments import register_payment_reports
 from app.reports.families.recovery import register_recovery_reports
@@ -71,7 +72,7 @@ def _register_payroll_register(registry: ReportRegistry) -> None:
         to_json=payroll_register.pay_bill_to_json,
         to_excel=payroll_register.pay_bill_to_excel,
         to_pdf=payroll_register.pay_bill_to_pdf,
-        content_types=payroll_register.DEFAULT_CONTENT_TYPES,
+        content_types=DEFAULT_CONTENT_TYPES,
         filename_pattern=payroll_register.PAY_BILL_FILENAME_PATTERN,
     )
     registry.register(
@@ -80,7 +81,7 @@ def _register_payroll_register(registry: ReportRegistry) -> None:
         to_json=payroll_register.treasury_face_to_json,
         to_excel=payroll_register.treasury_face_to_excel,
         to_pdf=payroll_register.treasury_face_to_pdf,
-        content_types=payroll_register.DEFAULT_CONTENT_TYPES,
+        content_types=DEFAULT_CONTENT_TYPES,
         filename_pattern=payroll_register.TREASURY_FACE_FILENAME_PATTERN,
     )
 

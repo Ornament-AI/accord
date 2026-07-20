@@ -7,7 +7,7 @@ generated programmatically from those numeric DTO values (never stored strings).
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -15,13 +15,10 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, NotFoundError
-from app.models.identity import Organization, User
+from app.exceptions import ConflictError
+from app.models.identity import User
 from app.models.payroll_runs import (
-    PayrollPeriod,
-    PayrollRun,
     payroll_employee_results,
-    payroll_run_versions,
 )
 from app.models.platform import PayrollApproval
 from app.models.reports import ReportConfiguration
@@ -39,6 +36,14 @@ from app.reports.excel import to_excel as base_to_excel
 from app.reports.formatting import format_inr
 from app.reports.pdf import to_pdf as base_to_pdf
 from app.reports.snapshots import load_report_snapshot
+from app.reports.posted_run import (
+    DEFAULT_CONTENT_TYPES,
+    DEFAULT_FILENAME_PATTERN,
+    ZERO,
+    money,
+    period_label,
+    require_posted_run,
+)
 from app.services.run_workflow import URN_MAKER_CHECKER
 
 # Report type string for orchestrator / registry registration.
@@ -46,26 +51,11 @@ REPORT_TYPE_APPROVAL_NOTE = "approval_note"
 
 ApprovalNoteDTO = ReportDTO
 
-_TWO_PLACES = Decimal("0.01")
-_ZERO = Decimal("0.00")
 
 _SIGNATORY_SLOTS: tuple[str, ...] = ("maker", "checker", "approving_officer")
 _PLACEHOLDER_NAME = "____________________"
 
-DEFAULT_CONTENT_TYPES: dict[str, str] = {
-    "json": "application/json",
-    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "pdf": "application/pdf",
-}
-FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
-
-
-def _money(value: Any) -> Decimal:
-    return Decimal(str(value)).quantize(_TWO_PLACES)
-
-
-def _period_label(year: int, month: int) -> str:
-    return date(year, month, 1).strftime("%B %Y")
+FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 
 
 def _format_timestamp(value: datetime | None) -> str:
@@ -74,47 +64,6 @@ def _format_timestamp(value: datetime | None) -> str:
     if value.tzinfo is None:
         return value.isoformat()
     return value.isoformat()
-
-
-async def _require_posted_run(
-    session: AsyncSession,
-    ctx: ReportContext,
-) -> tuple[PayrollRun, Any, PayrollPeriod, Organization]:
-    run = await session.get(PayrollRun, ctx.posted_run_id)
-    if run is None or run.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll run not found.")
-    if run.status != "posted":
-        raise ConflictError(
-            f"Payroll run must be posted to generate reports; found {run.status!r}.",
-            details={"run_id": str(run.id), "status": run.status},
-        )
-    if run.current_version_id is None:
-        raise ConflictError("Posted payroll run has no current_version_id.")
-
-    version = (
-        (
-            await session.execute(
-                sa.select(payroll_run_versions).where(
-                    payroll_run_versions.c.id == run.current_version_id,
-                    payroll_run_versions.c.organization_id == ctx.organization_id,
-                )
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if version is None:
-        raise ConflictError("Posted payroll run version not found.")
-
-    period = await session.get(PayrollPeriod, run.period_id)
-    if period is None or period.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll period not found.")
-
-    org = await session.get(Organization, ctx.organization_id)
-    if org is None:
-        raise NotFoundError("Organization not found.")
-
-    return run, version, period, org
 
 
 async def _load_headcount(
@@ -225,9 +174,9 @@ async def _load_signatories(
 
 def _totals_from_version(version: Any) -> tuple[Decimal, Decimal, Decimal]:
     totals = version["totals"] or {}
-    gross = _money(totals.get("gross_total", _ZERO))
-    deductions = _money(totals.get("deductions_total", _ZERO))
-    net = _money(totals.get("net_payable", _ZERO))
+    gross = money(totals.get("gross_total", ZERO))
+    deductions = money(totals.get("deductions_total", ZERO))
+    net = money(totals.get("net_payable", ZERO))
     return gross, deductions, net
 
 
@@ -235,7 +184,7 @@ class ApprovalNoteBuilder:
     """Build the office approval note DTO from a posted run snapshot."""
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> ApprovalNoteDTO:
-        run, version, period, org = await _require_posted_run(session, ctx)
+        run, version, period, org = await require_posted_run(session, ctx)
         gross, deductions, net = _totals_from_version(version)
         headcount = await _load_headcount(
             session,
@@ -289,7 +238,7 @@ class ApprovalNoteBuilder:
         deductions_words = amount_in_words(deductions)
         net_words = amount_in_words(net)
 
-        period_label = _period_label(period.period_year, period.period_month)
+        period_text = period_label(period.period_year, period.period_month)
         content_hash = str(version["content_hash"])
         version_number = int(version["version_number"])
 
@@ -305,7 +254,7 @@ class ApprovalNoteBuilder:
             template_version=ctx.template_version,
             title="Office Approval Note",
             organization_name=organization_name,
-            subtitle=period_label,
+            subtitle=period_text,
             sections=header_sections
             + (
                 TableSection(
@@ -315,7 +264,7 @@ class ApprovalNoteBuilder:
                         ReportColumn(key="value", header="Value", kind=ColumnKind.TEXT),
                     ),
                     rows=(
-                        ("Period", period_label),
+                        ("Period", period_text),
                         ("Run ID", str(run.id)),
                         ("Version number", str(version_number)),
                         ("Content hash", content_hash),

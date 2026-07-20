@@ -16,27 +16,21 @@ Key invariants (docs/report-specs/report-catalog.md):
 
 from __future__ import annotations
 
-import calendar
 from datetime import date
-from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import ConflictError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
 from app.models.effective import select_active_version
 from app.models.employees import employee_profile_versions
-from app.models.identity import Organization
 from app.models.payroll_runs import (
-    PayrollPeriod,
-    PayrollRun,
     payroll_employee_results,
     payroll_result_lines,
-    payroll_run_versions,
 )
 from app.reports.base import (
     ColumnKind,
@@ -50,6 +44,15 @@ from app.reports.base import (
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.pdf import to_pdf as base_to_pdf
 from app.reports.snapshots import load_report_snapshot
+from app.reports.posted_run import (
+    DEFAULT_CONTENT_TYPES,
+    DEFAULT_FILENAME_PATTERN,
+    ZERO,
+    money,
+    month_end,
+    period_label,
+    require_posted_run,
+)
 
 REPORT_TYPE_HBA_SCHEDULE = "hba_schedule"
 REPORT_TYPE_ADVANCE_SCHEDULE = "advance_schedule"
@@ -67,8 +70,6 @@ AccommodationScheduleDTO = ReportDTO
 
 AccommodationLocation = Literal["mumbai", "worli"]
 
-_TWO_PLACES = Decimal("0.01")
-_ZERO = Decimal("0.00")
 
 _LICENSE_FEE_COMPONENT = "ACCOMMODATION_LICENSE_FEE"
 _FOREGONE_HRA_COMPONENT = "FOREGONE_HRA"
@@ -82,68 +83,10 @@ _ADVANCE_COMPONENT_BY_TYPE: dict[str, str] = {
     "other": "OTHER_ADVANCE_INSTALLMENT",
 }
 
-DEFAULT_CONTENT_TYPES: dict[str, str] = {
-    "json": "application/json",
-    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "pdf": "application/pdf",
-}
-FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
+FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 
 # Column header must explicitly label foregone HRA as informational.
 _FOREGONE_HRA_HEADER = "Informational foregone HRA (not recovered)"
-
-
-def _money(value: Any) -> Decimal:
-    return Decimal(str(value)).quantize(_TWO_PLACES)
-
-
-def _month_end(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
-
-
-def _period_label(year: int, month: int) -> str:
-    return date(year, month, 1).strftime("%B %Y")
-
-
-async def _require_posted_run(
-    session: AsyncSession,
-    ctx: ReportContext,
-) -> tuple[PayrollRun, Any, PayrollPeriod, Organization]:
-    run = await session.get(PayrollRun, ctx.posted_run_id)
-    if run is None or run.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll run not found.")
-    if run.status != "posted":
-        raise ConflictError(
-            f"Payroll run must be posted to generate reports; found {run.status!r}.",
-            details={"run_id": str(run.id), "status": run.status},
-        )
-    if run.current_version_id is None:
-        raise ConflictError("Posted payroll run has no current_version_id.")
-
-    version = (
-        (
-            await session.execute(
-                sa.select(payroll_run_versions).where(
-                    payroll_run_versions.c.id == run.current_version_id,
-                    payroll_run_versions.c.organization_id == ctx.organization_id,
-                )
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if version is None:
-        raise ConflictError("Posted payroll run version not found.")
-
-    period = await session.get(PayrollPeriod, run.period_id)
-    if period is None or period.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll period not found.")
-
-    org = await session.get(Organization, ctx.organization_id)
-    if org is None:
-        raise NotFoundError("Organization not found.")
-
-    return run, version, period, org
 
 
 async def _resolve_employee_name(
@@ -223,8 +166,8 @@ async def build_advance_schedule(
         )
     component_code = _ADVANCE_COMPONENT_BY_TYPE[advance_type]
 
-    _run, version, period, org = await _require_posted_run(session, ctx)
-    as_of = _month_end(period.period_year, period.period_month)
+    _run, version, period, org = await require_posted_run(session, ctx)
+    as_of = month_end(period.period_year, period.period_month)
     snapshot = (
         await load_report_snapshot(
             session,
@@ -271,16 +214,16 @@ async def build_advance_schedule(
     )
 
     rows: list[tuple[Any, ...]] = []
-    schedule_total = _ZERO
+    schedule_total = ZERO
 
     for line in lines:
-        installment_amount = _money(line["amount"])
+        installment_amount = money(line["amount"])
         trace = line["trace"] or {}
         source_ids = list(trace.get("source_version_ids") or [])
         installment_version_id = UUID(str(source_ids[0])) if source_ids else None
 
         reference = ""
-        principal = _ZERO
+        principal = ZERO
         progress = ""
         if installment_version_id is not None and snapshot is not None:
             advance = advance_sources.get(str(installment_version_id))
@@ -295,7 +238,7 @@ async def build_advance_schedule(
             total = int(advance["installments_total"])
             progress = f"{opening + 1}/{total}"
             reference = str(advance.get("reference") or "")
-            principal = _money(advance["principal"])
+            principal = money(advance["principal"])
         elif installment_version_id is not None:
             inst = (
                 (
@@ -320,7 +263,7 @@ async def build_advance_schedule(
                 # This posted recovery counts as one installment toward progress.
                 progress = f"{opening + 1}/{total}"
                 reference = advance.reference or ""
-                principal = _money(advance.principal)
+                principal = money(advance.principal)
 
         if snapshot is not None:
             identity = identities.get(str(line["employee_id"]), {})
@@ -355,7 +298,7 @@ async def build_advance_schedule(
         None,
         None,
         None,
-        _money(schedule_total),
+        money(schedule_total),
         None,
     )
 
@@ -368,7 +311,7 @@ async def build_advance_schedule(
             if snapshot is not None
             else org.name
         ),
-        subtitle=_period_label(period.period_year, period.period_month),
+        subtitle=period_label(period.period_year, period.period_month),
         sections=(
             TableSection(
                 title="Schedule",
@@ -409,8 +352,8 @@ async def build_accommodation_schedule(
             details={"location": location},
         )
 
-    _run, version, period, org = await _require_posted_run(session, ctx)
-    as_of = _month_end(period.period_year, period.period_month)
+    _run, version, period, org = await require_posted_run(session, ctx)
+    as_of = month_end(period.period_year, period.period_month)
     snapshot = (
         await load_report_snapshot(
             session,
@@ -447,13 +390,13 @@ async def build_accommodation_schedule(
             template_version=ctx.template_version,
             title=f"Accommodation schedule — {location.title()}",
             organization_name=org.name,
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=(
                 TableSection(
                     title="Schedule",
                     columns=_accommodation_columns(),
                     rows=(),
-                    totals=("TOTAL", None, None, _ZERO, None),
+                    totals=("TOTAL", None, None, ZERO, None),
                 ),
                 TableSection(
                     title="Informational foregone HRA (not part of recovery total)",
@@ -464,7 +407,7 @@ async def build_accommodation_schedule(
                             kind=ColumnKind.MONEY,
                         ),
                     ),
-                    rows=((_ZERO,),),
+                    rows=((ZERO,),),
                 ),
             ),
         )
@@ -532,8 +475,8 @@ async def build_accommodation_schedule(
         return assignment.quarters_location, assignment.quarters_identifier
 
     schedule_rows: list[tuple[Any, ...]] = []
-    actual_recovery_total = _ZERO
-    informational_foregone_hra_total = _ZERO
+    actual_recovery_total = ZERO
+    informational_foregone_hra_total = ZERO
 
     for result in result_rows:
         emp_lines = lines_by_result.get(result["id"], [])
@@ -564,8 +507,8 @@ async def build_accommodation_schedule(
         if license_line is None:
             continue
 
-        license_fee = _money(license_line["amount"])
-        foregone = _money(foregone_line["amount"]) if foregone_line is not None else _ZERO
+        license_fee = money(license_line["amount"])
+        foregone = money(foregone_line["amount"]) if foregone_line is not None else ZERO
         actual_recovery_total += license_fee
         informational_foregone_hra_total += foregone
 
@@ -592,8 +535,8 @@ async def build_accommodation_schedule(
         )
 
     # Defense in depth: recovery total is actual only — never actual + foregone.
-    actual_recovery_total = _money(actual_recovery_total)
-    informational_foregone_hra_total = _money(informational_foregone_hra_total)
+    actual_recovery_total = money(actual_recovery_total)
+    informational_foregone_hra_total = money(informational_foregone_hra_total)
 
     return ReportDTO(
         report_type=report_type,
@@ -604,7 +547,7 @@ async def build_accommodation_schedule(
             if snapshot is not None
             else org.name
         ),
-        subtitle=_period_label(period.period_year, period.period_month),
+        subtitle=period_label(period.period_year, period.period_month),
         sections=(
             TableSection(
                 title="Schedule",
@@ -687,7 +630,7 @@ class ComponentScheduleBuilder:
         code = (ctx.variant_key or "").strip()
         if not code:
             raise ConflictError("component_schedule requires a component-code variant_key.")
-        _run, version, period, org = await _require_posted_run(session, ctx)
+        _run, version, period, org = await require_posted_run(session, ctx)
         snapshot = await load_report_snapshot(
             session,
             organization_id=ctx.organization_id,
@@ -734,10 +677,10 @@ class ComponentScheduleBuilder:
         )
         identities = snapshot.get("employee_identity") or {}
         rows: list[tuple[Any, ...]] = []
-        total = _ZERO
+        total = ZERO
         for line in line_rows:
             identity = identities.get(str(line["employee_id"]), {})
-            amount = _money(line["amount"])
+            amount = money(line["amount"])
             total += amount
             rows.append(
                 (
@@ -754,7 +697,7 @@ class ComponentScheduleBuilder:
             template_version=ctx.template_version,
             title=title,
             organization_name=str((snapshot.get("organization") or {}).get("name") or org.name),
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=(
                 TableSection(
                     title="Schedule",
@@ -766,7 +709,7 @@ class ComponentScheduleBuilder:
                         ),
                     ),
                     rows=tuple(rows),
-                    totals=("TOTAL", None, _money(total)),
+                    totals=("TOTAL", None, money(total)),
                 ),
                 TableSection(
                     title="Accounting",

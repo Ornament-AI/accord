@@ -12,7 +12,6 @@ Payslip Excel uses one worksheet per employee; PDF uses one page per employee.
 
 from __future__ import annotations
 
-import calendar
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -21,22 +20,13 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, NotFoundError, ValidationError
+from app.exceptions import ConflictError, ValidationError
 from app.models.effective import effective_on, select_active_version
 from app.models.employees import (
     employee_bank_account_versions,
     employee_posting_versions,
-    employee_profile_versions,
 )
-from app.models.identity import Organization
 from app.models.org_structure import Post
-from app.models.payroll_runs import (
-    PayrollPeriod,
-    PayrollRun,
-    payroll_employee_results,
-    payroll_result_lines,
-    payroll_run_versions,
-)
 from app.reports.amount_in_words import amount_in_words
 from app.reports.base import (
     ColumnKind,
@@ -50,6 +40,17 @@ from app.reports.base import (
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.pdf import to_pdf as base_to_pdf
 from app.reports.snapshots import load_report_snapshot
+from app.reports.posted_run import (
+    DEFAULT_CONTENT_TYPES,
+    DEFAULT_FILENAME_PATTERN,
+    ZERO,
+    load_result_rows,
+    money,
+    month_end,
+    period_label,
+    require_posted_run,
+    resolve_profile_as_of,
+)
 from app.schemas.employees import mask_value
 
 # Report type strings for orchestrator registration.
@@ -59,17 +60,10 @@ REPORT_TYPE_PAYSLIPS = "payslips"
 BankAdviceDTO = ReportDTO
 PayslipBundleDTO = ReportDTO
 
-_TWO_PLACES = Decimal("0.01")
-_ZERO = Decimal("0.00")
 
-DEFAULT_CONTENT_TYPES: dict[str, str] = {
-    "json": "application/json",
-    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "pdf": "application/pdf",
-}
 PAYSLIP_CONTENT_TYPES = DEFAULT_CONTENT_TYPES
-BANK_ADVICE_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
-PAYSLIPS_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
+BANK_ADVICE_FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
+PAYSLIPS_FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 
 _DEDUCTION_CLASSIFICATIONS = frozenset({"ag_deduction", "treasury_deduction", "external_recovery"})
 
@@ -87,135 +81,6 @@ class MissingPrimarySalaryAccountError(ValidationError):
             + ", ".join(ordered),
             details={"employee_numbers": ordered},
         )
-
-
-def _money(value: Any) -> Decimal:
-    return Decimal(str(value)).quantize(_TWO_PLACES)
-
-
-def _month_end(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
-
-
-def _period_label(year: int, month: int) -> str:
-    return date(year, month, 1).strftime("%B %Y")
-
-
-async def _require_posted_run(
-    session: AsyncSession,
-    ctx: ReportContext,
-) -> tuple[PayrollRun, Any, PayrollPeriod, Organization]:
-    run = await session.get(PayrollRun, ctx.posted_run_id)
-    if run is None or run.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll run not found.")
-    if run.status != "posted":
-        raise ConflictError(
-            f"Payroll run must be posted to generate reports; found {run.status!r}.",
-            details={"run_id": str(run.id), "status": run.status},
-        )
-    if run.current_version_id is None:
-        raise ConflictError("Posted payroll run has no current_version_id.")
-
-    version = (
-        (
-            await session.execute(
-                sa.select(payroll_run_versions).where(
-                    payroll_run_versions.c.id == run.current_version_id,
-                    payroll_run_versions.c.organization_id == ctx.organization_id,
-                )
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if version is None:
-        raise ConflictError("Posted payroll run version not found.")
-
-    period = await session.get(PayrollPeriod, run.period_id)
-    if period is None or period.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll period not found.")
-
-    org = await session.get(Organization, ctx.organization_id)
-    if org is None:
-        raise NotFoundError("Organization not found.")
-
-    return run, version, period, org
-
-
-async def _load_result_rows(
-    session: AsyncSession,
-    *,
-    organization_id: UUID,
-    run_version_id: UUID,
-) -> list[dict[str, Any]]:
-    results = (
-        (
-            await session.execute(
-                sa.select(payroll_employee_results)
-                .where(
-                    payroll_employee_results.c.organization_id == organization_id,
-                    payroll_employee_results.c.run_version_id == run_version_id,
-                )
-                .order_by(payroll_employee_results.c.employee_number)
-            )
-        )
-        .mappings()
-        .all()
-    )
-
-    if not results:
-        return []
-
-    result_ids = [row["id"] for row in results]
-    lines = (
-        (
-            await session.execute(
-                sa.select(payroll_result_lines)
-                .where(
-                    payroll_result_lines.c.organization_id == organization_id,
-                    payroll_result_lines.c.employee_result_id.in_(result_ids),
-                )
-                .order_by(
-                    payroll_result_lines.c.employee_result_id,
-                    payroll_result_lines.c.sequence,
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
-
-    lines_by_result: dict[UUID, list[Any]] = {rid: [] for rid in result_ids}
-    for line in lines:
-        lines_by_result[line["employee_result_id"]].append(line)
-
-    out: list[dict[str, Any]] = []
-    for row in results:
-        out.append({"result": row, "lines": lines_by_result.get(row["id"], [])})
-    return out
-
-
-async def _resolve_profile(
-    session: AsyncSession,
-    *,
-    organization_id: UUID,
-    employee_id: UUID,
-    as_of: date,
-) -> Any | None:
-    return (
-        (
-            await session.execute(
-                select_active_version(
-                    employee_profile_versions,
-                    header_id=employee_id,
-                    organization_id=organization_id,
-                    on_date=as_of,
-                )
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
 
 
 async def _resolve_designation(
@@ -321,7 +186,7 @@ def _posted_net_payable(version: Any) -> Decimal:
     totals = version["totals"] or {}
     if "net_payable" not in totals:
         raise ConflictError("Posted run version totals missing net_payable.")
-    return _money(totals["net_payable"])
+    return money(totals["net_payable"])
 
 
 def _posted_disbursement(version: Any) -> Decimal:
@@ -336,7 +201,7 @@ def _posted_disbursement(version: Any) -> Decimal:
     totals = version["totals"] or {}
     if "disbursement" not in totals:
         raise ConflictError("Posted run version totals missing disbursement.")
-    return _money(totals["disbursement"])
+    return money(totals["disbursement"])
 
 
 class BankAdviceBuilder:
@@ -347,9 +212,9 @@ class BankAdviceBuilder:
     """
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> BankAdviceDTO:
-        _run, version, period, org = await _require_posted_run(session, ctx)
-        as_of = _month_end(period.period_year, period.period_month)
-        packed = await _load_result_rows(
+        _run, version, period, org = await require_posted_run(session, ctx)
+        as_of = month_end(period.period_year, period.period_month)
+        packed = await load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
@@ -357,7 +222,7 @@ class BankAdviceBuilder:
 
         # Credit-worthiness is judged on disbursement (what is actually paid),
         # not on treasury-face net payable.
-        paid = [item for item in packed if _money(item["result"]["disbursement"]) > _ZERO]
+        paid = [item for item in packed if money(item["result"]["disbursement"]) > ZERO]
 
         snapshot = None
         identities: dict[str, Any] = {}
@@ -400,7 +265,7 @@ class BankAdviceBuilder:
 
         columns = _bank_advice_columns()
         rows: list[tuple[Any, ...]] = []
-        advice_total = _ZERO
+        advice_total = ZERO
 
         for item in paid:
             result = item["result"]
@@ -411,7 +276,7 @@ class BankAdviceBuilder:
                 account_number = str(identity["bank_account_number"])
                 ifsc = str(identity["bank_ifsc"])
             else:
-                profile = await _resolve_profile(
+                profile = await resolve_profile_as_of(
                     session,
                     organization_id=ctx.organization_id,
                     employee_id=employee_id,
@@ -421,7 +286,7 @@ class BankAdviceBuilder:
                 account = accounts[employee_id]
                 account_number = str(account["account_number"])
                 ifsc = str(account["ifsc"])
-            credit = _money(result["disbursement"])
+            credit = money(result["disbursement"])
             advice_total += credit
             rows.append(
                 (
@@ -433,7 +298,7 @@ class BankAdviceBuilder:
                 )
             )
 
-        advice_total = _money(advice_total)
+        advice_total = money(advice_total)
         posted_disbursement = _posted_disbursement(version)
         # Defense in depth: advice credits must equal the posted run disbursement.
         # NOTE: this is deliberately reconciled against disbursement, NOT against
@@ -484,7 +349,7 @@ class BankAdviceBuilder:
                 if snapshot is not None
                 else org.name
             ),
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=tuple(sections),
         )
 
@@ -524,9 +389,9 @@ class PayslipBundleBuilder:
     """Build a payslip bundle DTO with one section (PDF page) per employee."""
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> PayslipBundleDTO:
-        _run, version, period, org = await _require_posted_run(session, ctx)
-        as_of = _month_end(period.period_year, period.period_month)
-        packed = await _load_result_rows(
+        _run, version, period, org = await require_posted_run(session, ctx)
+        as_of = month_end(period.period_year, period.period_month)
+        packed = await load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
@@ -556,7 +421,7 @@ class PayslipBundleBuilder:
                 pran_masked = mask_value(identity.get("pran"))
                 designation = str(identity.get("designation") or "")
             else:
-                profile = await _resolve_profile(
+                profile = await resolve_profile_as_of(
                     session,
                     organization_id=ctx.organization_id,
                     employee_id=employee_id,
@@ -574,8 +439,8 @@ class PayslipBundleBuilder:
                 )
             # Payslip take-home is the disbursement (what reaches the bank
             # account), not the treasury-face net payable.
-            net = _money(result["net_payable"])
-            disbursement = _money(result["disbursement"])
+            net = money(result["net_payable"])
+            disbursement = money(result["disbursement"])
             words = amount_in_words(disbursement)
 
             rows: list[tuple[Any, ...]] = [
@@ -593,12 +458,12 @@ class PayslipBundleBuilder:
                         kind,
                         str(line["component_code"]),
                         _line_display_classification(line),
-                        _money(line["amount"]),
+                        money(line["amount"]),
                     )
                 )
-            offbill = _money(result["offbill_employer_remittance"])
+            offbill = money(result["offbill_employer_remittance"])
             rows.append(("net", "net_payable", "Net payable (treasury-face)", net))
-            if offbill > _ZERO:
+            if offbill > ZERO:
                 rows.append(
                     (
                         "net",
@@ -627,7 +492,7 @@ class PayslipBundleBuilder:
                 if snapshot is not None
                 else org.name
             ),
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=tuple(sections),
         )
 

@@ -19,26 +19,11 @@ amounts (never used for computation).
 
 from __future__ import annotations
 
-import calendar
-from datetime import date
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
 
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, NotFoundError
-from app.models.effective import select_active_version
-from app.models.employees import employee_profile_versions
-from app.models.identity import Organization
-from app.models.payroll_runs import (
-    PayrollPeriod,
-    PayrollRun,
-    payroll_employee_results,
-    payroll_result_lines,
-    payroll_run_versions,
-)
 from app.reports.base import (
     ColumnKind,
     ReportColumn,
@@ -51,6 +36,17 @@ from app.reports.base import (
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.formatting import format_inr
 from app.reports.pdf import to_pdf as base_to_pdf
+from app.reports.posted_run import (
+    DEFAULT_CONTENT_TYPES,
+    DEFAULT_FILENAME_PATTERN,
+    ZERO,
+    load_result_rows,
+    money,
+    month_end,
+    period_label,
+    require_posted_run,
+    resolve_profile_as_of,
+)
 
 REPORT_TYPE_INCOME_TAX = "income_tax_schedule"
 REPORT_TYPE_PROFESSIONAL_TAX = "professional_tax_schedule"
@@ -60,164 +56,31 @@ IncomeTaxScheduleDTO = ReportDTO
 ProfessionalTaxScheduleDTO = ReportDTO
 GisScheduleDTO = ReportDTO
 
-_TWO_PLACES = Decimal("0.01")
-_ZERO = Decimal("0.00")
 
 _INCOME_TAX = "INCOME_TAX"
 _PROFESSIONAL_TAX = "PROFESSIONAL_TAX"
 _GIS = "GIS"
 
-DEFAULT_CONTENT_TYPES: dict[str, str] = {
-    "json": "application/json",
-    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "pdf": "application/pdf",
-}
-FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
-
-
-def _money(value: Any) -> Decimal:
-    return Decimal(str(value)).quantize(_TWO_PLACES)
-
-
-def _month_end(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
-
-
-def _period_label(year: int, month: int) -> str:
-    return date(year, month, 1).strftime("%B %Y")
-
-
-async def _require_posted_run(
-    session: AsyncSession,
-    ctx: ReportContext,
-) -> tuple[PayrollRun, Any, PayrollPeriod, Organization]:
-    run = await session.get(PayrollRun, ctx.posted_run_id)
-    if run is None or run.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll run not found.")
-    if run.status != "posted":
-        raise ConflictError(
-            f"Payroll run must be posted to generate reports; found {run.status!r}.",
-            details={"run_id": str(run.id), "status": run.status},
-        )
-    if run.current_version_id is None:
-        raise ConflictError("Posted payroll run has no current_version_id.")
-
-    version = (
-        (
-            await session.execute(
-                sa.select(payroll_run_versions).where(
-                    payroll_run_versions.c.id == run.current_version_id,
-                    payroll_run_versions.c.organization_id == ctx.organization_id,
-                )
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if version is None:
-        raise ConflictError("Posted payroll run version not found.")
-
-    period = await session.get(PayrollPeriod, run.period_id)
-    if period is None or period.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll period not found.")
-
-    org = await session.get(Organization, ctx.organization_id)
-    if org is None:
-        raise NotFoundError("Organization not found.")
-
-    return run, version, period, org
-
-
-async def _load_result_rows(
-    session: AsyncSession,
-    *,
-    organization_id: UUID,
-    run_version_id: UUID,
-) -> list[dict[str, Any]]:
-    results = (
-        (
-            await session.execute(
-                sa.select(payroll_employee_results)
-                .where(
-                    payroll_employee_results.c.organization_id == organization_id,
-                    payroll_employee_results.c.run_version_id == run_version_id,
-                )
-                .order_by(payroll_employee_results.c.employee_number)
-            )
-        )
-        .mappings()
-        .all()
-    )
-    if not results:
-        return []
-
-    result_ids = [row["id"] for row in results]
-    lines = (
-        (
-            await session.execute(
-                sa.select(payroll_result_lines)
-                .where(
-                    payroll_result_lines.c.organization_id == organization_id,
-                    payroll_result_lines.c.employee_result_id.in_(result_ids),
-                )
-                .order_by(
-                    payroll_result_lines.c.employee_result_id,
-                    payroll_result_lines.c.sequence,
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
-    lines_by_result: dict[UUID, list[Any]] = {rid: [] for rid in result_ids}
-    for line in lines:
-        lines_by_result[line["employee_result_id"]].append(line)
-
-    return [{"result": row, "lines": lines_by_result.get(row["id"], [])} for row in results]
+FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 
 
 def _line_amount_for_code(lines: list[Any], code: str) -> Decimal | None:
     """Return summed posted amount for ``code``, or None when no line exists."""
-    total = _ZERO
+    total = ZERO
     found = False
     for line in lines:
         if str(line["component_code"]) != code:
             continue
         found = True
-        total += _money(line["amount"])
+        total += money(line["amount"])
     if not found:
         return None
-    return _money(total)
-
-
-async def _resolve_profile(
-    session: AsyncSession,
-    *,
-    organization_id: UUID,
-    employee_id: UUID,
-    as_of: date,
-) -> dict[str, Any] | None:
-    # Posted runs pin immutable effective-dated version ids (ADR 0005). Resolving
-    # identity fields as-of period end is safe: versions are never mutated in place.
-    return (
-        (
-            await session.execute(
-                select_active_version(
-                    employee_profile_versions,
-                    header_id=employee_id,
-                    organization_id=organization_id,
-                    on_date=as_of,
-                )
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
+    return money(total)
 
 
 def _pt_slab_note(amounts: list[Decimal], liable_count: int) -> str:
     """Display-only note from distinct posted PT amounts (not used for computation)."""
-    unique = sorted({_money(a) for a in amounts})
+    unique = sorted({money(a) for a in amounts})
     if not unique:
         return f"Professional tax slab note: no posted amounts; liable employees: {liable_count}."
     amounts_display = ", ".join(format_inr(a) for a in unique)
@@ -260,23 +123,23 @@ class IncomeTaxScheduleBuilder:
     """
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> IncomeTaxScheduleDTO:
-        _run, version, period, org = await _require_posted_run(session, ctx)
-        as_of = _month_end(period.period_year, period.period_month)
-        packed = await _load_result_rows(
+        _run, version, period, org = await require_posted_run(session, ctx)
+        as_of = month_end(period.period_year, period.period_month)
+        packed = await load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
         )
         columns = _income_tax_columns()
         rows: list[tuple[Any, ...]] = []
-        tax_total = _ZERO
+        tax_total = ZERO
 
         for item in packed:
             result = item["result"]
             tax = _line_amount_for_code(item["lines"], _INCOME_TAX)
             if tax is None:
                 continue
-            profile = await _resolve_profile(
+            profile = await resolve_profile_as_of(
                 session,
                 organization_id=ctx.organization_id,
                 employee_id=result["employee_id"],
@@ -285,7 +148,7 @@ class IncomeTaxScheduleBuilder:
             name = str(profile["name"]) if profile is not None else ""
             # Full PAN — masking is intentionally not applied (tax-authority schedule).
             pan = str(profile["pan"] or "") if profile is not None else ""
-            gross = _money(result["gross_total"])
+            gross = money(result["gross_total"])
             rows.append(
                 (
                     str(result["employee_number"]),
@@ -297,14 +160,14 @@ class IncomeTaxScheduleBuilder:
             )
             tax_total += tax
 
-        totals: tuple[Any, ...] = ("TOTAL", None, None, None, _money(tax_total))
+        totals: tuple[Any, ...] = ("TOTAL", None, None, None, money(tax_total))
 
         return ReportDTO(
             report_type=REPORT_TYPE_INCOME_TAX,
             template_version=ctx.template_version,
             title="Income Tax schedule",
             organization_name=org.name,
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=(
                 TableSection(
                     title="Income Tax",
@@ -324,16 +187,16 @@ class ProfessionalTaxScheduleBuilder:
     """
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> ProfessionalTaxScheduleDTO:
-        _run, version, period, org = await _require_posted_run(session, ctx)
-        as_of = _month_end(period.period_year, period.period_month)
-        packed = await _load_result_rows(
+        _run, version, period, org = await require_posted_run(session, ctx)
+        as_of = month_end(period.period_year, period.period_month)
+        packed = await load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
         )
         columns = _professional_tax_columns()
         rows: list[tuple[Any, ...]] = []
-        pt_total = _ZERO
+        pt_total = ZERO
         posted_amounts: list[Decimal] = []
 
         for item in packed:
@@ -341,7 +204,7 @@ class ProfessionalTaxScheduleBuilder:
             pt = _line_amount_for_code(item["lines"], _PROFESSIONAL_TAX)
             if pt is None:
                 continue
-            profile = await _resolve_profile(
+            profile = await resolve_profile_as_of(
                 session,
                 organization_id=ctx.organization_id,
                 employee_id=result["employee_id"],
@@ -353,7 +216,7 @@ class ProfessionalTaxScheduleBuilder:
             posted_amounts.append(pt)
 
         liable_count = len(rows)
-        totals: tuple[Any, ...] = ("TOTAL", None, _money(pt_total))
+        totals: tuple[Any, ...] = ("TOTAL", None, money(pt_total))
         slab_note = _pt_slab_note(posted_amounts, liable_count)
 
         return ReportDTO(
@@ -361,7 +224,7 @@ class ProfessionalTaxScheduleBuilder:
             template_version=ctx.template_version,
             title="Professional Tax schedule",
             organization_name=org.name,
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=(
                 TableSection(
                     title="Professional Tax",
@@ -382,23 +245,23 @@ class GisScheduleBuilder:
     """Build the GIS remittance schedule from a posted run (mixed slab amounts)."""
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> GisScheduleDTO:
-        _run, version, period, org = await _require_posted_run(session, ctx)
-        as_of = _month_end(period.period_year, period.period_month)
-        packed = await _load_result_rows(
+        _run, version, period, org = await require_posted_run(session, ctx)
+        as_of = month_end(period.period_year, period.period_month)
+        packed = await load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
         )
         columns = _gis_columns()
         rows: list[tuple[Any, ...]] = []
-        gis_total = _ZERO
+        gis_total = ZERO
 
         for item in packed:
             result = item["result"]
             gis = _line_amount_for_code(item["lines"], _GIS)
             if gis is None:
                 continue
-            profile = await _resolve_profile(
+            profile = await resolve_profile_as_of(
                 session,
                 organization_id=ctx.organization_id,
                 employee_id=result["employee_id"],
@@ -408,14 +271,14 @@ class GisScheduleBuilder:
             rows.append((str(result["employee_number"]), name, gis))
             gis_total += gis
 
-        totals: tuple[Any, ...] = ("TOTAL", None, _money(gis_total))
+        totals: tuple[Any, ...] = ("TOTAL", None, money(gis_total))
 
         return ReportDTO(
             report_type=REPORT_TYPE_GIS,
             template_version=ctx.template_version,
             title="GIS schedule",
             organization_name=org.name,
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=(
                 TableSection(
                     title="GIS",
