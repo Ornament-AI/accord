@@ -1,14 +1,64 @@
+import { GrainGradient } from "@paper-design/shaders-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { LightRays } from "@/components/ui/light-rays";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { useAuth } from "@/contexts/AuthContext";
 import { resolveApiUrl } from "@/lib/api-url";
 import { APP_NAME } from "@/lib/branding";
+import { useReducedMotion } from "@/lib/motion";
 import { sanitizeReturnTo } from "@/lib/return-to";
+import { useTheme } from "@/lib/ui/providers/theme-provider";
+
+const GRAIN_GRADIENT_COLORS = {
+	light: {
+		background: "#f6f8f7",
+		colors: ["#e7f0ed", "#bddbd4", "#78b9ad", "#2f8179"],
+	},
+	dark: {
+		background: "#121716",
+		colors: ["#123331", "#1f5a55", "#2f8179", "#6aa99f"],
+	},
+};
+
+function useResolvedDarkTheme() {
+	const { theme } = useTheme();
+	const [systemPrefersDark, setSystemPrefersDark] = useState(
+		() => window.matchMedia("(prefers-color-scheme: dark)").matches,
+	);
+
+	useEffect(() => {
+		if (theme !== "system") return;
+
+		const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+		const handleChange = () => setSystemPrefersDark(mediaQuery.matches);
+		handleChange();
+		mediaQuery.addEventListener("change", handleChange);
+		return () => mediaQuery.removeEventListener("change", handleChange);
+	}, [theme]);
+
+	return theme === "dark" || (theme === "system" && systemPrefersDark);
+}
+
+function LoginBackground() {
+	const isDark = useResolvedDarkTheme();
+	const prefersReducedMotion = useReducedMotion();
+	const palette = isDark ? GRAIN_GRADIENT_COLORS.dark : GRAIN_GRADIENT_COLORS.light;
+
+	return (
+		<GrainGradient
+			aria-hidden="true"
+			className="pointer-events-none absolute inset-0"
+			width="100%"
+			height="100%"
+			colorBack={palette.background}
+			colors={palette.colors}
+			speed={prefersReducedMotion ? 0 : 1}
+		/>
+	);
+}
 
 function consumeStoredError(): string | null {
 	const stored = sessionStorage.getItem("auth_error");
@@ -50,8 +100,8 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-background p-6 md:p-10 [--ray-color:oklch(0.704_0.14_182.503/0.12)] dark:[--ray-color:oklch(0.47_0.076_188.216/0.10)]">
-			<LightRays color="var(--ray-color)" count={8} blur={30} speed={12} length="75vh" />
+		<div className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-background p-6 md:p-10">
+			<LoginBackground />
 			<div className="absolute top-6 right-6 z-10">
 				<ThemeSwitcher />
 			</div>
@@ -62,7 +112,7 @@ export default function LoginPage() {
 					</span>
 				</div>
 
-				<div className="app-material-level-1 flex flex-col gap-6 rounded-lg border app-border-level-1 bg-card p-6">
+				<div className="flex flex-col gap-6 rounded-lg border app-border-level-1 bg-card p-6 shadow-sm">
 					<div className="flex flex-col items-center gap-2 text-center">
 						<h1 className="text-2xl font-semibold">Welcome</h1>
 						<p className="text-sm text-muted-foreground">
