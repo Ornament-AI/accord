@@ -9,13 +9,13 @@
 
 ## Context
 
-Accord generates payroll export artifacts — bank files, statutory reports, payslips, and other catalogued outputs ([report-catalog.md](../report-specs/report-catalog.md)) — after workflow commands such as `post` ([ADR 0008](0008-command-workflow-idempotency.md)). Generation is CPU- and I/O-bound, must survive API restarts, and must remain organization-scoped under RLS.
+Accord generates payroll export artifacts: bank files, statutory reports, payslips, and other catalogued outputs ([report-catalog.md](../report-specs/report-catalog.md)). They are produced after workflow commands such as `post` ([ADR 0008](0008-command-workflow-idempotency.md)). Generation is CPU- and I/O-bound. It must survive API restarts, and it must stay organization-scoped under RLS.
 
-Payroll downloads are compliance-sensitive. Every successful download must produce an append-only `audit_events` row with command `artifact.download` ([ADR 0009](0009-audit-outbox.md)). That conflicts with handing clients storage URLs that bypass application authorization and audit.
+Payroll downloads are sensitive, and compliance rules apply to them. Every successful download must produce an append-only `audit_events` row with command `artifact.download` ([ADR 0009](0009-audit-outbox.md)). If we hand clients raw storage URLs, they can skip the app’s authz checks and that audit row.
 
-The platform also needs background work for report generation, retention purge, orphan reconciliation, and lease reaping. Redis + Celery would add a second durability and tenancy story beside PostgreSQL, which already owns transactional truth for runs, audit, and outbox.
+The platform also needs background work: it must generate reports, purge expired artifacts, reconcile orphans, and reap stale leases. Redis + Celery would add a second durability and tenancy story. PostgreSQL already owns the transactional truth for runs, audit, and outbox.
 
-This ADR decides: (1) a durable PostgreSQL job queue (not Redis/Celery); (2) S3-compatible object storage with opaque keys and checksums; (3) **backend-streamed downloads** as primary (not presigned); (4) a DB-first consistency protocol for `export_artifacts`.
+This ADR decides four things: (1) a durable PostgreSQL job queue (not Redis/Celery); (2) S3-compatible object storage with opaque keys and checksums; (3) **backend-streamed downloads** as the primary model (not presigned); (4) a DB-first consistency protocol for `export_artifacts`.
 
 ---
 
@@ -23,7 +23,7 @@ This ADR decides: (1) a durable PostgreSQL job queue (not Redis/Celery); (2) S3-
 
 ### 1. Durable PostgreSQL `jobs` queue (not Redis/Celery)
 
-Background work is rows in `jobs`. Workers claim with `SELECT … FOR UPDATE SKIP LOCKED`, hold a time-bounded lease, heartbeat while running, and transition through an explicit status set. Redis, Celery, RQ, Sidekiq, and equivalent brokers are **out of scope** for v1; PostgreSQL is the sole queue durability store.
+Background work is rows in `jobs`. Workers claim with `SELECT … FOR UPDATE SKIP LOCKED`. They hold a time-bounded lease, heartbeat while running, and move through an explicit status set. Redis, Celery, RQ, Sidekiq, and equivalent brokers are **out of scope** for v1. PostgreSQL is the sole queue durability store.
 
 #### Job statuses (closed set)
 
@@ -73,7 +73,7 @@ CREATE UNIQUE INDEX jobs_org_type_dedupe_inflight_uidx
     AND status IN ('queued', 'running');
 ```
 
-Prefer inserting the job in the **same transaction** as the commanding mutation (e.g. `post` → `export.generate`) per [ADR 0008](0008-command-workflow-idempotency.md). If enqueue is deferred, use the outbox ([ADR 0009](0009-audit-outbox.md)).
+Prefer to insert the job in the **same transaction** as the commanding mutation (e.g. `post` → `export.generate`), per [ADR 0008](0008-command-workflow-idempotency.md). If the enqueue is deferred, use the outbox ([ADR 0009](0009-audit-outbox.md)).
 
 ---
 
@@ -110,11 +110,11 @@ RETURNING j.*;
 COMMIT;
 ```
 
-After any cross-org claim, the worker **must** `SET LOCAL app.current_org_id` to the claimed row’s `organization_id` for every subsequent job transaction (handler, artifact writes, audit).
+After any cross-org claim, the worker **must** `SET LOCAL app.current_org_id` to the claimed row’s `organization_id`. That applies to every later job transaction: the handler, artifact writes, and audit.
 
 #### Lease and heartbeat
 
-Default lease: **60s** (configurable per `job_type`). While `running`, extend on a cadence under the window (e.g. every 20s):
+Default lease: **60s** (configurable per `job_type`). While `running`, extend the lease on a cadence under the window (e.g. every 20s):
 
 ```sql
 UPDATE jobs
@@ -126,18 +126,18 @@ WHERE id = :job_id
   AND cancel_requested = false;
 ```
 
-Zero-row heartbeat (cancel flipped) → cooperative stop → `cancelled`.
+A zero-row heartbeat means the cancel flag flipped. The worker stops at a safe point and sets `cancelled`.
 
 #### Exponential backoff then `dead_letter`
 
-On retryable failure: record `last_error`. If `attempt_count < max_attempts`, set `status = queued`, clear lease fields, set  
+On a retryable failure: record `last_error`. If `attempt_count < max_attempts`, set `status = queued`, clear the lease fields, and set  
 `available_at = now() + (interval '1 second' * (2 ^ least(attempt_count, 8)))`  
-(exponential backoff with cap, optional jitter). If attempts exhausted, `status = dead_letter`, `finished_at = now()`. Non-retryable errors (invalid payload, missing posted run, unknown `report_type`) go straight to `dead_letter`.
+(exponential backoff with a cap, optional jitter). If attempts are exhausted, set `status = dead_letter` and `finished_at = now()`. Non-retryable errors (invalid payload, missing posted run, unknown `report_type`) go straight to `dead_letter`.
 
 #### Cooperative cancel
 
-- `queued` + `cancel_requested` → `cancelled` immediately (claimer skips these rows).
-- `running` + cancel → observe on heartbeat/checkpoints; no new side effects; then `cancelled`.
+- `queued` + `cancel_requested` → `cancelled` right away (the claimer skips these rows).
+- `running` + cancel → observed on heartbeat/checkpoints; no new side effects; then `cancelled`.
 - Terminal jobs ignore cancel.
 
 ---
@@ -147,7 +147,7 @@ On retryable failure: record `last_error`. If `attempt_count < max_attempts`, se
 | Concern | Decision |
 | --- | --- |
 | Image | **Same backend Docker image** as the API. |
-| Entrypoint | Different entrypoint (e.g. `accord-worker` vs `accord-api`). |
+| Entrypoint | Different entrypoint/command: the API runs `uvicorn app.main:app`; the worker runs `python worker.py` (`backend/worker.py`). |
 | Org GUC | Every job txn: `SET LOCAL app.current_org_id` to the claimed org before tenant writes. |
 | Shutdown | On `SIGTERM`: stop claiming; drain in-flight up to grace; exit (leases expire → reaper). |
 | Lease reaper | `running` with `lease_expires_at < now()` → requeue (`queued`, clear lease) or `dead_letter` if attempts exhausted. |
@@ -175,18 +175,18 @@ WHERE status = 'running'
 
 **Object key (normative):** `{organization_id}/{object_uuid}`
 
-Keys are **opaque** — no employee names, account numbers, period labels, report titles, or other human-readable/business data in the path. Org prefix aids lifecycle ops; **DB + RLS remain authoritative** for authz. On finalize, record **SHA-256**, size, and etag/version on `export_artifacts`. Bucket is private; application credentials only.
+Keys are **opaque**. No employee names, account numbers, period labels, report titles, or other readable business data may appear in the path. The org prefix helps lifecycle ops, but **DB + RLS remain authoritative** for authz. On finalize, record the **SHA-256**, size, and etag/version on `export_artifacts`. The bucket is private. Only the app’s own credentials can reach it.
 
 ---
 
 ### 5. Primary download model: backend-streamed (not presigned)
 
-**Primary model:** the API authorizes the caller, opens the object with server credentials, and **streams** bytes over the authenticated Accord HTTPS session.
+**Primary model:** the API checks the caller’s rights, opens the object with server credentials, and **streams** the bytes over the authenticated Accord HTTPS session.
 
 **Justification:**
 
-1. **Payroll sensitivity** — bank files, payslips, and statutory extracts must not be reachable via transferable URLs that outlive a session or leak via logs/referrers.
-2. **Per-request authorization** — each download re-checks org membership, capabilities, artifact `retention_state` / `status`, and run visibility.
+1. **Payroll sensitivity** — bank files, payslips, and statutory extracts must not be reachable through URLs that can be passed around. Such URLs can outlive a session or leak via logs and referrers.
+2. **Per-request authorization** — each download re-checks org membership, capabilities, the artifact’s `retention_state` / `status`, and run visibility.
 3. **Reliable audit** — the stream handler inserts `audit_events` with `command = 'artifact.download'` ([ADR 0009](0009-audit-outbox.md)), with `entity_type = 'export_artifact'`, actor, request id, and metadata. A presigned GET to storage **bypasses** this path.
 
 **Tradeoff vs presigned:**
@@ -198,7 +198,7 @@ Keys are **opaque** — no employee names, account numbers, period labels, repor
 | Ops | API bandwidth / buffering | Offloads bandwidth to S3/MinIO |
 | Leakage | No durable client-held URL | URL is a bearer capability until expiry |
 
-**Presigned URLs are NOT the primary download model** and are not used for end-user payroll artifact download in v1. Future internal use requires an ADR amendment plus equivalent audit evidence. Every download is audit-logged per [ADR 0009](0009-audit-outbox.md).
+**Presigned URLs are NOT the primary download model.** They are not used for end-user payroll artifact download in v1. Any future internal use needs an ADR amendment, plus audit evidence of equal strength. Every download is audit-logged per [ADR 0009](0009-audit-outbox.md).
 
 ---
 
@@ -218,12 +218,12 @@ Keys are **opaque** — no employee names, account numbers, period labels, repor
 | 3 Finalize | DB error after PUT | Object may exist; retry finalize via HEAD/re-hash. |
 | 3 Finalize | Checksum mismatch | Do not mark `available`; delete/overwrite object; fail attempt. |
 
-Never mark `available` without verified SHA-256 and size. Download handlers ignore non-`available` rows.
+Never mark a row `available` without a verified SHA-256 and size. Download handlers ignore non-`available` rows.
 
 **Orphan reconciliation** (`storage.reconcile_orphans`):
 
-1. **Stuck pending** older than threshold → re-drive upload/finalize or mark failed and delete partial object.
-2. **Orphaned objects** (storage key with no DB row / failed past grace) → delete from storage.
+1. **Stuck pending** rows older than a threshold → re-drive upload/finalize, or mark failed and delete the partial object.
+2. **Orphaned objects** (a storage key with no DB row, or failed past grace) → delete from storage.
 3. **Missing objects** (`available` but HEAD 404) → mark unhealthy / re-queue generation; never silently serve.
 
 ---
@@ -256,17 +256,17 @@ Never mark `available` without verified SHA-256 and size. Download handlers igno
 
 **Indexes:** `(organization_id, posted_run_id, report_type, created_at DESC)`; `(organization_id, status, created_at)`; `(organization_id, retention_state, expires_at)`; unique `(organization_id, object_key)`.
 
-**Retention purge** (`storage.purge_expired`): select `active` with `expires_at < now()` → `expired` → delete object → `purged`. Non-`active` / non-`available` downloads fail authz (no stream). Purge/reconcile use the same queue, lease, and org GUC rules.
+**Retention purge** (`storage.purge_expired`): select `active` rows with `expires_at < now()` → mark `expired` → delete the object → mark `purged`. Downloads of non-`active` / non-`available` rows fail authz (no stream). Purge and reconcile use the same queue, lease, and org GUC rules.
 
-**Download auditing:** every successful stream authorization writes `audit_events` with `command = 'artifact.download'` ([ADR 0009](0009-audit-outbox.md)). Successful byte access must not occur without that audit row.
+**Download auditing:** every successful stream authorization writes `audit_events` with `command = 'artifact.download'` ([ADR 0009](0009-audit-outbox.md)). No bytes may flow without that audit row.
 
 ---
 
 ## Consequences
 
-**Positive:** One durability system (PostgreSQL) for commands, audit, outbox, jobs, and artifact metadata. `SKIP LOCKED` scales to multiple workers. Opaque keys + checksums reduce leakage. Backend-streamed downloads make `artifact.download` audit enforceable. DB-first pending → available supports crash recovery.
+**Positive:** One durability system (PostgreSQL) covers commands, audit, outbox, jobs, and artifact metadata. `SKIP LOCKED` scales to multiple workers. Opaque keys plus checksums reduce leakage. Backend-streamed downloads make the `artifact.download` audit enforceable. The DB-first pending → available flow supports crash recovery.
 
-**Costs:** API bears download bandwidth (acceptable for payroll sizes; revisit only via new ADR). Workers must implement leases, heartbeats, and `SIGTERM` correctly. Cross-org poller needs a privileged path. Orphan reconciliation is mandatory ops machinery. Alert on `dead_letter` growth, stuck `pending` artifacts, and unreaped expired leases.
+**Costs:** The API bears download bandwidth (acceptable for payroll sizes; revisit only via a new ADR). Workers must get leases, heartbeats, and `SIGTERM` right. The cross-org poller needs a privileged path. Running the orphan reconciler is not optional. Alert on `dead_letter` growth, stuck `pending` artifacts, and expired leases that were never reaped.
 
 ---
 
@@ -274,24 +274,24 @@ Never mark `available` without verified SHA-256 and size. Download handlers igno
 
 ### A. Redis / Celery as primary queue
 
-**Rejected for v1.** Second durability/tenancy boundary; handlers still need DB idempotency. Postgres `SKIP LOCKED` suffices for export/purge/reconcile volume.
+**Rejected for v1.** It adds a second durability/tenancy boundary, and handlers still need DB idempotency. Postgres `SKIP LOCKED` handles the export/purge/reconcile volume.
 
 ### B. Presigned URLs as primary download
 
-**Rejected as primary.** Undermines per-request authz and reliable `artifact.download` auditing ([ADR 0009](0009-audit-outbox.md)). Bandwidth offload does not justify the compliance gap. Backend streaming is mandatory for user-facing downloads; **presigned is not primary**.
+**Rejected as primary.** It undercuts per-request authz and reliable `artifact.download` auditing ([ADR 0009](0009-audit-outbox.md)). Bandwidth offload does not justify the compliance gap. Backend streaming is mandatory for user-facing downloads; **presigned is not primary**.
 
 ### C. Upload-first (object then DB row)
 
-**Rejected.** Crashes after PUT leave unreferenced objects. DB intent `pending` first gives a control-plane record for reconciliation.
+**Rejected.** A crash after the PUT leaves objects that nothing references. A DB intent row (`pending`) first gives a control-plane record for reconciliation.
 
 ### D. Human-readable object keys
 
-**Rejected.** Keys appear in logs and listings; payroll identifiers must not live in paths. Opaque `{organization_id}/{object_uuid}` only.
+**Rejected.** Keys show up in logs and listings, and payroll identifiers must not live in paths. Opaque `{organization_id}/{object_uuid}` only.
 
 ### E. Separate worker image/codebase
 
-**Rejected.** Domain drift risk. Same image, different entrypoint.
+**Rejected.** Risk of domain drift. Same image, different entrypoint.
 
 ### F. Synchronous in-request generation only
 
-**Rejected** for posted-run catalog exports. Timeouts and scaling require durable jobs; tiny sync previews (if any) are outside this artifact store.
+**Rejected** for posted-run catalog exports. Timeouts and scaling demand durable jobs. Tiny sync previews (if any) sit outside this artifact store.

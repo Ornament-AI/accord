@@ -1,20 +1,23 @@
 # Release Acceptance
 
-Release acceptance matrix for Accord Phase 0 / subsequent releases.
-Gates are **A, B, C, D, E, F, H, I, J, K** — identical lettering to
-[testing.md](testing.md). **There is no gate G.**
+This matrix defines the gates a release must pass. It covers Accord Phase 0
+and every later release. The gates are lettered **A, B, C, D, E, F, H, I, J,
+K** — the same letters as [testing.md](testing.md). **There is no Gate G.**
 
-Cross-ref: [testing.md](testing.md), [threat-model.md](threat-model.md),
+Cross-references: [testing.md](testing.md), [threat-model.md](threat-model.md),
 [security.md](security.md).
 
-A release is accepted only when every gate below is **Pass** with linked
-evidence. Partial passes do not ship.
+We accept a release only when every gate below is a **Pass** with linked
+evidence. A partial pass does not ship.
 
 ---
 
 ## Gate matrix
 
 ### Gate A — Atlas baseline
+
+This gate confirms the declared Atlas upstream baseline before any product
+gate runs.
 
 | Field | Content |
 | --- | --- |
@@ -24,6 +27,8 @@ evidence. Partial passes do not ship.
 
 ### Gate B — Phase 0 contracts review
 
+Humans review the Phase 0 contract documents and sign off on them.
+
 | Field | Content |
 | --- | --- |
 | **Description** | Human review that Phase 0 contracts are complete, mutually consistent, and approved: testing, threat model, release acceptance, security, ADRs, payroll domain. |
@@ -31,6 +36,9 @@ evidence. Partial passes do not ship.
 | **Evidence artifact** | Signed checklist (PR review + release manager sign-off); checklist PDF/markdown in release packet |
 
 ### Gate C — Transplant shell CI
+
+CI must pass lint, typecheck, unit tests, and API smoke tests on the
+transplanted shell.
 
 | Field | Content |
 | --- | --- |
@@ -40,6 +48,8 @@ evidence. Partial passes do not ship.
 
 ### Gate D — Cross-tenant isolation
 
+Tests must prove that no tenant can ever read another tenant's data.
+
 | Field | Content |
 | --- | --- |
 | **Description** | Prove organization isolation under forced RLS with the restricted runtime role; no cross-tenant IDOR via API, services, storage, or workers. |
@@ -47,6 +57,9 @@ evidence. Partial passes do not ship.
 | **Evidence artifact** | CI URL for RLS job; RLS coverage report listing tenant tables with forced RLS (`ALTER TABLE ... FORCE ROW LEVEL SECURITY`) |
 
 ### Gate E — Effective-dated master data
+
+Tests must prove that dated master data stays correct across period
+boundaries.
 
 | Field | Content |
 | --- | --- |
@@ -56,6 +69,8 @@ evidence. Partial passes do not ship.
 
 ### Gate F — Calculation correctness
 
+Tests must prove the payroll math is exact and uses no floats.
+
 | Field | Content |
 | --- | --- |
 | **Description** | June 2026 synthetic totals and money/invariant unit proofs; Decimal-only payroll domain (no float). |
@@ -63,6 +78,9 @@ evidence. Partial passes do not ship.
 | **Evidence artifact** | CI URL; calculation golden diff report; float-ban script transcript |
 
 ### Gate H — Workflow integrity (maker/checker, post, idempotency)
+
+Tests must prove the run workflow is safe: maker/checker splits, posted data
+stays frozen, and repeated commands stay safe.
 
 | Field | Content |
 | --- | --- |
@@ -72,6 +90,8 @@ evidence. Partial passes do not ship.
 
 ### Gate I — Export durability & object isolation
 
+Tests must prove that export files endure and stay private to their tenant.
+
 | Field | Content |
 | --- | --- |
 | **Description** | S3-compatible export artifacts endure and cannot be read across tenants. |
@@ -80,6 +100,9 @@ evidence. Partial passes do not ship.
 
 ### Gate J — Reports & reconciliation
 
+Tests must prove each report family reconciles to posted data and stays
+consistent across Excel and PDF.
+
 | Field | Content |
 | --- | --- |
 | **Description** | Every report type uses one DTO/source of truth for Excel+PDF; semantic goldens; reconciliation to posted source. |
@@ -87,6 +110,8 @@ evidence. Partial passes do not ship.
 | **Evidence artifact** | CI URL; golden comparison report (sanitized fixtures only — no real PII) |
 
 ### Gate K — Deploy / restore / E2E
+
+Tests must prove that deploy, restore, and browser flows work end to end.
 
 | Field | Content |
 | --- | --- |
@@ -97,6 +122,8 @@ evidence. Partial passes do not ship.
 ---
 
 ## Summary table
+
+Each gate at a glance.
 
 | Gate | Short name | Primary suite paths | Evidence |
 | --- | --- | --- | --- |
@@ -115,7 +142,7 @@ evidence. Partial passes do not ship.
 
 ## Final quality gates checklist
 
-Release manager confirms each item before tagging:
+The release manager confirms each item before tagging.
 
 | # | Requirement | Pointer |
 | --- | --- | --- |
@@ -142,6 +169,7 @@ Release manager confirms each item before tagging:
 | Security reviewer | | | D, H, K + threat-model | |
 | Release manager | | | All + final checklist | |
 
-**Ship rule:** If any gate is Fail or evidence is missing, do not promote.
-File exceptions only as time-bounded, signed waivers referencing the specific
-threat and compensating control from [threat-model.md](threat-model.md).
+**Ship rule:** Do not promote if any gate fails or its evidence is missing.
+Exceptions need a signed, time-bounded waiver. Each waiver must name the
+specific threat and its compensating control from
+[threat-model.md](threat-model.md).

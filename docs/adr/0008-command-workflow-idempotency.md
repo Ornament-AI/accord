@@ -7,16 +7,16 @@
 
 ## Context
 
-Payroll runs move through a maker/checker lifecycle (see [payroll-domain.md](../payroll-domain.md)): draft inputs → immutable calculation snapshots (ADR 0007) → validation → submission → approval → posting → optional reversal. Accidental or hostile status changes via generic REST updates would bypass dual control, break auditability, and allow double-posting under retries.
+Payroll runs move through a maker/checker lifecycle (see [payroll-domain.md](../payroll-domain.md)): draft inputs → immutable calculation snapshots (ADR 0007) → validation → submission → approval → posting → optional reversal. A generic REST update could change status by accident or by attack. That would bypass dual control, break the audit trail, and allow double-posting under retries.
 
-Clients and workers retry. Concurrent operators race. The system must therefore:
+Clients and workers retry. Operators race each other. So the system must:
 
-1. Expose **only explicit commands** for workflow status changes.
+1. Change workflow status **only through explicit, named commands**.
 2. Bind each submission to one **immutable calculated run version** and a **content hash**.
-3. Enforce **approver ≠ submitter** in both service and database.
+3. Enforce **approver ≠ submitter** in both the service and the database.
 4. Post **exactly once** under row locks, with audit + outbox in the same transaction (ADR 0009).
-5. Provide **organization-scoped idempotency** with payload-hash collision detection and TTL cleanup.
-6. Serialize mutating commands with row locks (and optional advisory locks) while draft edits use optimistic concurrency.
+5. Give each command an **idempotency key, scoped per organization**. Flag key reuse with a changed payload. Clean up old keys by TTL.
+6. Serialize mutating commands with row locks, plus optional advisory locks. Draft edits use optimistic concurrency instead.
 
 ## Decision
 
@@ -37,11 +37,11 @@ All payroll run **status** transitions occur **only** through these named comman
 
 **Hard rules:**
 
-1. **Generic CRUD / PATCH / PUT must never change workflow status.** Create-run and draft-input APIs may set initial `draft` only at insert time; thereafter `status` is command-owned.
+1. **Generic CRUD / PATCH / PUT must never change workflow status.** Create-run and draft-input APIs may set the initial `draft` value, and only at insert time. After that, `status` belongs to the commands.
 2. Enforcement is layered:
-   - **(a) Schemas:** Generic create/update request/response schemas for runs and draft inputs **omit** `status` (and omit `bound_run_version_id`, `submission_content_hash`, `submitted_by_id`, `approved_by_id` as writable fields). Clients cannot patch status.
-   - **(b) Service layer:** Only dedicated command service functions (e.g. `PayrollRunCommands.calculate|validate|submit|…`) perform status updates. Repositories used by generic handlers refuse status columns.
-   - **(c) Database:** A `BEFORE UPDATE` trigger on `payroll_runs` raises if `OLD.status IS DISTINCT FROM NEW.status` unless the session has executed `SET LOCAL app.allow_workflow_transition = 'true'` inside the command transaction. Command services set that GUC for the duration of the transaction only; generic code paths never set it.
+   - **(a) Schemas:** Generic create/update schemas for runs and draft inputs **omit** `status`. They also omit `bound_run_version_id`, `submission_content_hash`, `submitted_by_id`, and `approved_by_id` as writable fields. Clients cannot patch status.
+   - **(b) Service layer:** Only dedicated command service functions update status. In code these are `calculate_run_command` (`backend/app/services/run_calculation/`), `validate_run`, `submit_run`, `withdraw_run`, `approve_run`, `reject_run` (`backend/app/services/run_workflow.py`), and `post_run` / `reverse_run` (`backend/app/services/run_posting.py`). Generic handlers go through repositories that refuse status columns.
+   - **(c) Database:** A `BEFORE UPDATE` trigger on `payroll_runs` raises if `OLD.status IS DISTINCT FROM NEW.status`, unless the session has run `SET LOCAL app.allow_workflow_transition = 'true'` inside the command transaction. Command services set that GUC for the length of the transaction only. Generic code paths never set it.
 
 ### 2. Statuses and transition matrix
 
@@ -49,7 +49,7 @@ All payroll run **status** transitions occur **only** through these named comman
 
 **Commands (closed set):** `calculate`, `validate`, `submit`, `withdraw`, `approve`, `reject`, `post`, `reverse`.
 
-Cells are the **to-status** on success, or `rejected` with a short reason. HTTP mapping for rejected cells: typically **409 Conflict** for illegal transition / hash mismatch / SoD; **404** if run missing; capability failures per ADR 0002.
+Each cell shows the **to-status** on success, or `rejected` with a short reason. HTTP mapping for rejected cells: usually **409 Conflict** for an illegal transition, hash mismatch, or SoD breach; **404** when the run is missing; capability failures per ADR 0002.
 
 | From status | calculate | validate | submit | withdraw | approve | reject | post | reverse |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -65,24 +65,24 @@ Cells are the **to-status** on success, or `rejected` with a short reason. HTTP 
 
 **Normative notes on the matrix:**
 
-- `calculate` from `calculated` or `validated` **always appends a new** immutable `payroll_run_version` (ADR 0007). From `validated`, success **demotes** status to `calculated` because the prior validation no longer applies to the new version.
-- `validate` from `validated` may re-run checks against the same latest version and remain `validated` (idempotent success if checks still pass).
+- `calculate` from `calculated` or `validated` **always appends a new** immutable `payroll_run_version` (ADR 0007). From `validated`, success **demotes** status to `calculated`, because the prior validation no longer applies to the new version.
+- `validate` from `validated` may re-run checks against the same latest version and stay `validated` (idempotent success if checks still pass).
 - `submit` is allowed **only** from `validated`. It binds `bound_run_version_id` + `submission_content_hash` (section 3).
-- `withdraw` is allowed from `submitted` **or** `approved` (pre-post only). Success clears the submission binding fields (or marks them inactive) and lands in `withdrawn`. Draft input edits then require a fresh `calculate` → `validate` → `submit` cycle.
-- `reject` is allowed **only** from `submitted` (checker path). From `approved`, checker must not reject; use `withdraw` (authorized) or proceed to `post`.
+- `withdraw` is allowed from `submitted` **or** `approved` (pre-post only). Success clears the submission binding fields (or marks them inactive) and lands in `withdrawn`. Draft input edits then need a fresh `calculate` → `validate` → `submit` cycle.
+- `reject` is allowed **only** from `submitted` (checker path). From `approved`, the checker must not reject. Use `withdraw` (authorized) or proceed to `post`.
 - `post` is allowed **only** from `approved`. `reverse` is allowed **only** from `posted`. Both `posted` and `reversed` are terminal for the primary run row.
-- Concurrent duplicate commands that are legal and identical are handled by **idempotency** (section 6), not by inventing extra matrix cells.
+- Two identical, legal commands may race each other. That case goes through **idempotency** (section 6). We do not invent extra matrix cells for it.
 
 ### 3. Submission binds immutable version + content hash
 
 On successful `submit`:
 
-1. The command selects exactly one `payroll_run_versions` row (normally the latest successful calculation for the run, or an explicitly supplied `run_version_id` that must belong to the run).
+1. The command selects exactly one `payroll_run_versions` row. Normally that is the latest successful calculation for the run. The caller may instead supply an explicit `run_version_id`, which must belong to the run.
 2. It computes **SHA-256** over a canonical UTF-8 byte string of a JSON document that includes **at least**:
    - `organization_id`, `payroll_run_id`, `payroll_period_id`
    - `bound_run_version_id`
-   - **canonical JSON of calculated inputs** — pinned effective-dated master / config version ids and draft-exception identities as consumed by that version (stable key order, decimal strings per ADR 0006)
-   - **canonical JSON of calculated outputs** — employee lines (amounts + trace fields needed for identity) and run-level **totals** (gross, deductions, net, employer share, etc.)
+   - **canonical JSON of calculated inputs** — the pinned effective-dated master / config version ids, and the draft-exception identities as consumed by that version (stable key order, decimal strings per ADR 0006)
+   - **canonical JSON of calculated outputs** — employee lines (amounts + the trace fields needed for identity) and run-level **totals** (gross, deductions, net, employer share, etc.)
 3. It stores on `payroll_runs`:
    - `bound_run_version_id` — the immutable version id
    - `submission_content_hash` — lowercase hex SHA-256 of that canonical document
@@ -90,14 +90,14 @@ On successful `submit`:
 
 **Edit policy while locked for review:**
 
-- While status is `submitted` or `approved`, any API that mutates draft inputs returns **HTTP 409**. Operator must `withdraw` first, then edit, then `calculate` (new version), `validate`, and `submit` again (new hash).
-- `approve` and `post` **recompute or reload** the hash for `bound_run_version_id` and require equality with `submission_content_hash`. Mismatch → **409** (tamper / wrong version).
+- While status is `submitted` or `approved`, any API that mutates draft inputs returns **HTTP 409**. The operator must `withdraw` first, then edit, then `calculate` (new version), `validate`, and `submit` again (new hash).
+- `approve` and `post` **recompute or reload** the hash for `bound_run_version_id` and require it to equal `submission_content_hash`. A mismatch means tampering or the wrong version → **409**.
 
 ### 4. Maker / checker: approver ≠ submitter
 
 Dual control is mandatory for `approve`:
 
-1. **Service layer:** Before transitioning `submitted` → `approved`, assert `actor_user_id <> run.submitted_by_id`. Same person holding both capabilities in the ADR 0002 matrix still cannot approve their own submission.
+1. **Service layer:** Before moving `submitted` → `approved`, assert `actor_user_id <> run.submitted_by_id`. A person who holds both capabilities in the ADR 0002 matrix still cannot approve their own submission.
 2. **Database CHECK** on `payroll_runs`:
 
 ```sql
@@ -108,25 +108,25 @@ CONSTRAINT payroll_runs_approver_ne_submitter CHECK (
 )
 ```
 
-`reject` does not set `approved_by_id`. `post` does not relax SoD; posting may be a separate capability (ADR 0002) and may be the same or different user from the approver—product policy may tighten further later, but this ADR **requires** only submitter ≠ approver.
+`reject` does not set `approved_by_id`. `post` does not relax SoD. Posting may be a separate capability (ADR 0002), held by the same user as the approver or a different one. Product policy may tighten this later. This ADR **requires** only submitter ≠ approver.
 
 ### 5. Posting: single transaction, locks, audit, outbox
 
 `post` procedure (normative order):
 
 1. `BEGIN`
-2. `SELECT … FROM payroll_runs WHERE id = $run_id FOR UPDATE` (and tenant context bound per ADR 0001).
-3. Recheck: status is `approved`; `bound_run_version_id` present; recomputed content hash **equals** `submission_content_hash`; validation artifacts for that version still pass (or stored validation stamp present); run totals match the bound version totals.
+2. `SELECT … FROM payroll_runs WHERE id = $run_id FOR UPDATE` (with tenant context bound per ADR 0001).
+3. Recheck everything: status is `approved`; `bound_run_version_id` is present; the recomputed content hash **equals** `submission_content_hash`; the validation artifacts for that version still pass (or a stored validation stamp is present); the run totals match the bound version totals.
 4. In **one** transaction: set status `posted` (with `SET LOCAL app.allow_workflow_transition = 'true'`), write posting metadata (`posted_by_id`, `posted_at`), insert **`audit_events`**, insert **`outbox_events`** for downstream consumers.
 5. `COMMIT`
 
-Failure at any recheck aborts without partial post. Cross-reference **[ADR 0009](0009-audit-outbox.md)** for `audit_events` / `outbox_events` shape, delivery, and retention. Idempotent replay of `post` with the same idempotency key returns the original success snapshot; a second distinct key racing after first commit sees rejected: already posted / 409.
+If any recheck fails, the whole transaction aborts. There is no partial post. See **[ADR 0009](0009-audit-outbox.md)** for the `audit_events` / `outbox_events` shape, delivery, and retention. An idempotent replay of `post` with the same idempotency key returns the original success snapshot. A second distinct key that races in after the first commit sees rejected: already posted / 409.
 
-Posted snapshot rows remain immutable (application denial + DB immutability triggers as required by release gate H); economic undo is only via `reverse`.
+Posted snapshot rows stay immutable. The app denies writes to them, and DB triggers block writes too, as release gate H requires. The only economic undo is `reverse`.
 
 ### 6. Organization-scoped idempotency
 
-Every state-changing payroll command endpoint **requires** an `Idempotency-Key` header (or equivalent). Keys are stored in `idempotency_keys`, scoped by `organization_id` (RLS per ADR 0001). This ADR **extends** the sketch in ADR 0001 to the command-oriented schema below.
+Every payroll command that changes state **requires** an `Idempotency-Key` header (or equivalent). Keys live in `idempotency_keys`, scoped by `organization_id` (RLS per ADR 0001). This ADR **extends** the sketch in ADR 0001 to the command schema below.
 
 #### Table: `idempotency_keys`
 
@@ -167,27 +167,27 @@ Every state-changing payroll command endpoint **requires** an `Idempotency-Key` 
 | Optional transaction-scoped **advisory locks** | `pg_advisory_xact_lock(hashtext(organization_id::text), hashtext(run_id::text))` (or equivalent two-int form) when commands also touch related draft tables and need a coarser serialize point. |
 | Optimistic `input_version` (integer) | Draft input / monthly exception updates (ADR 0007): client supplies expected version; mismatch → **409**; success increments version. Does **not** replace FOR UPDATE on commands. |
 
-Command transactions that change status always set `app.allow_workflow_transition` locally as in section 1.
+Every command transaction that changes status sets `app.allow_workflow_transition` locally, as in section 1.
 
 ## Consequences
 
 **Positive:**
 
-- Workflow status cannot drift via generic APIs or forgotten WHERE clauses; DB GUC + trigger is a hard backstop.
-- Submission hash + bound version makes approve/post verify “what was calculated” rather than “whatever is latest.”
-- Maker/checker SoD is enforceable even under raw SQL that sets both columns incorrectly.
-- Posting is exactly-once under row lock + idempotency, with audit/outbox atomicity (ADR 0009).
-- Retries are safe; key/payload abuse is a loud 409.
+- Workflow status cannot drift through generic APIs or a forgotten WHERE clause. The DB GUC + trigger is a hard backstop.
+- The submission hash plus the bound version means approve and post verify “what was calculated”, not “whatever is latest”.
+- Maker/checker SoD holds even against raw SQL that sets both columns wrongly.
+- Posting runs exactly once, under a row lock and an idempotency key. Audit and outbox commit in the same transaction (ADR 0009).
+- Retries are safe. Key/payload abuse fails loudly with a 409.
 
 **Negative / costs:**
 
-- More endpoints and client discipline (commands + Idempotency-Key) than a single PATCH-status resource.
-- 72-hour idempotency retention and cleanup job operational load.
-- Withdraw-from-approved adds an operational path that must be authorized carefully (capability + audit).
+- More endpoints and more client discipline (commands + Idempotency-Key) than a single PATCH-status resource.
+- Keys are kept for 72 hours, and a cleanup job must run. That adds ops load.
+- Withdraw-from-approved adds one more ops path. It must be gated with care (capability + audit).
 
 **Follow-ons:**
 
-- Report generation reads posted snapshots only ([report-catalog.md](../report-specs/report-catalog.md)).
+- Reports read posted snapshots only ([report-catalog.md](../report-specs/report-catalog.md)).
 
 ## Alternatives Considered
 

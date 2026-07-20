@@ -1,21 +1,26 @@
 # Atlas → Accord upstream transplant manifest
 
-Research-only inventory of portable infrastructure from the Atlas monorepo.
-Every path below was verified to exist on disk at the listed commit via
-`test -e` / `ls` / `find`. Versions were read from config/lock/requirements
-files (not guessed).
+This is a research-only inventory. It lists the portable infrastructure in
+the Atlas monorepo. Every path below was checked on disk at the listed
+commit, via `test -e` / `ls` / `find`. Versions were read from
+config/lock/requirements files. None were guessed.
 
 ## 1. Upstream identity
 
-- Repo path: `/Users/darshan/Documents/GitHub/atlas`
-- Commit: `4d5d1f980f3b17144cc6f6173974ff9205fb573a`
-- Tag: `v1.1.0` (annotated, local — not yet pushed; cut 2026-07-17 at commit `4d5d1f980f3b17144cc6f6173974ff9205fb573a` after Gate A verification: 19/19 checks, 1519 backend + 1155 frontend tests, 0 skipped, v1.0.0→HEAD migration replay verified)
+- Repo path: `/Users/darshan/Documents/GitHub/atlas`.
+- Commit: `4d5d1f980f3b17144cc6f6173974ff9205fb573a`.
+- Tag: `v1.1.0`. The tag is annotated and local. It is not yet pushed. It
+  was cut on 2026-07-17 at commit
+  `4d5d1f980f3b17144cc6f6173974ff9205fb573a`, after Gate A verification:
+  19/19 checks, 1519 backend + 1155 frontend tests, 0 skipped, and a
+  verified v1.0.0→HEAD migration replay.
 
-Verified with: `git -C /Users/darshan/Documents/GitHub/atlas rev-parse HEAD`
+Verified with: `git -C /Users/darshan/Documents/GitHub/atlas rev-parse HEAD`.
 
 ## 2. Copy inventory
 
-Paths are relative to the Atlas repo root. Grouped by transplant area.
+Paths are relative to the Atlas repo root. They are grouped by transplant
+area.
 
 ### A. Backend infrastructure
 
@@ -115,7 +120,8 @@ Paths are relative to the Atlas repo root. Grouped by transplant area.
 | `frontend/public/fonts/OFL.txt` | SIL OFL 1.1 — IBM Plex |
 | `frontend/public/fonts/noto-sans-devanagari-OFL.txt` | SIL OFL 1.1 — Noto Sans Devanagari |
 
-Backend PDF font assets (optional if Accord generates PDFs with same fonts):
+Backend PDF font assets. These are optional. Copy them if Accord generates
+PDFs with the same fonts:
 
 | Path | Role |
 |------|------|
@@ -125,11 +131,17 @@ Backend PDF font assets (optional if Accord generates PDFs with same fonts):
 
 #### `frontend/src/components/ui/**` — every file (59)
 
+> **Accord status (2026-07-20):** Accord commit `a66577b` later removed
+> eight of these transplanted primitives, one of the transplanted tests, and
+> the `recharts` dependency. They were unused in Accord. The entries stay
+> listed here because this manifest records what was transplanted. Each
+> removed entry is marked below.
+
 **Primitives / modules (46):**
 
-- `frontend/src/components/ui/alert-dialog.tsx`
+- `frontend/src/components/ui/alert-dialog.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/alert.tsx`
-- `frontend/src/components/ui/attachment.tsx`
+- `frontend/src/components/ui/attachment.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/avatar.tsx`
 - `frontend/src/components/ui/badge-variants.ts`
 - `frontend/src/components/ui/badge.tsx`
@@ -138,7 +150,7 @@ Backend PDF font assets (optional if Accord generates PDFs with same fonts):
 - `frontend/src/components/ui/button.tsx`
 - `frontend/src/components/ui/calendar.tsx`
 - `frontend/src/components/ui/card.tsx`
-- `frontend/src/components/ui/chart.tsx`
+- `frontend/src/components/ui/chart.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/checkbox.tsx`
 - `frontend/src/components/ui/collapsible.tsx`
 - `frontend/src/components/ui/combobox.tsx`
@@ -151,7 +163,7 @@ Backend PDF font assets (optional if Accord generates PDFs with same fonts):
 - `frontend/src/components/ui/input-group.tsx`
 - `frontend/src/components/ui/input.tsx`
 - `frontend/src/components/ui/label.tsx`
-- `frontend/src/components/ui/lazy-recharts.tsx`
+- `frontend/src/components/ui/lazy-recharts.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/light-rays.tsx`
 - `frontend/src/components/ui/month-picker.tsx`
 - `frontend/src/components/ui/pagination.tsx`
@@ -161,16 +173,16 @@ Backend PDF font assets (optional if Accord generates PDFs with same fonts):
 - `frontend/src/components/ui/sheet.tsx`
 - `frontend/src/components/ui/sidebar.tsx`
 - `frontend/src/components/ui/skeleton.tsx`
-- `frontend/src/components/ui/slider.tsx`
+- `frontend/src/components/ui/slider.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/sonner.tsx`
-- `frontend/src/components/ui/sortable-column-header.tsx`
-- `frontend/src/components/ui/spinner.tsx`
+- `frontend/src/components/ui/sortable-column-header.tsx` — removed from Accord on 2026-07-20.
+- `frontend/src/components/ui/spinner.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/table.tsx`
 - `frontend/src/components/ui/tabs-variants.ts`
 - `frontend/src/components/ui/tabs.tsx`
 - `frontend/src/components/ui/textarea.tsx`
 - `frontend/src/components/ui/theme-switcher.tsx`
-- `frontend/src/components/ui/toggle.tsx`
+- `frontend/src/components/ui/toggle.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/tooltip.tsx`
 - `frontend/src/components/ui/use-sidebar-resize.ts`
 
@@ -182,7 +194,7 @@ Backend PDF font assets (optional if Accord generates PDFs with same fonts):
 - `frontend/src/components/ui/__tests__/date-range-picker.test.tsx`
 - `frontend/src/components/ui/__tests__/empty.test.tsx`
 - `frontend/src/components/ui/__tests__/input-group.test.tsx`
-- `frontend/src/components/ui/__tests__/lazy-recharts.test.tsx`
+- `frontend/src/components/ui/__tests__/lazy-recharts.test.tsx` — removed from Accord on 2026-07-20.
 - `frontend/src/components/ui/__tests__/month-picker.test.tsx`
 - `frontend/src/components/ui/__tests__/overlay-positioners.test.tsx`
 - `frontend/src/components/ui/__tests__/pagination.test.tsx`
@@ -239,10 +251,12 @@ Backend PDF font assets (optional if Accord generates PDFs with same fonts):
 | `frontend/src/lib/content-disposition.ts` | Filename from `Content-Disposition` |
 | `frontend/src/lib/utils.ts` | `cn` helpers + `ATLAS_TIME_ZONE` (rename) |
 
-> Domain-coupled query modules exist and should be rewritten, not transplanted as-is:
-> `frontend/src/lib/query-keys.ts`, `frontend/src/lib/query-options.ts`,
+> Domain-coupled query modules exist too. Rewrite them. Do not transplant
+> them as-is: `frontend/src/lib/query-keys.ts`,
+> `frontend/src/lib/query-options.ts`,
 > `frontend/src/lib/query-invalidation.ts`, `frontend/src/lib/api/core.ts`,
-> `frontend/src/lib/export-filenames.ts` (`datedAtlasExportFilename` → `atlas-…` filenames).
+> `frontend/src/lib/export-filenames.ts` (`datedAtlasExportFilename` →
+> `atlas-…` filenames).
 
 #### Vitest helpers / frontend toolchain
 
@@ -274,8 +288,9 @@ Backend PDF font assets (optional if Accord generates PDFs with same fonts):
 | `deploy/.env.example` | Deploy env template |
 | `.dockerignore` | Root Docker ignore |
 
-> Atlas-named deploy scripts exist and can be used as templates after rename:
-> `deploy/deploy-atlas.sh`, `deploy/deploy-atlas-wrapper.sh`, `deploy/set-atlas-tag.sh`.
+> Atlas-named deploy scripts exist as well. Use them as templates after a
+> rename: `deploy/deploy-atlas.sh`, `deploy/deploy-atlas-wrapper.sh`,
+> `deploy/set-atlas-tag.sh`.
 
 ## 3. Exclusion list
 
@@ -458,7 +473,8 @@ Do **not** copy these into Accord. Each path was verified to exist.
 
 ## 4. Rename map
 
-Actual identifiers found via case-insensitive `atlas` greps / file reads. Replace with Accord equivalents when transplanting.
+These identifiers were found with case-insensitive `atlas` greps and file
+reads. Replace each one with its Accord equivalent when transplanting.
 
 ### App / product name strings
 
@@ -560,7 +576,10 @@ Actual identifiers found via case-insensitive `atlas` greps / file reads. Replac
 | SPDX / Apache license headers in source | **None found** via repo search for `Apache License` / `SPDX-License` |
 | `git ls-files '*LICENSE*'` | Only font OFL files (below) |
 
-> Accord already has an Apache-2.0 `LICENSE` at the Accord repo root. Atlas itself does not ship Apache notice files at this commit; preserve Accord’s own LICENSE when scaffolding, and do not invent an Atlas NOTICE that is not upstream.
+> Accord already has an Apache-2.0 `LICENSE` at the Accord repo root. Atlas
+> itself ships no Apache notice files at this commit. Keep Accord’s own
+> LICENSE when scaffolding. Do not invent an Atlas NOTICE that is not
+> upstream.
 
 ### Font OFL files (preserve verbatim when copying fonts)
 
@@ -579,7 +598,7 @@ Actual identifiers found via case-insensitive `atlas` greps / file reads. Replac
 
 ## 6. Stack versions
 
-Exact pins as read from files. Source noted.
+These are exact pins as read from files. The source is noted for each one.
 
 | Component | Version | Source |
 |-----------|---------|--------|
@@ -623,39 +642,46 @@ Exact pins as read from files. Source noted.
 | Postgres (compose) | **18.4-alpine** | `docker-compose.yml`, `deploy/docker-compose.yml` |
 | nginx (web image) | **1.30-alpine** | `deploy/Dockerfile.web` |
 
-**Note:** Root `uv.lock` is **not** a full Python dependency lockfile; authoritative backend pins are `backend/requirements.txt` and `backend/requirements-dev.txt`.
+**Note:** the root `uv.lock` is **not** a full Python dependency lockfile.
+The authoritative backend pins are `backend/requirements.txt` and
+`backend/requirements-dev.txt`.
+
+> **Accord status (2026-07-20):** Accord no longer depends on `recharts`;
+> commit `a66577b` removed it along with the chart primitives noted in §2.B.
 
 ## 7. Visual parity checklist
 
-Manual checks after transplant, based on behaviors observed in Atlas frontend code:
+Run these manual checks after the transplant. They come from behaviors seen
+in the Atlas frontend code. Some named components were later removed from
+Accord (see the §2.B note); skip checks for parts Accord does not keep.
 
-- [ ] Light-mode CSS variables from `:root` in `frontend/src/index.css` match Atlas (warm “Delta Warm Earthy” OKLCH palette: background/foreground/card/primary/sidebar/chart tokens)
-- [ ] Dark-mode `.dark` variables match Atlas (default app theme is **dark** via `ThemeProvider defaultTheme="dark"` in `App.tsx`)
-- [ ] `ThemeProvider` themes `dark` \| `light` \| `system` work; FOUC guard in `theme-init.ts` runs before paint
-- [ ] Theme preference persists under the renamed storage key (was `ATLAS_THEME`)
-- [ ] `theme-switcher` 3-way control (system / light / dark) renders and cycles correctly in shell and compact sidebar modes
-- [ ] IBM Plex Sans 400/500/600/700 render from local `public/fonts/*.woff2` `@font-face` rules
-- [ ] IBM Plex Mono 400 renders for mono stacks (`--app-font-mono`)
-- [ ] Noto Sans Devanagari renders for Devanagari text (unicode-range face + `--app-font-devanagari` fallback stack)
-- [ ] Font OFL files remain alongside copied font binaries
-- [ ] Sidebar expand/collapse works; cookie `sidebar_state` persists open state
-- [ ] Sidebar drag-resize works (`use-sidebar-resize.ts`); width clamped ~240–520px and persisted (was `atlas:sidebar:width:px`)
-- [ ] Keyboard shortcut Ctrl/Cmd+B toggles sidebar (from `sidebar.tsx`)
-- [ ] Mobile sidebar uses sheet/off-canvas behavior (`SIDEBAR_WIDTH_MOBILE`)
-- [ ] App shell composition: `ProtectedShell` → `AppLayout` → `PageShell` / `PageToolbar` / `AppSidebar` / `SiteHeader`
-- [ ] Inset sidebar variant and header height (`--header-height`) match Atlas spacing
-- [ ] Page transition: non-table routes fade + slight `translateY`; table-heavy routes use stable transition (no flicker)
-- [ ] Dialog / alert-dialog / sheet overlay styling matches (dark overlay + backdrop blur observed in theme CSS)
-- [ ] Popover / dropdown / tooltip motion classes (`.atlas-motion-*` → renamed) and reduced-motion hard-cut respect `prefers-reduced-motion`
-- [ ] Table styling: `ui/table`, sortable headers, data-table shell, skeleton, pagination controls
-- [ ] Form controls (input, select, combobox, checkbox, textarea, date/month pickers) match Atlas density and focus rings
-- [ ] Loading states (`loading-state`, `spinner`, `skeleton`) match
-- [ ] Empty states (`empty-state` / `ui/empty`) match
-- [ ] Error states (`error-boundary`, `error-with-retry`, `invalid-route-state`) match
-- [ ] Toast/notifications: lazy Sonner toaster; App wires `position="top-center"`; light/dark toast token overrides in `index.css`
-- [ ] Focus-visible rings and disabled styles on buttons/inputs match
-- [ ] Custom thin scrollbars and table scroll/surface utilities match
-- [ ] Brand mark in sidebar/header uses Accord name (was `APP_NAME` / `APP_SUBTITLE`) without Atlas/HAM copy
-- [ ] Login page visual layout parity after copy rewrite (same shell/typography, new product strings)
-- [ ] Responsive layout: desktop inset shell + mobile collapsed sidebar / stacked toolbar
-- [ ] Motion: `LazyMotion` + `MotionConfig reducedMotion="user"` still applied at app root
+- [ ] Light-mode CSS variables from `:root` in `frontend/src/index.css` match Atlas (warm “Delta Warm Earthy” OKLCH palette: background/foreground/card/primary/sidebar/chart tokens).
+- [ ] Dark-mode `.dark` variables match Atlas. The default app theme is **dark**, via `ThemeProvider defaultTheme="dark"` in `App.tsx`.
+- [ ] `ThemeProvider` themes `dark` \| `light` \| `system` work. The FOUC guard in `theme-init.ts` runs before paint.
+- [ ] Theme preference persists under the renamed storage key (was `ATLAS_THEME`).
+- [ ] The `theme-switcher` 3-way control (system / light / dark) renders and cycles correctly, in both shell and compact sidebar modes.
+- [ ] IBM Plex Sans 400/500/600/700 render from local `public/fonts/*.woff2` `@font-face` rules.
+- [ ] IBM Plex Mono 400 renders for mono stacks (`--app-font-mono`).
+- [ ] Noto Sans Devanagari renders for Devanagari text (unicode-range face + `--app-font-devanagari` fallback stack).
+- [ ] Font OFL files remain alongside copied font binaries.
+- [ ] Sidebar expand/collapse works. The cookie `sidebar_state` persists the open state.
+- [ ] Sidebar drag-resize works (`use-sidebar-resize.ts`). Width is clamped to about 240–520px and persisted (was `atlas:sidebar:width:px`).
+- [ ] The keyboard shortcut Ctrl/Cmd+B toggles the sidebar (from `sidebar.tsx`).
+- [ ] The mobile sidebar uses sheet/off-canvas behavior (`SIDEBAR_WIDTH_MOBILE`).
+- [ ] App shell composition holds: `ProtectedShell` → `AppLayout` → `PageShell` / `PageToolbar` / `AppSidebar` / `SiteHeader`.
+- [ ] The inset sidebar variant and header height (`--header-height`) match Atlas spacing.
+- [ ] Page transitions match: non-table routes fade with a slight `translateY`; table-heavy routes use a stable transition (no flicker).
+- [ ] Dialog / alert-dialog / sheet overlay styling matches (dark overlay + backdrop blur, as seen in the theme CSS).
+- [ ] Popover / dropdown / tooltip motion classes (`.atlas-motion-*` → renamed) and the reduced-motion hard cut respect `prefers-reduced-motion`.
+- [ ] Table styling matches: `ui/table`, sortable headers, data-table shell, skeleton, pagination controls.
+- [ ] Form controls (input, select, combobox, checkbox, textarea, date/month pickers) match Atlas density and focus rings.
+- [ ] Loading states (`loading-state`, `spinner`, `skeleton`) match.
+- [ ] Empty states (`empty-state` / `ui/empty`) match.
+- [ ] Error states (`error-boundary`, `error-with-retry`, `invalid-route-state`) match.
+- [ ] Toast/notifications match: lazy Sonner toaster; the App wires `position="top-center"`; light/dark toast token overrides live in `index.css`.
+- [ ] Focus-visible rings and disabled styles on buttons/inputs match.
+- [ ] Custom thin scrollbars and table scroll/surface utilities match.
+- [ ] The brand mark in the sidebar/header uses the Accord name (was `APP_NAME` / `APP_SUBTITLE`) with no Atlas/HAM copy.
+- [ ] The login page keeps visual layout parity after the copy rewrite (same shell/typography, new product strings).
+- [ ] Responsive layout holds: desktop inset shell plus mobile collapsed sidebar / stacked toolbar.
+- [ ] Motion: `LazyMotion` + `MotionConfig reducedMotion="user"` still apply at the app root.
