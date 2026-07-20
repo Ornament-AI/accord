@@ -37,7 +37,9 @@ def validate_membership_role(role: str) -> str:
 
 async def _count_active_admins(db: AsyncSession, organization_id: UUID) -> int:
     result = await db.execute(
-        select(func.count()).select_from(OrganizationMembership).where(
+        select(func.count())
+        .select_from(OrganizationMembership)
+        .where(
             OrganizationMembership.organization_id == organization_id,
             OrganizationMembership.role == ADMIN_ROLE,
             OrganizationMembership.is_active.is_(True),
@@ -82,9 +84,7 @@ async def provision_member(
         raise ValidationError("A valid email is required.")
 
     await bind_tenant_context(db, organization_id=organization_id)
-    user = (
-        await db.execute(select(User).where(User.email == cleaned_email))
-    ).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.email == cleaned_email))).scalar_one_or_none()
 
     if user is not None:
         existing = (

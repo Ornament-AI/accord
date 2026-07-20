@@ -73,8 +73,7 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
             (org_id, "Org A", "org-a"),
         )
         conn.execute(
-            "INSERT INTO employees (id, organization_id, employee_number) VALUES "
-            "(%s, %s, %s)",
+            "INSERT INTO employees (id, organization_id, employee_number) VALUES (%s, %s, %s)",
             (employee_id, org_id, "E-001"),
         )
         conn.execute(
@@ -332,9 +331,7 @@ def test_payroll_runs_partial_unique_primary_index(
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         with pytest.raises(UniqueViolation):
             conn.execute(
-                "INSERT INTO payroll_runs "
-                "(organization_id, period_id, status) "
-                "VALUES (%s, %s, %s)",
+                "INSERT INTO payroll_runs (organization_id, period_id, status) VALUES (%s, %s, %s)",
                 (seed.org_id, seed.period_id, "draft"),
             )
         conn.rollback()

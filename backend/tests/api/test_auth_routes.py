@@ -253,9 +253,7 @@ async def test_me_unbootstrapped_when_no_organization(client, dev_settings):
 
 
 @pytest.mark.asyncio
-async def test_me_unprovisioned_when_org_exists_without_membership(
-    client, dev_settings, session
-):
+async def test_me_unprovisioned_when_org_exists_without_membership(client, dev_settings, session):
     await seed_organization(session, name="Solo Org", slug="solo-org")
     await session.commit()
 
@@ -546,9 +544,7 @@ async def test_callback_claims_invite_and_activates(client, monkeypatch, session
 
 
 @pytest.mark.asyncio
-async def test_callback_unprovisioned_when_org_exists_without_invite(
-    client, monkeypatch, session
-):
+async def test_callback_unprovisioned_when_org_exists_without_invite(client, monkeypatch, session):
     value = settings(
         dev_auth_bypass=False,
         workos_client_id="client_test",

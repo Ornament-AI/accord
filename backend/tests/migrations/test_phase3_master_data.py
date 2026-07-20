@@ -169,8 +169,7 @@ def test_office_payroll_unit_code_removal_preserves_records(scratch_db: str) -> 
             (office_id, organization_id, "Head Office", "HO", "mumbai"),
         )
         conn.execute(
-            "INSERT INTO payroll_units (id, organization_id, name, code) "
-            "VALUES (%s, %s, %s, %s)",
+            "INSERT INTO payroll_units (id, organization_id, name, code) VALUES (%s, %s, %s, %s)",
             (unit_id, organization_id, "Main Payroll", "PU-MAIN"),
         )
         conn.commit()

@@ -137,7 +137,7 @@ async def test_create_employee_all_regimes_masks_sensitive_and_money_string(
         client,
         _create_payload(
             office_id=office.id,
-                        post_id=post.id,
+            post_id=post.id,
             regime=regime,
         ),
     )
@@ -156,7 +156,7 @@ async def test_create_rejects_numeric_basic_pay(client, session, dev_settings):
     _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-                post_id=post.id,
+        post_id=post.id,
         basic_pay=50732.00,
     )
     resp = await client.post("/api/employees", json=payload)
@@ -177,7 +177,7 @@ async def test_create_rejects_nps_with_jurisdiction(client, session, dev_setting
     _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-                post_id=post.id,
+        post_id=post.id,
         regime="nps",
     )
     payload["profile"]["gpf_jurisdiction"] = "mumbai"
@@ -190,7 +190,7 @@ async def test_create_allows_unknown_legacy_profile_fields(client, session, dev_
     _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-                post_id=post.id,
+        post_id=post.id,
         regime="nps",
     )
     payload["profile"]["sevarth_id"] = None
@@ -274,7 +274,7 @@ async def test_duplicate_employee_number_returns_409(client, session, dev_settin
     _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-                post_id=post.id,
+        post_id=post.id,
         employee_number="E-DUP-001",
     )
     assert (await client.post("/api/employees", json=payload)).status_code == 201

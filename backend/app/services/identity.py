@@ -81,9 +81,7 @@ async def list_active_memberships(
     org = await get_singleton_organization(db)
     if org is None:
         return []
-    membership = await get_active_membership_for_org(
-        db, organization_id=org.id, user_id=user_id
-    )
+    membership = await get_active_membership_for_org(db, organization_id=org.id, user_id=user_id)
     if membership is None:
         return []
     return [(org, membership)]

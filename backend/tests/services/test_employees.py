@@ -34,9 +34,7 @@ from tests.identity_helpers import seed_organization, seed_user
 async def _world(session: AsyncSession):
     org = await seed_organization(session, name="Emp Svc Org", slug=f"emp-svc-{uuid4().hex[:10]}")
     user = await seed_user(session, workos_user_id=f"emp_svc_{uuid4().hex[:10]}")
-    office = Office(
-        organization_id=org.id, name="HQ", jurisdiction="mumbai"
-    )
+    office = Office(organization_id=org.id, name="HQ", jurisdiction="mumbai")
     post = Post(organization_id=org.id, designation=f"Clerk-{uuid4().hex[:6]}", class_="III")
     session.add_all([office, post])
     await session.commit()

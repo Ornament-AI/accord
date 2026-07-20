@@ -56,9 +56,7 @@ async def _admin_intent_matches(
     email = admin_email.strip()
     await bind_tenant_context(db, organization_id=org.id)
 
-    user = (
-        await db.execute(select(User).where(User.email == email))
-    ).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user is not None:
         membership = (
             await db.execute(
@@ -136,9 +134,7 @@ async def provision_organization(
     await bind_tenant_context(db, organization_id=org.id)
     db.add(OrganizationSettings(organization_id=org.id))
 
-    user = (
-        await db.execute(select(User).where(User.email == cleaned_email))
-    ).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.email == cleaned_email))).scalar_one_or_none()
     if user is not None:
         db.add(
             OrganizationMembership(
@@ -162,9 +158,7 @@ async def provision_organization(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        raise ConflictError(
-            "Organization already exists (singleton constraint)."
-        ) from exc
+        raise ConflictError("Organization already exists (singleton constraint).") from exc
 
     await db.refresh(org)
     return BootstrapResult(organization=org, created=True)

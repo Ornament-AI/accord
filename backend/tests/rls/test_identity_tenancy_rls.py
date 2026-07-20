@@ -56,8 +56,7 @@ def _seed_org(database_url: str) -> SeededOrg:
             (org_id, "Org A", "org-a"),
         )
         conn.execute(
-            "INSERT INTO users (id, workos_user_id, email, name) VALUES "
-            "(%s, %s, %s, %s)",
+            "INSERT INTO users (id, workos_user_id, email, name) VALUES (%s, %s, %s, %s)",
             (user_id, "workos_user_a", "a@example.com", "User A"),
         )
         conn.execute(

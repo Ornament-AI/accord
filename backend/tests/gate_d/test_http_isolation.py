@@ -37,9 +37,7 @@ async def test_admin_me_is_active_with_singleton_membership(
 
 
 @pytest.mark.asyncio
-async def test_outsider_me_is_unprovisioned(
-    client, dev_settings, session, one_org_world
-):
+async def test_outsider_me_is_unprovisioned(client, dev_settings, session, one_org_world):
     world: OneOrgWorld = one_org_world
     cookie = await mint_session_cookie(session, dev_settings, user_id=world.outsider.id)
     apply_session_cookie(client, cookie)
@@ -52,9 +50,7 @@ async def test_outsider_me_is_unprovisioned(
 
 @pytest.mark.asyncio
 async def test_unbootstrapped_me_when_no_organization(client, dev_settings, session):
-    user = await seed_user(
-        session, workos_user_id="gate_d_unboot", email="unboot@gate-d.test"
-    )
+    user = await seed_user(session, workos_user_id="gate_d_unboot", email="unboot@gate-d.test")
     await session.commit()
     cookie = await mint_session_cookie(session, dev_settings, user_id=user.id)
     apply_session_cookie(client, cookie)
@@ -66,9 +62,7 @@ async def test_unbootstrapped_me_when_no_organization(client, dev_settings, sess
 
 
 @pytest.mark.asyncio
-async def test_switch_organization_route_removed(
-    client, dev_settings, session, one_org_world
-):
+async def test_switch_organization_route_removed(client, dev_settings, session, one_org_world):
     world: OneOrgWorld = one_org_world
     cookie = await mint_session_cookie(
         session,
@@ -86,9 +80,7 @@ async def test_switch_organization_route_removed(
 
 
 @pytest.mark.asyncio
-async def test_create_organization_route_removed(
-    client, dev_settings, session, one_org_world
-):
+async def test_create_organization_route_removed(client, dev_settings, session, one_org_world):
     world: OneOrgWorld = one_org_world
     cookie = await mint_session_cookie(
         session,

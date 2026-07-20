@@ -120,9 +120,7 @@ async def test_download_unknown_artifact_404(client, session, dev_settings, stor
 
 
 @pytest.mark.asyncio
-async def test_download_unprovisioned_user_fail_closed(
-    client, session, dev_settings, storage
-):
+async def test_download_unprovisioned_user_fail_closed(client, session, dev_settings, storage):
     org, admin = await _admin_world(session, dev_settings, client)
     await _bind(session, org.id, admin.id)
     artifact = await create_artifact(

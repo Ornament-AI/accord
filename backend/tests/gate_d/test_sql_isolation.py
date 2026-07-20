@@ -185,8 +185,7 @@ def test_join_does_not_surface_rows_under_wrong_guc(
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         _bind_org(conn, "accord_app", uuid.uuid4())
         wrong = conn.execute(
-            "SELECT u.email FROM organization_memberships m "
-            "JOIN users u ON u.id = m.user_id"
+            "SELECT u.email FROM organization_memberships m JOIN users u ON u.id = m.user_id"
         ).fetchall()
 
     assert wrong == []

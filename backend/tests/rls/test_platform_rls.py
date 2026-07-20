@@ -62,8 +62,7 @@ def _seed_platform_data(database_url: str) -> SeededPlatformData:
             (org_id, "Org A", "org-a"),
         )
         conn.execute(
-            "INSERT INTO users (id, workos_user_id, email, name) VALUES "
-            "(%s, %s, %s, %s)",
+            "INSERT INTO users (id, workos_user_id, email, name) VALUES (%s, %s, %s, %s)",
             (
                 user_id,
                 f"wos_{user_id.hex[:12]}",

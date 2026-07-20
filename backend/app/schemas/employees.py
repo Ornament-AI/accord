@@ -289,6 +289,7 @@ def posting_from_row(row: Any) -> PostingVersionResponse:
         change_reason=row["change_reason"],
     )
 
+
 def pay_from_row(row: Any) -> PayVersionResponse:
     effective_from, effective_to = _validity_bounds(row["validity"])
     basic_pay = row["basic_pay"]

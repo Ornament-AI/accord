@@ -26,9 +26,7 @@ async def test_provision_organization_creates_once(session):
     orgs = (await session.execute(select(Organization))).scalars().all()
     assert len(orgs) == 1
     await bind_tenant_context(session, organization_id=orgs[0].id)
-    invite = (
-        await session.execute(select(OrganizationInvitation))
-    ).scalar_one()
+    invite = (await session.execute(select(OrganizationInvitation))).scalar_one()
     assert invite.email == "admin@example.com"
     assert invite.role == "organization_administrator"
 
@@ -118,8 +116,7 @@ async def test_second_organization_insert_fails_singleton_index(session):
     with pytest.raises(Exception):
         await session.execute(
             text(
-                "INSERT INTO organizations (name, slug, is_active) "
-                "VALUES ('Other', 'other', true)"
+                "INSERT INTO organizations (name, slug, is_active) VALUES ('Other', 'other', true)"
             )
         )
         await session.commit()

@@ -140,7 +140,6 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
         await session.flush()
         office_ids[office.fixture_id] = row.id
 
-
     post = Post(
         organization_id=org.id,
         designation="Synthetic Clerk",

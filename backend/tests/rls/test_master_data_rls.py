@@ -90,13 +90,11 @@ def _seed_master_data(database_url: str) -> SeededMasterData:
             (org_id, user_u_id, "organization_administrator"),
         )
         conn.execute(
-            "INSERT INTO offices (organization_id, name, jurisdiction) VALUES "
-            "(%s, %s, %s)",
+            "INSERT INTO offices (organization_id, name, jurisdiction) VALUES (%s, %s, %s)",
             (org_id, "Office A", "mumbai"),
         )
         conn.execute(
-            "INSERT INTO employees (id, organization_id, employee_number) VALUES "
-            "(%s, %s, %s)",
+            "INSERT INTO employees (id, organization_id, employee_number) VALUES (%s, %s, %s)",
             (employee_id, org_id, "E-001"),
         )
         conn.execute(
@@ -221,8 +219,7 @@ def test_master_data_insert_blocked_while_bound_to_wrong_organization_guc(
         )
         with pytest.raises(psycopg.Error, match="(?i)row-level security"):
             conn.execute(
-                "INSERT INTO offices (organization_id, name, jurisdiction) "
-                "VALUES (%s, %s, %s)",
+                "INSERT INTO offices (organization_id, name, jurisdiction) VALUES (%s, %s, %s)",
                 (seed.org_id, "Cross", "other"),
             )
 
