@@ -105,19 +105,139 @@ async def load_component_catalog(
     return {row.code: row for row in rows}
 
 
-async def _active_rate_version(
+@dataclasses.dataclass(frozen=True)
+class _ResolvedMasterData:
+    """Batched as-of master data for the selected employees.
+
+    Loaded once per calculate (constant query count regardless of roster
+    size) and consumed per employee via dict lookups.
+    """
+
+    pay_by_employee: Mapping[UUID, Any]
+    instructions_by_employee: Mapping[UUID, list[RecurringInstruction]]
+    ri_version_by_instruction: Mapping[UUID, Any]
+    rate_version_by_component: Mapping[UUID, Any]
+    component_by_id: Mapping[UUID, PayComponent]
+    advances_by_employee: Mapping[UUID, list[AdvanceAccount]]
+    installment_by_advance: Mapping[UUID, Any]
+    assignments_by_employee: Mapping[UUID, list[AccommodationAssignment]]
+    charge_by_assignment: Mapping[UUID, Any]
+
+
+async def _load_master_data(
     db: AsyncSession,
     *,
     organization_id: UUID,
-    component_id: UUID,
+    employee_ids: list[UUID],
     on_date: date,
-) -> Any | None:
-    return await versioning.get_active_version(
+    catalog: dict[str, PayComponent],
+) -> _ResolvedMasterData:
+    pay_by_employee = await versioning.get_active_versions_map(
         db,
-        component_rate_versions,
-        header_id=component_id,
+        employee_pay_versions,
+        header_ids=employee_ids,
         organization_id=organization_id,
         on_date=on_date,
+    )
+
+    instructions_by_employee: dict[UUID, list[RecurringInstruction]] = {}
+    instructions = (
+        (
+            await db.execute(
+                sa.select(RecurringInstruction)
+                .where(RecurringInstruction.organization_id == organization_id)
+                .where(RecurringInstruction.employee_id.in_(employee_ids))
+                .order_by(RecurringInstruction.created_at)
+            )
+        )
+        .scalars()
+        .all()
+        if employee_ids
+        else []
+    )
+    for instruction in instructions:
+        instructions_by_employee.setdefault(instruction.employee_id, []).append(instruction)
+    ri_version_by_instruction = await versioning.get_active_versions_map(
+        db,
+        recurring_instruction_versions,
+        header_ids=[instruction.id for instruction in instructions],
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    rate_version_by_component = await versioning.get_active_versions_map(
+        db,
+        component_rate_versions,
+        header_ids=list(
+            {
+                instruction.component_id
+                for instruction in instructions
+                if instruction.id in ri_version_by_instruction
+            }
+        ),
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+
+    advances_by_employee: dict[UUID, list[AdvanceAccount]] = {}
+    advances = (
+        (
+            await db.execute(
+                sa.select(AdvanceAccount)
+                .where(AdvanceAccount.organization_id == organization_id)
+                .where(AdvanceAccount.employee_id.in_(employee_ids))
+                .order_by(AdvanceAccount.created_at)
+            )
+        )
+        .scalars()
+        .all()
+        if employee_ids
+        else []
+    )
+    for advance in advances:
+        advances_by_employee.setdefault(advance.employee_id, []).append(advance)
+    installment_by_advance = await versioning.get_active_versions_map(
+        db,
+        advance_installment_versions,
+        header_ids=[advance.id for advance in advances],
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+
+    assignments_by_employee: dict[UUID, list[AccommodationAssignment]] = {}
+    assignments = (
+        (
+            await db.execute(
+                sa.select(AccommodationAssignment)
+                .where(AccommodationAssignment.organization_id == organization_id)
+                .where(AccommodationAssignment.employee_id.in_(employee_ids))
+                .order_by(AccommodationAssignment.created_at)
+            )
+        )
+        .scalars()
+        .all()
+        if employee_ids
+        else []
+    )
+    for assignment in assignments:
+        assignments_by_employee.setdefault(assignment.employee_id, []).append(assignment)
+    charge_by_assignment = await versioning.get_active_versions_map(
+        db,
+        accommodation_charge_versions,
+        header_ids=[assignment.id for assignment in assignments],
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+
+    return _ResolvedMasterData(
+        pay_by_employee=pay_by_employee,
+        instructions_by_employee=instructions_by_employee,
+        ri_version_by_instruction=ri_version_by_instruction,
+        rate_version_by_component=rate_version_by_component,
+        component_by_id={component.id: component for component in catalog.values()},
+        advances_by_employee=advances_by_employee,
+        installment_by_advance=installment_by_advance,
+        assignments_by_employee=assignments_by_employee,
+        charge_by_assignment=charge_by_assignment,
     )
 
 
@@ -135,27 +255,20 @@ def _put_component(
     by_code[comp.component_code] = comp
 
 
-async def _resolve_employee_components(
-    db: AsyncSession,
+def _resolve_employee_components(
     *,
-    organization_id: UUID,
     employee: Employee,
     profile: Any,
     on_date: date,
     catalog: dict[str, PayComponent],
+    master: _ResolvedMasterData,
     roster_row: PayrollRunEmployee | None,
     period_days: int,
     run_inputs: list[PayrollRunInput],
 ) -> EmployeeCalcInput:
     by_code: dict[str, ComponentInput] = {}
 
-    pay = await versioning.get_active_version(
-        db,
-        employee_pay_versions,
-        header_id=employee.id,
-        organization_id=organization_id,
-        on_date=on_date,
-    )
+    pay = master.pay_by_employee.get(employee.id)
     if pay is not None:
         basic_comp = catalog.get(_BASIC_CODE)
         classification = (
@@ -181,34 +294,16 @@ async def _resolve_employee_components(
             ),
         )
 
-    ri_stmt = (
-        sa.select(RecurringInstruction)
-        .where(RecurringInstruction.organization_id == organization_id)
-        .where(RecurringInstruction.employee_id == employee.id)
-        .order_by(RecurringInstruction.created_at)
-    )
-    instructions = (await db.execute(ri_stmt)).scalars().all()
-    for instruction in instructions:
-        ri_version = await versioning.get_active_version(
-            db,
-            recurring_instruction_versions,
-            header_id=instruction.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
+    for instruction in master.instructions_by_employee.get(employee.id, []):
+        ri_version = master.ri_version_by_instruction.get(instruction.id)
         if ri_version is None:
             continue
-        component = await db.get(PayComponent, instruction.component_id)
-        if component is None or component.organization_id != organization_id:
+        component = master.component_by_id.get(instruction.component_id)
+        if component is None:
             raise ValidationError(
                 f"Recurring instruction {instruction.id} references a missing pay component."
             )
-        rate_row = await _active_rate_version(
-            db,
-            organization_id=organization_id,
-            component_id=component.id,
-            on_date=on_date,
-        )
+        rate_row = master.rate_version_by_component.get(component.id)
         if rate_row is None:
             raise ValidationError(
                 f"No active component rate version for {component.code!r} on {on_date.isoformat()}."
@@ -235,20 +330,8 @@ async def _resolve_employee_components(
             ),
         )
 
-    adv_stmt = (
-        sa.select(AdvanceAccount)
-        .where(AdvanceAccount.organization_id == organization_id)
-        .where(AdvanceAccount.employee_id == employee.id)
-        .order_by(AdvanceAccount.created_at)
-    )
-    for advance in (await db.execute(adv_stmt)).scalars().all():
-        inst = await versioning.get_active_version(
-            db,
-            advance_installment_versions,
-            header_id=advance.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
+    for advance in master.advances_by_employee.get(employee.id, []):
+        inst = master.installment_by_advance.get(advance.id)
         if inst is None:
             continue
         code = _ADVANCE_COMPONENT_CODES.get(advance.advance_type)
@@ -272,20 +355,8 @@ async def _resolve_employee_components(
             ),
         )
 
-    acc_stmt = (
-        sa.select(AccommodationAssignment)
-        .where(AccommodationAssignment.organization_id == organization_id)
-        .where(AccommodationAssignment.employee_id == employee.id)
-        .order_by(AccommodationAssignment.created_at)
-    )
-    for assignment in (await db.execute(acc_stmt)).scalars().all():
-        charge = await versioning.get_active_version(
-            db,
-            accommodation_charge_versions,
-            header_id=assignment.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
+    for assignment in master.assignments_by_employee.get(employee.id, []):
+        charge = master.charge_by_assignment.get(assignment.id)
         if charge is None:
             continue
         license_comp = catalog.get(_ACCOMMODATION_LICENSE_FEE_CODE)
@@ -566,30 +637,39 @@ async def resolve_run_calc_input(
     run = await db.get(PayrollRun, run_id)
     roster_initialized = bool(run and run.roster_initialized)
 
+    selected = [
+        employee
+        for employee in org_employees
+        if not (roster_initialized and employee.id not in roster_by_employee)
+    ]
+    profiles = await versioning.get_active_versions_map(
+        db,
+        employee_profile_versions,
+        header_ids=[employee.id for employee in selected],
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    selected = [employee for employee in selected if employee.id in profiles]
+    master = await _load_master_data(
+        db,
+        organization_id=organization_id,
+        employee_ids=[employee.id for employee in selected],
+        on_date=on_date,
+        catalog=catalog,
+    )
+
+    period_days = calendar.monthrange(period.period_year, period.period_month)[1]
     employees: list[EmployeeCalcInput] = []
     employee_by_ref: dict[str, Employee] = {}
-    for employee in org_employees:
-        roster_row = roster_by_employee.get(employee.id)
-        if roster_initialized and roster_row is None:
-            continue
-        profile = await versioning.get_active_version(
-            db,
-            employee_profile_versions,
-            header_id=employee.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
-        if profile is None:
-            continue
-        emp_input = await _resolve_employee_components(
-            db,
-            organization_id=organization_id,
+    for employee in selected:
+        emp_input = _resolve_employee_components(
             employee=employee,
-            profile=profile,
+            profile=profiles[employee.id],
             on_date=on_date,
             catalog=catalog,
-            roster_row=roster_row,
-            period_days=calendar.monthrange(period.period_year, period.period_month)[1],
+            master=master,
+            roster_row=roster_by_employee.get(employee.id),
+            period_days=period_days,
             run_inputs=inputs_by_employee.get(employee.id, []),
         )
         employees.append(emp_input)

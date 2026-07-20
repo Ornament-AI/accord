@@ -11,7 +11,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import NotFoundError
-from app.models.effective import select_active_version
 from app.models.recurring_instructions import RecurringInstruction, recurring_instruction_versions
 from app.schemas.pay_setup import RecurringInstructionCreate, RecurringInstructionVersionCreate
 from app.services import versioning
@@ -101,18 +100,17 @@ async def list_recurring_instructions(
         .where(RecurringInstruction.employee_id == employee_id)
         .order_by(RecurringInstruction.created_at)
     )
-    result = await db.execute(stmt)
+    headers = (await db.execute(stmt)).scalars().all()
+    active_versions = await versioning.get_active_versions_map(
+        db,
+        recurring_instruction_versions,
+        header_ids=[header.id for header in headers],
+        organization_id=organization_id,
+        on_date=as_of,
+    )
     items: list[dict[str, Any]] = []
-    for header in result.scalars().all():
-        active = await db.execute(
-            select_active_version(
-                recurring_instruction_versions,
-                header_id=header.id,
-                organization_id=organization_id,
-                on_date=as_of,
-            )
-        )
-        version_row = active.mappings().first()
+    for header in headers:
+        version_row = active_versions.get(header.id)
         if version_row is None:
             continue
         items.append(_instruction_response(header, serialize_version_row(version_row)))
