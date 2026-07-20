@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import calendar
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -13,16 +14,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError, StaleRowError, ValidationError
-from app.models.employees import Employee
-from app.models.payroll_runs import PayrollPeriod, PayrollRun, PayrollRunInput
+from app.models.employees import Employee, employee_pay_versions, employee_profile_versions
+from app.models.platform import AuditEvent
+from app.models.payroll_runs import PayrollPeriod, PayrollRun, PayrollRunEmployee, PayrollRunInput
 from app.schemas.payroll_runs import (
     PayrollPeriodCreate,
     PayrollRunCreate,
+    PayrollRunRosterUpdate,
     PayrollRunInputUpsert,
     _serialize_money,
     _serialize_rate,
 )
-from app.services import run_results as run_results_service
+from app.services import audit_events, run_results as run_results_service
+from app.services import versioning
 
 
 def _serialize_optional_money(value: Decimal | None) -> str | None:
@@ -80,12 +84,82 @@ def _run_list_item(run: PayrollRun, period: PayrollPeriod) -> dict[str, Any]:
         "period_id": run.period_id,
         "period_year": period.period_year,
         "period_month": period.period_month,
-        "run_type": run.run_type,
         "status": run.status,
         "lock_version": run.lock_version,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
     }
+
+
+def _roster_response(
+    employee: Employee,
+    *,
+    name: str | None,
+    sevarth_id: str | None,
+    retirement_regime: str | None,
+    basic_pay: Decimal | None,
+    row: PayrollRunEmployee | None,
+    period_days: int,
+    default_selected: bool = False,
+) -> dict[str, Any]:
+    return {
+        "employee_id": employee.id,
+        "employee_number": employee.employee_number,
+        "employee_name": name,
+        "sevarth_id": sevarth_id,
+        "retirement_regime": retirement_regime,
+        "basic_pay": _serialize_optional_money(basic_pay),
+        "selected": row is not None or default_selected,
+        "payable_days": _serialize_money(row.payable_days if row else Decimal(period_days)),
+        "da_percent": _serialize_optional_rate(row.da_percent if row else None),
+        "da_difference": _serialize_optional_money(row.da_difference if row else None),
+        "hra_percent": _serialize_optional_rate(row.hra_percent if row else None),
+        "transport_amount": _serialize_optional_money(row.transport_amount if row else None),
+    }
+
+
+_ROSTER_FIELD_LABELS = {
+    "payable_days": "Paid days",
+    "da_percent": "DA %",
+    "da_difference": "DA difference",
+    "hra_percent": "HRA %",
+    "transport_amount": "Transport",
+}
+
+
+def _roster_snapshot_item(item: PayrollRunEmployee | Any) -> dict[str, Any]:
+    return {
+        "employee_id": item.employee_id,
+        "payable_days": item.payable_days,
+        "da_percent": item.da_percent,
+        "da_difference": item.da_difference,
+        "hra_percent": item.hra_percent,
+        "transport_amount": item.transport_amount,
+    }
+
+
+def _roster_change_summary(
+    before: list[dict[str, Any]], after: list[dict[str, Any]]
+) -> tuple[int, list[str]]:
+    before_by_employee = {item["employee_id"]: item for item in before}
+    after_by_employee = {item["employee_id"]: item for item in after}
+    changed_employees = 0
+    changed_fields: set[str] = set()
+    for employee_id in before_by_employee.keys() | after_by_employee.keys():
+        previous = before_by_employee.get(employee_id)
+        current = after_by_employee.get(employee_id)
+        if previous is None or current is None:
+            changed_employees += 1
+            changed_fields.add("Employees")
+            continue
+        employee_changed = False
+        for field, label in _ROSTER_FIELD_LABELS.items():
+            if previous[field] != current[field]:
+                employee_changed = True
+                changed_fields.add(label)
+        if employee_changed:
+            changed_employees += 1
+    return changed_employees, sorted(changed_fields)
 
 
 def _run_detail(run: PayrollRun, period: PayrollPeriod) -> dict[str, Any]:
@@ -95,10 +169,10 @@ def _run_detail(run: PayrollRun, period: PayrollPeriod) -> dict[str, Any]:
         "period_year": period.period_year,
         "period_month": period.period_month,
         "period_status": period.status,
-        "run_type": run.run_type,
         "status": run.status,
         "current_version": None,
         "lock_version": run.lock_version,
+        "roster_initialized": run.roster_initialized,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
     }
@@ -144,6 +218,26 @@ async def _get_run(
 ) -> PayrollRun:
     run = await db.get(PayrollRun, run_id)
     if run is None or run.organization_id != organization_id:
+        raise NotFoundError("Payroll run not found.")
+    return run
+
+
+async def _get_run_for_update(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+) -> PayrollRun:
+    """Load a payroll run with a row lock for draft mutations that race calculate."""
+    run = (
+        await db.execute(
+            sa.select(PayrollRun)
+            .where(PayrollRun.id == run_id)
+            .where(PayrollRun.organization_id == organization_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if run is None:
         raise NotFoundError("Payroll run not found.")
     return run
 
@@ -215,7 +309,6 @@ async def create_run(
     run = PayrollRun(
         organization_id=organization_id,
         period_id=period.id,
-        run_type=body.run_type.value,
         status="draft",
     )
     db.add(run)
@@ -225,7 +318,7 @@ async def create_run(
     except IntegrityError as exc:
         await db.rollback()
         if _integrity_is(exc, UniqueViolationError):
-            raise ConflictError("A regular payroll run already exists for this period.") from exc
+            raise ConflictError("A payroll run already exists for this period.") from exc
         _raise_integrity_error(exc)
     return _run_list_item(run, period)
 
@@ -240,7 +333,10 @@ async def list_runs(
     stmt = (
         sa.select(PayrollRun, PayrollPeriod)
         .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
-        .where(PayrollRun.organization_id == organization_id)
+        .where(
+            PayrollRun.organization_id == organization_id,
+            PayrollRun.original_run_id.is_(None),
+        )
         .order_by(PayrollRun.created_at.desc())
     )
     if period_id is not None:
@@ -266,6 +362,204 @@ async def get_run(
         run=run,
     )
     return detail
+
+
+async def list_run_roster(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+) -> list[dict[str, Any]]:
+    run = await _get_run(db, organization_id=organization_id, run_id=run_id)
+    period = await _get_period(db, organization_id=organization_id, period_id=run.period_id)
+    period_days = calendar.monthrange(period.period_year, period.period_month)[1]
+    on_date = date(period.period_year, period.period_month, period_days)
+
+    employees = list(
+        (
+            await db.execute(
+                sa.select(Employee)
+                .where(Employee.organization_id == organization_id)
+                .order_by(Employee.employee_number)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    roster_rows = list(
+        (
+            await db.execute(
+                sa.select(PayrollRunEmployee)
+                .where(PayrollRunEmployee.organization_id == organization_id)
+                .where(PayrollRunEmployee.run_id == run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    roster_by_employee = {row.employee_id: row for row in roster_rows}
+
+    result: list[dict[str, Any]] = []
+    for employee in employees:
+        profile = await versioning.get_active_version(
+            db,
+            employee_profile_versions,
+            header_id=employee.id,
+            organization_id=organization_id,
+            on_date=on_date,
+        )
+        if profile is None:
+            continue
+        pay = await versioning.get_active_version(
+            db,
+            employee_pay_versions,
+            header_id=employee.id,
+            organization_id=organization_id,
+            on_date=on_date,
+        )
+        result.append(
+            _roster_response(
+                employee,
+                name=profile.get("name"),
+                sevarth_id=profile.get("sevarth_id"),
+                retirement_regime=profile.get("retirement_regime"),
+                basic_pay=Decimal(pay["basic_pay"]) if pay is not None else None,
+                row=roster_by_employee.get(employee.id),
+                period_days=period_days,
+                default_selected=not run.roster_initialized and run.status != "draft",
+            )
+        )
+    return result
+
+
+async def replace_run_roster(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+    actor_user_id: UUID,
+    body: PayrollRunRosterUpdate,
+) -> list[dict[str, Any]]:
+    run = await _get_run_for_update(db, organization_id=organization_id, run_id=run_id)
+    _require_draft(run)
+    was_initialized = run.roster_initialized
+    period = await _get_period(db, organization_id=organization_id, period_id=run.period_id)
+    period_days = calendar.monthrange(period.period_year, period.period_month)[1]
+    employee_ids = [item.employee_id for item in body.employees]
+    if not employee_ids:
+        raise ValidationError("Select at least one employee for this pay run.")
+    if len(employee_ids) != len(set(employee_ids)):
+        raise ValidationError("Each employee can appear only once in a payroll run.")
+    if any(item.payable_days > period_days for item in body.employees):
+        raise ValidationError(f"Payable days cannot exceed {period_days} for this period.")
+
+    if employee_ids:
+        valid_ids = set(
+            (
+                await db.execute(
+                    sa.select(Employee.id)
+                    .where(Employee.organization_id == organization_id)
+                    .where(Employee.id.in_(employee_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if valid_ids != set(employee_ids):
+            raise NotFoundError("One or more employees were not found.")
+
+    existing_rows = list(
+        (
+            await db.execute(
+                sa.select(PayrollRunEmployee)
+                .where(PayrollRunEmployee.organization_id == organization_id)
+                .where(PayrollRunEmployee.run_id == run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    before = [_roster_snapshot_item(row) for row in existing_rows]
+    after = [_roster_snapshot_item(item) for item in body.employees]
+    changed_employees, changed_fields = _roster_change_summary(before, after)
+
+    await db.execute(
+        sa.delete(PayrollRunEmployee)
+        .where(PayrollRunEmployee.organization_id == organization_id)
+        .where(PayrollRunEmployee.run_id == run_id)
+    )
+    for item in body.employees:
+        db.add(
+            PayrollRunEmployee(
+                organization_id=organization_id,
+                run_id=run_id,
+                employee_id=item.employee_id,
+                payable_days=item.payable_days,
+                da_percent=item.da_percent,
+                da_difference=item.da_difference,
+                hra_percent=item.hra_percent,
+                transport_amount=item.transport_amount,
+            )
+        )
+    run.roster_initialized = True
+    run.lock_version += 1
+    if changed_employees > 0:
+        await audit_events.write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="payroll_run.roster.update",
+            entity_type="payroll_run_roster",
+            entity_id=run_id,
+            entity_label=f"Payroll roster {period.period_year}-{period.period_month:02d}",
+            before_state={"employees": before},
+            after_state={"employees": after},
+            summary={
+                "action": "Created roster" if not was_initialized else "Updated roster",
+                "changed_employees": changed_employees,
+                "selected_employees": len(after),
+                "changed_fields": changed_fields,
+            },
+        )
+    await db.flush()
+    response = await list_run_roster(db, organization_id=organization_id, run_id=run_id)
+    await db.commit()
+    return response
+
+
+async def list_run_roster_history(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+) -> list[dict[str, Any]]:
+    await _get_run(db, organization_id=organization_id, run_id=run_id)
+    rows = list(
+        (
+            await db.execute(
+                sa.select(AuditEvent)
+                .where(AuditEvent.organization_id == organization_id)
+                .where(AuditEvent.entity_type == "payroll_run_roster")
+                .where(AuditEvent.entity_id == run_id)
+                .where(AuditEvent.command == "payroll_run.roster.update")
+                .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "action": str(row.summary.get("action") or "Updated roster"),
+            "changed_employees": int(row.summary.get("changed_employees") or 0),
+            "selected_employees": int(row.summary.get("selected_employees") or 0),
+            "changed_fields": list(row.summary.get("changed_fields") or []),
+            "actor_name": str((row.actor_snapshot or {}).get("name") or "Unknown user"),
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
 
 
 async def upsert_run_input(

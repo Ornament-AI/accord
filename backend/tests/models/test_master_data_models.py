@@ -44,7 +44,6 @@ async def test_office_orm_roundtrip(scratch_db: str) -> None:
             office = Office(
                 organization_id=org.id,
                 name="Main Office",
-                code="MAIN",
                 jurisdiction="mumbai",
             )
             session.add(office)
@@ -60,7 +59,7 @@ async def test_office_orm_roundtrip(scratch_db: str) -> None:
             loaded = (
                 await session.execute(select(Office).where(Office.id == office_id))
             ).scalar_one()
-            assert loaded.code == "MAIN"
+            assert loaded.name == "Main Office"
             assert loaded.jurisdiction == "mumbai"
             assert loaded.created_at is not None
             assert loaded.updated_at is not None

@@ -73,7 +73,7 @@ def immutable_grants_db(scratch_db: str) -> tuple[str, SeededPayrollRunData, uui
     assert up_head.returncode == 0, diag("alembic upgrade head", up_head)
 
     seed = _seed_payroll_run_data(scratch_db)
-    audit_id = _seed_audit_event(scratch_db, seed.org_a_id)
+    audit_id = _seed_audit_event(scratch_db, seed.org_id)
     return scratch_db, seed, audit_id
 
 
@@ -83,7 +83,7 @@ def test_immutable_tables_deny_update_delete_despite_trigger_escape(
     database_url, seed, audit_id = immutable_grants_db
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
-        _set_app_role(conn, seed.org_a_id)
+        _set_app_role(conn, seed.org_id)
 
         # (a) UPDATE denied even with trigger escape hatch enabled.
         conn.execute("BEGIN")
@@ -91,10 +91,10 @@ def test_immutable_tables_deny_update_delete_despite_trigger_escape(
         with pytest.raises(psycopg.Error, match="(?i)permission denied"):
             conn.execute(
                 "UPDATE payroll_result_lines SET amount = %s WHERE id = %s",
-                ("999.99", seed.line_a_id),
+                ("999.99", seed.line_id),
             )
         conn.rollback()
-        _set_app_role(conn, seed.org_a_id)
+        _set_app_role(conn, seed.org_id)
 
         # (b) DELETE denied even with trigger escape hatch enabled.
         conn.execute("BEGIN")
@@ -102,10 +102,10 @@ def test_immutable_tables_deny_update_delete_despite_trigger_escape(
         with pytest.raises(psycopg.Error, match="(?i)permission denied"):
             conn.execute(
                 "DELETE FROM payroll_result_lines WHERE id = %s",
-                (seed.line_a_id,),
+                (seed.line_id,),
             )
         conn.rollback()
-        _set_app_role(conn, seed.org_a_id)
+        _set_app_role(conn, seed.org_id)
 
         # (c) audit_events UPDATE/DELETE denied (grant backstop re-asserted).
         with pytest.raises(psycopg.Error, match="(?i)permission denied"):
@@ -114,23 +114,23 @@ def test_immutable_tables_deny_update_delete_despite_trigger_escape(
                 ("tamper", audit_id),
             )
         conn.rollback()
-        _set_app_role(conn, seed.org_a_id)
+        _set_app_role(conn, seed.org_id)
 
         with pytest.raises(psycopg.Error, match="(?i)permission denied"):
             conn.execute("DELETE FROM audit_events WHERE id = %s", (audit_id,))
         conn.rollback()
-        _set_app_role(conn, seed.org_a_id)
+        _set_app_role(conn, seed.org_id)
 
         # (d) SELECT still works within org.
         lines = conn.execute(
             "SELECT id FROM payroll_result_lines WHERE id = %s",
-            (seed.line_a_id,),
+            (seed.line_id,),
         ).fetchall()
         audits = conn.execute(
             "SELECT id FROM audit_events WHERE id = %s",
             (audit_id,),
         ).fetchall()
-        assert {row[0] for row in lines} == {seed.line_a_id}
+        assert {row[0] for row in lines} == {seed.line_id}
         assert {row[0] for row in audits} == {audit_id}
 
         # (e) INSERT still works (insert-then-immutable).
@@ -140,8 +140,8 @@ def test_immutable_tables_deny_update_delete_despite_trigger_escape(
             "classification, calc_kind, amount, sequence, trace) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
-                seed.result_a_id,
+                seed.org_id,
+                seed.result_id,
                 "HRA",
                 "earning",
                 "fixed_recurring_amount",
@@ -155,10 +155,10 @@ def test_immutable_tables_deny_update_delete_despite_trigger_escape(
             "(organization_id, command, entity_type, entity_id, summary) "
             "VALUES (%s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
+                seed.org_id,
                 "calculate",
                 "payroll_run",
-                seed.run_a_id,
+                seed.run_id,
                 Json({"after": {"status": "calculated"}}),
             ),
         )

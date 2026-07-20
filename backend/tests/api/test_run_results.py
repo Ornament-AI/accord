@@ -27,14 +27,14 @@ from app.schemas.run_results import CalculateResponse
 from app.services import run_calculation as run_calculation_service
 from app.services import versioning
 from app.tenancy import bind_tenant_context
+from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
     login_dev,
     seed_membership,
-    seed_organization,
     seed_user,
-    session_cookie_from_response,
 )
+from tests.roster_helpers import initialize_run_roster
 
 
 def _run_results_app():
@@ -54,19 +54,21 @@ async def client(dev_settings):
         yield ac
 
 
-async def _create_org_as_admin(client) -> tuple[UUID, UUID]:
+async def _create_org_as_admin(client, session) -> tuple[UUID, UUID]:
+    slug = f"results-api-{uuid4().hex[:8]}"
+    await provision_organization(
+        session,
+        name="Results API",
+        slug=slug,
+        admin_email="dev@accord.local",
+    )
+    await session.commit()
     resp, cookie = await login_dev(client)
     assert resp.status_code in {200, 302}, resp.text
     assert cookie, "expected accord_session cookie from login"
-    client.cookies.set("accord_session", cookie)
-
-    slug = f"results-api-{uuid4().hex[:8]}"
-    resp = await client.post("/api/organizations", json={"name": "Results API", "slug": slug})
-    assert resp.status_code == 201, resp.text
-    cookie = session_cookie_from_response(resp) or cookie
-    client.cookies.set("accord_session", cookie)
-    body = resp.json()
-    return UUID(body["active_organization"]["id"]), UUID(body["id"])
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "active", body
+    return UUID(body["organization"]["id"]), UUID(body["id"])
 
 
 async def _bind(session, org_id: UUID, user_id: UUID) -> None:
@@ -247,11 +249,19 @@ async def _seed_calculated_world(session, *, org_id: UUID, user_id: UUID) -> dic
         run = PayrollRun(
             organization_id=org_id,
             period_id=period.id,
-            run_type="regular",
             status="draft",
         )
         session.add(run)
         await session.flush()
+        session.add_all(
+            initialize_run_roster(
+                organization_id=org_id,
+                run=run,
+                employee_ids=[employee.id],
+                period_year=period.period_year,
+                period_month=period.period_month,
+            )
+        )
 
         session.add(
             PayrollRunInput(
@@ -300,7 +310,7 @@ async def _restore_admin_cookie(
 
 @pytest.mark.asyncio
 async def test_results_list_happy_path(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     world = await _seed_calculated_world(session, org_id=org_id, user_id=user_id)
     await _restore_admin_cookie(client, session, dev_settings, org_id=org_id, user_id=user_id)
 
@@ -327,7 +337,7 @@ async def test_results_list_happy_path(client, session, dev_settings):
 
 @pytest.mark.asyncio
 async def test_results_version_number_selection(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     world = await _seed_calculated_world(session, org_id=org_id, user_id=user_id)
 
     await _bind(session, org_id, user_id)
@@ -363,7 +373,7 @@ async def test_results_version_number_selection(client, session, dev_settings):
 
 @pytest.mark.asyncio
 async def test_results_409_when_run_has_no_calculated_version(client, session):
-    org_id, _user_id = await _create_org_as_admin(client)
+    org_id, _user_id = await _create_org_as_admin(client, session)
 
     period = await client.post(
         "/api/payroll-periods",
@@ -372,7 +382,7 @@ async def test_results_409_when_run_has_no_calculated_version(client, session):
     assert period.status_code == 201, period.text
     run = await client.post(
         "/api/payroll-runs",
-        json={"period_id": period.json()["id"], "run_type": "regular"},
+        json={"period_id": period.json()["id"]},
     )
     assert run.status_code == 201, run.text
 
@@ -384,14 +394,14 @@ async def test_results_409_when_run_has_no_calculated_version(client, session):
 
 @pytest.mark.asyncio
 async def test_results_404_unknown_run(client, session):
-    await _create_org_as_admin(client)
+    await _create_org_as_admin(client, session)
     resp = await client.get(f"/api/payroll-runs/{uuid4()}/results")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_employee_lines_trace_passthrough_and_sequence(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     world = await _seed_calculated_world(session, org_id=org_id, user_id=user_id)
     await _restore_admin_cookie(client, session, dev_settings, org_id=org_id, user_id=user_id)
 
@@ -431,7 +441,7 @@ async def test_employee_lines_trace_passthrough_and_sequence(client, session, de
 async def test_run_detail_populated_current_version_after_calculation(
     client, session, dev_settings
 ):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     world = await _seed_calculated_world(session, org_id=org_id, user_id=user_id)
     await _restore_admin_cookie(client, session, dev_settings, org_id=org_id, user_id=user_id)
 
@@ -450,7 +460,7 @@ async def test_run_detail_populated_current_version_after_calculation(
 
 @pytest.mark.asyncio
 async def test_calculate_response_matches_calculate_response_schema(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     world = await _seed_calculated_world(session, org_id=org_id, user_id=user_id)
 
     # Fresh draft run against the same seeded master data for the API path.
@@ -469,11 +479,19 @@ async def test_calculate_response_matches_calculate_response_schema(client, sess
         draft = PayrollRun(
             organization_id=org_id,
             period_id=period_row.id,
-            run_type="regular",
             status="draft",
         )
         session.add(draft)
         await session.flush()
+        session.add_all(
+            initialize_run_roster(
+                organization_id=org_id,
+                run=draft,
+                employee_ids=[world["employee_id"]],
+                period_year=period_row.period_year,
+                period_month=period_row.period_month,
+            )
+        )
         draft_id = draft.id
 
     await _restore_admin_cookie(client, session, dev_settings, org_id=org_id, user_id=user_id)
@@ -490,40 +508,43 @@ async def test_calculate_response_matches_calculate_response_schema(client, sess
 
 
 @pytest.mark.asyncio
-async def test_results_tenant_isolation_org_b_404(client, session, dev_settings):
-    org_a_id, admin_a = await _create_org_as_admin(client)
-    world = await _seed_calculated_world(session, org_id=org_a_id, user_id=admin_a)
+async def test_results_unknown_run_404(client, session):
+    await _create_org_as_admin(client, session)
 
-    org_b = await seed_organization(session, name="Org B", slug=f"org-b-{uuid4().hex[:8]}")
-    admin_b = await seed_user(session, email="admin-b-results@example.com", name="Admin B")
-    await seed_membership(
-        session,
-        organization_id=org_b.id,
-        user_id=admin_b.id,
-        role="organization_administrator",
-    )
+    list_resp = await client.get(f"/api/payroll-runs/{uuid4()}/results")
+    assert list_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_results_unprovisioned_user_fail_closed(client, session, dev_settings):
+    org_id, admin_id = await _create_org_as_admin(client, session)
+    world = await _seed_calculated_world(session, org_id=org_id, user_id=admin_id)
+    outsider = await seed_user(session, email=f"out-{uuid4().hex[:8]}@example.com")
     await session.commit()
 
-    cookie = await mint_session_cookie(
-        session,
-        dev_settings,
-        user_id=admin_b.id,
-        active_organization_id=org_b.id,
+    apply_session_cookie(
+        client,
+        await mint_session_cookie(
+            session,
+            dev_settings,
+            user_id=outsider.id,
+            active_organization_id=org_id,
+        ),
     )
-    apply_session_cookie(client, cookie)
 
     list_resp = await client.get(f"/api/payroll-runs/{world['run_id']}/results")
-    assert list_resp.status_code == 404
+    assert list_resp.status_code == 409
+    assert list_resp.json()["error"] == "OrganizationContextRequired"
 
     emp_resp = await client.get(
         f"/api/payroll-runs/{world['run_id']}/results/{world['employee_id']}"
     )
-    assert emp_resp.status_code == 404
+    assert emp_resp.status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_results_capability_gate_auditor_403(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     world = await _seed_calculated_world(session, org_id=org_id, user_id=user_id)
 
     auditor = await seed_user(session, email="auditor-results@example.com", name="Auditor")

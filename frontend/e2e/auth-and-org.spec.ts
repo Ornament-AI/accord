@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import {
 	ensureAuthenticatedLanding,
-	ensureUniqueOrganization,
+	ensureSingletonOrganization,
 	loginViaDevBypass,
 } from "./helpers/auth";
 import { AUTH_DIR, STORAGE_STATE_PATH } from "./helpers/paths";
@@ -12,29 +12,24 @@ import { uniqueSlug, writeRunContext } from "./helpers/run-context";
 import { authenticatedLanding } from "./helpers/ui";
 
 /**
- * Setup project: establishes the single-run org and persists storageState for
- * dependent chromium specs. Fresh slug every process so re-runs on accord_e2e
- * do not collide.
+ * Setup project: reuses the singleton org (provisioned via CLI) and persists
+ * storageState for dependent chromium specs. Does not create organizations via UI.
  */
 test.describe.configure({ mode: "serial" });
 
-test("dev-bypass login, create org, land on worklist with switcher", async ({ page }) => {
+test("dev-bypass login, reuse singleton org, land with static brand", async ({ page }) => {
 	const orgSlug = uniqueSlug("e2e-org");
-	const orgName = `E2E Org ${orgSlug}`;
 
 	await loginViaDevBypass(page);
-	await ensureUniqueOrganization(page, { name: orgName });
+	const orgName = await ensureSingletonOrganization(page);
 	await ensureAuthenticatedLanding(page);
 
 	await expect(authenticatedLanding(page)).toBeVisible();
 
-	// Org switcher trigger shows the active organization name.
-	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();
-	await expect(switcher).toContainText(orgName);
-	await switcher.click();
-	await expect(page.getByRole("menuitem", { name: orgName })).toBeVisible();
-	await expect(page.getByRole("menuitem", { name: "Add" })).toBeVisible();
-	await page.keyboard.press("Escape");
+	const brand = page.locator('[data-slot="sidebar-header"]').first();
+	await expect(brand).toContainText(orgName);
+	// No switcher menu / Add under ADR 0011.
+	await expect(page.getByRole("menuitem", { name: "Add" })).toHaveCount(0);
 
 	mkdirSync(AUTH_DIR, { recursive: true });
 	writeRunContext({ orgSlug, orgName });

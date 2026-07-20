@@ -1,4 +1,8 @@
-"""Unit tests for organization slug validation."""
+"""Unit tests for organization slug validation.
+
+HTTP ``POST /api/organizations`` is removed (ADR 0011). Singleton bootstrap
+coverage is in ``tests/services/test_bootstrap_organization.py``.
+"""
 
 from __future__ import annotations
 

@@ -5,8 +5,16 @@ import { Link, useLocation } from "react-router";
 import { toast } from "sonner";
 
 import { NavUser } from "@/components/nav-user";
-import { OrganizationSwitcher } from "@/components/organization-switcher";
+import { OrganizationBrand } from "@/components/organization-brand";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuGroup,
+	DropdownMenuLabel,
+	DropdownMenuLinkItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
 	Sidebar,
 	SidebarContent,
@@ -49,9 +57,8 @@ function NavFolderItem({
 	const visibleChildren = item.children.filter(
 		(child) => child.capability === undefined || hasCapability(child.capability),
 	);
-	const sectionActive = isPathActive(pathname, item.path);
+	const sectionActive = visibleChildren.some((child) => isPathActive(pathname, child.path));
 	const [open, setOpen] = useState(sectionActive);
-	const firstChildPath = visibleChildren[0]?.path ?? item.path;
 
 	useEffect(() => {
 		if (sectionActive) {
@@ -66,14 +73,42 @@ function NavFolderItem({
 	if (isCompactSidebar) {
 		return (
 			<SidebarMenuItem>
-				<SidebarMenuButton
-					render={<Link to={firstChildPath} />}
-					tooltip={item.title}
-					isActive={false}
-				>
-					<item.icon />
-					<span>{item.title}</span>
-				</SidebarMenuButton>
+				<DropdownMenu>
+					<DropdownMenuTrigger
+						render={
+							<SidebarMenuButton
+								tooltip={item.title}
+								isActive={false}
+								className="data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground"
+							/>
+						}
+					>
+						<item.icon />
+						<span>{item.title}</span>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent
+						side="right"
+						align="start"
+						sideOffset={4}
+						className="min-w-44 rounded-lg"
+					>
+						<DropdownMenuGroup>
+							<DropdownMenuLabel className="px-2 pb-1 pt-1.5 text-[length:var(--text-caption)] font-normal text-muted-foreground">
+								{item.title}
+							</DropdownMenuLabel>
+							{visibleChildren.map((child) => (
+								<DropdownMenuLinkItem
+									key={child.path}
+									render={<Link to={child.path} />}
+									data-active={isPathActive(pathname, child.path) || undefined}
+									className="rounded-md data-[active=true]:bg-accent data-[active=true]:text-accent-foreground"
+								>
+									{child.title}
+								</DropdownMenuLinkItem>
+							))}
+						</DropdownMenuGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</SidebarMenuItem>
 		);
 	}
@@ -132,7 +167,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
-				<OrganizationSwitcher />
+				<OrganizationBrand />
 			</SidebarHeader>
 
 			<SidebarContent className="scroll-fade">

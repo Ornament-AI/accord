@@ -50,6 +50,7 @@ from app.services import versioning
 from app.services.run_calculation import calculate_run_command
 from app.services.run_posting import post_run
 from app.tenancy import bind_tenant_context
+from tests.roster_helpers import initialize_run_roster
 from tests.e2e.fixture_loader import (
     ADVANCE_COMPONENT_CODES,
     EmployeeSeed,
@@ -242,10 +243,19 @@ async def _seed_posted_june_recovery_world(session: AsyncSession) -> dict:
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status="draft",
     )
     session.add(run)
+    await session.flush()
+    session.add_all(
+        initialize_run_roster(
+            organization_id=org.id,
+            run=run,
+            employee_ids=list(employee_ids.values()),
+            period_year=period.period_year,
+            period_month=period.period_month,
+        )
+    )
     await session.commit()
 
     world = {
@@ -517,7 +527,6 @@ async def test_unposted_run_raises_conflict_error(session):
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status="draft",
     )
     session.add(run)

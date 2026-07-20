@@ -1,10 +1,10 @@
 # ADR-0001: Tenancy, RLS, and Database Roles
 
-**Status:** Proposed
+**Status:** Accepted (kernel); product multi-org superseded by [0011-single-organization.md](0011-single-organization.md)
 
 ## Context
 
-Accord is a greenfield multi-tenant payroll SaaS for local governments. Unlike Atlas (single-tenant, one deployment per customer), a single Accord deployment hosts many organizations. A tenancy bug is a full data-breach class failure: one municipality must never read or mutate another’s employees, bank accounts, or payroll runs.
+Accord’s persistence layer was designed with a multi-tenant kernel (`organization_id` on tenant tables, forced RLS, transaction-local GUCs). The **product** is a single organization per deployment ([ADR 0011](0011-single-organization.md)); the kernel below remains as **migration debt** until Phase 2 removal. A tenancy bug in the kernel remains a fail-closed binding failure: unset or wrong `app.organization_id` must not expose rows.
 
 PostgreSQL Row Level Security (RLS) is a **forced, mandatory** tenancy control for Accord — not optional defense-in-depth. Application filters alone are insufficient: a missing `WHERE organization_id = …` in one query would leak rows. RLS must deny cross-tenant access even if application code forgets to filter.
 

@@ -138,7 +138,7 @@ export function CreatePeriodDialog({ open, onOpenChange }: CreatePeriodDialogPro
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Create period"}
+							{isSubmitting ? "Creating…" : "Create Period"}
 						</Button>
 					</DialogFooter>
 				</form>

@@ -121,7 +121,7 @@ export default function PayComponentsPage() {
 					{!listQuery.isLoading && !listQuery.isError && isEmpty ? (
 						<EmptyState
 							icon={Wallet}
-							title="No pay components"
+							title="No Pay Components"
 							description="Create a pay component to get started."
 						/>
 					) : null}

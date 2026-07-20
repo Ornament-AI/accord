@@ -224,7 +224,7 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 							<>
 								<div className="flex items-center justify-between gap-4">
 									<div className="grid gap-1">
-										<Label htmlFor="create-pc-employer-transfer">Employer transfer</Label>
+										<Label htmlFor="create-pc-employer-transfer">Employer Transfer</Label>
 										<p className="text-xs text-muted-foreground">
 											Marks an employer-funded deduction.
 										</p>
@@ -245,7 +245,7 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 
 								{form.employer_transfer ? (
 									<div className="grid gap-2">
-										<Label htmlFor="create-pc-transfer-of">Paired employer contribution</Label>
+										<Label htmlFor="create-pc-transfer-of">Paired Employer Contribution</Label>
 										<Select
 											value={form.transfer_of || OFF_BILL_VALUE}
 											onValueChange={(value) =>
@@ -290,7 +290,7 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Create component"}
+							{isSubmitting ? "Creating…" : "Create Component"}
 						</Button>
 					</DialogFooter>
 				</form>

@@ -1,4 +1,8 @@
-"""Behavioral RLS tests for Phase 5 platform tables (audit_events + jobs)."""
+"""Behavioral RLS tests for Phase 5 platform tables (audit_events + jobs) (ADR 0011).
+
+Isolation proofs use a single organization row: empty/wrong GUC ⇒ 0 rows;
+correct GUC ⇒ rows; second organization INSERT fails the singleton unique index.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ from dataclasses import dataclass
 
 import psycopg
 import pytest
+from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 
 from tests.migrations.conftest import (
@@ -24,14 +29,10 @@ RLS_SPOT_CHECK_TABLES = (
 
 @dataclass(frozen=True)
 class SeededPlatformData:
-    org_a_id: uuid.UUID
-    org_b_id: uuid.UUID
-    user_a_id: uuid.UUID
-    user_b_id: uuid.UUID
-    audit_a_id: uuid.UUID
-    audit_b_id: uuid.UUID
-    job_a_id: uuid.UUID
-    job_b_id: uuid.UUID
+    org_id: uuid.UUID
+    user_id: uuid.UUID
+    audit_id: uuid.UUID
+    job_id: uuid.UUID
 
 
 def _grant_table_dml(database_url: str) -> None:
@@ -50,53 +51,35 @@ def _grant_table_dml(database_url: str) -> None:
 
 
 def _seed_platform_data(database_url: str) -> SeededPlatformData:
-    org_a_id = uuid.uuid4()
-    org_b_id = uuid.uuid4()
-    user_a_id = uuid.uuid4()
-    user_b_id = uuid.uuid4()
-    audit_a_id = uuid.uuid4()
-    audit_b_id = uuid.uuid4()
-    job_a_id = uuid.uuid4()
-    job_b_id = uuid.uuid4()
+    org_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    audit_id = uuid.uuid4()
+    job_id = uuid.uuid4()
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute(
-            "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s), (%s, %s, %s)",
-            (org_a_id, "Org A", "org-a", org_b_id, "Org B", "org-b"),
+            "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
+            (org_id, "Org A", "org-a"),
         )
         conn.execute(
-            "INSERT INTO users (id, workos_user_id, email, name) VALUES "
-            "(%s, %s, %s, %s), (%s, %s, %s, %s)",
+            "INSERT INTO users (id, workos_user_id, email, name) VALUES (%s, %s, %s, %s)",
             (
-                user_a_id,
-                f"wos_{user_a_id.hex[:12]}",
-                f"a-{user_a_id.hex[:8]}@example.com",
+                user_id,
+                f"wos_{user_id.hex[:12]}",
+                f"a-{user_id.hex[:8]}@example.com",
                 "User A",
-                user_b_id,
-                f"wos_{user_b_id.hex[:12]}",
-                f"b-{user_b_id.hex[:8]}@example.com",
-                "User B",
             ),
         )
         conn.execute(
             "INSERT INTO audit_events "
             "(id, organization_id, actor_user_id, request_id, command, "
             "entity_type, entity_id, summary) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s), "
             "(%s, %s, %s, %s, %s, %s, %s, %s)",
             (
-                audit_a_id,
-                org_a_id,
-                user_a_id,
+                audit_id,
+                org_id,
+                user_id,
                 "req-a",
-                "post",
-                "payroll_run",
-                uuid.uuid4(),
-                Json({"before": {"status": "approved"}, "after": {"status": "posted"}}),
-                audit_b_id,
-                org_b_id,
-                user_b_id,
-                "req-b",
                 "post",
                 "payroll_run",
                 uuid.uuid4(),
@@ -106,33 +89,23 @@ def _seed_platform_data(database_url: str) -> SeededPlatformData:
         conn.execute(
             "INSERT INTO jobs "
             "(id, organization_id, job_type, status, payload, created_by) VALUES "
-            "(%s, %s, %s, %s, %s, %s), (%s, %s, %s, %s, %s, %s)",
+            "(%s, %s, %s, %s, %s, %s)",
             (
-                job_a_id,
-                org_a_id,
+                job_id,
+                org_id,
                 "export.generate",
                 "queued",
                 Json({"report_type": "bank_file"}),
-                user_a_id,
-                job_b_id,
-                org_b_id,
-                "export.generate",
-                "queued",
-                Json({"report_type": "bank_file"}),
-                user_b_id,
+                user_id,
             ),
         )
         conn.commit()
 
     return SeededPlatformData(
-        org_a_id=org_a_id,
-        org_b_id=org_b_id,
-        user_a_id=user_a_id,
-        user_b_id=user_b_id,
-        audit_a_id=audit_a_id,
-        audit_b_id=audit_b_id,
-        job_a_id=job_a_id,
-        job_b_id=job_b_id,
+        org_id=org_id,
+        user_id=user_id,
+        audit_id=audit_id,
+        job_id=job_id,
     )
 
 
@@ -158,25 +131,43 @@ def test_platform_select_scoped_to_organization_guc(
         conn.execute(f"SET ROLE {role}")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(seed.org_id),),
         )
         audits = conn.execute("SELECT organization_id FROM audit_events").fetchall()
         jobs = conn.execute("SELECT organization_id FROM jobs").fetchall()
 
-    assert {row[0] for row in audits} == {seed.org_a_id}
-    assert {row[0] for row in jobs} == {seed.org_a_id}
+    assert {row[0] for row in audits} == {seed.org_id}
+    assert {row[0] for row in jobs} == {seed.org_id}
 
 
-def test_platform_insert_wrong_organization_blocked(
+def test_platform_select_fail_closed_with_wrong_organization_guc(
     seeded_platform_db: tuple[str, SeededPlatformData],
 ) -> None:
-    database_url, seed = seeded_platform_db
+    database_url, _seed = seeded_platform_db
+    wrong_org_id = uuid.uuid4()
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute("SET ROLE accord_app")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(wrong_org_id),),
+        )
+        for table in RLS_SPOT_CHECK_TABLES:
+            count = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            assert count == 0, f"{table}: expected zero rows under wrong GUC"
+
+
+def test_platform_insert_blocked_while_bound_to_wrong_organization_guc(
+    seeded_platform_db: tuple[str, SeededPlatformData],
+) -> None:
+    database_url, seed = seeded_platform_db
+    wrong_org_id = uuid.uuid4()
+
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        conn.execute("SET ROLE accord_app")
+        conn.execute(
+            "SELECT set_config('app.organization_id', %s, false)",
+            (str(wrong_org_id),),
         )
         with pytest.raises(psycopg.Error, match="(?i)row-level security"):
             conn.execute(
@@ -184,7 +175,7 @@ def test_platform_insert_wrong_organization_blocked(
                 "(organization_id, command, entity_type, entity_id, summary) "
                 "VALUES (%s, %s, %s, %s, %s)",
                 (
-                    seed.org_b_id,
+                    seed.org_id,
                     "calculate",
                     "payroll_run",
                     uuid.uuid4(),
@@ -195,14 +186,14 @@ def test_platform_insert_wrong_organization_blocked(
         conn.execute("SET ROLE accord_app")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(wrong_org_id),),
         )
         with pytest.raises(psycopg.Error, match="(?i)row-level security"):
             conn.execute(
                 "INSERT INTO jobs (organization_id, job_type, status, payload) "
                 "VALUES (%s, %s, %s, %s)",
                 (
-                    seed.org_b_id,
+                    seed.org_id,
                     "export.generate",
                     "queued",
                     Json({}),
@@ -238,7 +229,7 @@ def test_platform_insert_fail_closed_without_organization_guc(
                 "(organization_id, command, entity_type, entity_id, summary) "
                 "VALUES (%s, %s, %s, %s, %s)",
                 (
-                    seed.org_a_id,
+                    seed.org_id,
                     "calculate",
                     "payroll_run",
                     uuid.uuid4(),
@@ -252,5 +243,18 @@ def test_platform_insert_fail_closed_without_organization_guc(
             conn.execute(
                 "INSERT INTO jobs (organization_id, job_type, status, payload) "
                 "VALUES (%s, %s, %s, %s)",
-                (seed.org_a_id, "export.generate", "queued", Json({})),
+                (seed.org_id, "export.generate", "queued", Json({})),
+            )
+
+
+def test_second_organization_insert_fails_singleton_index(
+    seeded_platform_db: tuple[str, SeededPlatformData],
+) -> None:
+    database_url, _seed = seeded_platform_db
+
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        with pytest.raises(UniqueViolation, match="(?i)uq_organizations_singleton"):
+            conn.execute(
+                "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
+                (uuid.uuid4(), "Org B", "org-b"),
             )

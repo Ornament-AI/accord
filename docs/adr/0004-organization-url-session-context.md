@@ -1,17 +1,17 @@
 # ADR-0004: Organization URL and Session Context
 
-**Status:** Proposed
+**Status:** Accepted (org-implicit APIs + session GUC bind); multi-org switch / open create superseded by [0011-single-organization.md](0011-single-organization.md)
 
 ## Context
 
-Accord is multi-tenant. Every authenticated request that touches tenant data needs a clear answer to: *which organization is in scope?*
+Every authenticated request that touches tenant data needs a clear answer to: *which organization is in scope?* For the single-organization product ([0011](0011-single-organization.md)), the answer is always the deployment singleton when the user is a member. The session still stores `active_organization_id` as **kernel debt** for RLS binding.
 
 Two common API styles:
 
 1. **Organization-implicit routes** — active org resolved from server-side session, e.g. `GET /api/employees`.
 2. **Organization-in-path routes** — org appears in every URL, e.g. `GET /api/organizations/{org_id}/employees`.
 
-This choice interacts with forced RLS and transaction GUCs ([0001-tenancy-rls-database-roles.md](0001-tenancy-rls-database-roles.md)) and with WorkOS sessions that store `active_organization_id` ([0002-workos-authentication-sessions.md](0002-workos-authentication-sessions.md)). A wrong choice multiplies IDOR risk across every handler.
+This choice interacts with forced RLS and transaction GUCs ([0001-tenancy-rls-database-roles.md](0001-tenancy-rls-database-roles.md)) and with sessions that store `active_organization_id` ([0002-workos-authentication-sessions.md](0002-workos-authentication-sessions.md)).
 
 ## Decision
 
@@ -30,29 +30,20 @@ GET    /api/payroll-runs/{run_id}
 Resolution order (centralized in shared auth dependency / middleware — not per-handler ad hoc logic):
 
 1. Authenticate session cookie → load server-side session.
-2. Require `active_organization_id` for org-scoped routes; if null, return Problem Detail (e.g. 409 `OrganizationContextRequired`) directing the client to switch.
+2. Require `active_organization_id` for org-scoped routes; if null, return Problem Detail (e.g. 409 `OrganizationContextRequired`) — under ADR 0011 the client shows unbootstrapped/unprovisioned, not an org switcher.
 3. Re-validate membership `is_active` for that org (ADR 0002 staleness rules).
 4. Open DB transaction and `SET LOCAL app.organization_id` / `app.user_id` / `app.request_id` (ADR 0001) **before** any tenant query.
 5. Handlers receive a trusted `TenantContext` and never read organization scope from the JSON body.
 
-### 2. Canonical org-switch endpoint
+### 2. Org-switch endpoint (superseded)
 
-**Canonical:** `POST /api/auth/switch-organization` (defined in ADR 0002).
+~~**Canonical:** `POST /api/auth/switch-organization`.~~ **Removed** by [ADR 0011](0011-single-organization.md). Session `active_organization_id` is auto-bound to the singleton when the user has an active membership.
 
-```http
-POST /api/auth/switch-organization
-Content-Type: application/json
-
-{"organization_id": "11111111-1111-1111-1111-111111111111"}
-```
-
-Behavior:
+Historical behavior (for archaeology only):
 
 - Re-validate active membership for the current user.
 - Update session `active_organization_id`, rotate session id, set cookie.
 - Response includes the new effective `organization_id`.
-
-**Optional alias:** `POST /api/organizations/{id}/switch` may call the same service for ergonomic REST shape. Clients and docs should treat **`/api/auth/switch-organization` as canonical** to avoid two competing contracts. If the alias is implemented, it must not diverge in authz or side effects.
 
 ### 3. Echo effective organization on every org-scoped response
 
@@ -114,8 +105,7 @@ Org id (or slug) may appear in the URL only in these cases:
 
 | Route class | Example | Why allowed |
 | --- | --- | --- |
-| Switch command | `POST /api/auth/switch-organization` (body) or alias `POST /api/organizations/{id}/switch` | The target org **is** the command argument; membership is re-validated before session update |
-| Platform support admin | e.g. `GET /api/support/organizations/{org_id}/…` | Caller is **platform support administrator** (ADR 0002) — not a normal tenant user; separately audited; explicitly allowed to name a target org |
+| Platform support admin | e.g. `GET /api/support/organizations/{org_id}/…` | Caller is **platform support administrator** (ADR 0002) — not a normal tenant user; separately audited; explicitly allowed to name a target org (support routes may remain out of scope for v1) |
 
 Rules for support routes:
 
@@ -166,13 +156,9 @@ async function onOrganizationSwitched(nextOrganizationId: string): Promise<void>
 4. **Allow soft cache invalidation only** — Rejected. Selective invalidation risks leaving org-scoped detail queries in memory; full `queryClient.clear()` + remount is mandatory.
 5. **Subdomain-per-org (`org-slug.accord.example`)** — Deferred. Possible future UX; would still resolve to server-side session/org binding and must not bypass membership checks.
 
-## Addendum (Gate D, 2026-07-17): self-service organization creation
+## Addendum (superseded by ADR 0011)
 
-`POST /api/organizations` is deliberately gated only on an authenticated
-session, not on any capability: any signed-in user may create an organization
-and becomes its `organization_administrator`. This is the standard SaaS
-bootstrap flow (the no-organization welcome state depends on it) and is NOT a
-tenancy leak — each created organization is fully RLS-isolated. Gate D's
-adversarial suite (`backend/tests/gate_d/test_http_isolation.py`) asserts this
-behavior explicitly. Revisit if the platform later needs invite-only or
-platform-admin-gated organization provisioning (e.g. paid plans, vetting).
+Self-service `POST /api/organizations` is **removed**. Bootstrap is CLI-only
+(`scripts/provision_organization.py`) with a DB singleton unique index. See
+[0011-single-organization.md](0011-single-organization.md). Gate D now proves
+fail-closed GUC isolation against one organization, not dual-org spawn.

@@ -19,7 +19,7 @@ from app.models.employees import (
     employee_posting_versions,
     employee_profile_versions,
 )
-from app.models.org_structure import EmployeeGroup, Office, PayrollUnit, Post
+from app.models.org_structure import Office, Post
 from app.schemas.employees import (
     BankInput,
     CreateEmployeeRequest,
@@ -79,9 +79,7 @@ def _profile_values(profile: ProfileInput) -> dict[str, Any]:
 def _posting_values(posting: PostingInput) -> dict[str, Any]:
     return {
         "office_id": posting.office_id,
-        "payroll_unit_id": posting.payroll_unit_id,
         "post_id": posting.post_id,
-        "employee_group_id": posting.employee_group_id,
     }
 
 
@@ -139,23 +137,8 @@ async def _validate_posting_fks(
         db, Office, organization_id=organization_id, entity_id=posting.office_id, label="Office"
     )
     await _require_org_entity(
-        db,
-        PayrollUnit,
-        organization_id=organization_id,
-        entity_id=posting.payroll_unit_id,
-        label="Payroll unit",
-    )
-    await _require_org_entity(
         db, Post, organization_id=organization_id, entity_id=posting.post_id, label="Post"
     )
-    if posting.employee_group_id is not None:
-        await _require_org_entity(
-            db,
-            EmployeeGroup,
-            organization_id=organization_id,
-            entity_id=posting.employee_group_id,
-            label="Employee group",
-        )
 
 
 def _parse_kind(kind: str) -> VersionKind:

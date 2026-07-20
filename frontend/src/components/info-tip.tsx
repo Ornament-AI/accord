@@ -32,7 +32,7 @@ export function InfoTip({
 			aria-label={ariaLabel}
 			data-testid={dataTestId}
 			className={cn(
-				"-my-1 inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/35",
+				"accord-motion-highlight -my-1 inline-flex size-6 shrink-0 touch-manipulation items-center justify-center rounded-full text-muted-foreground/60 hover:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/35",
 				className,
 			)}
 		>

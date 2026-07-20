@@ -26,7 +26,6 @@ from __future__ import annotations
 CAPABILITIES = frozenset(
     {
         "manage_organization",
-        "manage_members",
         "manage_master_data",
         "view_master_data",
         "reveal_sensitive_fields",
@@ -37,6 +36,17 @@ CAPABILITIES = frozenset(
         "generate_reports",
         "release_reports",
         "view_audit",
+    }
+)
+
+MEMBERSHIP_ROLES = frozenset(
+    {
+        "organization_administrator",
+        "payroll_preparer",
+        "payroll_reviewer",
+        "payroll_approver",
+        "report_releaser",
+        "auditor",
     }
 )
 

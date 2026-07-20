@@ -16,12 +16,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import {
-	type PayrollRunListItem,
-	periodLabel,
-	runTypeLabel,
-	usePayrollRuns,
-} from "@/lib/api/payroll-runs";
+import { type PayrollRunListItem, periodLabel, usePayrollRuns } from "@/lib/api/payroll-runs";
 import { useArtifactsList, useReportCatalog } from "@/lib/api/reports";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -32,7 +27,7 @@ import { useReportGeneration } from "./use-report-generation";
 const ARTIFACTS_PAGE_SIZE = 20;
 
 function postedRunLabel(run: PayrollRunListItem): string {
-	return `${periodLabel(run.period_year, run.period_month)} · ${runTypeLabel(run.run_type)}`;
+	return periodLabel(run.period_year, run.period_month);
 }
 
 export default function ReportsPage() {
@@ -81,7 +76,7 @@ export default function ReportsPage() {
 					{noPostedRuns ? (
 						<EmptyState
 							icon={WalletCards}
-							title="No posted runs yet"
+							title="No Posted Runs Yet"
 							description="Post a payroll run before generating reports."
 						/>
 					) : null}

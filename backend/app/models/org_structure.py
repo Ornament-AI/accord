@@ -1,4 +1,4 @@
-"""Org structure master data (offices, payroll units, posts, employee groups)."""
+"""Org structure master data (offices, posts)."""
 
 from __future__ import annotations
 
@@ -26,11 +26,6 @@ class Office(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=
             "jurisdiction IN ('mumbai','nagpur','worli','other')",
             name="ck_offices_jurisdiction",
         ),
-        UniqueConstraint(
-            "organization_id",
-            "code",
-            name="uq_offices_organization_id_code",
-        ),
     )
 
     id: uuid.UUID = _id_field()
@@ -38,28 +33,7 @@ class Office(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=
     updated_at: datetime = _updated_at_field()
     organization_id: uuid.UUID = _organization_id_field()
     name: str = Field(sa_column=Column(Text, nullable=False))
-    code: str = Field(sa_column=Column(Text, nullable=False))
     jurisdiction: str = Field(sa_column=Column(Text, nullable=False))
-
-
-class PayrollUnit(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=True):
-    """Payroll processing unit within an organization."""
-
-    __tablename__ = "payroll_units"
-    __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            "code",
-            name="uq_payroll_units_organization_id_code",
-        ),
-    )
-
-    id: uuid.UUID = _id_field()
-    created_at: datetime = _created_at_field()
-    updated_at: datetime = _updated_at_field()
-    organization_id: uuid.UUID = _organization_id_field()
-    name: str = Field(sa_column=Column(Text, nullable=False))
-    code: str = Field(sa_column=Column(Text, nullable=False))
 
 
 class Post(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=True):
@@ -87,23 +61,3 @@ class Post(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=Tr
     class_: str = Field(
         sa_column=Column("class", Text, nullable=False),
     )
-
-
-class EmployeeGroup(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=True):
-    """Employee grouping used for posting / payroll classification."""
-
-    __tablename__ = "employee_groups"
-    __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            "code",
-            name="uq_employee_groups_organization_id_code",
-        ),
-    )
-
-    id: uuid.UUID = _id_field()
-    created_at: datetime = _created_at_field()
-    updated_at: datetime = _updated_at_field()
-    organization_id: uuid.UUID = _organization_id_field()
-    name: str = Field(sa_column=Column(Text, nullable=False))
-    code: str = Field(sa_column=Column(Text, nullable=False))

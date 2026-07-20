@@ -34,17 +34,10 @@ import {
 	todayApiDate,
 	useCreateEmployeeVersion,
 } from "@/lib/api/employees";
-import {
-	useEmployeeGroupsList,
-	useOfficesList,
-	usePayrollUnitsList,
-	usePostsList,
-} from "@/lib/api/org-structure";
+import { useOfficesList, usePostsList } from "@/lib/api/org-structure";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
-
-const NONE_VALUE = "__none__";
 
 function labelForId(
 	id: string | null | undefined,
@@ -85,30 +78,18 @@ export function ScheduleChangeDialog({
 }: ScheduleChangeDialogProps) {
 	const createVersion = useCreateEmployeeVersion(employeeId);
 	const officesQuery = useOfficesList();
-	const payrollUnitsQuery = usePayrollUnitsList();
 	const postsQuery = usePostsList();
-	const employeeGroupsQuery = useEmployeeGroupsList();
 
 	const offices = officesQuery.data ?? [];
-	const payrollUnits = payrollUnitsQuery.data ?? [];
 	const posts = postsQuery.data ?? [];
-	const employeeGroups = employeeGroupsQuery.data ?? [];
 
 	const officeLabels = useMemo(
 		() => Object.fromEntries(offices.map((item) => [item.id, namedEntityLabel(item)])),
 		[offices],
 	);
-	const payrollUnitLabels = useMemo(
-		() => Object.fromEntries(payrollUnits.map((item) => [item.id, namedEntityLabel(item)])),
-		[payrollUnits],
-	);
 	const postLabels = useMemo(
 		() => Object.fromEntries(posts.map((item) => [item.id, postEntityLabel(item)])),
 		[posts],
-	);
-	const employeeGroupLabels = useMemo(
-		() => Object.fromEntries(employeeGroups.map((item) => [item.id, namedEntityLabel(item)])),
-		[employeeGroups],
 	);
 
 	const [effectiveFrom, setEffectiveFrom] = useState(todayApiDate());
@@ -131,9 +112,7 @@ export function ScheduleChangeDialog({
 
 	// Posting fields
 	const [officeId, setOfficeId] = useState("");
-	const [payrollUnitId, setPayrollUnitId] = useState("");
 	const [postId, setPostId] = useState("");
-	const [employeeGroupId, setEmployeeGroupId] = useState("");
 
 	// Pay fields
 	const [payMatrixLevel, setPayMatrixLevel] = useState("");
@@ -167,9 +146,7 @@ export function ScheduleChangeDialog({
 		}
 		if (kind === "posting" && activePosting) {
 			setOfficeId(activePosting.office_id);
-			setPayrollUnitId(activePosting.payroll_unit_id);
 			setPostId(activePosting.post_id);
-			setEmployeeGroupId(activePosting.employee_group_id ?? "");
 		}
 		if (kind === "pay" && activePay) {
 			setPayMatrixLevel(activePay.pay_matrix_level ?? "");
@@ -184,11 +161,7 @@ export function ScheduleChangeDialog({
 	}, [open, kind, activeProfile, activePosting, activePay, activeBank]);
 
 	const postingCatalogLoading =
-		kind === "posting" &&
-		(officesQuery.isLoading ||
-			payrollUnitsQuery.isLoading ||
-			postsQuery.isLoading ||
-			employeeGroupsQuery.isLoading);
+		kind === "posting" && (officesQuery.isLoading || postsQuery.isLoading);
 
 	const buildBody = (): Record<string, unknown> | null => {
 		const base = {
@@ -219,9 +192,7 @@ export function ScheduleChangeDialog({
 			return {
 				...base,
 				office_id: officeId.trim(),
-				payroll_unit_id: payrollUnitId.trim(),
 				post_id: postId.trim(),
-				employee_group_id: employeeGroupId.trim() || null,
 			};
 		}
 		if (kind === "pay") {
@@ -268,7 +239,7 @@ export function ScheduleChangeDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>Schedule {kindLabels[kind].toLowerCase()} change</DialogTitle>
+					<DialogTitle>Schedule {kindLabels[kind]} Change</DialogTitle>
 					<DialogDescription>
 						Append a new {kindLabels[kind].toLowerCase()} version with a new effective date.
 					</DialogDescription>
@@ -428,29 +399,6 @@ export function ScheduleChangeDialog({
 									</Select>
 								</div>
 								<div className="grid gap-2">
-									<Label htmlFor="schedule-payroll-unit">Payroll Unit</Label>
-									<Select
-										value={payrollUnitId || null}
-										onValueChange={(value) => setPayrollUnitId(value ?? "")}
-										disabled={isSubmitting || postingCatalogLoading}
-									>
-										<SelectTrigger id="schedule-payroll-unit" className="w-full">
-											<SelectValue placeholder="Select payroll unit">
-												{(value: string | null) =>
-													labelForId(value, payrollUnitLabels, "Select payroll unit")
-												}
-											</SelectValue>
-										</SelectTrigger>
-										<SelectContent>
-											{payrollUnits.map((unit) => (
-												<SelectItem key={unit.id} value={unit.id}>
-													{namedEntityLabel(unit)}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-								<div className="grid gap-2">
 									<Label htmlFor="schedule-post">Post</Label>
 									<Select
 										value={postId || null}
@@ -466,34 +414,6 @@ export function ScheduleChangeDialog({
 											{posts.map((post) => (
 												<SelectItem key={post.id} value={post.id}>
 													{postEntityLabel(post)}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-								<div className="grid gap-2">
-									<Label htmlFor="schedule-employee-group">Employee Group</Label>
-									<Select
-										value={employeeGroupId || NONE_VALUE}
-										onValueChange={(value) =>
-											setEmployeeGroupId(!value || value === NONE_VALUE ? "" : value)
-										}
-										disabled={isSubmitting || postingCatalogLoading}
-									>
-										<SelectTrigger id="schedule-employee-group" className="w-full">
-											<SelectValue placeholder="None">
-												{(value: string | null) =>
-													!value || value === NONE_VALUE
-														? "None"
-														: labelForId(value, employeeGroupLabels, "None")
-												}
-											</SelectValue>
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value={NONE_VALUE}>None</SelectItem>
-											{employeeGroups.map((group) => (
-												<SelectItem key={group.id} value={group.id}>
-													{namedEntityLabel(group)}
 												</SelectItem>
 											))}
 										</SelectContent>

@@ -48,11 +48,14 @@ gate → suite mapping for release acceptance. Cross-ref:
   Runtime proof uses `accord_app` / `accord_worker`
   (`NOSUPERUSER NOBYPASSRLS` runtime database role).
 
-### RLS / cross-tenant isolation
+### RLS / fail-closed isolation
+
+Single-organization product ([ADR 0011](adr/0011-single-organization.md)):
+suites seed **one** org and prove empty/wrong GUC returns zero rows. A second
+`organizations` insert must fail the singleton unique index. Gate D lives under
+`backend/tests/gate_d/`.
 
 - Dedicated suite under `backend/tests/rls/`.
-- Cross-tenant isolation:
-  `backend/tests/rls/test_cross_tenant_isolation.py`.
 - Forced RLS coverage (every tenant-scoped table has
   `ALTER TABLE ... FORCE ROW LEVEL SECURITY`):
   `backend/tests/rls/test_forced_rls_coverage.py`.
@@ -141,7 +144,7 @@ Identical lettering in [release-acceptance.md](release-acceptance.md).
 | **A** | Atlas baseline | `scripts/verify_atlas_baseline.sh` |
 | **B** | Phase 0 contracts | Review checklist against `docs/testing.md`, `docs/threat-model.md`, `docs/release-acceptance.md`, `docs/security.md`, ADRs, and payroll-domain contracts |
 | **C** | Transplant shell CI | Lint, typecheck, unit, and API smoke: `backend/tests/unit/test_money_decimal.py`, `backend/tests/unit/test_calculation_invariants.py`, `backend/tests/api/`, `backend/tests/services/`, `frontend/src/**/*.test.tsx` |
-| **D** | Cross-tenant isolation | `backend/tests/rls/test_cross_tenant_isolation.py`, `backend/tests/rls/test_forced_rls_coverage.py`, plus API/services/storage/worker paths that prove `organization_id` isolation under `accord_app` |
+| **D** | Fail-closed RLS isolation | `backend/tests/gate_d/`, `backend/tests/rls/`, plus API/services/storage/worker paths that prove empty/wrong GUC returns zero rows under `accord_app` (singleton org; ADR 0011) |
 | **E** | Effective-dated master data | `backend/tests/master_data/test_effective_dating.py` |
 | **F** | Calculation correctness | `backend/tests/calculations/test_june_2026_totals.py`, `backend/tests/unit/test_calculation_invariants.py`, `backend/tests/unit/test_money_decimal.py`, `scripts/ci/no_float_payroll_domain.sh` |
 | **H** | Workflow integrity | `backend/tests/workflow/test_maker_checker.py`, `backend/tests/workflow/test_posted_immutability.py`, `backend/tests/workflow/test_idempotency.py`, `backend/tests/security/test_posted_sql_immutability.py` |

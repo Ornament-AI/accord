@@ -12,14 +12,16 @@ Jurisdiction = Literal["mumbai", "nagpur", "worli", "other"]
 
 
 class OfficeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1)
-    code: str = Field(min_length=1)
     jurisdiction: Jurisdiction
 
 
 class OfficeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
-    code: str | None = None
     jurisdiction: Jurisdiction | None = None
 
 
@@ -28,48 +30,7 @@ class OfficeResponse(BaseModel):
 
     id: UUID
     name: str
-    code: str
     jurisdiction: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class PayrollUnitCreate(BaseModel):
-    name: str = Field(min_length=1)
-    code: str = Field(min_length=1)
-
-
-class PayrollUnitUpdate(BaseModel):
-    name: str | None = None
-    code: str | None = None
-
-
-class PayrollUnitResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    name: str
-    code: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class EmployeeGroupCreate(BaseModel):
-    name: str = Field(min_length=1)
-    code: str = Field(min_length=1)
-
-
-class EmployeeGroupUpdate(BaseModel):
-    name: str | None = None
-    code: str | None = None
-
-
-class EmployeeGroupResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    name: str
-    code: str
     created_at: datetime
     updated_at: datetime
 

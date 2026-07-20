@@ -32,7 +32,6 @@ class AuditEventListItem(BaseModel):
     entity_label: str
     actor: AuditActor | None = None
     changed_count: int = 0
-    has_structured_detail: bool = False
     created_at: datetime
 
 

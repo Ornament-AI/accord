@@ -109,9 +109,7 @@ class PostingInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     office_id: UUID
-    payroll_unit_id: UUID
     post_id: UUID
-    employee_group_id: UUID | None = None
 
 
 class PayInput(BaseModel):
@@ -188,9 +186,7 @@ class PostingVersionResponse(BaseModel):
     effective_from: date
     effective_to: date | None
     office_id: UUID
-    payroll_unit_id: UUID
     post_id: UUID
-    employee_group_id: UUID | None
     created_at: datetime
     created_by: UUID
     change_reason: str | None
@@ -287,9 +283,7 @@ def posting_from_row(row: Any) -> PostingVersionResponse:
         effective_from=effective_from,
         effective_to=effective_to,
         office_id=row["office_id"],
-        payroll_unit_id=row["payroll_unit_id"],
         post_id=row["post_id"],
-        employee_group_id=row["employee_group_id"],
         created_at=row["created_at"],
         created_by=row["created_by"],
         change_reason=row["change_reason"],

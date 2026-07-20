@@ -396,8 +396,6 @@ def wipe_org_master_data(org_id: str, *, dsn_env: dict[str, str]) -> None:
 		"component_rate_versions",
 		"pay_components",
 		"posts",
-		"employee_groups",
-		"payroll_units",
 		"offices",
 		"jobs",
 		"outbox_events",
@@ -451,42 +449,36 @@ def seed(base_url: str, xlsx: Path, *, pg: dict[str, str]) -> None:
 		if login.status_code not in {200, 302}:
 			raise SeedError(f"login failed: {login.status_code}")
 		me = _require(client.get("/api/auth/me"), context="me")
-		org = me.get("active_organization")
-		if not org:
-			raise SeedError("No active organization")
+		if me.get("access_state") != "active" or not me.get("organization"):
+			raise SeedError(
+				"No active organization membership. Bootstrap with "
+				"scripts/provision_organization.py and ensure this user is a member, then re-run."
+			)
+		org = me["organization"]
 		try:
 			org_id = str(UUID(org["id"]))
 		except (KeyError, TypeError, ValueError) as exc:
-			raise SeedError(f"active organization id is not a UUID: {org.get('id')!r}") from exc
+			raise SeedError(f"organization id is not a UUID: {org.get('id')!r}") from exc
 		print(f"Seeding into {org['name']} ({org['slug']})")
 
 		wipe_org_master_data(org_id, dsn_env=pg)
 
 		# Offices
 		offices: dict[str, UUID] = {}
-		for code, name, jurisdiction in (
-			("MSIDC_MUM", "MSIDC Mumbai HQ", "mumbai"),
-			("MSIDC_NGP", "MSIDC Nagpur GPF Circle", "nagpur"),
-			("MSIDC_WORLI", "MSIDC Worli Quarters", "worli"),
+		for name, jurisdiction in (
+			("MSIDC Mumbai HQ", "mumbai"),
+			("MSIDC Nagpur GPF Circle", "nagpur"),
+			("MSIDC Worli Quarters", "worli"),
 		):
 			body = _require(
 				client.post(
 					"/api/offices",
-					json={"name": name, "code": code, "jurisdiction": jurisdiction},
+					json={"name": name, "jurisdiction": jurisdiction},
 				),
-				context=f"office {code}",
+				context=f"office {name}",
 			)
 			offices[jurisdiction] = UUID(body["id"])
-			print(f"  office {code}")
-
-		unit = _require(
-			client.post(
-				"/api/payroll-units",
-				json={"name": "MSIDC Head Office Pay Unit", "code": "MSIDC_HO"},
-			),
-			context="payroll unit",
-		)
-		unit_id = UUID(unit["id"])
+			print(f"  office {name}")
 
 		# Posts from designations
 		post_ids: dict[str, UUID] = {}
@@ -586,7 +578,6 @@ def seed(base_url: str, xlsx: Path, *, pg: dict[str, str]) -> None:
 						"profile": profile,
 						"posting": {
 							"office_id": str(office_id),
-							"payroll_unit_id": str(unit_id),
 							"post_id": str(post_ids[emp.designation]),
 						},
 						"pay": {

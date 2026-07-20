@@ -10,7 +10,6 @@ export type Role =
 /** Capability strings granted on the active organization. */
 export type Capability =
 	| "manage_organization"
-	| "manage_members"
 	| "manage_master_data"
 	| "view_master_data"
 	| "reveal_sensitive_fields"
@@ -22,14 +21,16 @@ export type Capability =
 	| "release_reports"
 	| "view_audit";
 
-export type OrganizationMembership = {
+export type AccessState = "unbootstrapped" | "unprovisioned" | "active";
+
+export type MeOrganization = {
 	id: string;
 	name: string;
 	slug: string;
-	role: Role | string;
 };
 
-export type ActiveOrganization = OrganizationMembership & {
+export type MeMembership = {
+	role: Role | string;
 	capabilities: Capability[] | string[];
 };
 
@@ -40,21 +41,24 @@ export type AuthUser = {
 	is_platform_admin: boolean;
 };
 
-/** Response shape for GET /api/auth/me, switch-organization, and create organization. */
+/** Response shape for GET /api/auth/me (ADR 0011 singular contract). */
 export type AuthMeResponse = {
 	id: string;
 	email: string;
 	name: string;
 	is_platform_admin: boolean;
-	active_organization: ActiveOrganization | null;
-	organizations: OrganizationMembership[];
+	access_state: AccessState;
+	organization: MeOrganization | null;
+	membership: MeMembership | null;
 };
 
-export type CreateOrganizationInput = {
-	name: string;
-	slug: string;
+/** @deprecated Use MeOrganization + MeMembership; kept for transitional UI helpers. */
+export type OrganizationMembership = MeOrganization & {
+	role: Role | string;
 };
 
-export type SwitchOrganizationInput = {
-	organization_id: string;
+/** Active org view for capability checks (organization + membership). */
+export type ActiveOrganization = MeOrganization & {
+	role: Role | string;
+	capabilities: Capability[] | string[];
 };

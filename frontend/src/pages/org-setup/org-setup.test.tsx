@@ -42,21 +42,10 @@ describe("Org setup catalog pages", () => {
 			expect(
 				await screen.findByTestId("offices-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText("HO", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
-			expect(screen.getByText("Head Office")).toBeInTheDocument();
-
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("organization_administrator"),
-			});
-			const { handlers: orgHandlers } = createOrgSetupHandlers();
-			server.use(...authHandlers, ...orgHandlers);
-
-			renderApp({ initialEntries: ["/organization/payroll-units"] });
 			expect(
-				await screen.findByTestId("payroll-units-page", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("Head Office", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText("PU-HQ")).toBeInTheDocument();
-			expect(screen.getByText("HQ Payroll")).toBeInTheDocument();
+			expect(screen.queryByRole("columnheader", { name: "Code" })).not.toBeInTheDocument();
 
 			renderApp({ initialEntries: ["/organization/posts"] });
 			expect(
@@ -64,13 +53,6 @@ describe("Org setup catalog pages", () => {
 			).toBeInTheDocument();
 			expect(await screen.findByText("Clerk")).toBeInTheDocument();
 			expect(screen.getByText("Class III")).toBeInTheDocument();
-
-			renderApp({ initialEntries: ["/organization/employee-groups"] });
-			expect(
-				await screen.findByTestId("employee-groups-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			expect(await screen.findByText("GRP-A")).toBeInTheDocument();
-			expect(screen.getByText("Group A")).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -86,17 +68,16 @@ describe("Org setup catalog pages", () => {
 			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
 			expect(await screen.findByRole("heading", { name: "Add Office" })).toBeInTheDocument();
 
-			fireEvent.change(screen.getByLabelText("Code"), { target: { value: "BR-01" } });
 			fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Branch Office" } });
 			openBaseUiSelect(screen.getByLabelText("Jurisdiction"));
 			pickBaseUiOption("Worli");
-			fireEvent.click(screen.getByRole("button", { name: "Create office" }));
+			fireEvent.click(screen.getByRole("button", { name: "Create Office" }));
 
 			await waitFor(() => {
 				expect(screen.queryByRole("heading", { name: "Add Office" })).not.toBeInTheDocument();
 			});
-			expect(await screen.findByText("BR-01")).toBeInTheDocument();
-			expect(screen.getByText("Branch Office")).toBeInTheDocument();
+			expect(await screen.findByText("Branch Office")).toBeInTheDocument();
+			expect(screen.queryByLabelText("Code")).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -104,61 +85,16 @@ describe("Org setup catalog pages", () => {
 	it(
 		"keeps the empty-state Add action in the page header only",
 		async () => {
-			await setupPage("/organization/employee-groups", "organization_administrator", {
-				employeeGroups: [],
+			await setupPage("/organization/posts", "organization_administrator", {
+				posts: [],
 			});
 
 			expect(
-				await screen.findByText("No employee groups", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("No Posts", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
+			expect(screen.getByTestId("posts-tab")).toHaveClass("flex-1");
 			expect(screen.getAllByRole("button", { name: /^Add$/i })).toHaveLength(1);
-			expect(screen.queryByText("Add an employee group to get started.")).not.toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"surfaces 409 create conflicts as a field error",
-		async () => {
-			await setupPage("/organization/offices", "organization_administrator", {
-				createError: {
-					status: 409,
-					body: { detail: "Office code already exists", error: "ConflictError" },
-				},
-			});
-			expect(
-				await screen.findByTestId("offices-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-
-			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
-			expect(await screen.findByRole("heading", { name: "Add Office" })).toBeInTheDocument();
-			fireEvent.change(screen.getByLabelText("Code"), { target: { value: "DUP" } });
-			fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Duplicate" } });
-			fireEvent.click(screen.getByRole("button", { name: "Create office" }));
-
-			expect(await screen.findByText("This code is already in use")).toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"keeps the natural-key field immutable in the edit dialog",
-		async () => {
-			await setupPage("/organization/offices");
-			expect(
-				await screen.findByTestId("offices-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-
-			const codeCell = await screen.findByText("HO", {}, { timeout: PAGE_TIMEOUT });
-			const row = codeCell.closest("tr");
-			expect(row).not.toBeNull();
-			fireEvent.click(row as HTMLElement);
-			expect(await screen.findByRole("heading", { name: "Edit Office" })).toBeInTheDocument();
-
-			const codeInput = screen.getByLabelText("Code");
-			expect(codeInput).toHaveValue("HO");
-			expect(codeInput).toBeDisabled();
-			expect(codeInput).toHaveAttribute("readonly");
+			expect(screen.queryByText("Add a post to get started.")).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -174,7 +110,9 @@ describe("Org setup capability gating", () => {
 		async () => {
 			await setupPage("/organization/offices", "payroll_reviewer");
 
-			expect(await screen.findByText("HO", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
+			expect(
+				await screen.findByText("Head Office", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
@@ -184,10 +122,12 @@ describe("Org setup capability gating", () => {
 		"denies direct access without view_master_data",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "report_releaser",
 					capabilities: ROLE_CAPABILITIES.report_releaser,
 				},
@@ -197,7 +137,7 @@ describe("Org setup capability gating", () => {
 			renderApp({ initialEntries: ["/organization/offices"] });
 
 			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,

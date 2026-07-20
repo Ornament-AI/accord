@@ -61,7 +61,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(0.998 0.001 186.391);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.54 0.088 186.391);
+  --primary: oklch(0.57 0.088 186.391);
   --primary-foreground: oklch(0.984 0.014 180.72);
   --primary-text: oklch(0.54 0.088 186.391);
   --icon-accent: oklch(0.42 0.07 186.391);
@@ -88,7 +88,7 @@
   --chart-9: oklch(0.60 0.17 8);    /* Pending Bills — rose coral */
   --sidebar: oklch(0.962 0.005 186.391);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.54 0.088 186.391);
+  --sidebar-primary: oklch(0.57 0.088 186.391);
   --sidebar-primary-foreground: oklch(0.984 0.014 180.72);
   --sidebar-accent: oklch(0.925 0.007 186.391);
   --sidebar-accent-foreground: oklch(0.205 0 0);
@@ -167,7 +167,7 @@
   --card-foreground: oklch(0.96 0 0);
   --popover: oklch(0.265 0.003 186.391);
   --popover-foreground: oklch(0.96 0 0);
-  --primary: oklch(0.47 0.076 188.216);
+  --primary: oklch(0.50 0.076 188.216);
   --primary-foreground: oklch(0.984 0.014 180.72);
   --primary-text: oklch(0.78 0.13 182.503);
   --icon-accent: oklch(0.78 0.13 182.503);
@@ -194,7 +194,7 @@
   --chart-9: oklch(0.72 0.14 8);    /* Pending Bills */
   --sidebar: oklch(0.26 0.003 186.391);
   --sidebar-foreground: oklch(0.96 0 0);
-  --sidebar-primary: oklch(0.704 0.14 182.503);
+  --sidebar-primary: oklch(0.734 0.14 182.503);
   --sidebar-primary-foreground: oklch(0.277 0.046 192.524);
   --sidebar-accent: oklch(0.285 0.004 186.391);
   --sidebar-accent-foreground: oklch(0.96 0 0);
@@ -368,7 +368,7 @@
     @apply min-h-full w-full flex flex-col;
   }
   body {
-    @apply font-sans bg-background text-foreground antialiased;
+    @apply relative font-sans bg-background text-foreground antialiased;
     letter-spacing: var(--tracking-normal);
   }
 
@@ -723,6 +723,43 @@
   animation: accord-skeleton-sweep 1200ms var(--accord-motion-ease) infinite;
 }
 
+/* Hover/focus surface feedback — interruptible, GPU-friendly properties only. */
+.accord-motion-interactive {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, scale;
+  transition-duration: var(--accord-motion-fast);
+  transition-timing-function: var(--accord-motion-ease);
+}
+
+.accord-motion-highlight {
+  transition-property: color, background-color, border-color, box-shadow, opacity;
+  transition-duration: var(--accord-motion-fast);
+  transition-timing-function: var(--accord-motion-ease);
+}
+
+.accord-motion-control {
+  transition-property: color, background-color, border-color, box-shadow;
+  transition-duration: var(--accord-motion-fast);
+  transition-timing-function: var(--accord-motion-ease);
+}
+
+.accord-motion-pressable:not(:disabled):not([aria-disabled='true']):not([data-disabled]):not([data-static='true']):active {
+  scale: 0.96;
+}
+
+[data-slot='checkbox-indicator'] svg,
+[data-slot='select-item-indicator'] svg,
+[data-slot='combobox-item-indicator'] svg,
+[data-slot='sort-icon'] {
+  animation: accord-icon-in var(--accord-motion-base) var(--accord-motion-ease) both;
+}
+
+[data-slot='switch-thumb'] {
+  transition:
+    translate var(--accord-motion-base) var(--accord-motion-ease),
+    transform var(--accord-motion-base) var(--accord-motion-ease),
+    background-color var(--accord-motion-fast) var(--accord-motion-ease);
+}
+
 [data-slot='input'][aria-invalid='true'],
 [data-slot='textarea'][aria-invalid='true'],
 [data-slot='input-group'][aria-invalid='true'] {
@@ -733,6 +770,20 @@
 @keyframes accord-skeleton-sweep {
   100% {
     translate: 100% 0;
+  }
+}
+
+@keyframes accord-icon-in {
+  from {
+    opacity: 0;
+    scale: 0.25;
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+    filter: blur(0);
   }
 }
 
@@ -773,7 +824,8 @@
   .accord-motion-dialog,
   .accord-motion-tooltip,
   .accord-motion-sheet,
-  .accord-motion-collapsible {
+  .accord-motion-collapsible,
+  .accord-motion-pressable:active {
     filter: none !important;
     scale: 1 !important;
     translate: 0 0 !important;
@@ -781,5 +833,14 @@
 
   .accord-motion-collapsible {
     height: auto !important;
+  }
+
+  [data-slot='checkbox-indicator'] svg,
+  [data-slot='select-item-indicator'] svg,
+  [data-slot='combobox-item-indicator'] svg,
+  [data-slot='sort-icon'] {
+    animation: none !important;
+    filter: none !important;
+    scale: 1 !important;
   }
 }

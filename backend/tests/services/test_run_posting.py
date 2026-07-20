@@ -38,6 +38,7 @@ from app.services.run_calculation import calculate_run_command
 from app.services.run_posting import post_run, reverse_run
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_organization, seed_user
+from tests.roster_helpers import initialize_run_roster
 
 
 async def _bind(session: AsyncSession, org_id, user_id) -> None:
@@ -219,11 +220,19 @@ async def _seed_world(session: AsyncSession) -> dict:
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status="draft",
     )
     session.add(run)
     await session.flush()
+    session.add_all(
+        initialize_run_roster(
+            organization_id=org.id,
+            run=run,
+            employee_ids=[employee.id],
+            period_year=period.period_year,
+            period_month=period.period_month,
+        )
+    )
 
     override = PayrollRunInput(
         organization_id=org.id,
@@ -613,7 +622,6 @@ async def test_reverse_happy_path(session):
 
     reversal = await session.get(PayrollRun, UUID(result["reversal_run_id"]))
     assert reversal is not None
-    assert reversal.run_type == "reversal"
     assert reversal.status == "draft"
     assert reversal.original_run_id == world["run_id"]
     assert reversal.period_id == world["period_id"]

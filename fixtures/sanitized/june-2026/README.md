@@ -17,7 +17,7 @@ This directory is a **fully synthetic**, structure-preserving golden payroll fix
 
 | File | Role |
 | --- | --- |
-| `organization.json` | Synthetic org, offices (Mumbai / Nagpur / Worli), pay unit, maker/checker/approving-officer signatories |
+| `organization.json` | Synthetic org, offices (Mumbai / Nagpur / Worli), maker/checker/approving-officer signatories |
 | `components.json` | Pay component catalog with classifications |
 | `employees.json` | Synthetic identity, regime, retirement accounts, bank, PT liability, accommodation |
 | `pay.json` | Per-employee component lines for period `2026-06` with per-employee totals |

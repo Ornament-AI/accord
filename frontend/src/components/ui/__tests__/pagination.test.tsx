@@ -66,6 +66,6 @@ describe("Pagination", () => {
 		);
 
 		expect(screen.getByRole("link", { name: "2" })).toHaveAttribute("aria-current", "page");
-		expect(screen.getByText("More pages")).toBeInTheDocument();
+		expect(screen.getByText("More Pages")).toBeInTheDocument();
 	});
 });

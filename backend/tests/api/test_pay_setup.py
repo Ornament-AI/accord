@@ -12,13 +12,12 @@ from app.api.routes.pay_setup import router as pay_setup_router
 from app.main import create_app
 from app.models.employees import Employee
 from app.tenancy import bind_tenant_context
+from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
     login_dev,
     seed_membership,
-    seed_organization,
     seed_user,
-    session_cookie_from_response,
 )
 
 
@@ -37,18 +36,19 @@ async def client(dev_settings):
         yield ac
 
 
-async def _create_org_as_admin(client) -> tuple[UUID, UUID]:
-    await login_dev(client)
+async def _create_org_as_admin(client, session) -> tuple[UUID, UUID]:
     slug = f"acme-{uuid4().hex[:8]}"
-    resp = await client.post("/api/organizations", json={"name": "Acme", "slug": slug})
-    assert resp.status_code == 201, resp.text
-    cookie = session_cookie_from_response(resp)
-    if cookie:
-        client.cookies.set("accord_session", cookie)
-    body = resp.json()
-    org_id = UUID(body["active_organization"]["id"])
-    user_id = UUID(body["id"])
-    return org_id, user_id
+    await provision_organization(
+        session,
+        name="Acme",
+        slug=slug,
+        admin_email="dev@accord.local",
+    )
+    await session.commit()
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "active", body
+    return UUID(body["organization"]["id"]), UUID(body["id"])
 
 
 async def _seed_employee(session, *, org_id: UUID, user_id: UUID, number: str = "E001") -> Employee:
@@ -63,7 +63,7 @@ async def _seed_employee(session, *, org_id: UUID, user_id: UUID, number: str = 
 
 
 async def _admin_context(client, session) -> dict:
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     employee = await _seed_employee(session, org_id=org_id, user_id=user_id)
     return {
         "org_id": org_id,
@@ -595,7 +595,7 @@ async def test_accommodation_license_fee_and_hra_foregone_independent(client, se
 
 @pytest.mark.asyncio
 async def test_auditor_cannot_view_pay_components(client, dev_settings, session):
-    org_id, admin_id = await _create_org_as_admin(client)
+    org_id, admin_id = await _create_org_as_admin(client, session)
     auditor = await seed_user(session, email="auditor@example.com", name="Auditor")
     await seed_membership(
         session,
@@ -620,7 +620,7 @@ async def test_auditor_cannot_view_pay_components(client, dev_settings, session)
 
 @pytest.mark.asyncio
 async def test_payroll_reviewer_can_get_but_not_post_pay_components(client, dev_settings, session):
-    org_id, _admin_id = await _create_org_as_admin(client)
+    org_id, _admin_id = await _create_org_as_admin(client, session)
     reviewer = await seed_user(session, email="reviewer@example.com", name="Reviewer")
     await seed_membership(
         session,
@@ -653,62 +653,56 @@ async def test_payroll_reviewer_can_get_but_not_post_pay_components(client, dev_
     assert post_resp.json()["error"] == "urn:accord:capability:manage_master_data"
 
 
-# --- Tenant isolation ---------------------------------------------------------
-
-
-async def _dual_org_admin(client, session, dev_settings) -> dict:
-    org_a_id, admin_id = await _create_org_as_admin(client)
-
-    org_b = await seed_organization(session, name="Org B", slug=f"org-b-{uuid4().hex[:8]}")
-    await seed_membership(
-        session,
-        organization_id=org_b.id,
-        user_id=admin_id,
-        role="organization_administrator",
-    )
-    await session.commit()
-    return {"org_a_id": org_a_id, "org_b_id": org_b.id, "admin_id": admin_id}
+# --- Fail-closed / unknown-id isolation (single org, ADR 0011) ----------------
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_pay_component_patch_404_after_switch(client, session, dev_settings):
-    worlds = await _dual_org_admin(client, session, dev_settings)
-    component = await _create_component(client, code="ORG_A_ONLY")
-    component_id = component["id"]
-
-    switch = await client.post(
-        "/api/auth/switch-organization",
-        json={"organization_id": str(worlds["org_b_id"])},
-    )
-    assert switch.status_code == 200
-    cookie = session_cookie_from_response(switch)
-    if cookie:
-        client.cookies.set("accord_session", cookie)
-
-    listed = (await client.get("/api/pay-components")).json()
-    assert all(c["id"] != component_id for c in listed)
+async def test_pay_component_unknown_id_patch_404(client, session):
+    await _create_org_as_admin(client, session)
+    await _create_component(client, code="KNOWN")
 
     patch = await client.patch(
-        f"/api/pay-components/{component_id}",
+        f"/api/pay-components/{uuid4()}",
         json={"name": "Should Not Apply"},
     )
     assert patch.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_recurring_instruction_versions_404_after_switch(
-    client, session, dev_settings
-):
-    worlds = await _dual_org_admin(client, session, dev_settings)
-    employee = await _seed_employee(
-        session,
-        org_id=worlds["org_a_id"],
-        user_id=worlds["admin_id"],
-    )
-    component = await _create_component(client, code="RI_ORG_A")
+async def test_unprovisioned_user_fail_closed(client, session, dev_settings):
+    """Authenticated user without membership cannot access tenant resources."""
+    org_id, _admin_id = await _create_org_as_admin(client, session)
+    component = await _create_component(client, code="BOUND")
+    outsider = await seed_user(session, email=f"out-{uuid4().hex[:8]}@example.com")
+    await session.commit()
 
+    apply_session_cookie(
+        client,
+        await mint_session_cookie(
+            session,
+            dev_settings,
+            user_id=outsider.id,
+            active_organization_id=org_id,
+        ),
+    )
+
+    listed = await client.get("/api/pay-components")
+    assert listed.status_code == 409
+    assert listed.json()["error"] == "OrganizationContextRequired"
+
+    patch = await client.patch(
+        f"/api/pay-components/{component['id']}",
+        json={"name": "Should Not Apply"},
+    )
+    assert patch.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_recurring_instruction_versions_unknown_id_404(client, session):
+    ctx = await _admin_context(client, session)
+    component = await _create_component(client, code="RI_KNOWN")
     created = await client.post(
-        f"/api/employees/{employee.id}/recurring-instructions",
+        f"/api/employees/{ctx['employee_id']}/recurring-instructions",
         json={
             "component_id": component["id"],
             "effective_from": "2026-01-01",
@@ -716,18 +710,8 @@ async def test_tenant_isolation_recurring_instruction_versions_404_after_switch(
         },
     )
     assert created.status_code == 201
-    instruction_id = created.json()["id"]
 
-    switch = await client.post(
-        "/api/auth/switch-organization",
-        json={"organization_id": str(worlds["org_b_id"])},
-    )
-    assert switch.status_code == 200
-    cookie = session_cookie_from_response(switch)
-    if cookie:
-        client.cookies.set("accord_session", cookie)
-
-    versions = await client.get(f"/api/recurring-instructions/{instruction_id}/versions")
+    versions = await client.get(f"/api/recurring-instructions/{uuid4()}/versions")
     assert versions.status_code == 404
 
 

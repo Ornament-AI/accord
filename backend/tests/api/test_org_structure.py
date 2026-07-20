@@ -10,13 +10,12 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.routes.org_structure import router as org_structure_router
 from app.main import create_app
+from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
     login_dev,
     seed_membership,
-    seed_organization,
     seed_user,
-    session_cookie_from_response,
 )
 
 
@@ -35,16 +34,19 @@ async def client(dev_settings):
         yield ac
 
 
-async def _create_org_as_admin(client) -> tuple[UUID, UUID]:
-    await login_dev(client)
+async def _create_org_as_admin(client, session) -> tuple[UUID, UUID]:
     slug = f"acme-{uuid4().hex[:8]}"
-    resp = await client.post("/api/organizations", json={"name": "Acme", "slug": slug})
-    assert resp.status_code == 201, resp.text
-    cookie = session_cookie_from_response(resp)
-    if cookie:
-        client.cookies.set("accord_session", cookie)
-    body = resp.json()
-    return UUID(body["active_organization"]["id"]), UUID(body["id"])
+    await provision_organization(
+        session,
+        name="Acme",
+        slug=slug,
+        admin_email="dev@accord.local",
+    )
+    await session.commit()
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "active", body
+    return UUID(body["organization"]["id"]), UUID(body["id"])
 
 
 # --- CRUD happy paths -----------------------------------------------------------
@@ -52,18 +54,19 @@ async def _create_org_as_admin(client) -> tuple[UUID, UUID]:
 
 @pytest.mark.asyncio
 async def test_office_crud(client, session):
-    await _create_org_as_admin(client)
+    await _create_org_as_admin(client, session)
 
     created = await client.post(
         "/api/offices",
-        json={"name": "Mumbai HQ", "code": "MUM-01", "jurisdiction": "mumbai"},
+        json={"name": "Mumbai HQ", "jurisdiction": "mumbai"},
     )
     assert created.status_code == 201, created.text
     office = created.json()
     assert office["jurisdiction"] == "mumbai"
+    assert "code" not in office
 
     listed = (await client.get("/api/offices")).json()
-    assert [o["code"] for o in listed] == ["MUM-01"]
+    assert [o["name"] for o in listed] == ["Mumbai HQ"]
 
     patched = await client.patch(
         f"/api/offices/{office['id']}",
@@ -75,28 +78,8 @@ async def test_office_crud(client, session):
 
 
 @pytest.mark.asyncio
-async def test_payroll_unit_and_employee_group_crud(client, session):
-    await _create_org_as_admin(client)
-
-    for path, payload in (
-        ("/api/payroll-units", {"name": "Unit A", "code": "UNIT-A"}),
-        ("/api/employee-groups", {"name": "Group 1", "code": "GRP-1"}),
-    ):
-        created = await client.post(path, json=payload)
-        assert created.status_code == 201, created.text
-        listed = (await client.get(path)).json()
-        assert [x["code"] for x in listed] == [payload["code"]]
-        patched = await client.patch(
-            f"{path}/{created.json()['id']}",
-            json={"name": "Renamed"},
-        )
-        assert patched.status_code == 200
-        assert patched.json()["name"] == "Renamed"
-
-
-@pytest.mark.asyncio
 async def test_post_crud_with_class_field_mapping(client, session):
-    await _create_org_as_admin(client)
+    await _create_org_as_admin(client, session)
 
     created = await client.post(
         "/api/posts",
@@ -118,33 +101,20 @@ async def test_post_crud_with_class_field_mapping(client, session):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_codes_conflict(client, session):
-    await _create_org_as_admin(client)
+async def test_remaining_natural_keys_conflict(client, session):
+    await _create_org_as_admin(client, session)
 
-    for path, payload in (
-        ("/api/offices", {"name": "A", "code": "DUP", "jurisdiction": "other"}),
-        ("/api/payroll-units", {"name": "A", "code": "DUP"}),
-        ("/api/employee-groups", {"name": "A", "code": "DUP"}),
-        ("/api/posts", {"designation": "DUP", "class_name": "Class I"}),
-    ):
-        first = await client.post(path, json=payload)
-        assert first.status_code == 201, first.text
-        second = await client.post(path, json={**payload, "name": "B"})
-        assert second.status_code == 409, f"{path}: {second.text}"
+    path = "/api/posts"
+    payload = {"designation": "DUP", "class_name": "Class I"}
+    first = await client.post(path, json=payload)
+    assert first.status_code == 201, first.text
+    second = await client.post(path, json={**payload, "class_name": "Class II"})
+    assert second.status_code == 409, f"{path}: {second.text}"
 
 
 @pytest.mark.asyncio
 async def test_immutable_natural_keys(client, session):
-    await _create_org_as_admin(client)
-
-    office = (
-        await client.post(
-            "/api/offices",
-            json={"name": "A", "code": "OFF-1", "jurisdiction": "other"},
-        )
-    ).json()
-    resp = await client.patch(f"/api/offices/{office['id']}", json={"code": "OFF-2"})
-    assert resp.status_code == 409
+    await _create_org_as_admin(client, session)
 
     post = (
         await client.post(
@@ -157,8 +127,31 @@ async def test_immutable_natural_keys(client, session):
 
 
 @pytest.mark.asyncio
+async def test_legacy_office_codes_are_rejected(client, session):
+    await _create_org_as_admin(client, session)
+
+    office = await client.post(
+        "/api/offices",
+        json={"name": "A", "code": "OFF-1", "jurisdiction": "other"},
+    )
+    assert office.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_office_names_are_not_synthetic_keys(client, session):
+    await _create_org_as_admin(client, session)
+
+    for payload in (
+        {"name": "Shared Name", "jurisdiction": "mumbai"},
+        {"name": "Shared Name", "jurisdiction": "nagpur"},
+    ):
+        response = await client.post("/api/offices", json=payload)
+        assert response.status_code == 201, response.text
+
+
+@pytest.mark.asyncio
 async def test_update_missing_entity_404(client, session):
-    await _create_org_as_admin(client)
+    await _create_org_as_admin(client, session)
     resp = await client.patch(f"/api/offices/{uuid4()}", json={"name": "X"})
     assert resp.status_code == 404
 
@@ -168,10 +161,10 @@ async def test_update_missing_entity_404(client, session):
 
 @pytest.mark.asyncio
 async def test_reviewer_reads_structure_but_cannot_write(client, dev_settings, session):
-    org_id, _admin_id = await _create_org_as_admin(client)
+    org_id, _admin_id = await _create_org_as_admin(client, session)
     await client.post(
         "/api/offices",
-        json={"name": "A", "code": "OFF-1", "jurisdiction": "other"},
+        json={"name": "A", "jurisdiction": "other"},
     )
 
     reviewer = await seed_user(session, email="reviewer@example.com", name="Reviewer")
@@ -195,47 +188,51 @@ async def test_reviewer_reads_structure_but_cannot_write(client, dev_settings, s
 
     write = await client.post(
         "/api/offices",
-        json={"name": "B", "code": "OFF-2", "jurisdiction": "other"},
+        json={"name": "B", "jurisdiction": "other"},
     )
     assert write.status_code == 403
     assert write.json()["error"] == "urn:accord:capability:manage_master_data"
 
 
-# --- Tenant isolation -------------------------------------------------------------
+# --- Fail-closed / unknown-id isolation (single org, ADR 0011) --------------------
 
 
 @pytest.mark.asyncio
-async def test_offices_are_tenant_isolated_with_same_code(client, dev_settings, session):
-    org_a_id, admin_id = await _create_org_as_admin(client)
+async def test_unknown_office_id_404(client, session):
+    await _create_org_as_admin(client, session)
+    await client.post(
+        "/api/offices",
+        json={"name": "Known Office", "jurisdiction": "mumbai"},
+    )
+
+    resp = await client.patch(
+        f"/api/offices/{uuid4()}",
+        json={"name": "Missing"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_unprovisioned_user_fail_closed_on_offices(client, dev_settings, session):
+    org_id, _admin_id = await _create_org_as_admin(client, session)
     resp = await client.post(
         "/api/offices",
-        json={"name": "Org A Office", "code": "SHARED", "jurisdiction": "mumbai"},
+        json={"name": "Known Office", "jurisdiction": "mumbai"},
     )
     assert resp.status_code == 201
-
-    org_b = await seed_organization(session, name="Org B", slug=f"org-b-{uuid4().hex[:8]}")
-    await seed_membership(
-        session,
-        organization_id=org_b.id,
-        user_id=admin_id,
-        role="organization_administrator",
-    )
+    outsider = await seed_user(session, email=f"out-{uuid4().hex[:8]}@example.com")
     await session.commit()
 
-    cookie = await mint_session_cookie(
-        session,
-        dev_settings,
-        user_id=admin_id,
-        active_organization_id=org_b.id,
+    apply_session_cookie(
+        client,
+        await mint_session_cookie(
+            session,
+            dev_settings,
+            user_id=outsider.id,
+            active_organization_id=org_id,
+        ),
     )
-    apply_session_cookie(client, cookie)
 
-    # Same code is creatable in org B and org A's office is invisible.
-    assert (await client.get("/api/offices")).json() == []
-    dup = await client.post(
-        "/api/offices",
-        json={"name": "Org B Office", "code": "SHARED", "jurisdiction": "nagpur"},
-    )
-    assert dup.status_code == 201, dup.text
-    listed = (await client.get("/api/offices")).json()
-    assert [o["name"] for o in listed] == ["Org B Office"]
+    listed = await client.get("/api/offices")
+    assert listed.status_code == 409
+    assert listed.json()["error"] == "OrganizationContextRequired"

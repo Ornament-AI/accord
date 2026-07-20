@@ -171,16 +171,18 @@ async def test_enqueue_dedupe_returns_same_inflight_job(
 
 
 @pytest.mark.asyncio
-async def test_enqueue_dedupe_does_not_collide_across_org_or_type(
+async def test_enqueue_dedupe_does_not_collide_across_job_type(
     pg_env: tuple[PostgresJobQueue, async_sessionmaker[AsyncSession], str],
 ) -> None:
+    """Same dedupe_key may coexist for different job types (singleton org)."""
     queue, factory, _ = pg_env
-    org_a = await _create_org(factory)
-    org_b = await _create_org(factory)
-    a = await queue.enqueue(org_a, "export.generate", {}, dedupe_key="same")
-    b = await queue.enqueue(org_b, "export.generate", {}, dedupe_key="same")
-    c = await queue.enqueue(org_a, "storage.purge_expired", {}, dedupe_key="same")
-    assert len({a.id, b.id, c.id}) == 3
+    org = await _create_org(factory)
+    a = await queue.enqueue(org, "export.generate", {}, dedupe_key="same")
+    b = await queue.enqueue(org, "storage.purge_expired", {}, dedupe_key="same")
+    assert a.id != b.id
+    # Same org + type + key collapses to one job.
+    again = await queue.enqueue(org, "export.generate", {}, dedupe_key="same")
+    assert again.id == a.id
 
 
 @pytest.mark.asyncio
@@ -574,19 +576,18 @@ async def test_concurrent_claims_get_different_jobs(
 
 
 @pytest.mark.asyncio
-async def test_rls_org_a_cannot_claim_org_b_job(
+async def test_rls_wrong_guc_cannot_claim_job(
     pg_env: tuple[PostgresJobQueue, async_sessionmaker[AsyncSession], str],
 ) -> None:
-    """Under accord_app + org A GUC, org B's queued job is invisible to claim."""
+    """Under accord_app + wrong org GUC, the singleton org's job is invisible."""
     queue, factory, _db = pg_env
-    org_a = await _create_org(factory)
-    org_b = await _create_org(factory)
+    org = await _create_org(factory)
+    wrong_org = uuid.uuid4()
 
-    # Seed org B job as table owner / superuser (RLS bypassed).
-    await queue.for_organization(org_b).enqueue(org_b, "export.generate", {"org": "b"})
+    await queue.for_organization(org).enqueue(org, "export.generate", {"org": "solo"})
 
     class _RlsFactory:
-        """Session factory that SETs ROLE accord_app and binds org A."""
+        """Session factory that SETs ROLE accord_app and binds a GUC org id."""
 
         def __init__(self, inner: async_sessionmaker[AsyncSession], org_id: uuid.UUID) -> None:
             self._inner = inner
@@ -602,12 +603,11 @@ async def test_rls_org_a_cannot_claim_org_b_job(
                 await bind_organization(session, self._org_id)
                 yield session
 
-    rls_queue = PostgresJobQueue(_RlsFactory(factory, org_a))  # type: ignore[arg-type]
-    claimed = await rls_queue.claim("worker-rls")
-    assert claimed is None
+    wrong_queue = PostgresJobQueue(_RlsFactory(factory, wrong_org))  # type: ignore[arg-type]
+    assert await wrong_queue.claim("worker-rls") is None
 
-    # Control: with org B context under accord_app, the job is claimable.
-    rls_b = PostgresJobQueue(_RlsFactory(factory, org_b))  # type: ignore[arg-type]
-    claimed_b = await rls_b.claim("worker-rls")
-    assert claimed_b is not None
-    assert claimed_b.organization_id == org_b
+    # Control: correct GUC under accord_app can claim.
+    ok_queue = PostgresJobQueue(_RlsFactory(factory, org))  # type: ignore[arg-type]
+    claimed = await ok_queue.claim("worker-rls")
+    assert claimed is not None
+    assert claimed.organization_id == org

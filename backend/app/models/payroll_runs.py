@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     Date,
@@ -104,10 +105,6 @@ class PayrollRun(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, ta
     __tablename__ = "payroll_runs"
     __table_args__ = (
         CheckConstraint(
-            "run_type IN ('regular','supplemental','reversal')",
-            name="ck_payroll_runs_run_type",
-        ),
-        CheckConstraint(
             "status IN ("
             "'draft',"
             "'calculating',"
@@ -121,12 +118,11 @@ class PayrollRun(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, ta
             name="ck_payroll_runs_status",
         ),
         Index(
-            "ix_payroll_runs_org_period_run_type_regular",
+            "ux_payroll_runs_org_period_primary",
             "organization_id",
             "period_id",
-            "run_type",
             unique=True,
-            postgresql_where=text("run_type = 'regular'"),
+            postgresql_where=text("original_run_id IS NULL"),
         ),
     )
 
@@ -139,14 +135,6 @@ class PayrollRun(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, ta
             PG_UUID(as_uuid=True),
             ForeignKey("payroll_periods.id"),
             nullable=False,
-        ),
-    )
-    run_type: str = Field(
-        default="regular",
-        sa_column=Column(
-            Text,
-            nullable=False,
-            server_default=text("'regular'"),
         ),
     )
     original_run_id: Optional[uuid.UUID] = Field(
@@ -184,6 +172,64 @@ class PayrollRun(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, ta
             nullable=False,
             server_default=text("0"),
         ),
+    )
+    roster_initialized: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean,
+            nullable=False,
+            server_default=text("false"),
+        ),
+    )
+
+
+class PayrollRunEmployee(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=True):
+    """Selected employee and editable month-specific values for a draft run."""
+
+    __tablename__ = "payroll_run_employees"
+    __table_args__ = (
+        CheckConstraint(
+            "payable_days >= 0 AND payable_days <= 31",
+            name="ck_payroll_run_employees_payable_days",
+        ),
+        CheckConstraint(
+            "da_percent IS NULL OR (da_percent >= 0 AND da_percent <= 1000)",
+            name="ck_payroll_run_employees_da_percent",
+        ),
+        CheckConstraint(
+            "hra_percent IS NULL OR (hra_percent >= 0 AND hra_percent <= 1000)",
+            name="ck_payroll_run_employees_hra_percent",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "run_id",
+            "employee_id",
+            name="uq_payroll_run_employees_org_run_employee",
+        ),
+    )
+
+    id: uuid.UUID = _id_field()
+    created_at: datetime = _created_at_field()
+    updated_at: datetime = _updated_at_field()
+    organization_id: uuid.UUID = _organization_id_field()
+    run_id: uuid.UUID = Field(
+        sa_column=Column(PG_UUID(as_uuid=True), ForeignKey("payroll_runs.id"), nullable=False)
+    )
+    employee_id: uuid.UUID = Field(
+        sa_column=Column(PG_UUID(as_uuid=True), ForeignKey("employees.id"), nullable=False)
+    )
+    payable_days: Decimal = Field(sa_column=Column(Numeric(5, 2), nullable=False))
+    da_percent: Optional[Decimal] = Field(
+        default=None, sa_column=Column(Numeric(9, 4), nullable=True)
+    )
+    da_difference: Optional[Decimal] = Field(
+        default=None, sa_column=Column(Numeric(12, 2), nullable=True)
+    )
+    hra_percent: Optional[Decimal] = Field(
+        default=None, sa_column=Column(Numeric(9, 4), nullable=True)
+    )
+    transport_amount: Optional[Decimal] = Field(
+        default=None, sa_column=Column(Numeric(12, 2), nullable=True)
     )
 
 

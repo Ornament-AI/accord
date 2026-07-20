@@ -31,10 +31,10 @@ async def test_metrics_http_labels_use_route_templates(client):
     assert 'route="/api/healthz"' in body
 
     # Parameterized path must never appear as a raw UUID in the route label.
-    org_id = uuid4()
-    await client.get(f"/api/organizations/{org_id}")
+    employee_id = uuid4()
+    await client.get(f"/api/employees/{employee_id}")
     metrics = (await client.get("/metrics")).text
-    assert not re.search(rf'route="[^"]*{org_id}[^"]*"', metrics)
+    assert not re.search(rf'route="[^"]*{employee_id}[^"]*"', metrics)
     assert (
         re.search(r'route="[^"]*\{[^}]+\}[^"]*"', metrics) is not None
         or 'route="unmatched"' in metrics

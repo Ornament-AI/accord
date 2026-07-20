@@ -7,10 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, AuthShellBoundary } from "@/contexts/AuthContext";
 import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
-import { buildEmployeeDetail, createEmployeeHandlers } from "@/pages/employees/employee-handlers";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
-import { mockToast, openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
+import { mockToast } from "@/test/helpers";
 import { server } from "@/test/msw-server";
 
 import { CreatePeriodDialog } from "./CreatePeriodDialog";
@@ -19,9 +18,9 @@ import PayRunsPage from "./PayRunsPage";
 import {
 	buildCurrentVersion,
 	buildPeriod,
+	buildRosterRow,
 	buildRun,
 	buildRunDetail,
-	buildRunInput,
 	createPayRunHandlers,
 } from "./pay-run-handlers";
 
@@ -77,9 +76,9 @@ describe("Pay Runs list page", () => {
 			renderPayRunRoutes("/pay-runs");
 
 			expect(
-				await screen.findByText("No pay runs", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("No Payroll History", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(screen.getByText("Create a period and pay run to get started.")).toBeInTheDocument();
+			expect(screen.getByText("Select Add to create the first payroll run.")).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -98,14 +97,15 @@ describe("Pay Runs list page", () => {
 			expect(
 				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText("2026-07", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
-			expect(screen.getByText("2026-06")).toBeInTheDocument();
-			expect(screen.getByText("Regular")).toBeInTheDocument();
-			expect(screen.getByText("Supplemental")).toBeInTheDocument();
+			expect(
+				await screen.findByText("July 2026", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.getByText("June 2026")).toBeInTheDocument();
+			expect(screen.queryByRole("columnheader", { name: "Run Type" })).not.toBeInTheDocument();
 			expect(screen.getByText("Draft")).toBeInTheDocument();
 			expect(screen.getByText("Calculated")).toBeInTheDocument();
 
-			fireEvent.click(screen.getByRole("button", { name: /Open pay run 2026-07/i }));
+			fireEvent.click(screen.getByRole("button", { name: /Open pay run July 2026/i }));
 			expect(
 				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
@@ -114,15 +114,17 @@ describe("Pay Runs list page", () => {
 	);
 
 	it(
-		"creates a payroll period successfully",
+		"opens the Add form, then creates and opens the selected month's pay run",
 		async () => {
 			const onCreatePeriod = vi.fn();
+			const onCreateRun = vi.fn();
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
 			});
 			const { handlers: payHandlers } = createPayRunHandlers({
 				periods: [buildPeriod({ id: "period-1", period_year: 2026, period_month: 7 })],
 				onCreatePeriod,
+				onCreateRun,
 			});
 			server.use(...authHandlers, ...payHandlers);
 
@@ -131,21 +133,23 @@ describe("Pay Runs list page", () => {
 			expect(
 				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			fireEvent.click(screen.getByRole("button", { name: /^Period$/i }));
+			expect(screen.queryByText("Which payroll period are you running?")).not.toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Add" }));
+			expect(await screen.findByRole("heading", { name: "Add Pay Run" })).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Payroll Month" }));
+			fireEvent.click(await screen.findByRole("button", { name: "Aug 2026" }));
+			const continueButton = screen.getByRole("button", { name: "Continue" });
+			await waitFor(() => expect(continueButton).toBeEnabled());
+			fireEvent.click(continueButton);
 
+			await waitFor(() =>
+				expect(onCreatePeriod).toHaveBeenCalledWith({ period_year: 2026, period_month: 8 }),
+			);
+			await waitFor(() => expect(onCreateRun).toHaveBeenCalled());
+			expect(onCreateRun).toHaveBeenCalledWith({ period_id: "period-new-2" });
 			expect(
-				await screen.findByRole("heading", { name: "New Payroll Period" }),
+				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2026" } });
-			fireEvent.change(screen.getByLabelText("Month"), { target: { value: "8" } });
-			fireEvent.click(screen.getByRole("button", { name: "Create period" }));
-
-			await waitFor(() => {
-				expect(
-					screen.queryByRole("heading", { name: "New Payroll Period" }),
-				).not.toBeInTheDocument();
-			});
-			expect(onCreatePeriod).toHaveBeenCalledWith({ period_year: 2026, period_month: 8 });
 		},
 		PAGE_TIMEOUT,
 	);
@@ -170,7 +174,7 @@ describe("Pay Runs list page", () => {
 		expect(await screen.findByRole("heading", { name: "New Payroll Period" })).toBeInTheDocument();
 		fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2026" } });
 		fireEvent.change(screen.getByLabelText("Month"), { target: { value: "7" } });
-		fireEvent.click(screen.getByRole("button", { name: "Create period" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create Period" }));
 
 		expect(
 			await screen.findByText("Payroll period already exists for this month"),
@@ -178,58 +182,15 @@ describe("Pay Runs list page", () => {
 	});
 
 	it(
-		"creates a pay run successfully",
-		async () => {
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("organization_administrator"),
-			});
-			const { handlers: payHandlers } = createPayRunHandlers({
-				runs: [
-					buildRun({
-						id: "run-seed",
-						period_id: "period-1",
-						period_year: 2026,
-						period_month: 7,
-						run_type: "supplemental",
-						status: "draft",
-					}),
-				],
-			});
-			server.use(...authHandlers, ...payHandlers);
-
-			renderPayRunRoutes("/pay-runs");
-
-			expect(
-				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
-
-			expect(await screen.findByRole("heading", { name: "New Pay Run" })).toBeInTheDocument();
-			const dialog = screen.getByRole("dialog");
-			await waitFor(() => {
-				expect(within(dialog).getByLabelText("Period")).toHaveTextContent("2026-07");
-			});
-			expect(within(dialog).getByLabelText("Run Type")).toHaveTextContent("Regular");
-			openBaseUiSelect(screen.getByLabelText("Run Type"));
-			pickBaseUiOption("Regular");
-			fireEvent.click(screen.getByRole("button", { name: "Create run" }));
-
-			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "New Pay Run" })).not.toBeInTheDocument();
-			});
-			expect(await screen.findByText("Regular")).toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
 		"hides create actions without create_run capability",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_reviewer",
 					capabilities: ROLE_CAPABILITIES.payroll_reviewer,
 				},
@@ -241,7 +202,7 @@ describe("Pay Runs list page", () => {
 			renderPayRunRoutes("/pay-runs");
 
 			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Period$/i })).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
@@ -254,6 +215,91 @@ describe("Pay run detail — calculate gating", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});
+
+	it(
+		"selects employees and saves monthly payroll values from the table",
+		async () => {
+			const onReplaceRoster = vi.fn();
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				details: {
+					"run-1": buildRunDetail({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "draft",
+						roster_initialized: false,
+					}),
+				},
+				rosters: {
+					"run-1": [
+						buildRosterRow({
+							employee_id: "emp-1",
+							employee_number: "E-001",
+							employee_name: "Alice Example",
+							selected: false,
+						}),
+					],
+				},
+				onReplaceRoster,
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+
+			expect(
+				await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.queryByPlaceholderText("Master")).not.toBeInTheDocument();
+			expect(screen.getByRole("columnheader", { name: "Regime" })).toHaveClass("text-center");
+			expect(screen.getByRole("columnheader", { name: "Paid Days" })).toHaveClass("text-center");
+			expect(screen.getByRole("columnheader", { name: "Basic Pay" })).toHaveClass("text-right");
+			expect(screen.getByLabelText("Paid Days for Alice Example")).toHaveClass("text-center");
+			expect(screen.getByLabelText("Paid Days for Alice Example")).toBeDisabled();
+			const menuActions = screen.getByTestId("pay-run-menu-actions");
+			expect(within(menuActions).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+			expect(screen.getByLabelText("Paid Days for Alice Example")).toBeEnabled();
+			fireEvent.change(screen.getByLabelText("Paid Days for Alice Example"), {
+				target: { value: "29" },
+			});
+			expect(screen.getByRole("checkbox", { name: "Include Alice Example" })).toBeChecked();
+			fireEvent.change(screen.getByLabelText("DA Percent for Alice Example"), {
+				target: { value: "12.5" },
+			});
+			fireEvent.change(screen.getByLabelText("DA Difference for Alice Example"), {
+				target: { value: "750" },
+			});
+			fireEvent.change(screen.getByLabelText("HRA Percent for Alice Example"), {
+				target: { value: "18" },
+			});
+			fireEvent.change(screen.getByLabelText("Transport Amount for Alice Example"), {
+				target: { value: "1200" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+			await waitFor(() =>
+				expect(onReplaceRoster).toHaveBeenCalledWith("run-1", {
+					employees: [
+						{
+							employee_id: "emp-1",
+							payable_days: "29",
+							da_percent: "12.5",
+							da_difference: "750",
+							hra_percent: "18",
+							transport_amount: "1200",
+						},
+					],
+				}),
+			);
+			expect(await screen.findByText("Created roster")).toBeInTheDocument();
+			expect(screen.getByText("Dev Test User")).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
 
 	async function renderDetailWithStatus(status: string) {
 		const { handlers: authHandlers } = createAuthHandlers({
@@ -304,6 +350,26 @@ describe("Pay run detail — calculate gating", () => {
 				expect(button).toBeDisabled();
 				expect(button).toHaveAttribute("title");
 			}
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"disables Calculate while payroll table edits are unsaved",
+		async () => {
+			await renderDetailWithStatus("draft");
+			const calculate = await screen.findByRole("button", { name: "Calculate Pay Run" });
+			expect(calculate).toBeEnabled();
+
+			fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+			expect(calculate).toBeDisabled();
+			expect(calculate).toHaveAttribute(
+				"title",
+				"Save or cancel payroll table edits before calculating.",
+			);
+
+			fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+			expect(calculate).toBeEnabled();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -360,13 +426,11 @@ describe("Pay run detail — calculate gating", () => {
 				expect(toast.success).toHaveBeenCalledWith("Pay run calculated");
 			});
 
-			expect(await screen.findByTestId("pay-run-totals")).toBeInTheDocument();
-			expect(screen.getByText("Net Payable")).toBeInTheDocument();
-			expect(screen.getByText("₹99,000.00")).toBeInTheDocument();
 			expect(await screen.findByText("Calculated")).toBeInTheDocument();
 			expect(screen.getByText("Version 2")).toBeInTheDocument();
 			expect(screen.queryByText(/Engine engine-/)).not.toBeInTheDocument();
-			expect(await screen.findByText("Employee results")).toBeInTheDocument();
+			expect(screen.queryByText("Payroll results")).not.toBeInTheDocument();
+			expect(screen.queryByText("Employee results")).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -375,10 +439,12 @@ describe("Pay run detail — calculate gating", () => {
 		"hides Calculate without create_run capability",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_reviewer",
 					capabilities: ROLE_CAPABILITIES.payroll_reviewer,
 				},
@@ -390,7 +456,7 @@ describe("Pay run detail — calculate gating", () => {
 			renderPayRunRoutes("/pay-runs/run-1");
 
 			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: "Calculate Pay Run" })).not.toBeInTheDocument();
 		},
@@ -404,7 +470,7 @@ describe("Pay run detail — results and adjustments", () => {
 	});
 
 	it(
-		"renders a prioritized payroll summary and employee results",
+		"keeps calculated output in the main roster table",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
@@ -434,116 +500,31 @@ describe("Pay run detail — results and adjustments", () => {
 			renderPayRunRoutes("/pay-runs/run-1");
 
 			expect(
-				await screen.findByTestId("pay-run-totals", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(screen.getByText("₹12,34,567.89")).toBeInTheDocument();
-			expect(screen.getByText("₹20,00,000.00")).toBeInTheDocument();
 			expect(screen.getByText("Version 3")).toBeInTheDocument();
 			expect(screen.queryByText(/Engine engine-/)).not.toBeInTheDocument();
 			expect(screen.queryByText(/Hash hash-/)).not.toBeInTheDocument();
-			expect(await screen.findByText("Employee results")).toBeInTheDocument();
-			expect(screen.getByText("E-001")).toBeInTheDocument();
-		},
-		PAGE_TIMEOUT,
-	);
-
-	it(
-		"supports inputs CRUD while draft",
-		async () => {
-			const { handlers: authHandlers } = createAuthHandlers({
-				me: buildRoleAuthMe("organization_administrator"),
-			});
-			const { handlers: employeeHandlers } = createEmployeeHandlers({
-				employees: [
-					{
-						id: "emp-1",
-						employee_number: "E-001",
-						name: "Alice Example",
-						sevarth_id: "SEV-001",
-						retirement_regime: "gpf",
-					},
-				],
-				details: {
-					"emp-1": buildEmployeeDetail({
-						id: "emp-1",
-						employee_number: "E-001",
-					}),
-				},
-			});
-			const { handlers: payHandlers } = createPayRunHandlers({
-				details: {
-					"run-1": buildRunDetail({
-						id: "run-1",
-						period_id: "period-1",
-						period_year: 2026,
-						period_month: 7,
-						status: "draft",
-					}),
-				},
-				inputs: {
-					"run-1": [
-						buildRunInput({
-							id: "input-1",
-							run_id: "run-1",
-							employee_id: "emp-1",
-							component_code: "BASIC",
-							amount: "1500.00",
-							reason: "One-time bump",
-						}),
-					],
-				},
-			});
-			server.use(...authHandlers, ...employeeHandlers, ...payHandlers);
-
-			renderPayRunRoutes("/pay-runs/run-1");
-
+			expect(screen.getByRole("columnheader", { name: "Total" })).toBeInTheDocument();
+			// Calculated runs show immutable net payable from results, not the roster preview.
+			expect(await screen.findByText("₹59,000.00")).toBeInTheDocument();
+			expect(screen.getByText("₹40,000.00")).toBeInTheDocument();
+			expect(screen.queryByText("Payroll results")).not.toBeInTheDocument();
+			expect(screen.queryByText("Employee results")).not.toBeInTheDocument();
+			expect(screen.getByRole("heading", { name: "Change History" })).toBeInTheDocument();
+			expect(screen.getByText("No Changes Yet")).toBeInTheDocument();
 			expect(
-				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
-			).toBeInTheDocument();
-			expect(await screen.findByText("Basic")).toBeInTheDocument();
-			expect(screen.getByText("Employee emp-1")).toBeInTheDocument();
-			expect(screen.getByText("₹1,500.00")).toBeInTheDocument();
-			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
-
-			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
-			expect(await screen.findByRole("heading", { name: "Add Run Input" })).toBeInTheDocument();
-
-			await waitFor(() => {
-				expect(screen.getByLabelText("Employee")).toBeInTheDocument();
-			});
-			openBaseUiSelect(screen.getByLabelText("Employee"));
-			pickBaseUiOption(/E-001/);
-			fireEvent.change(screen.getByLabelText("Component Code"), { target: { value: "HRA" } });
-			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2500.00" } });
-			fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Housing adjust" } });
-			fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
-
-			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "Add Run Input" })).not.toBeInTheDocument();
-			});
-			expect(await screen.findByText("HRA")).toBeInTheDocument();
-
-			fireEvent.click(screen.getByRole("button", { name: /Edit input BASIC/i }));
-			expect(await screen.findByRole("heading", { name: "Edit Run Input" })).toBeInTheDocument();
-			fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Updated reason" } });
-			fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-			await waitFor(() => {
-				expect(screen.queryByRole("heading", { name: "Edit Run Input" })).not.toBeInTheDocument();
-			});
-			expect(await screen.findByText("Updated reason")).toBeInTheDocument();
-
-			fireEvent.click(screen.getByRole("button", { name: /Delete input HRA/i }));
-			expect(await screen.findByRole("heading", { name: "Delete input?" })).toBeInTheDocument();
-			fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-			await waitFor(() => {
-				expect(screen.queryByText("HRA")).not.toBeInTheDocument();
-			});
+				screen.queryByText("Saved edits to employee payroll values for this run."),
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByText("No changes yet. Saved inline edits will appear here."),
+			).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
 
 	it(
-		"hides input add/edit/delete when run is not draft",
+		"shows saved roster history and hides Edit when the run is not draft",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
@@ -558,16 +539,17 @@ describe("Pay run detail — results and adjustments", () => {
 						status: "submitted",
 					}),
 				},
-				inputs: {
+				rosterHistory: {
 					"run-1": [
-						buildRunInput({
-							id: "input-1",
-							run_id: "run-1",
-							employee_id: "emp-1",
-							component_code: "BASIC",
-							amount: "1500.00",
-							reason: "One-time bump",
-						}),
+						{
+							id: "history-1",
+							action: "Updated roster",
+							changed_employees: 2,
+							selected_employees: 12,
+							changed_fields: ["Paid Days", "HRA %"],
+							actor_name: "Payroll Administrator",
+							created_at: "2026-07-18T12:30:00Z",
+						},
 					],
 				},
 			});
@@ -578,10 +560,10 @@ describe("Pay run detail — results and adjustments", () => {
 			expect(
 				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
-			expect(await screen.findByText("Basic")).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /Edit input/i })).not.toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /Delete input/i })).not.toBeInTheDocument();
+			expect(await screen.findByText("Updated roster")).toBeInTheDocument();
+			expect(screen.getByText("Paid Days, HRA %")).toBeInTheDocument();
+			expect(screen.getByText("Payroll Administrator")).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -596,10 +578,12 @@ describe("Pay Runs capability gate", () => {
 		"denies direct URL access without create_run",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "report_releaser",
 					capabilities: ROLE_CAPABILITIES.report_releaser,
 				},
@@ -610,7 +594,7 @@ describe("Pay Runs capability gate", () => {
 			renderPayRunRoutes("/pay-runs");
 
 			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,

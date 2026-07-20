@@ -349,7 +349,7 @@ export function CreateRateVersionDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Create rate version"}
+							{isSubmitting ? "Creating…" : "Create Rate Version"}
 						</Button>
 					</DialogFooter>
 				</form>

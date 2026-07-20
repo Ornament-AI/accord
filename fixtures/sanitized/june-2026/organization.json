@@ -73,16 +73,5 @@
         }
       }
     }
-  ],
-  "pay_units": [
-    {
-      "pay_unit_id": "PU_SYNTH_001",
-      "name": "Synthetic Pay Unit A",
-      "office_ids": [
-        "OFF_MUM_HQ",
-        "OFF_NGP_HQ",
-        "OFF_WORLI"
-      ]
-    }
   ]
 }

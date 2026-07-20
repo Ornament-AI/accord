@@ -49,7 +49,6 @@ BASIC_CODE = "BASIC"
 class OfficeSeed:
     fixture_id: str
     name: str
-    code: str
     jurisdiction: str
     city: str
 
@@ -109,8 +108,6 @@ class OrganizationSeed:
     name: str
     period: str
     offices: list[OfficeSeed]
-    pay_unit_name: str
-    pay_unit_code: str
 
 
 @dataclass(frozen=True)
@@ -170,19 +167,15 @@ def load_june_fixture() -> JuneFixture:
         OfficeSeed(
             fixture_id=office["office_id"],
             name=office["name"],
-            code=office["office_id"],
             jurisdiction=office["city"].strip().lower(),
             city=office["city"],
         )
         for office in org_doc["offices"]
     ]
-    pay_unit = org_doc["pay_units"][0]
     organization = OrganizationSeed(
         name=org_doc["name"],
         period=org_doc["period"],
         offices=offices,
-        pay_unit_name=pay_unit["name"],
-        pay_unit_code=pay_unit["pay_unit_id"],
     )
 
     components: list[ComponentSeed] = []

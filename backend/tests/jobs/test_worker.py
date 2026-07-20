@@ -294,29 +294,32 @@ async def test_outbox_pump_marks_events_processed(
 
 
 @pytest.mark.asyncio
-async def test_multi_org_jobs_completed_across_cycles(
+async def test_multiple_jobs_same_org_completed_across_cycles(
     pg_env: tuple[PostgresJobQueue, async_sessionmaker[AsyncSession], str],
 ) -> None:
+    """Worker drains multiple queued jobs for the singleton organization."""
     queue, factory, _ = pg_env
-    org_a = await _create_org(factory)
-    org_b = await _create_org(factory)
+    org = await _create_org(factory)
     registry = JobHandlerRegistry()
     seen: list[str] = []
 
-    @registry.register("multi.org")
-    async def multi_org(job: Job) -> dict | None:
-        seen.append(str(job.organization_id))
-        return {"org": str(job.organization_id)}
+    @registry.register("multi.job")
+    async def multi_job(job: Job) -> dict | None:
+        seen.append(str(job.id))
+        return {"job": str(job.id)}
 
-    job_a = await queue.for_organization(org_a).enqueue(org_a, "multi.org", {})
-    job_b = await queue.for_organization(org_b).enqueue(org_b, "multi.org", {})
+    job_a = await queue.for_organization(org).enqueue(org, "multi.job", {"n": 1})
+    job_b = await queue.for_organization(org).enqueue(org, "multi.job", {"n": 2})
 
     worker = _worker(factory, registry)
-    # One cycle claims at most one job per org — both should finish in one pass.
-    assert await worker.run_once() is True
+    # Drain until both succeed (may take more than one cycle).
+    for _ in range(5):
+        if len(seen) >= 2:
+            break
+        await worker.run_once()
 
-    row_a = await _load_job(factory, org_a, job_a.id)
-    row_b = await _load_job(factory, org_b, job_b.id)
+    row_a = await _load_job(factory, org, job_a.id)
+    row_b = await _load_job(factory, org, job_b.id)
     assert row_a["status"] == JobStatus.succeeded.value
     assert row_b["status"] == JobStatus.succeeded.value
-    assert set(seen) == {str(org_a), str(org_b)}
+    assert set(seen) == {str(job_a.id), str(job_b.id)}

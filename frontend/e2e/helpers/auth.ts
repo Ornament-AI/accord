@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-import { authenticatedLanding, clickUntilDialog } from "./ui";
+import { authenticatedLanding } from "./ui";
 
 /**
  * Dev auth bypass (backend DevAuthAdapter): GET /api/auth/login establishes a
@@ -37,8 +37,7 @@ export async function loginViaDevBypass(page: Page): Promise<void> {
 
 /**
  * Recover the capability-aware authenticated landing page if an interrupted
- * navigation or stale retry starts on another route. Normal login, org create,
- * and org switch flows should already stay on their matched route.
+ * navigation or stale retry starts on another route.
  */
 export async function ensureAuthenticatedLanding(page: Page): Promise<void> {
 	const notFound = page.getByText("Page not found");
@@ -64,55 +63,48 @@ export async function ensureAuthenticatedLanding(page: Page): Promise<void> {
 	await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
 }
 
-export async function fillCreateOrganizationDialog(
-	page: Page,
-	opts: { name: string },
-): Promise<void> {
-	const dialog = page.getByRole("dialog");
-	await expect(dialog.getByRole("heading", { name: "Create Organization" })).toBeVisible();
-	await dialog.getByLabel("Name").fill(opts.name);
-	await dialog.getByRole("button", { name: "Create Organization" }).click();
-	await expect(dialog).toBeHidden({ timeout: 30_000 });
-}
-
-/** Create org from the inline NoOrganizationPage form. */
-export async function createOrganization(page: Page, opts: { name: string }): Promise<void> {
-	await expect(page.getByTestId("no-organization-page")).toBeVisible();
-	await page.getByLabel("Organization Name").fill(opts.name);
-	await page.getByRole("button", { name: "Continue" }).click();
-}
-
-/** Create an org from onboarding or the switcher, selecting a membership first if required. */
-export async function ensureUniqueOrganization(page: Page, opts: { name: string }): Promise<void> {
-	const noOrgPage = page.getByTestId("no-organization-page");
-	const selectionPage = page.getByTestId("organization-selection-page");
+/**
+ * Ensure the singleton org is available for e2e.
+ *
+ * Normal path: reuse an already-active membership (access_state=active).
+ * If the deployment is unbootstrapped, fail with instructions to run
+ * `scripts/provision_organization.py` (no UI create path under ADR 0011).
+ * Multi-org legacy DBs must be reset with `scripts/reset_e2e_db.sh`.
+ */
+export async function ensureSingletonOrganization(page: Page): Promise<string> {
+	const notReady = page.getByTestId("deployment-not-ready-page");
+	const notProvisioned = page.getByTestId("not-provisioned-page");
 	const landing = authenticatedLanding(page);
 
-	// Wait for /me + React to settle before branching — a non-waiting isVisible()
-	// right after login redirect races the no-org page and wrongly takes the
-	// "already has org" path.
-	await expect(noOrgPage.or(selectionPage).or(landing)).toBeVisible({ timeout: 30_000 });
+	await expect(notReady.or(notProvisioned).or(landing)).toBeVisible({ timeout: 30_000 });
 
-	if (await noOrgPage.isVisible()) {
-		await createOrganization(page, opts);
-		await ensureAuthenticatedLanding(page);
-		return;
+	if (await notReady.isVisible()) {
+		throw new Error(
+			"Deployment is unbootstrapped. Run migrations, then: " +
+				"backend/.venv/bin/python scripts/provision_organization.py " +
+				"--name 'E2E Org' --slug e2e-org --admin-email \"$DEV_AUTH_EMAIL\". " +
+				"For a dirty multi-org e2e DB: scripts/reset_e2e_db.sh --i-understand-this-deletes-data",
+		);
 	}
 
-	if (await selectionPage.isVisible()) {
-		// Persistent E2E databases can accumulate memberships across runs. Select
-		// one deterministically so the switcher is available for creating this
-		// run's isolated organization.
-		await selectionPage.getByTestId("organization-option").first().click();
-		await expect(landing).toBeVisible({ timeout: 30_000 });
+	if (await notProvisioned.isVisible()) {
+		throw new Error(
+			"Dev auth user is not a member of the singleton org. " +
+				"Run: backend/.venv/bin/python scripts/provision_member.py " +
+				"--email \"$DEV_AUTH_EMAIL\" --role organization_administrator",
+		);
 	}
 
-	// Already authenticated into some org (e.g. retry after a prior create).
 	await ensureAuthenticatedLanding(page);
-	const switcher = page.locator('[data-slot="sidebar-header"]').getByRole("button").first();
-	await switcher.click();
-	const createMenuItem = page.getByRole("menuitem", { name: "Add" });
-	await clickUntilDialog(page, createMenuItem);
-	await fillCreateOrganizationDialog(page, opts);
-	await ensureAuthenticatedLanding(page);
+	const brand = page.locator('[data-slot="sidebar-header"]').first();
+	const name = (await brand.innerText()).split("\n")[0]?.trim() ?? "Organization";
+	return name;
+}
+
+/** @deprecated Use ensureSingletonOrganization — kept as alias for older specs. */
+export async function ensureUniqueOrganization(
+	page: Page,
+	_opts?: { name: string },
+): Promise<void> {
+	await ensureSingletonOrganization(page);
 }

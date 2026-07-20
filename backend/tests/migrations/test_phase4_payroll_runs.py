@@ -7,7 +7,7 @@ import psycopg
 from .conftest import as_psycopg_url, diag, run_alembic
 
 INITIAL_REVISION = "2f397740f38a"
-HEAD_REVISION = "e2b9d47c1503"
+HEAD_REVISION = "a0d4f8b2c615"
 
 PHASE4_TABLES = (
     "payroll_periods",
@@ -48,6 +48,34 @@ def _table_exists(database_url: str, table_name: str) -> bool:
                 "WHERE table_schema = 'public' AND table_name = %s"
                 ")",
                 (table_name,),
+            ).fetchone()[0]
+            is True
+        )
+
+
+def _column_exists(database_url: str, table_name: str, column_name: str) -> bool:
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        return (
+            conn.execute(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = %s AND column_name = %s"
+                ")",
+                (table_name, column_name),
+            ).fetchone()[0]
+            is True
+        )
+
+
+def _index_exists(database_url: str, index_name: str) -> bool:
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        return (
+            conn.execute(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM pg_indexes "
+                "WHERE schemaname = 'public' AND indexname = %s"
+                ")",
+                (index_name,),
             ).fetchone()[0]
             is True
         )
@@ -98,6 +126,8 @@ def test_phase4_payroll_runs_upgrade_downgrade(scratch_db: str) -> None:
     assert check.returncode == 0, diag("alembic check after upgrade head", check)
 
     assert _alembic_version(scratch_db) == HEAD_REVISION
+    assert not _column_exists(scratch_db, "payroll_runs", "run_type")
+    assert _index_exists(scratch_db, "ux_payroll_runs_org_period_primary")
     for table in PHASE4_TABLES:
         assert _table_exists(scratch_db, table), f"expected table {table}"
         enabled, forced = _rls_flags(scratch_db, table)
@@ -127,6 +157,8 @@ def test_phase4_payroll_runs_upgrade_downgrade(scratch_db: str) -> None:
     up2 = run_alembic(scratch_db, "upgrade", "head")
     assert up2.returncode == 0, diag("alembic re-upgrade head", up2)
     assert _alembic_version(scratch_db) == HEAD_REVISION
+    assert not _column_exists(scratch_db, "payroll_runs", "run_type")
+    assert _index_exists(scratch_db, "ux_payroll_runs_org_period_primary")
     for table in PHASE4_TABLES:
         assert _table_exists(scratch_db, table), f"expected table {table} after round-trip"
 

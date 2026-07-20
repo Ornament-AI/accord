@@ -5,22 +5,16 @@ import { LoadingState } from "@/components/loading-state";
 import { AppShellProvider } from "@/contexts/AppShellContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
-import NoOrganizationPage from "@/pages/NoOrganizationPage";
-import {
-	EmployeeGroupsPage,
-	OfficesPage,
-	OrgSetupIndexRedirect,
-	PayrollUnitsPage,
-	PostsPage,
-} from "@/pages/org-setup/OrgSetupPage";
-import SelectOrganizationPage from "@/pages/SelectOrganizationPage";
+import DeploymentNotReadyPage from "@/pages/DeploymentNotReadyPage";
+import NotProvisionedPage from "@/pages/NotProvisionedPage";
+import { OfficesPage, OrgSetupIndexRedirect, PostsPage } from "@/pages/org-setup/OrgSetupPage";
 
 const ProtectedShell = lazy(() =>
 	import("@/components/protected-shell").then((mod) => ({ default: mod.ProtectedShell })),
 );
 
 export function ProtectedLayout() {
-	const { user, isLoading, organizations, activeOrganization } = useAuth();
+	const { user, isLoading, accessState } = useAuth();
 	const location = useLocation();
 
 	if (isLoading) {
@@ -32,17 +26,20 @@ export function ProtectedLayout() {
 		return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
 	}
 
-	const hasNoOrganization = organizations.length === 0 && activeOrganization === null;
-	if (hasNoOrganization) {
+	if (accessState === "unbootstrapped") {
 		return (
 			<Suspense fallback={<LoadingState />}>
-				<NoOrganizationPage />
+				<DeploymentNotReadyPage />
 			</Suspense>
 		);
 	}
 
-	if (activeOrganization === null) {
-		return <SelectOrganizationPage />;
+	if (accessState === "unprovisioned") {
+		return (
+			<Suspense fallback={<LoadingState />}>
+				<NotProvisionedPage />
+			</Suspense>
+		);
 	}
 
 	return (
@@ -55,10 +52,10 @@ export function ProtectedLayout() {
 }
 
 export function AuthenticatedIndexRedirect() {
-	const { activeOrganization, hasCapability } = useAuth();
+	const { accessState, hasCapability } = useAuth();
 
-	if (activeOrganization === null) {
-		return <SelectOrganizationPage />;
+	if (accessState !== "active") {
+		return <Navigate to="/" replace />;
 	}
 
 	if (hasCapability("create_run")) {
@@ -106,10 +103,10 @@ export const PayComponentsPage = lazy(() => import("@/pages/pay-components/PayCo
 export const PayComponentDetailPage = lazy(
 	() => import("@/pages/pay-components/PayComponentDetailPage"),
 );
-export { EmployeeGroupsPage, OfficesPage, OrgSetupIndexRedirect, PayrollUnitsPage, PostsPage };
+export { OfficesPage, OrgSetupIndexRedirect, PostsPage };
 export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsPage = lazy(() => import("@/pages/reports/ReportsPage"));
 export const AuditPage = lazy(() => import("@/pages/audit/AuditPage"));
-export { NoOrganizationPage, SelectOrganizationPage };
+export { DeploymentNotReadyPage, NotProvisionedPage };
 export const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));

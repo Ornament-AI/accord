@@ -19,6 +19,7 @@ from app.models.pay_components import PayComponent, component_rate_versions
 from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
+    PayrollRunEmployee,
     PayrollRunInput,
     payroll_employee_results,
     payroll_result_lines,
@@ -32,6 +33,7 @@ from app.services import versioning
 from app.services.run_calculation import calculate_run_command
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_organization, seed_user
+from tests.roster_helpers import initialize_run_roster
 
 
 async def _bind(session: AsyncSession, org_id, user_id) -> None:
@@ -213,11 +215,19 @@ async def _seed_world(session: AsyncSession) -> dict:
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status="draft",
     )
     session.add(run)
     await session.flush()
+    session.add_all(
+        initialize_run_roster(
+            organization_id=org.id,
+            run=run,
+            employee_ids=[employee.id],
+            period_year=period.period_year,
+            period_month=period.period_month,
+        )
+    )
 
     override = PayrollRunInput(
         organization_id=org.id,
@@ -421,6 +431,65 @@ async def test_override_changes_line_amount(session):
     assert overridden["totals"]["earnings_total"] == "53000.00"
     assert overridden["totals"]["net_payable"] == "51500.00"
     assert overridden["content_hash"] != baseline["content_hash"]
+
+
+@pytest.mark.asyncio
+async def test_draft_without_roster_rejects_calculate(session):
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    run = await session.get(PayrollRun, world["run_id"])
+    assert run is not None
+    run.roster_initialized = False
+    await session.execute(
+        sa.delete(PayrollRunEmployee).where(
+            PayrollRunEmployee.run_id == world["run_id"],
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="roster must be saved"):
+        await calculate_run_command(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_roster_prorates_basic_and_applies_inline_payroll_values(session):
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    roster = (
+        await session.execute(
+            sa.select(PayrollRunEmployee).where(
+                PayrollRunEmployee.run_id == world["run_id"],
+                PayrollRunEmployee.employee_id == world["employee_id"],
+            )
+        )
+    ).scalar_one()
+    roster.payable_days = Decimal("15.00")
+    roster.da_percent = Decimal("50.0000")
+    roster.da_difference = Decimal("100.00")
+    roster.hra_percent = Decimal("20.0000")
+    roster.transport_amount = Decimal("200.00")
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    # June has 30 days: BASIC 25,000; DA 12,500; HRA 5,000; transport 200;
+    # existing allowance override 2,500; DA difference is a gross adjustment.
+    assert result["totals"]["earnings_total"] == "45200.00"
+    assert result["totals"]["gross_adjustment_total"] == "100.00"
+    assert result["totals"]["gross_total"] == "45300.00"
+    assert result["totals"]["net_payable"] == "43800.00"
 
 
 @pytest.mark.asyncio

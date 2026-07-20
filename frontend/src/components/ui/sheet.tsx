@@ -2,6 +2,7 @@ import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type * as React from "react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -97,10 +98,16 @@ function SheetContent({
 				{showCloseButton && (
 					<SheetPrimitive.Close
 						data-slot="sheet-close"
-						className="data-open:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 outline-none transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/35 disabled:pointer-events-none"
+						render={
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label="Close"
+								className="absolute top-3 right-3 bg-transparent text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground hover:shadow-none dark:hover:bg-transparent"
+							/>
+						}
 					>
-						<XIcon className="size-4" />
-						<span className="sr-only">Close</span>
+						<XIcon weight="bold" aria-hidden />
 					</SheetPrimitive.Close>
 				)}
 			</SheetPrimitive.Popup>

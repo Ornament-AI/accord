@@ -18,8 +18,6 @@ Clients and workers retry. Concurrent operators race. The system must therefore:
 5. Provide **organization-scoped idempotency** with payload-hash collision detection and TTL cleanup.
 6. Serialize mutating commands with row locks (and optional advisory locks) while draft edits use optimistic concurrency.
 
-Supplemental / correction runs for the same period are a **later phase**. When introduced, they are separate `payroll_runs` rows that **reuse this same command set and transition rules**; they do not invent a second workflow vocabulary.
-
 ## Decision
 
 ### 1. Command-only workflow status changes
@@ -45,8 +43,6 @@ All payroll run **status** transitions occur **only** through these named comman
    - **(b) Service layer:** Only dedicated command service functions (e.g. `PayrollRunCommands.calculate|validate|submit|…`) perform status updates. Repositories used by generic handlers refuse status columns.
    - **(c) Database:** A `BEFORE UPDATE` trigger on `payroll_runs` raises if `OLD.status IS DISTINCT FROM NEW.status` unless the session has executed `SET LOCAL app.allow_workflow_transition = 'true'` inside the command transaction. Command services set that GUC for the duration of the transaction only; generic code paths never set it.
 
-Supplemental/correction runs (later phase) call the same command service entry points; they do not use PATCH-to-status shortcuts.
-
 ### 2. Statuses and transition matrix
 
 **Statuses (closed set):** `draft`, `calculated`, `validated`, `submitted`, `approved`, `rejected`, `withdrawn`, `posted`, `reversed`.
@@ -64,7 +60,7 @@ Cells are the **to-status** on success, or `rejected` with a short reason. HTTP 
 | `approved` | rejected: withdraw first | rejected: withdraw first | rejected: already approved | `withdrawn` | rejected: already approved | rejected: withdraw or post | `posted` | rejected: not posted |
 | `rejected` | `calculated` | rejected: need calculate | rejected: need validate | rejected: not submitted/approved | rejected: not submitted | rejected: already rejected | rejected: not approved | rejected: not posted |
 | `withdrawn` | `calculated` | rejected: need calculate | rejected: need validate | rejected: already withdrawn | rejected: not submitted | rejected: not submitted | rejected: not approved | rejected: not posted |
-| `posted` | rejected: terminal (use reverse/supplemental) | rejected: terminal | rejected: terminal | rejected: terminal | rejected: terminal | rejected: terminal | rejected: already posted | `reversed` |
+| `posted` | rejected: terminal (use reverse) | rejected: terminal | rejected: terminal | rejected: terminal | rejected: terminal | rejected: terminal | rejected: already posted | `reversed` |
 | `reversed` | rejected: terminal (new run for corrections) | rejected: terminal | rejected: terminal | rejected: terminal | rejected: terminal | rejected: terminal | rejected: terminal | rejected: already reversed |
 
 **Normative notes on the matrix:**
@@ -74,7 +70,7 @@ Cells are the **to-status** on success, or `rejected` with a short reason. HTTP 
 - `submit` is allowed **only** from `validated`. It binds `bound_run_version_id` + `submission_content_hash` (section 3).
 - `withdraw` is allowed from `submitted` **or** `approved` (pre-post only). Success clears the submission binding fields (or marks them inactive) and lands in `withdrawn`. Draft input edits then require a fresh `calculate` → `validate` → `submit` cycle.
 - `reject` is allowed **only** from `submitted` (checker path). From `approved`, checker must not reject; use `withdraw` (authorized) or proceed to `post`.
-- `post` is allowed **only** from `approved`. `reverse` is allowed **only** from `posted`. Both `posted` and `reversed` are terminal for this run row; further economic corrections use a **new** run (supplemental/correction, later phase) with the same commands.
+- `post` is allowed **only** from `approved`. `reverse` is allowed **only** from `posted`. Both `posted` and `reversed` are terminal for the primary run row.
 - Concurrent duplicate commands that are legal and identical are handled by **idempotency** (section 6), not by inventing extra matrix cells.
 
 ### 3. Submission binds immutable version + content hash
@@ -191,7 +187,6 @@ Command transactions that change status always set `app.allow_workflow_transitio
 
 **Follow-ons:**
 
-- Supplemental/correction runs reuse this ADR without a second state machine.
 - Report generation reads posted snapshots only ([report-catalog.md](../report-specs/report-catalog.md)).
 
 ## Alternatives Considered

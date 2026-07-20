@@ -46,7 +46,6 @@ function seedPostedRuns() {
 		period_id: period.id,
 		period_year: 2026,
 		period_month: 6,
-		run_type: "regular",
 		status: "posted",
 	});
 	const runB = buildRun({
@@ -54,7 +53,6 @@ function seedPostedRuns() {
 		period_id: period.id,
 		period_year: 2026,
 		period_month: 5,
-		run_type: "regular",
 		status: "posted",
 	});
 	return createPayRunHandlers({
@@ -124,7 +122,7 @@ describe("Reports page", () => {
 			renderReportsPage();
 
 			await screen.findByTestId("report-catalog", {}, { timeout: PAGE_TIMEOUT });
-			await selectPostedRun(/2026-06/);
+			await selectPostedRun(/June 2026/);
 
 			const payBill = await screen.findByTestId("report-type-payroll_register.pay_bill");
 			fireEvent.click(
@@ -162,7 +160,7 @@ describe("Reports page", () => {
 
 			renderReportsPage();
 			await screen.findByTestId("report-catalog", {}, { timeout: PAGE_TIMEOUT });
-			await selectPostedRun(/2026-06/);
+			await selectPostedRun(/June 2026/);
 
 			const payBill = screen.getByTestId("report-type-payroll_register.pay_bill");
 			fireEvent.click(
@@ -229,7 +227,7 @@ describe("Reports page", () => {
 			expect(within(artifacts).getByText("payments.bank_rtgs_advice")).toBeInTheDocument();
 			expect(within(artifacts).getByText("2.0 KB")).toBeInTheDocument();
 
-			await selectPostedRun(/2026-06 · Regular/);
+			await selectPostedRun(/June 2026/);
 
 			await waitFor(
 				() => {
@@ -252,10 +250,12 @@ describe("Reports page", () => {
 		"capability gate blocks without generate_reports",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_preparer",
 					capabilities: ["view_master_data", "create_run"],
 				},
@@ -268,7 +268,7 @@ describe("Reports page", () => {
 			renderReportsPage();
 
 			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(screen.queryByTestId("reports-page")).not.toBeInTheDocument();
 		},
@@ -299,7 +299,7 @@ describe("Reports page", () => {
 			renderReportsPage();
 
 			expect(
-				await screen.findByText("No posted runs yet", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("No Posted Runs Yet", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 			expect(screen.queryByTestId("report-catalog")).not.toBeInTheDocument();
 		},
@@ -319,7 +319,7 @@ describe("Reports page", () => {
 			renderReportsPage();
 
 			expect(
-				await screen.findByText("No artifacts yet", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("No Artifacts Yet", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,

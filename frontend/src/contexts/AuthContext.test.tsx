@@ -1,167 +1,67 @@
-import { screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { useAuth } from "@/contexts/AuthContext";
-import { queryClient } from "@/lib/query-client";
-import {
-	buildAuthMe,
-	buildNoOrgAuthMe,
-	buildRoleAuthMe,
-	ROLE_CAPABILITIES,
-} from "@/test/auth-fixtures";
-import { createAuthHandlers } from "@/test/auth-handlers";
-import { server } from "@/test/msw-server";
-import { renderApp, renderWithAuthProviders } from "@/test/render-app";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { buildAuthMe, buildNoOrgAuthMe, buildUnprovisionedAuthMe } from "@/test/auth-fixtures";
 
-describe("AuthContext and protected shell", () => {
-	beforeEach(() => {
-		queryClient.clear();
-		sessionStorage.clear();
+function Probe() {
+	const { user, accessState, organization, membership, hasCapability, isLoading } = useAuth();
+	if (isLoading) return <div data-testid="loading">loading</div>;
+	return (
+		<div>
+			<span data-testid="email">{user?.email ?? "none"}</span>
+			<span data-testid="access">{accessState ?? "none"}</span>
+			<span data-testid="org">{organization?.name ?? "none"}</span>
+			<span data-testid="role">{membership?.role ?? "none"}</span>
+			<span data-testid="has-manage">{String(hasCapability("manage_organization"))}</span>
+		</div>
+	);
+}
+
+describe("AuthContext", () => {
+	const server = setupServer();
+
+	beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+	afterEach(() => server.resetHandlers());
+	afterAll(() => server.close());
+
+	it("loads singular active me payload", async () => {
+		server.use(http.get("/api/auth/me", () => HttpResponse.json(buildAuthMe())));
+		render(
+			<AuthProvider>
+				<Probe />
+			</AuthProvider>,
+		);
+		await waitFor(() => expect(screen.getByTestId("email")).toHaveTextContent("ada@example.com"));
+		expect(screen.getByTestId("access")).toHaveTextContent("active");
+		expect(screen.getByTestId("org")).toHaveTextContent("Acme Payroll");
+		expect(screen.getByTestId("role")).toHaveTextContent("organization_administrator");
+		expect(screen.getByTestId("has-manage")).toHaveTextContent("true");
 	});
 
-	afterEach(() => {
-		vi.restoreAllMocks();
+	it("surfaces unbootstrapped state", async () => {
+		server.use(http.get("/api/auth/me", () => HttpResponse.json(buildNoOrgAuthMe())));
+		render(
+			<AuthProvider>
+				<Probe />
+			</AuthProvider>,
+		);
+		await waitFor(() => expect(screen.getByTestId("access")).toHaveTextContent("unbootstrapped"));
+		expect(screen.getByTestId("org")).toHaveTextContent("none");
+		expect(screen.getByTestId("role")).toHaveTextContent("none");
 	});
 
-	it("redirects unauthenticated users from the app shell to login", async () => {
-		const { handlers } = createAuthHandlers({ unauthenticated: true });
-		server.use(...handlers);
-
-		const { router } = renderApp({ initialEntries: ["/"] });
-
-		await waitFor(() => {
-			expect(router.state.location.pathname).toBe("/login");
-		});
-		expect(router.state.location.search).toContain("returnTo");
-	});
-
-	it("shows the no-organization empty state when memberships are empty", async () => {
-		const { handlers } = createAuthHandlers({ me: buildNoOrgAuthMe() });
-		server.use(...handlers);
-
-		renderApp({ initialEntries: ["/"] });
-
-		expect(await screen.findByTestId("no-organization-page")).toBeInTheDocument();
-		expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
-	});
-
-	it("lands payroll operators on Pay Runs instead of a dashboard", async () => {
-		const { handlers } = createAuthHandlers({
-			me: buildRoleAuthMe("organization_administrator"),
-		});
-		server.use(...handlers);
-
-		const { router } = renderApp({ initialEntries: ["/"] });
-
-		await waitFor(() => {
-			expect(router.state.location.pathname).toBe("/pay-runs");
-		});
-	});
-
-	it("lands audit-only roles on Reports instead of an inaccessible worklist", async () => {
-		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("auditor") });
-		server.use(...handlers);
-
-		const { router } = renderApp({ initialEntries: ["/"] });
-
-		await waitFor(() => {
-			expect(router.state.location.pathname).toBe("/reports");
-		});
-	});
-
-	it("loads an authenticated org session and evaluates hasCapability strictly", async () => {
-		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe("auditor") });
-		server.use(...handlers);
-
-		function DualCapabilityProbe() {
-			const { hasCapability, user, activeOrganization, isLoading } = useAuth();
-			if (isLoading) return <div>loading</div>;
-			return (
-				<div>
-					<span data-testid="user-email">{user?.email ?? "none"}</span>
-					<span data-testid="active-org">{activeOrganization?.name ?? "none"}</span>
-					<span data-testid="has-audit">{String(hasCapability("view_audit"))}</span>
-					<span data-testid="has-manage">{String(hasCapability("manage_organization"))}</span>
-				</div>
-			);
-		}
-
-		renderWithAuthProviders(<DualCapabilityProbe />);
-
-		await waitFor(() => {
-			expect(screen.getByTestId("user-email")).toHaveTextContent("ada@example.com");
-		});
-		expect(screen.getByTestId("active-org")).toHaveTextContent("Acme Payroll");
-		expect(screen.getByTestId("has-audit")).toHaveTextContent("true");
-		expect(screen.getByTestId("has-manage")).toHaveTextContent("false");
-		expect(ROLE_CAPABILITIES.auditor).toContain("view_audit");
-		expect(ROLE_CAPABILITIES.auditor).not.toContain("manage_organization");
-	});
-
-	it("does not grant capabilities from is_platform_admin alone", async () => {
-		const { handlers } = createAuthHandlers({
-			me: buildAuthMe({
-				is_platform_admin: true,
-				active_organization: {
-					id: "org-acme",
-					name: "Acme Payroll",
-					slug: "acme-payroll",
-					role: "auditor",
-					capabilities: ["view_audit"],
-				},
-			}),
-		});
-		server.use(...handlers);
-
-		function PlatformAdminProbe() {
-			const { hasCapability, isLoading } = useAuth();
-			if (isLoading) return <div>loading</div>;
-			return <span data-testid="has-cap">{String(hasCapability("manage_organization"))}</span>;
-		}
-
-		renderWithAuthProviders(<PlatformAdminProbe />);
-
-		await waitFor(() => {
-			expect(screen.getByTestId("has-cap")).toHaveTextContent("false");
-		});
-	});
-
-	it("returns a conflict response through createOrganization without swallowing it", async () => {
-		const { handlers } = createAuthHandlers({
-			me: buildNoOrgAuthMe(),
-			onCreateOrganization: () => ({
-				status: 409,
-				body: { detail: "Organization slug already taken" },
-			}),
-		});
-		server.use(...handlers);
-
-		function CreateProbe() {
-			const { createOrganization, isLoading } = useAuth();
-			if (isLoading) return <div>loading</div>;
-			return (
-				<button
-					type="button"
-					onClick={() => {
-						void createOrganization({ name: "Dup", slug: "dup" }).catch((error: unknown) => {
-							const message = error instanceof Error ? error.message : "unknown";
-							document.body.setAttribute("data-create-error", message);
-						});
-					}}
-				>
-					create
-				</button>
-			);
-		}
-
-		renderWithAuthProviders(<CreateProbe />);
-		await screen.findByRole("button", { name: "create" });
-		screen.getByRole("button", { name: "create" }).click();
-
-		await waitFor(() => {
-			expect(document.body.getAttribute("data-create-error")).toMatch(
-				/already taken|409|Conflict/i,
-			);
-		});
+	it("surfaces unprovisioned state with organization", async () => {
+		server.use(http.get("/api/auth/me", () => HttpResponse.json(buildUnprovisionedAuthMe())));
+		render(
+			<AuthProvider>
+				<Probe />
+			</AuthProvider>,
+		);
+		await waitFor(() => expect(screen.getByTestId("access")).toHaveTextContent("unprovisioned"));
+		expect(screen.getByTestId("org")).toHaveTextContent("Acme Payroll");
+		expect(screen.getByTestId("role")).toHaveTextContent("none");
 	});
 });

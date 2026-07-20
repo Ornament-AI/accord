@@ -106,7 +106,7 @@ describe("Pay Components list page", () => {
 			fireEvent.change(screen.getByLabelText("Code"), { target: { value: "DA" } });
 			fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Dearness Allowance" } });
 			fireEvent.change(screen.getByLabelText("Display Order"), { target: { value: "3" } });
-			fireEvent.click(screen.getByRole("button", { name: "Create component" }));
+			fireEvent.click(screen.getByRole("button", { name: "Create Component" }));
 
 			await waitFor(() => {
 				expect(
@@ -135,7 +135,7 @@ describe("Pay Components list page", () => {
 		expect(await screen.findByRole("heading", { name: "New Pay Component" })).toBeInTheDocument();
 		fireEvent.change(screen.getByLabelText("Code"), { target: { value: "BASIC" } });
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Dup" } });
-		fireEvent.click(screen.getByRole("button", { name: "Create component" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create Component" }));
 
 		expect(await screen.findByText("Pay component code already exists")).toBeInTheDocument();
 		expect(screen.getByLabelText("Code")).toHaveAttribute("aria-invalid", "true");
@@ -256,10 +256,12 @@ describe("Pay component detail page", () => {
 		"renders rate version history and gates Add rate version",
 		async () => {
 			const withoutManage = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_reviewer",
 					capabilities: ROLE_CAPABILITIES.payroll_reviewer,
 				},
@@ -369,7 +371,7 @@ describe("Create rate version dialog", () => {
 		const basisGroup = screen.getByRole("group", { name: "Basis Components" });
 		fireEvent.click(within(basisGroup).getByRole("checkbox", { name: /BASIC/i }));
 
-		fireEvent.click(screen.getByRole("button", { name: "Create rate version" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create Rate Version" }));
 
 		await waitFor(() => {
 			expect(createdBodies).toHaveLength(1);
@@ -439,7 +441,7 @@ describe("Create rate version dialog", () => {
 		expect(await screen.findByRole("heading", { name: "New Rate Version" })).toBeInTheDocument();
 		pickDateByLabel("Effective From", "2026-01-01");
 		fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "100.00" } });
-		fireEvent.click(screen.getByRole("button", { name: "Create rate version" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create Rate Version" }));
 
 		expect(await screen.findByRole("alert")).toHaveTextContent("Rate version periods overlap.");
 	});
@@ -454,10 +456,12 @@ describe("Pay Components capability gate", () => {
 		"denies direct URL access without view_master_data",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "report_releaser",
 					capabilities: ROLE_CAPABILITIES.report_releaser,
 				},
@@ -468,7 +472,7 @@ describe("Pay Components capability gate", () => {
 			renderPayRoutes("/pay-components");
 
 			expect(
-				await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,

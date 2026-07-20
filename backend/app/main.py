@@ -25,7 +25,6 @@ from app.api.routes import (
     employees,
     health,
     org_structure,
-    organizations,
     pay_setup,
     payroll_runs,
     reports,
@@ -318,7 +317,6 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
-    app.include_router(organizations.router, prefix="/api")
     app.include_router(employees.router, prefix="/api")
     app.include_router(org_structure.router, prefix="/api")
     app.include_router(pay_setup.router, prefix="/api")

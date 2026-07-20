@@ -138,7 +138,7 @@ Source of truth: `backend/app/auth/capabilities.py:26–83`.
 | Create/calculate / submit / approve / post | `create_run`, `submit_run`, `approve_run`, `post_run` | Matches; post → `report_releaser` not approver (`capabilities.py:8–10`, 69–75) |
 | Run reverse | No distinct capability; reverse route uses `post_run` (`run_posting.py:69–76`) | Documented as “unimplemented 13th capability” (`capabilities.py:15–16`); ADR “scoped” reverse for releaser is approximated by `post_run` |
 | Reports | `generate_reports` (+ interpretive `release_reports`) | Matches comments |
-| Organization-level configuration / members | `manage_organization`, `manage_members` | `manage_organization` protects report configuration; `manage_members` is unused by any route (no membership CRUD API) |
+| Organization-level configuration | `manage_organization` | Protects report configuration; member access changes are CLI-only (`provision_member.py`, ADR 0011) |
 | Platform support | Explicitly out of scope / display-only (`capabilities.py:17–18`) | Gap vs ADR support row |
 
 ### `require_capability` on mutating routes — Partial
@@ -146,10 +146,8 @@ Source of truth: `backend/app/auth/capabilities.py:26–83`.
 Audit of `@router.post|put|patch|delete` under `backend/app/api/routes/`:
 
 - **Gated:** employees, org_structure, pay_setup, payroll_runs, run_*, reports generate — all use `require_capability(...)`.
-- **Auth-only (no capability):** `POST /api/organizations` — `CurrentUser` only
-  (`organizations.py:31–38`). Gate D documents unlimited org spawn
-  (`test_http_isolation.py:1–17`).
-- **Expected exceptions:** auth logout / switch-org / WorkOS webhook.
+- **Auth-only (no capability):** none for org create — `POST /api/organizations` removed (ADR 0011); bootstrap is CLI-only via `scripts/provision_organization.py`.
+- **Expected exceptions:** auth logout / WorkOS webhook.
 
 ### Maker/checker (approver ≠ submitter) — Partial
 
@@ -354,8 +352,8 @@ create; missing `test_forced_rls_coverage.py`.
 ### 5. Privilege escalation — Partial
 
 Capability matrix mostly matches ADR; mutating payroll/master routes gated.
-Gaps: unauthenticated-capability org create; `manage_members` unused; platform
-support display-only with no break-glass; reverse folded into `post_run`.
+Gaps: unauthenticated-capability org create; platform support display-only with
+no break-glass; reverse folded into `post_run`.
 
 ### 6. Maker/checker — Partial
 
@@ -413,7 +411,6 @@ rehearsal evidence reviewed in this lane.
 | **Medium** | Maker/checker DB | SoD only in service layer (`platform.py:143–145`) | Add trigger/function preventing approve/reject actor = latest submit actor |
 | **Medium** | Support break-glass | Not implemented; tests missing | Implement time-boxed audited support sessions per security.md |
 | **Low** | `capabilities.py:15–16`, `run_posting.py:76` | No distinct `reverse_run` capability | Add capability + matrix cell if SoD for reverse must differ from post |
-| **Low** | `manage_members` unused | Capability exists without routes | Implement membership APIs with capability checks or remove until shipped |
 | **Low** | Gate D SQL table set (`test_sql_isolation.py:26–30`) | Cross-tenant SQL Gate D omits payroll/master tables | Extend Gate D or formally rely on `tests/rls/*` in release gate |
 | **Info** | Missing threat-model suites | `backend/tests/security/*`, `test_forced_rls_coverage.py`, `scripts/ci/pii_fixture_guard.sh` | Restore or retarget proven-by paths in docs |
 | **Info** | `frontend/package.json:53,57` | `msw` caret; TypeScript 7 RC | Pin msw; track RC → stable |

@@ -1,31 +1,27 @@
-"""Auth routes — login, callback, logout, me, switch-org, WorkOS webhooks."""
+"""Auth routes — login, callback, logout, me, WorkOS webhooks."""
 
 from __future__ import annotations
 
 import hashlib
-from uuid import UUID
 
 from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from app.api.deps import CurrentUser, Session
+from app.api.deps import Session
 from app.api.responses import problem_response
 from app.auth.adapters import DevAuthAdapter, get_auth_adapter
 from app.auth.errors import (
     AuthExchangeError,
     AuthMisconfiguredError,
-    MembershipForbiddenError,
     WeakSessionSecretError,
 )
 from app.auth.session import get_session_store, sign_oauth_state, verify_oauth_state
 from app.auth.webhooks import handle_workos_event, verify_workos_webhook
 from app.config import get_settings
 from app.models.identity import User
-from app.schemas.identity import SwitchOrganizationRequest
 from app.services.identity import (
     build_me_payload,
     establish_session_for_identity,
-    resolve_active_organization,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -206,7 +202,7 @@ async def logout(request: Request, db: Session) -> Response:
 
 @router.get("/me")
 async def me(request: Request, db: Session) -> Response:
-    """Return the current identity, memberships, active org, and capabilities."""
+    """Return identity, access_state, singular organization, and membership."""
     settings = get_settings()
 
     if settings.is_production:
@@ -251,55 +247,6 @@ async def me(request: Request, db: Session) -> Response:
 
     payload = await build_me_payload(db, user, session_row)
     return JSONResponse(content=payload)
-
-
-@router.post("/switch-organization")
-async def switch_organization(
-    request: Request,
-    body: SwitchOrganizationRequest,
-    principal: CurrentUser,
-    db: Session,
-) -> Response:
-    """Set active org after membership re-validation; rotate session; return /me."""
-    settings = get_settings()
-    if principal.session_id is None:
-        raise MembershipForbiddenError("No active session to rotate.")
-
-    user = await db.get(User, UUID(principal.user_id))
-    if user is None:
-        return _problem(
-            request,
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    active = await resolve_active_organization(db, user, body.organization_id)
-    if active is None:
-        raise MembershipForbiddenError("You do not have an active membership in that organization.")
-
-    store = get_session_store(settings, db)
-    cookie_value = await store.rotate_session(
-        old_session_id=UUID(principal.session_id),
-        user_id=user.id,
-        active_organization_id=body.organization_id,
-        user_agent_hash=_user_agent_hash(request),
-    )
-    await db.commit()
-
-    # Load the new session row for /me payload.
-    new_session = await store.read_session(cookie_value)
-    if new_session is None:
-        # Should not happen immediately after rotate; fail closed.
-        return _problem(
-            request,
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    payload = await build_me_payload(db, user, new_session)
-    response = JSONResponse(content=payload, status_code=status.HTTP_200_OK)
-    store.apply_session_cookie(response, cookie_value)
-    return response
 
 
 @router.post("/webhooks/workos")

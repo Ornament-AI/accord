@@ -110,7 +110,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, table=True):
 
 
 class Organization(UUIDPrimaryKeyMixin, TimestampMixin, table=True):
-    """Global organization (tenant root)."""
+    """Global organization (tenant root). Singleton per deployment (ADR 0011)."""
 
     __tablename__ = "organizations"
     __table_args__ = (
@@ -119,6 +119,8 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, table=True):
             "workos_organization_id",
             name="uq_organizations_workos_organization_id",
         ),
+        # Expression unique index: at most one organizations row.
+        Index("uq_organizations_singleton", text("(true)"), unique=True),
     )
 
     id: uuid.UUID = _id_field()
@@ -240,6 +242,64 @@ class OrganizationSettings(
     financial_year_start_month: int = Field(
         default=4,
         sa_column=Column(Integer, nullable=False, server_default=text("4")),
+    )
+
+
+class OrganizationInvitation(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    OrganizationOwnedMixin,
+    table=True,
+):
+    """Pending membership invite for the singleton organization (ADR 0011)."""
+
+    __tablename__ = "organization_invitations"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ("
+            "'organization_administrator',"
+            "'payroll_preparer',"
+            "'payroll_reviewer',"
+            "'payroll_approver',"
+            "'report_releaser',"
+            "'auditor'"
+            ")",
+            name="ck_organization_invitations_role",
+        ),
+        Index(
+            "uq_organization_invitations_org_email_pending",
+            "organization_id",
+            "email",
+            unique=True,
+            postgresql_where=text("accepted_at IS NULL AND revoked_at IS NULL"),
+        ),
+    )
+
+    id: uuid.UUID = _id_field()
+    created_at: datetime = _created_at_field()
+    updated_at: datetime = _updated_at_field()
+    organization_id: uuid.UUID = _organization_id_field()
+    email: str = Field(
+        sa_column=Column(CITEXT, nullable=False),
+    )
+    role: str = Field(
+        sa_column=Column(Text, nullable=False),
+    )
+    invited_by_user_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=Column(
+            PG_UUID(as_uuid=True),
+            ForeignKey("users.id"),
+            nullable=True,
+        ),
+    )
+    accepted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
     )
 
 

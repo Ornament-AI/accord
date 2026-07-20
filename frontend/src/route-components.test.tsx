@@ -1,50 +1,57 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { MemoryRouter, Route, Routes } from "react-router";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { queryClient } from "@/lib/query-client";
-import { buildAuthMe, buildRoleAuthMe } from "@/test/auth-fixtures";
-import { createAuthHandlers } from "@/test/auth-handlers";
-import { server } from "@/test/msw-server";
-import { renderApp } from "@/test/render-app";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
+import { ProtectedLayout } from "@/route-components";
+import { buildAuthMe, buildNoOrgAuthMe, buildUnprovisionedAuthMe } from "@/test/auth-fixtures";
 
-describe("authenticated routing", () => {
-	beforeEach(() => {
-		queryClient.clear();
+vi.mock("@/components/protected-shell", () => ({
+	ProtectedShell: () => <div data-testid="protected-shell">shell</div>,
+}));
+
+describe("ProtectedLayout", () => {
+	const server = setupServer();
+
+	beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+	afterEach(() => server.resetHandlers());
+	afterAll(() => server.close());
+
+	function renderLayout() {
+		return render(
+			<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME">
+				<AuthProvider>
+					<MemoryRouter initialEntries={["/"]}>
+						<Routes>
+							<Route path="/" element={<ProtectedLayout />} />
+							<Route path="/login" element={<div>login</div>} />
+						</Routes>
+					</MemoryRouter>
+				</AuthProvider>
+			</ThemeProvider>,
+		);
+	}
+
+	it("shows deployment not ready when unbootstrapped", async () => {
+		server.use(http.get("/api/auth/me", () => HttpResponse.json(buildNoOrgAuthMe())));
+		renderLayout();
+		await waitFor(() =>
+			expect(screen.getByTestId("deployment-not-ready-page")).toBeInTheDocument(),
+		);
 	});
 
-	it("asks a multi-membership session to select an organization", async () => {
-		const organizations = [
-			{
-				id: "org-acme",
-				name: "Acme Payroll",
-				slug: "acme-payroll",
-				role: "organization_administrator" as const,
-			},
-			{
-				id: "org-beta",
-				name: "Beta Payroll",
-				slug: "beta-payroll",
-				role: "auditor" as const,
-			},
-		];
-		let switchedTo: string | null = null;
-		const { handlers } = createAuthHandlers({
-			me: buildAuthMe({ active_organization: null, organizations }),
-			onSwitchOrganization: (organizationId) => {
-				switchedTo = organizationId;
-				return buildRoleAuthMe("auditor", organizationId);
-			},
-		});
-		server.use(...handlers);
+	it("shows not provisioned when org exists without membership", async () => {
+		server.use(http.get("/api/auth/me", () => HttpResponse.json(buildUnprovisionedAuthMe())));
+		renderLayout();
+		await waitFor(() => expect(screen.getByTestId("not-provisioned-page")).toBeInTheDocument());
+	});
 
-		renderApp();
-
-		expect(await screen.findByRole("heading", { name: "Select an organization" })).toBeVisible();
-		fireEvent.click(screen.getByRole("button", { name: /Beta Payroll.*beta-payroll/ }));
-
-		await waitFor(() => {
-			expect(switchedTo).toBe("org-beta");
-			expect(screen.queryByTestId("organization-selection-page")).not.toBeInTheDocument();
-		});
+	it("renders shell when active", async () => {
+		server.use(http.get("/api/auth/me", () => HttpResponse.json(buildAuthMe())));
+		renderLayout();
+		await waitFor(() => expect(screen.getByTestId("protected-shell")).toBeInTheDocument());
 	});
 });

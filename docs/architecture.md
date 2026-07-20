@@ -60,7 +60,7 @@ stateDiagram-v2
   submitted --> approved: approve
   submitted --> rejected: reject
   approved --> posted: post
-  posted --> reversed: reverse (new draft reversal run)
+  posted --> reversed: reverse (linked draft counter-record)
 
   note right of calculated
     validate is read-only
@@ -76,7 +76,7 @@ stateDiagram-v2
 | `withdraw` | `services/run_workflow.py` | `submitted` → `calculated` |
 | `approve` / `reject` | `services/run_workflow.py` | `submitted` → `approved` / `rejected` |
 | `post` | `services/run_posting.py` | `approved` → `posted` (+ audit + outbox) |
-| `reverse` | `services/run_posting.py` | `posted` → `reversed`; creates a new `draft` reversal run |
+| `reverse` | `services/run_posting.py` | `posted` → `reversed`; creates a linked `draft` counter-record |
 
 **Discrepancies vs ADR 0008 (do not paper over):**
 
@@ -90,6 +90,12 @@ stateDiagram-v2
 ---
 
 ## Request tenancy flow
+
+Product contract: one organization per deployment ([ADR 0011](adr/0011-single-organization.md)).
+`GET /api/auth/me` exposes `access_state` plus singular `organization` / `membership`.
+Bootstrap is ops CLI only (`scripts/provision_organization.py`). Session
+`active_organization_id`, `organization_id` columns, and forced RLS GUCs remain
+**kernel debt** until Phase 2 removal; they are not a multi-org product surface.
 
 Verified against `backend/app/api/deps.py`, `backend/app/tenancy.py`,
 `backend/app/services/identity.py`, ADR 0001, ADR 0004:
@@ -148,6 +154,7 @@ Reports never re-resolve “current” master data; they read posted pinned vers
 | [0008](adr/0008-command-workflow-idempotency.md) | Command workflow, maker/checker, idempotency |
 | [0009](adr/0009-audit-outbox.md) | Append-only audit events + transactional outbox |
 | [0010](adr/0010-jobs-object-storage.md) | Durable jobs queue + S3-compatible export artifacts |
+| [0011](adr/0011-single-organization.md) | Single-organization product contract; CLI bootstrap; kernel debt |
 
 ---
 

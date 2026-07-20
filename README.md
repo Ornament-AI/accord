@@ -14,9 +14,10 @@ immutable posted payroll data.
 - **Temporal truth** — effective-dated master versions; posted payroll retains the
   exact source version IDs and snapshots it was computed from.
 - **Immutable posting** — posted results are never edited or deleted; corrections
-  use withdrawal before posting, or reversal/supplemental runs after.
-- **Defense-in-depth tenancy** — multi-organization from day one, with forced
-  PostgreSQL row-level security on every tenant-owned table.
+  use withdrawal before posting or a formal reversal after posting.
+- **Single-organization product** — one organization per deployment
+  ([ADR 0011](docs/adr/0011-single-organization.md)); forced PostgreSQL
+  row-level security remains as fail-closed kernel debt until Phase 2 removal.
 - **Transactional evidence** — every business mutation commits atomically with an
   append-only audit event and an outbox event.
 

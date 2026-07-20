@@ -8,7 +8,7 @@ import pytest
 
 from app.main import app as fastapi_app
 from app.api.routes.employees import router as employees_router
-from app.models.org_structure import Office, PayrollUnit, Post
+from app.models.org_structure import Office, Post
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import seed_membership, seed_organization, seed_user
 
@@ -16,18 +16,16 @@ if not any(getattr(r, "path", "").startswith("/api/employees") for r in fastapi_
     fastapi_app.include_router(employees_router, prefix="/api")
 
 
-async def _seed_posting_refs(session, org_id: UUID) -> tuple[Office, PayrollUnit, Post]:
+async def _seed_posting_refs(session, org_id: UUID) -> tuple[Office, Post]:
     office = Office(
         organization_id=org_id,
         name="HQ",
-        code=f"O-{uuid4().hex[:6]}",
         jurisdiction="mumbai",
     )
-    unit = PayrollUnit(organization_id=org_id, name="PU1", code=f"PU-{uuid4().hex[:6]}")
     post = Post(organization_id=org_id, designation=f"Clerk-{uuid4().hex[:6]}", class_="III")
-    session.add_all([office, unit, post])
+    session.add_all([office, post])
     await session.flush()
-    return office, unit, post
+    return office, post
 
 
 async def _admin_world(session, dev_settings, client, *, slug: str | None = None):
@@ -43,7 +41,7 @@ async def _admin_world(session, dev_settings, client, *, slug: str | None = None
         user_id=admin.id,
         role="organization_administrator",
     )
-    office, unit, post = await _seed_posting_refs(session, org.id)
+    office, post = await _seed_posting_refs(session, org.id)
     await session.commit()
     cookie = await mint_session_cookie(
         session,
@@ -52,7 +50,7 @@ async def _admin_world(session, dev_settings, client, *, slug: str | None = None
         active_organization_id=org.id,
     )
     apply_session_cookie(client, cookie)
-    return org, admin, office, unit, post
+    return org, admin, office, post
 
 
 def _profile_payload(regime: str) -> dict:
@@ -78,7 +76,6 @@ def _profile_payload(regime: str) -> dict:
 def _create_payload(
     *,
     office_id: UUID,
-    unit_id: UUID,
     post_id: UUID,
     regime: str = "gpf",
     employee_number: str | None = None,
@@ -91,7 +88,6 @@ def _create_payload(
         "profile": _profile_payload(regime),
         "posting": {
             "office_id": str(office_id),
-            "payroll_unit_id": str(unit_id),
             "post_id": str(post_id),
         },
         "pay": {"pay_matrix_level": "L10", "basic_pay": basic_pay},
@@ -136,12 +132,11 @@ async def _auth_as(session, dev_settings, client, org_id: UUID, user, role: str)
 async def test_create_employee_all_regimes_masks_sensitive_and_money_string(
     client, session, dev_settings, regime
 ):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     body = await _create_employee(
         client,
         _create_payload(
             office_id=office.id,
-            unit_id=unit.id,
             post_id=post.id,
             regime=regime,
         ),
@@ -158,10 +153,9 @@ async def test_create_employee_all_regimes_masks_sensitive_and_money_string(
 
 @pytest.mark.asyncio
 async def test_create_rejects_numeric_basic_pay(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-        unit_id=unit.id,
         post_id=post.id,
         basic_pay=50732.00,
     )
@@ -171,8 +165,8 @@ async def test_create_rejects_numeric_basic_pay(client, session, dev_settings):
 
 @pytest.mark.asyncio
 async def test_create_allows_gpf_with_unknown_jurisdiction(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
-    payload = _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
+    payload = _create_payload(office_id=office.id, post_id=post.id)
     del payload["profile"]["gpf_jurisdiction"]
     resp = await client.post("/api/employees", json=payload)
     assert resp.status_code == 201
@@ -180,10 +174,9 @@ async def test_create_allows_gpf_with_unknown_jurisdiction(client, session, dev_
 
 @pytest.mark.asyncio
 async def test_create_rejects_nps_with_jurisdiction(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-        unit_id=unit.id,
         post_id=post.id,
         regime="nps",
     )
@@ -194,10 +187,9 @@ async def test_create_rejects_nps_with_jurisdiction(client, session, dev_setting
 
 @pytest.mark.asyncio
 async def test_create_allows_unknown_legacy_profile_fields(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-        unit_id=unit.id,
         post_id=post.id,
         regime="nps",
     )
@@ -222,10 +214,10 @@ async def test_create_allows_unknown_legacy_profile_fields(client, session, dev_
 
 @pytest.mark.asyncio
 async def test_pay_version_as_of_before_on_after_boundary(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     created = await _create_employee(
         client,
-        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        _create_payload(office_id=office.id, post_id=post.id),
     )
     employee_id = created["id"]
 
@@ -258,10 +250,10 @@ async def test_pay_version_as_of_before_on_after_boundary(client, session, dev_s
 
 @pytest.mark.asyncio
 async def test_overlapping_effective_from_returns_409(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     created = await _create_employee(
         client,
-        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        _create_payload(office_id=office.id, post_id=post.id),
     )
     employee_id = created["id"]
 
@@ -279,10 +271,9 @@ async def test_overlapping_effective_from_returns_409(client, session, dev_setti
 
 @pytest.mark.asyncio
 async def test_duplicate_employee_number_returns_409(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     payload = _create_payload(
         office_id=office.id,
-        unit_id=unit.id,
         post_id=post.id,
         employee_number="E-DUP-001",
     )
@@ -298,10 +289,10 @@ async def test_duplicate_employee_number_returns_409(client, session, dev_settin
 
 @pytest.mark.asyncio
 async def test_bank_primary_same_effective_from_returns_409(client, session, dev_settings):
-    _, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    _, _, office, post = await _admin_world(session, dev_settings, client)
     created = await _create_employee(
         client,
-        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        _create_payload(office_id=office.id, post_id=post.id),
     )
     employee_id = created["id"]
 
@@ -325,10 +316,10 @@ async def test_bank_primary_same_effective_from_returns_409(client, session, dev
 
 @pytest.mark.asyncio
 async def test_masking_default_and_reveal_admin_vs_preparer(client, session, dev_settings):
-    org, admin, office, unit, post = await _admin_world(session, dev_settings, client)
+    org, admin, office, post = await _admin_world(session, dev_settings, client)
     created = await _create_employee(
         client,
-        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        _create_payload(office_id=office.id, post_id=post.id),
     )
     employee_id = created["id"]
 
@@ -349,28 +340,48 @@ async def test_masking_default_and_reveal_admin_vs_preparer(client, session, dev
     assert blocked.json()["error"] == "urn:accord:capability:reveal_sensitive_fields"
 
 
-# --- Tenant isolation -------------------------------------------------------------
+# --- Fail-closed / unknown-id isolation (single org, ADR 0011) --------------------
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_org_b_cannot_see_org_a_employee(client, session, dev_settings):
-    org_a, _, office, unit, post = await _admin_world(session, dev_settings, client)
-    created = await _create_employee(
+async def test_unknown_employee_id_404(client, session, dev_settings):
+    org, _, office, post = await _admin_world(session, dev_settings, client)
+    await _create_employee(
         client,
-        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        _create_payload(office_id=office.id, post_id=post.id),
     )
-    employee_id = created["id"]
+    _ = org
 
-    org_b = await seed_organization(session, name="Org B", slug=f"emp-b-{uuid4().hex[:10]}")
-    user_b = await seed_user(session, name="Org B Admin")
-    await _auth_as(session, dev_settings, client, org_b.id, user_b, "organization_administrator")
-
-    by_id = await client.get(f"/api/employees/{employee_id}")
+    by_id = await client.get(f"/api/employees/{uuid4()}")
     assert by_id.status_code == 404
 
+
+@pytest.mark.asyncio
+async def test_unprovisioned_user_fail_closed_on_employees(client, session, dev_settings):
+    org, _admin, office, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, post_id=post.id),
+    )
+    outsider = await seed_user(session, name="Outsider")
+    await session.commit()
+
+    apply_session_cookie(
+        client,
+        await mint_session_cookie(
+            session,
+            dev_settings,
+            user_id=outsider.id,
+            active_organization_id=org.id,
+        ),
+    )
+
+    by_id = await client.get(f"/api/employees/{created['id']}")
+    assert by_id.status_code == 409
+    assert by_id.json()["error"] == "OrganizationContextRequired"
+
     listed = await client.get("/api/employees")
-    assert listed.status_code == 200
-    assert listed.json()["items"] == []
+    assert listed.status_code == 409
 
 
 # --- Capability gates -------------------------------------------------------------
@@ -378,10 +389,10 @@ async def test_tenant_isolation_org_b_cannot_see_org_a_employee(client, session,
 
 @pytest.mark.asyncio
 async def test_payroll_reviewer_can_get_but_not_post(client, session, dev_settings):
-    org, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    org, _, office, post = await _admin_world(session, dev_settings, client)
     created = await _create_employee(
         client,
-        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        _create_payload(office_id=office.id, post_id=post.id),
     )
 
     reviewer = await seed_user(session, name="Reviewer")
@@ -392,7 +403,7 @@ async def test_payroll_reviewer_can_get_but_not_post(client, session, dev_settin
 
     post_resp = await client.post(
         "/api/employees",
-        json=_create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        json=_create_payload(office_id=office.id, post_id=post.id),
     )
     assert post_resp.status_code == 403
     assert post_resp.json()["error"] == "urn:accord:capability:manage_master_data"
@@ -400,10 +411,10 @@ async def test_payroll_reviewer_can_get_but_not_post(client, session, dev_settin
 
 @pytest.mark.asyncio
 async def test_auditor_cannot_get_employees(client, session, dev_settings):
-    org, _, office, unit, post = await _admin_world(session, dev_settings, client)
+    org, _, office, post = await _admin_world(session, dev_settings, client)
     await _create_employee(
         client,
-        _create_payload(office_id=office.id, unit_id=unit.id, post_id=post.id),
+        _create_payload(office_id=office.id, post_id=post.id),
     )
 
     auditor = await seed_user(session, name="Auditor")

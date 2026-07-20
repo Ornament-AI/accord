@@ -52,12 +52,6 @@ RateValue = Annotated[
 ]
 
 
-class RunType(StrEnum):
-    REGULAR = "regular"
-    SUPPLEMENTAL = "supplemental"
-    REVERSAL = "reversal"
-
-
 class InputKind(StrEnum):
     EXCEPTION = "exception"
     OVERRIDE = "override"
@@ -81,8 +75,9 @@ class PayrollPeriodResponse(BaseModel):
 
 
 class PayrollRunCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     period_id: UUID
-    run_type: RunType = RunType.REGULAR
 
 
 class PayrollRunListItem(BaseModel):
@@ -92,7 +87,6 @@ class PayrollRunListItem(BaseModel):
     period_id: UUID
     period_year: int
     period_month: int
-    run_type: str
     status: str
     lock_version: int
     created_at: datetime
@@ -107,12 +101,54 @@ class PayrollRunDetail(BaseModel):
     period_year: int
     period_month: int
     period_status: str
-    run_type: str
     status: str
     current_version: CurrentVersion | None = None
     lock_version: int
+    roster_initialized: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class PayrollRunEmployeeUpsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: UUID
+    payable_days: MoneyAmount = Field(ge=0, le=31)
+    da_percent: RateValue | None = Field(default=None, ge=0, le=1000)
+    da_difference: MoneyAmount | None = None
+    hra_percent: RateValue | None = Field(default=None, ge=0, le=1000)
+    transport_amount: MoneyAmount | None = None
+
+
+class PayrollRunRosterUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employees: list[PayrollRunEmployeeUpsert] = Field(min_length=1)
+
+
+class PayrollRunEmployeeResponse(BaseModel):
+    employee_id: UUID
+    employee_number: str
+    employee_name: str | None = None
+    sevarth_id: str | None = None
+    retirement_regime: str | None = None
+    basic_pay: MoneyAmount | None = None
+    selected: bool
+    payable_days: MoneyAmount
+    da_percent: RateValue | None = None
+    da_difference: MoneyAmount | None = None
+    hra_percent: RateValue | None = None
+    transport_amount: MoneyAmount | None = None
+
+
+class PayrollRunRosterHistoryResponse(BaseModel):
+    id: UUID
+    action: str
+    changed_employees: int
+    selected_employees: int
+    changed_fields: list[str]
+    actor_name: str
+    created_at: datetime
 
 
 class PayrollRunInputUpsert(BaseModel):

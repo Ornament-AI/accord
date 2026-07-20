@@ -268,7 +268,6 @@ async def test_unposted_run_raises_conflict(session):
     draft = PayrollRun(
         organization_id=org_id,
         period_id=period.id,
-        run_type="supplemental",
         status="draft",
     )
     session.add(draft)

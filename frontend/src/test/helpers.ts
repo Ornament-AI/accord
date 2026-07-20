@@ -2,36 +2,49 @@ import { fireEvent, screen } from "@testing-library/react";
 import { vi } from "vitest";
 
 import type { AuthUser } from "@/contexts/AuthContext";
-import type { ActiveOrganization, Capability, OrganizationMembership } from "@/types/auth";
+import type {
+	AccessState,
+	ActiveOrganization,
+	Capability,
+	MeMembership,
+	MeOrganization,
+} from "@/types/auth";
 
 type AuthState = {
 	user: Partial<AuthUser> | null;
 	isLoading?: boolean;
+	accessState?: AccessState | null;
+	organization?: MeOrganization | null;
+	membership?: MeMembership | null;
 	activeOrganization?: ActiveOrganization | null;
-	organizations?: OrganizationMembership[];
 	shellEpoch?: number;
 	hasCapability?: (capability: Capability) => boolean;
-	switchOrganization?: (organizationId: string) => Promise<void>;
-	createOrganization?: (input: { name: string; slug: string }) => Promise<unknown>;
 	logout?: () => void | Promise<void>;
 	refetch?: () => void;
 };
 
 export function mockAuth(state: AuthState) {
 	const activeOrganization = state.activeOrganization ?? null;
+	const accessState =
+		state.accessState ??
+		(activeOrganization ? "active" : state.organization ? "unprovisioned" : "unbootstrapped");
 	return {
 		useAuth: () => ({
 			user: state.user,
 			isLoading: state.isLoading ?? false,
+			accessState,
+			organization: state.organization ?? activeOrganization,
+			membership:
+				state.membership ??
+				(activeOrganization
+					? { role: activeOrganization.role, capabilities: activeOrganization.capabilities }
+					: null),
 			activeOrganization,
-			organizations: state.organizations ?? [],
 			shellEpoch: state.shellEpoch ?? 0,
 			hasCapability:
 				state.hasCapability ??
 				((capability: Capability) =>
 					Boolean(activeOrganization?.capabilities.includes(capability))),
-			switchOrganization: state.switchOrganization ?? vi.fn(async () => undefined),
-			createOrganization: state.createOrganization ?? vi.fn(async () => ({})),
 			logout: state.logout ?? vi.fn(),
 			refetch: state.refetch ?? vi.fn(),
 		}),
@@ -154,6 +167,7 @@ export {
 	buildAuthMe,
 	buildNoOrgAuthMe,
 	buildRoleAuthMe,
+	buildUnprovisionedAuthMe,
 	ROLE_CAPABILITIES,
 } from "./auth-fixtures";
 export { createAuthHandlers } from "./auth-handlers";

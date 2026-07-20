@@ -65,10 +65,12 @@ async function setupDetailPage(options: {
 		(options.role ? ROLE_CAPABILITIES[options.role] : ROLE_CAPABILITIES.organization_administrator);
 
 	const me = buildAuthMe({
-		active_organization: {
+		organization: {
 			id: "org-acme",
 			name: "Acme Payroll",
 			slug: "acme-payroll",
+		},
+		membership: {
 			role: options.role ?? "organization_administrator",
 			capabilities,
 		},
@@ -185,10 +187,12 @@ describe("WorkflowActionBar visibility matrix", () => {
 		"$name",
 		async ({ status, capabilities, visible, enabled }) => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "organization_administrator",
 					capabilities,
 				},
@@ -252,10 +256,12 @@ describe("WorkflowActionBar visibility matrix", () => {
 		"hides submit/approve/post without those capabilities",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "auditor",
 					capabilities: ["create_run", "view_audit"],
 				},

@@ -137,10 +137,10 @@ export default function PayComponentDetailPage() {
 
 	if (!componentId) {
 		return (
-			<CapabilityGate capability="view_master_data" title="Pay component">
-				<AppLayout title="Pay component">
+			<CapabilityGate capability="view_master_data" title="Pay Component">
+				<AppLayout title="Pay Component">
 					<PageShell>
-						<EmptyState title="Pay component not found" description="Missing component id." />
+						<EmptyState title="Pay Component Not Found" description="Missing component id." />
 					</PageShell>
 				</AppLayout>
 			</CapabilityGate>
@@ -148,9 +148,9 @@ export default function PayComponentDetailPage() {
 	}
 
 	return (
-		<CapabilityGate capability="view_master_data" title="Pay component">
+		<CapabilityGate capability="view_master_data" title="Pay Component">
 			<AppLayout
-				title={component ? <PayComponentBreadcrumb label={component.code} /> : "Pay component"}
+				title={component ? <PayComponentBreadcrumb label={component.code} /> : "Pay Component"}
 				actions={
 					canManage ? (
 						<Button size="xs" onClick={() => setCreateOpen(true)}>

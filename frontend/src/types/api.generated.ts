@@ -209,31 +209,11 @@ export interface paths {
         };
         /**
          * Me
-         * @description Return the current identity, memberships, active org, and capabilities.
+         * @description Return identity, access_state, singular organization, and membership.
          */
         get: operations["me_api_auth_me_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/switch-organization": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Switch Organization
-         * @description Set active org after membership re-validation; rotate session; return /me.
-         */
-        post: operations["switch_organization_api_auth_switch_organization_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -258,41 +238,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/employee-groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Employee Groups Route */
-        get: operations["list_employee_groups_route_api_employee_groups_get"];
-        put?: never;
-        /** Create Employee Group Route */
-        post: operations["create_employee_group_route_api_employee_groups_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/employee-groups/{employee_group_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Employee Group Route */
-        patch: operations["update_employee_group_route_api_employee_groups__employee_group_id__patch"];
         trace?: never;
     };
     "/api/employees": {
@@ -473,46 +418,6 @@ export interface paths {
         head?: never;
         /** Update Office Route */
         patch: operations["update_office_route_api_offices__office_id__patch"];
-        trace?: never;
-    };
-    "/api/organizations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Organization Route
-         * @description Create an organization; creator becomes administrator; return /me shape.
-         */
-        post: operations["create_organization_route_api_organizations_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/organizations/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Organization Route
-         * @description Create an organization; creator becomes administrator; return /me shape.
-         */
-        post: operations["create_organization_route_api_organizations__post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/pay-components": {
@@ -791,6 +696,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll-runs/{run_id}/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Payroll Run Roster */
+        get: operations["list_payroll_run_roster_api_payroll_runs__run_id__roster_get"];
+        /** Replace Payroll Run Roster */
+        put: operations["replace_payroll_run_roster_api_payroll_runs__run_id__roster_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll-runs/{run_id}/roster-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Payroll Run Roster History */
+        get: operations["list_payroll_run_roster_history_api_payroll_runs__run_id__roster_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll-runs/{run_id}/submit": {
         parameters: {
             query?: never;
@@ -840,41 +780,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/payroll-units": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Payroll Units Route */
-        get: operations["list_payroll_units_route_api_payroll_units_get"];
-        put?: never;
-        /** Create Payroll Unit Route */
-        post: operations["create_payroll_unit_route_api_payroll_units_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/payroll-units/{payroll_unit_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Payroll Unit Route */
-        patch: operations["update_payroll_unit_route_api_payroll_units__payroll_unit_id__patch"];
         trace?: never;
     };
     "/api/posts": {
@@ -1367,11 +1272,6 @@ export interface components {
             /** Event Kind */
             event_kind?: ("mutation" | "access") | null;
             /**
-             * Has Structured Detail
-             * @default false
-             */
-            has_structured_detail: boolean;
-            /**
              * Id
              * Format: uuid
              */
@@ -1409,11 +1309,6 @@ export interface components {
             entity_type: string;
             /** Event Kind */
             event_kind?: ("mutation" | "access") | null;
-            /**
-             * Has Structured Detail
-             * @default false
-             */
-            has_structured_detail: boolean;
             /**
              * Id
              * Format: uuid
@@ -1589,13 +1484,6 @@ export interface components {
             posting?: components["schemas"]["PostingInput"] | null;
             profile: components["schemas"]["ProfileInput"];
         };
-        /** CreateOrganizationRequest */
-        CreateOrganizationRequest: {
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-        };
         /**
          * CurrentVersion
          * @description Immutable calculated version summary (run detail + results list).
@@ -1655,42 +1543,6 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-        };
-        /** EmployeeGroupCreate */
-        EmployeeGroupCreate: {
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
-        };
-        /** EmployeeGroupResponse */
-        EmployeeGroupResponse: {
-            /** Code */
-            code: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** EmployeeGroupUpdate */
-        EmployeeGroupUpdate: {
-            /** Code */
-            code?: string | null;
-            /** Name */
-            name?: string | null;
         };
         /** EmployeeResultDetail */
         EmployeeResultDetail: {
@@ -1802,8 +1654,6 @@ export interface components {
         InputKind: "exception" | "override" | "one_time";
         /** OfficeCreate */
         OfficeCreate: {
-            /** Code */
-            code: string;
             /**
              * Jurisdiction
              * @enum {string}
@@ -1814,8 +1664,6 @@ export interface components {
         };
         /** OfficeResponse */
         OfficeResponse: {
-            /** Code */
-            code: string;
             /**
              * Created At
              * Format: date-time
@@ -1838,8 +1686,6 @@ export interface components {
         };
         /** OfficeUpdate */
         OfficeUpdate: {
-            /** Code */
-            code?: string | null;
             /** Jurisdiction */
             jurisdiction?: ("mumbai" | "nagpur" | "worli" | "other") | null;
             /** Name */
@@ -2012,8 +1858,6 @@ export interface components {
              * Format: uuid
              */
             period_id: string;
-            /** @default regular */
-            run_type: components["schemas"]["RunType"];
         };
         /** PayrollRunDetail */
         PayrollRunDetail: {
@@ -2041,8 +1885,11 @@ export interface components {
             period_status: string;
             /** Period Year */
             period_year: number;
-            /** Run Type */
-            run_type: string;
+            /**
+             * Roster Initialized
+             * @default false
+             */
+            roster_initialized: boolean;
             /** Status */
             status: string;
             /**
@@ -2050,6 +1897,54 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** PayrollRunEmployeeResponse */
+        PayrollRunEmployeeResponse: {
+            /** Basic Pay */
+            basic_pay?: string | null;
+            /** Da Difference */
+            da_difference?: string | null;
+            /** Da Percent */
+            da_percent?: string | null;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Employee Name */
+            employee_name?: string | null;
+            /** Employee Number */
+            employee_number: string;
+            /** Hra Percent */
+            hra_percent?: string | null;
+            /** Payable Days */
+            payable_days: string;
+            /** Retirement Regime */
+            retirement_regime?: string | null;
+            /** Selected */
+            selected: boolean;
+            /** Sevarth Id */
+            sevarth_id?: string | null;
+            /** Transport Amount */
+            transport_amount?: string | null;
+        };
+        /** PayrollRunEmployeeUpsert */
+        PayrollRunEmployeeUpsert: {
+            /** Da Difference */
+            da_difference?: number | string | null;
+            /** Da Percent */
+            da_percent?: (number | string) | null;
+            /**
+             * Employee Id
+             * Format: uuid
+             */
+            employee_id: string;
+            /** Hra Percent */
+            hra_percent?: (number | string) | null;
+            /** Payable Days */
+            payable_days: number | string;
+            /** Transport Amount */
+            transport_amount?: number | string | null;
         };
         /** PayrollRunInputResponse */
         PayrollRunInputResponse: {
@@ -2141,8 +2036,6 @@ export interface components {
             period_month: number;
             /** Period Year */
             period_year: number;
-            /** Run Type */
-            run_type: string;
             /** Status */
             status: string;
             /**
@@ -2151,17 +2044,16 @@ export interface components {
              */
             updated_at: string;
         };
-        /** PayrollUnitCreate */
-        PayrollUnitCreate: {
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
-        };
-        /** PayrollUnitResponse */
-        PayrollUnitResponse: {
-            /** Code */
-            code: string;
+        /** PayrollRunRosterHistoryResponse */
+        PayrollRunRosterHistoryResponse: {
+            /** Action */
+            action: string;
+            /** Actor Name */
+            actor_name: string;
+            /** Changed Employees */
+            changed_employees: number;
+            /** Changed Fields */
+            changed_fields: string[];
             /**
              * Created At
              * Format: date-time
@@ -2172,20 +2064,13 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Name */
-            name: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
+            /** Selected Employees */
+            selected_employees: number;
         };
-        /** PayrollUnitUpdate */
-        PayrollUnitUpdate: {
-            /** Code */
-            code?: string | null;
-            /** Name */
-            name?: string | null;
+        /** PayrollRunRosterUpdate */
+        PayrollRunRosterUpdate: {
+            /** Employees */
+            employees: components["schemas"]["PayrollRunEmployeeUpsert"][];
         };
         /** PostCreate */
         PostCreate: {
@@ -2225,18 +2110,11 @@ export interface components {
         };
         /** PostingInput */
         PostingInput: {
-            /** Employee Group Id */
-            employee_group_id?: string | null;
             /**
              * Office Id
              * Format: uuid
              */
             office_id: string;
-            /**
-             * Payroll Unit Id
-             * Format: uuid
-             */
-            payroll_unit_id: string;
             /**
              * Post Id
              * Format: uuid
@@ -2264,8 +2142,6 @@ export interface components {
             effective_from: string;
             /** Effective To */
             effective_to: string | null;
-            /** Employee Group Id */
-            employee_group_id: string | null;
             /**
              * Id
              * Format: uuid
@@ -2276,11 +2152,6 @@ export interface components {
              * Format: uuid
              */
             office_id: string;
-            /**
-             * Payroll Unit Id
-             * Format: uuid
-             */
-            payroll_unit_id: string;
             /**
              * Post Id
              * Format: uuid
@@ -2563,19 +2434,6 @@ export interface components {
                 [key: string]: string;
             };
             version: components["schemas"]["CurrentVersion"];
-        };
-        /**
-         * RunType
-         * @enum {string}
-         */
-        RunType: "regular" | "supplemental" | "reversal";
-        /** SwitchOrganizationRequest */
-        SwitchOrganizationRequest: {
-            /**
-             * Organization Id
-             * Format: uuid
-             */
-            organization_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -2958,39 +2816,6 @@ export interface operations {
             };
         };
     };
-    switch_organization_api_auth_switch_organization_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SwitchOrganizationRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     workos_webhook_api_auth_webhooks_workos_post: {
         parameters: {
             query?: never;
@@ -3007,94 +2832,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    list_employee_groups_route_api_employee_groups_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmployeeGroupResponse"][];
-                };
-            };
-        };
-    };
-    create_employee_group_route_api_employee_groups_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmployeeGroupCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmployeeGroupResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_employee_group_route_api_employee_groups__employee_group_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                employee_group_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmployeeGroupUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmployeeGroupResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3642,72 +3379,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OfficeResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_organization_route_api_organizations_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateOrganizationRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_organization_route_api_organizations__post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateOrganizationRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -4374,6 +4045,103 @@ export interface operations {
             };
         };
     };
+    list_payroll_run_roster_api_payroll_runs__run_id__roster_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRunEmployeeResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_payroll_run_roster_api_payroll_runs__run_id__roster_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollRunRosterUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRunEmployeeResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_payroll_run_roster_history_api_payroll_runs__run_id__roster_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRunRosterHistoryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     submit_payroll_run_api_payroll_runs__run_id__submit_post: {
         parameters: {
             query?: never;
@@ -4472,94 +4240,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_payroll_units_route_api_payroll_units_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PayrollUnitResponse"][];
-                };
-            };
-        };
-    };
-    create_payroll_unit_route_api_payroll_units_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PayrollUnitCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PayrollUnitResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_payroll_unit_route_api_payroll_units__payroll_unit_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                payroll_unit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PayrollUnitUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PayrollUnitResponse"];
                 };
             };
             /** @description Validation Error */

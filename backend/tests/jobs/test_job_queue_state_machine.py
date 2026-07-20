@@ -97,15 +97,16 @@ async def test_enqueue_dedupe_returns_same_inflight_job(
 
 
 @pytest.mark.asyncio
-async def test_enqueue_dedupe_does_not_collide_across_org_or_type(
+async def test_enqueue_dedupe_does_not_collide_across_job_type(
     queue: InMemoryJobQueue,
 ) -> None:
-    org_a = uuid4()
-    org_b = uuid4()
-    a = await queue.enqueue(org_a, "export.generate", {}, dedupe_key="same")
-    b = await queue.enqueue(org_b, "export.generate", {}, dedupe_key="same")
-    c = await queue.enqueue(org_a, "storage.purge_expired", {}, dedupe_key="same")
-    assert len({a.id, b.id, c.id}) == 3
+    """In-memory queue: dedupe is per (org, type, key); types stay independent."""
+    org = uuid4()
+    a = await queue.enqueue(org, "export.generate", {}, dedupe_key="same")
+    b = await queue.enqueue(org, "storage.purge_expired", {}, dedupe_key="same")
+    again = await queue.enqueue(org, "export.generate", {}, dedupe_key="same")
+    assert a.id != b.id
+    assert again.id == a.id
 
 
 @pytest.mark.asyncio

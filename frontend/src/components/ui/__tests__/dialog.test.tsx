@@ -17,7 +17,15 @@ describe("Dialog", () => {
 		const closeButton = screen.getByRole("button", { name: "Close" });
 		expect(closeButton).toHaveAttribute("data-variant", "ghost");
 		expect(closeButton).toHaveAttribute("data-size", "icon");
-		expect(closeButton).toHaveClass("top-3", "right-3", "text-muted-foreground");
+		expect(closeButton).toHaveClass(
+			"top-3",
+			"right-3",
+			"bg-transparent",
+			"text-muted-foreground",
+			"hover:bg-transparent",
+			"dark:hover:bg-transparent",
+		);
+		expect(closeButton.querySelector("path")?.getAttribute("d")).toContain("M208.49,191.51");
 	});
 
 	it("distributes footer actions evenly on mobile and restores desktop alignment", () => {

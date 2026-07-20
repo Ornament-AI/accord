@@ -15,7 +15,7 @@ export function SortableColumnHeader<T>({ column, label }: SortableColumnHeaderP
 		<button
 			type="button"
 			className={cn(
-				"-ml-1 inline-flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-left outline-none hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-ring/35",
+				"accord-motion-highlight -ml-1 inline-flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-left outline-none hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-ring/35",
 				sorted ? "text-foreground" : "text-muted-foreground",
 			)}
 			onClick={column.getToggleSortingHandler()}
@@ -30,9 +30,9 @@ export function SortableColumnHeader<T>({ column, label }: SortableColumnHeaderP
 		>
 			<span>{label}</span>
 			{sorted === "asc" ? (
-				<ArrowUp className="size-3.5 shrink-0 opacity-70" aria-hidden />
+				<ArrowUp className="size-3.5 shrink-0 opacity-70" data-slot="sort-icon" aria-hidden />
 			) : sorted === "desc" ? (
-				<ArrowDown className="size-3.5 shrink-0 opacity-70" aria-hidden />
+				<ArrowDown className="size-3.5 shrink-0 opacity-70" data-slot="sort-icon" aria-hidden />
 			) : null}
 		</button>
 	);

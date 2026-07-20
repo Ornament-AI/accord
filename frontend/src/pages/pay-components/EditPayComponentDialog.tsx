@@ -190,7 +190,7 @@ export function EditPayComponentDialog({
 								<>
 									<div className="flex items-center justify-between gap-4">
 										<div className="grid gap-1">
-											<Label htmlFor="edit-pc-employer-transfer">Employer transfer</Label>
+											<Label htmlFor="edit-pc-employer-transfer">Employer Transfer</Label>
 											<p className="text-xs text-muted-foreground">
 												Marks an employer-funded deduction.
 											</p>
@@ -211,7 +211,7 @@ export function EditPayComponentDialog({
 
 									{form.employer_transfer ? (
 										<div className="grid gap-2">
-											<Label htmlFor="edit-pc-transfer-of">Paired employer contribution</Label>
+											<Label htmlFor="edit-pc-transfer-of">Paired Employer Contribution</Label>
 											<Select
 												value={form.transfer_of || OFF_BILL_VALUE}
 												onValueChange={(value) =>

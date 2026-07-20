@@ -62,6 +62,7 @@ export function DataTableShell<TData>({
 											key={header.id}
 											className={cn(
 												header.column.columnDef.meta?.className,
+												header.column.columnDef.meta?.align === "center" && "text-center",
 												header.column.columnDef.meta?.align === "right" && "text-right",
 											)}
 										>
@@ -94,6 +95,7 @@ export function DataTableShell<TData>({
 											key={cell.id}
 											className={cn(
 												cell.column.columnDef.meta?.className,
+												cell.column.columnDef.meta?.align === "center" && "text-center",
 												cell.column.columnDef.meta?.align === "right" && "text-right",
 											)}
 										>

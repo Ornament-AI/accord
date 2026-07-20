@@ -1,4 +1,4 @@
-"""Integration tests for /api/auth/* routes (Phase-2 DB sessions)."""
+"""Integration tests for /api/auth/* routes (ADR 0011 singular /me)."""
 
 from __future__ import annotations
 
@@ -13,8 +13,10 @@ from app.auth.adapters import AuthenticatedIdentity, DevAuthAdapter
 from app.auth.errors import AuthMisconfiguredError
 from app.auth.session import DatabaseSessionStore, sign_oauth_state
 from app.models.base import utcnow
-from app.models.identity import Session as SessionRow
+from app.models.identity import OrganizationInvitation, Session as SessionRow
 from app.models.identity import User
+from app.services.bootstrap import provision_organization
+from app.tenancy import bind_tenant_context
 from tests.identity_helpers import (
     DEV_SUBJECT,
     clear_settings_cache,
@@ -44,8 +46,11 @@ async def test_login_establishes_dev_session_and_me_happy_path(client, dev_setti
     assert body["email"] == "dev@accord.local"
     assert body["name"] == "Dev Test User"
     assert body["is_platform_admin"] is False
-    assert body["active_organization"] is None
-    assert body["organizations"] == []
+    assert body["access_state"] == "unbootstrapped"
+    assert body["organization"] is None
+    assert body["membership"] is None
+    assert "organizations" not in body
+    assert "active_organization" not in body
 
     user = await user_by_workos_id(session, DEV_SUBJECT)
     assert user is not None
@@ -117,6 +122,7 @@ async def test_callback_happy_path_with_dev_adapter(client, dev_settings):
     body = me.json()
     UUID(body["id"])
     assert body["email"] == "dev@accord.local"
+    assert body["access_state"] == "unbootstrapped"
 
 
 @pytest.mark.asyncio
@@ -156,7 +162,9 @@ async def test_callback_happy_path_with_mocked_workos_exchange(client, monkeypat
     assert body["email"] == "worker@example.com"
     assert body["name"] == "Worker One"
     assert body["is_platform_admin"] is False
-    assert body["organizations"] == []
+    assert body["access_state"] == "unbootstrapped"
+    assert body["organization"] is None
+    assert body["membership"] is None
     mock_adapter.exchange_code.assert_awaited_once_with(code="auth-code")
 
     user = await user_by_workos_id(session, "user_workos_1")
@@ -232,19 +240,33 @@ def test_get_auth_adapter_production_fail_closed_unit():
         get_auth_adapter(value)
 
 
-# --- /me membership shapes -------------------------------------------------
+# --- /me access_state shapes (ADR 0011) --------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_me_zero_memberships(client, dev_settings):
+async def test_me_unbootstrapped_when_no_organization(client, dev_settings):
     await login_dev(client)
     body = (await client.get("/api/auth/me")).json()
-    assert body["organizations"] == []
-    assert body["active_organization"] is None
+    assert body["access_state"] == "unbootstrapped"
+    assert body["organization"] is None
+    assert body["membership"] is None
 
 
 @pytest.mark.asyncio
-async def test_me_one_membership_auto_activates_on_login(client, dev_settings, session):
+async def test_me_unprovisioned_when_org_exists_without_membership(client, dev_settings, session):
+    await seed_organization(session, name="Solo Org", slug="solo-org")
+    await session.commit()
+
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "unprovisioned"
+    assert body["organization"] is not None
+    assert body["organization"]["slug"] == "solo-org"
+    assert body["membership"] is None
+
+
+@pytest.mark.asyncio
+async def test_me_active_when_membership_exists(client, dev_settings, session):
     user = User(
         workos_user_id=DEV_SUBJECT,
         email="dev@accord.local",
@@ -258,56 +280,51 @@ async def test_me_one_membership_auto_activates_on_login(client, dev_settings, s
 
     await login_dev(client)
     body = (await client.get("/api/auth/me")).json()
-    assert len(body["organizations"]) == 1
-    assert body["organizations"][0]["slug"] == "solo-org"
-    assert body["active_organization"] is not None
-    assert body["active_organization"]["id"] == str(org.id)
-    assert body["active_organization"]["role"] == "organization_administrator"
-    assert "manage_organization" in body["active_organization"]["capabilities"]
+    assert body["access_state"] == "active"
+    assert body["organization"]["id"] == str(org.id)
+    assert body["organization"]["slug"] == "solo-org"
+    assert body["membership"] is not None
+    assert body["membership"]["role"] == "organization_administrator"
+    assert "manage_organization" in body["membership"]["capabilities"]
 
 
 @pytest.mark.asyncio
-async def test_me_two_memberships_lists_both_active_null_until_switch(
-    client, dev_settings, session
-):
-    user = User(
-        workos_user_id=DEV_SUBJECT,
-        email="dev@accord.local",
-        name="Dev Test User",
-    )
-    session.add(user)
-    await session.flush()
-    org_a = await seed_organization(session, name="Alpha", slug="alpha-co")
-    org_b = await seed_organization(session, name="Beta", slug="beta-co")
-    await seed_membership(session, organization_id=org_a.id, user_id=user.id)
-    await seed_membership(
+async def test_login_claims_pending_invitation(client, dev_settings, session):
+    """Pending invite matching login email is claimed atomically → access_state active."""
+    result = await provision_organization(
         session,
-        organization_id=org_b.id,
-        user_id=user.id,
-        role="payroll_preparer",
+        name="Invite Org",
+        slug="invite-org",
+        admin_email="dev@accord.local",
     )
     await session.commit()
 
     await login_dev(client)
     body = (await client.get("/api/auth/me")).json()
-    slugs = {o["slug"] for o in body["organizations"]}
-    assert slugs == {"alpha-co", "beta-co"}
-    assert body["active_organization"] is None
+    assert body["access_state"] == "active"
+    assert body["organization"]["id"] == str(result.organization.id)
+    assert body["membership"]["role"] == "organization_administrator"
 
-    switch = await client.post(
+    await bind_tenant_context(session, organization_id=result.organization.id)
+    invite = (
+        await session.execute(
+            select(OrganizationInvitation).where(
+                OrganizationInvitation.organization_id == result.organization.id,
+                OrganizationInvitation.email == "dev@accord.local",
+            )
+        )
+    ).scalar_one()
+    assert invite.accepted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_switch_organization_route_removed(client, dev_settings):
+    await login_dev(client)
+    resp = await client.post(
         "/api/auth/switch-organization",
-        json={"organization_id": str(org_b.id)},
+        json={"organization_id": "00000000-0000-0000-0000-000000000001"},
     )
-    assert switch.status_code == 200
-    switched = switch.json()
-    assert switched["active_organization"]["id"] == str(org_b.id)
-    assert switched["active_organization"]["role"] == "payroll_preparer"
-    # Cookie rotated — jar updated from Set-Cookie.
-    new_cookie = session_cookie_from_response(switch)
-    if new_cookie:
-        client.cookies.set("accord_session", new_cookie)
-    me = (await client.get("/api/auth/me")).json()
-    assert me["active_organization"]["id"] == str(org_b.id)
+    assert resp.status_code in {404, 405}
 
 
 # --- return_to validation --------------------------------------------------
@@ -429,7 +446,7 @@ async def test_login_dev_return_to_invalid_dropped(client, dev_settings):
     assert resp.headers["location"] == "http://localhost:5173"
 
 
-# --- callback upsert / auto-activate --------------------------------------
+# --- callback upsert / invite claim --------------------------------------
 
 
 @pytest.mark.asyncio
@@ -484,7 +501,7 @@ async def test_callback_upsert_creates_user_and_updates_existing(client, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_callback_sole_membership_auto_activates(client, monkeypatch, session):
+async def test_callback_claims_invite_and_activates(client, monkeypatch, session):
     value = settings(
         dev_auth_bypass=False,
         workos_client_id="client_test",
@@ -493,15 +510,12 @@ async def test_callback_sole_membership_auto_activates(client, monkeypatch, sess
     )
     patch_get_settings(monkeypatch, value)
 
-    user = User(
-        workos_user_id="auto_act_1",
-        email="auto@example.com",
-        name="Auto",
+    result = await provision_organization(
+        session,
+        name="Auto Org",
+        slug="auto-org",
+        admin_email="auto@example.com",
     )
-    session.add(user)
-    await session.flush()
-    org = await seed_organization(session, slug="auto-org")
-    await seed_membership(session, organization_id=org.id, user_id=user.id)
     await session.commit()
 
     mock_adapter = MagicMock()
@@ -523,12 +537,14 @@ async def test_callback_sole_membership_auto_activates(client, monkeypatch, sess
     cookie = session_cookie_from_response(resp)
     client.cookies.set("accord_session", cookie)
     body = (await client.get("/api/auth/me")).json()
-    assert body["active_organization"]["id"] == str(org.id)
+    assert body["access_state"] == "active"
+    assert body["organization"]["id"] == str(result.organization.id)
+    assert body["membership"]["role"] == "organization_administrator"
     clear_settings_cache()
 
 
 @pytest.mark.asyncio
-async def test_callback_multiple_memberships_active_null(client, monkeypatch, session):
+async def test_callback_unprovisioned_when_org_exists_without_invite(client, monkeypatch, session):
     value = settings(
         dev_auth_bypass=False,
         workos_client_id="client_test",
@@ -537,25 +553,15 @@ async def test_callback_multiple_memberships_active_null(client, monkeypatch, se
     )
     patch_get_settings(monkeypatch, value)
 
-    user = User(
-        workos_user_id="multi_act_1",
-        email="multi@example.com",
-        name="Multi",
-    )
-    session.add(user)
-    await session.flush()
-    org_a = await seed_organization(session, slug="multi-a")
-    org_b = await seed_organization(session, slug="multi-b")
-    await seed_membership(session, organization_id=org_a.id, user_id=user.id)
-    await seed_membership(session, organization_id=org_b.id, user_id=user.id)
+    org = await seed_organization(session, slug="unprov-org")
     await session.commit()
 
     mock_adapter = MagicMock()
     mock_adapter.exchange_code = AsyncMock(
         return_value=AuthenticatedIdentity(
-            subject_id="multi_act_1",
-            email="multi@example.com",
-            name="Multi",
+            subject_id="unprov_1",
+            email="outsider@example.com",
+            name="Outsider",
         )
     )
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
@@ -569,112 +575,10 @@ async def test_callback_multiple_memberships_active_null(client, monkeypatch, se
     cookie = session_cookie_from_response(resp)
     client.cookies.set("accord_session", cookie)
     body = (await client.get("/api/auth/me")).json()
-    assert body["active_organization"] is None
-    assert len(body["organizations"]) == 2
+    assert body["access_state"] == "unprovisioned"
+    assert body["organization"]["id"] == str(org.id)
+    assert body["membership"] is None
     clear_settings_cache()
-
-
-# --- switch-organization ---------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_switch_organization_happy_rotates_session(client, dev_settings, session):
-    user = User(
-        workos_user_id=DEV_SUBJECT,
-        email="dev@accord.local",
-        name="Dev Test User",
-    )
-    session.add(user)
-    await session.flush()
-    org_a = await seed_organization(session, slug="switch-a")
-    org_b = await seed_organization(session, slug="switch-b")
-    await seed_membership(session, organization_id=org_a.id, user_id=user.id)
-    await seed_membership(session, organization_id=org_b.id, user_id=user.id)
-    await session.commit()
-
-    _, old_cookie = await login_dev(client)
-    assert old_cookie
-    store = DatabaseSessionStore(dev_settings, session)
-    old_sid = store.parse_session_id(old_cookie)
-
-    resp = await client.post(
-        "/api/auth/switch-organization",
-        json={"organization_id": str(org_a.id)},
-    )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["active_organization"]["id"] == str(org_a.id)
-    new_cookie = session_cookie_from_response(resp)
-    assert new_cookie
-    assert new_cookie != old_cookie
-
-    session.expire_all()
-    old_row = await session.get(SessionRow, old_sid)
-    assert old_row is not None
-    assert old_row.revoked_at is not None
-
-
-@pytest.mark.asyncio
-async def test_switch_organization_403_no_membership(client, dev_settings, session):
-    await login_dev(client)
-    foreign = await seed_organization(session, slug="foreign-org")
-    await session.commit()
-
-    resp = await client.post(
-        "/api/auth/switch-organization",
-        json={"organization_id": str(foreign.id)},
-    )
-    assert resp.status_code == 403
-    assert resp.json()["error"] == "MembershipForbidden"
-
-
-@pytest.mark.asyncio
-async def test_switch_organization_403_inactive_membership(client, dev_settings, session):
-    user = User(
-        workos_user_id=DEV_SUBJECT,
-        email="dev@accord.local",
-        name="Dev Test User",
-    )
-    session.add(user)
-    await session.flush()
-    org = await seed_organization(session, slug="inactive-mem")
-    await seed_membership(
-        session,
-        organization_id=org.id,
-        user_id=user.id,
-        is_active=False,
-    )
-    await session.commit()
-
-    await login_dev(client)
-    resp = await client.post(
-        "/api/auth/switch-organization",
-        json={"organization_id": str(org.id)},
-    )
-    assert resp.status_code == 403
-    assert resp.json()["error"] == "MembershipForbidden"
-
-
-@pytest.mark.asyncio
-async def test_switch_organization_403_inactive_org(client, dev_settings, session):
-    user = User(
-        workos_user_id=DEV_SUBJECT,
-        email="dev@accord.local",
-        name="Dev Test User",
-    )
-    session.add(user)
-    await session.flush()
-    org = await seed_organization(session, slug="inactive-org", is_active=False)
-    await seed_membership(session, organization_id=org.id, user_id=user.id)
-    await session.commit()
-
-    await login_dev(client)
-    resp = await client.post(
-        "/api/auth/switch-organization",
-        json={"organization_id": str(org.id)},
-    )
-    assert resp.status_code == 403
-    assert resp.json()["error"] == "MembershipForbidden"
 
 
 # --- session expiry / idle / revoked --------------------------------------

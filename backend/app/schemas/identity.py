@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
-class SwitchOrganizationRequest(BaseModel):
-    organization_id: UUID
+AccessState = Literal["unbootstrapped", "unprovisioned", "active"]
 
 
 class MeOrganization(BaseModel):
     id: str
     name: str
     slug: str
+
+
+class MeMembership(BaseModel):
     role: str
-
-
-class MeActiveOrganization(MeOrganization):
     capabilities: list[str] = Field(default_factory=list)
 
 
@@ -27,5 +25,6 @@ class MeResponse(BaseModel):
     email: str
     name: str
     is_platform_admin: bool
-    active_organization: MeActiveOrganization | None
-    organizations: list[MeOrganization]
+    access_state: AccessState
+    organization: MeOrganization | None
+    membership: MeMembership | None

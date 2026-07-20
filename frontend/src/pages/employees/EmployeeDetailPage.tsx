@@ -33,12 +33,7 @@ import {
 	todayApiDate,
 	useEmployeeDetail,
 } from "@/lib/api/employees";
-import {
-	useEmployeeGroupsList,
-	useOfficesList,
-	usePayrollUnitsList,
-	usePostsList,
-} from "@/lib/api/org-structure";
+import { useOfficesList, usePostsList } from "@/lib/api/org-structure";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/utils";
@@ -112,11 +107,7 @@ function SnapshotFieldsTable({
 		return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
 	}
 
-	return (
-		<div className="app-table-surface overflow-hidden rounded-lg">
-			<FieldsValueTable rows={rows} />
-		</div>
-	);
+	return <FieldsValueTable rows={rows} />;
 }
 
 function ProfileFieldsTable({ profile }: { profile: ProfileVersionResponse | null }) {
@@ -150,15 +141,11 @@ function ProfileFieldsTable({ profile }: { profile: ProfileVersionResponse | nul
 function PostingFieldsTable({
 	posting,
 	officeLabel,
-	payrollUnitLabel,
 	postLabel,
-	employeeGroupLabel,
 }: {
 	posting: PostingVersionResponse | null;
 	officeLabel: string;
-	payrollUnitLabel: string;
 	postLabel: string;
-	employeeGroupLabel: string;
 }) {
 	if (!posting) {
 		return <SnapshotFieldsTable emptyMessage="No active posting version." rows={null} />;
@@ -169,9 +156,7 @@ function PostingFieldsTable({
 			emptyMessage="No active posting version."
 			rows={[
 				{ label: "Office", value: officeLabel },
-				{ label: "Payroll Unit", value: payrollUnitLabel },
 				{ label: "Post", value: postLabel },
-				{ label: "Employee Group", value: employeeGroupLabel },
 				{ label: "Effective From", value: formatDate(posting.effective_from) },
 			]}
 		/>
@@ -236,9 +221,7 @@ export default function EmployeeDetailPage() {
 	});
 
 	const officesQuery = useOfficesList();
-	const payrollUnitsQuery = usePayrollUnitsList();
 	const postsQuery = usePostsList();
-	const employeeGroupsQuery = useEmployeeGroupsList();
 
 	const asOfDate = useMemo(() => parseApiDate(asOf), [asOf]);
 	const employee = detailQuery.data;
@@ -249,30 +232,20 @@ export default function EmployeeDetailPage() {
 
 	const postingLabels = useMemo(() => {
 		const offices = new Map((officesQuery.data ?? []).map((item) => [item.id, item]));
-		const units = new Map((payrollUnitsQuery.data ?? []).map((item) => [item.id, item]));
 		const posts = new Map((postsQuery.data ?? []).map((item) => [item.id, item]));
-		const groups = new Map((employeeGroupsQuery.data ?? []).map((item) => [item.id, item]));
 
 		return {
 			officeLabel: labeledRef(posting?.office_id, offices),
-			payrollUnitLabel: labeledRef(posting?.payroll_unit_id, units),
 			postLabel: labeledPostRef(posting?.post_id, posts),
-			employeeGroupLabel: labeledRef(posting?.employee_group_id, groups),
 		};
-	}, [
-		posting,
-		officesQuery.data,
-		payrollUnitsQuery.data,
-		postsQuery.data,
-		employeeGroupsQuery.data,
-	]);
+	}, [posting, officesQuery.data, postsQuery.data]);
 
 	if (!employeeId) {
 		return (
 			<CapabilityGate capability="view_master_data" title="Employee">
 				<AppLayout title="Employee">
 					<PageShell>
-						<EmptyState title="Employee not found" description="Missing employee id." />
+						<EmptyState title="Employee Not Found" description="Missing employee id." />
 					</PageShell>
 				</AppLayout>
 			</CapabilityGate>
@@ -374,9 +347,7 @@ export default function EmployeeDetailPage() {
 										<PostingFieldsTable
 											posting={posting}
 											officeLabel={postingLabels.officeLabel}
-											payrollUnitLabel={postingLabels.payrollUnitLabel}
 											postLabel={postingLabels.postLabel}
-											employeeGroupLabel={postingLabels.employeeGroupLabel}
 										/>
 									</TabsContent>
 

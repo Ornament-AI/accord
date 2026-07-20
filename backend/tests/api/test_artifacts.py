@@ -101,38 +101,54 @@ async def test_download_returns_bytes_content_type_disposition(
 
 
 @pytest.mark.asyncio
-async def test_download_404_other_org(client, session, dev_settings, storage):
-    org_a, admin_a = await _admin_world(
-        session, dev_settings, client, slug=f"art-a-{uuid4().hex[:8]}"
+async def test_download_unknown_artifact_404(client, session, dev_settings, storage):
+    org, admin = await _admin_world(session, dev_settings, client)
+    await _bind(session, org.id, admin.id)
+    await create_artifact(
+        session,
+        storage,
+        organization_id=org.id,
+        report_type="bank_file",
+        template_version="v1",
+        content=b"known",
+        content_type="text/csv",
+        requested_by=admin.id,
     )
-    await _bind(session, org_a.id, admin_a.id)
+
+    resp = await client.get(f"/api/artifacts/{uuid4()}/download")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_download_unprovisioned_user_fail_closed(client, session, dev_settings, storage):
+    org, admin = await _admin_world(session, dev_settings, client)
+    await _bind(session, org.id, admin.id)
     artifact = await create_artifact(
         session,
         storage,
-        organization_id=org_a.id,
+        organization_id=org.id,
         report_type="bank_file",
         template_version="v1",
-        content=b"secret-a",
+        content=b"secret",
         content_type="text/csv",
-        requested_by=admin_a.id,
+        requested_by=admin.id,
     )
+    outsider = await seed_user(session, name="Outsider")
+    await session.commit()
 
-    org_b, admin_b = await _admin_world(
-        session, dev_settings, client, slug=f"art-b-{uuid4().hex[:8]}"
-    )
-    assert org_b.id != org_a.id
     apply_session_cookie(
         client,
         await mint_session_cookie(
             session,
             dev_settings,
-            user_id=admin_b.id,
-            active_organization_id=org_b.id,
+            user_id=outsider.id,
+            active_organization_id=org.id,
         ),
     )
 
     resp = await client.get(f"/api/artifacts/{artifact.id}/download")
-    assert resp.status_code == 404
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "OrganizationContextRequired"
 
 
 @pytest.mark.asyncio

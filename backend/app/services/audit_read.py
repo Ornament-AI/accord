@@ -49,7 +49,6 @@ def _list_item(row: sa.RowMapping) -> AuditEventListItem:
         entity_label=row["entity_label"] or _fallback_label(row["entity_type"], row["entity_id"]),
         actor=_actor(row),
         changed_count=row["changed_count"] or 0,
-        has_structured_detail=row["event_kind"] in {"mutation", "access"},
         created_at=row["created_at"],
     )
 

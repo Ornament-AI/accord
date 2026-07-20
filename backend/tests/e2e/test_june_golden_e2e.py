@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.payroll_runs import payroll_employee_results, payroll_result_lines
 from app.models.platform import AuditEvent, OutboxEvent, PayrollApproval
+from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.e2e.fixture_loader import (
     ACCOMMODATION_COMPONENT_CODES,
@@ -57,7 +58,6 @@ from tests.identity_helpers import (
     login_dev,
     seed_membership,
     seed_user,
-    session_cookie_from_response,
 )
 
 EFFECTIVE_FROM = "2026-01-01"
@@ -86,22 +86,21 @@ async def _auth_as(
     apply_session_cookie(client, cookie)
 
 
-async def _create_org_as_admin(client: AsyncClient, fixture: JuneFixture) -> tuple[UUID, UUID]:
-    resp, cookie = await login_dev(client)
-    assert resp.status_code in {200, 302}, resp.text
-    assert cookie, "expected accord_session cookie from login"
-    client.cookies.set("accord_session", cookie)
-
+async def _create_org_as_admin(
+    client: AsyncClient, session: AsyncSession, fixture: JuneFixture
+) -> tuple[UUID, UUID]:
     slug = f"june-e2e-{uuid4().hex[:10]}"
-    resp = await client.post(
-        "/api/organizations",
-        json={"name": fixture.organization.name, "slug": slug},
+    await provision_organization(
+        session,
+        name=fixture.organization.name,
+        slug=slug,
+        admin_email="dev@accord.local",
     )
-    assert resp.status_code == 201, resp.text
-    cookie = session_cookie_from_response(resp) or cookie
-    client.cookies.set("accord_session", cookie)
-    body = resp.json()
-    return UUID(body["active_organization"]["id"]), UUID(body["id"])
+    await session.commit()
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "active", body
+    return UUID(body["organization"]["id"]), UUID(body["id"])
 
 
 async def _seed_role_users(
@@ -163,27 +162,18 @@ async def _create_org_structure(
             "/api/offices",
             json={
                 "name": office.name,
-                "code": office.code,
                 "jurisdiction": office.jurisdiction,
             },
         )
         assert resp.status_code == 201, resp.text
         office_ids[office.fixture_id] = UUID(resp.json()["id"])
 
-    unit = await client.post(
-        "/api/payroll-units",
-        json={
-            "name": fixture.organization.pay_unit_name,
-            "code": fixture.organization.pay_unit_code,
-        },
-    )
-    assert unit.status_code == 201, unit.text
     post = await client.post(
         "/api/posts",
         json={"designation": "Synthetic Clerk", "class_name": "III"},
     )
     assert post.status_code == 201, post.text
-    return office_ids, UUID(unit.json()["id"]), UUID(post.json()["id"])
+    return office_ids, UUID(post.json()["id"])
 
 
 async def _create_components(client: AsyncClient, fixture: JuneFixture) -> dict[str, UUID]:
@@ -263,7 +253,6 @@ async def _create_employee(
     employee: EmployeeSeed,
     *,
     office_ids: dict[str, UUID],
-    unit_id: UUID,
     post_id: UUID,
 ) -> UUID:
     basic = line_amount(employee, BASIC_CODE)
@@ -274,7 +263,6 @@ async def _create_employee(
         "profile": _profile_payload(employee),
         "posting": {
             "office_id": str(office_ids[employee.office_id]),
-            "payroll_unit_id": str(unit_id),
             "post_id": str(post_id),
         },
         "pay": {"pay_matrix_level": "L10", "basic_pay": money_str(basic)},
@@ -488,11 +476,11 @@ async def test_june_2026_golden_e2e_full_workflow(client, session, dev_settings)
     assert len(fixture.employees) == 32
     expected = fixture.expected.aggregates
 
-    org_id, admin_id = await _create_org_as_admin(client, fixture)
+    org_id, admin_id = await _create_org_as_admin(client, session, fixture)
     roles = await _seed_role_users(session, org_id=org_id)
     await _auth_as(client, session, dev_settings, org_id=org_id, user_id=admin_id)
 
-    office_ids, unit_id, post_id = await _create_org_structure(client, fixture)
+    office_ids, post_id = await _create_org_structure(client, fixture)
     component_ids = await _create_components(client, fixture)
 
     employee_ids: dict[str, UUID] = {}
@@ -502,7 +490,6 @@ async def test_june_2026_golden_e2e_full_workflow(client, session, dev_settings)
             client,
             emp,
             office_ids=office_ids,
-            unit_id=unit_id,
             post_id=post_id,
         )
         employee_ids[emp.fixture_id] = emp_id
@@ -524,13 +511,27 @@ async def test_june_2026_golden_e2e_full_workflow(client, session, dev_settings)
     assert period.status_code == 201, period.text
     run = await client.post(
         "/api/payroll-runs",
-        json={"period_id": period.json()["id"], "run_type": "regular"},
+        json={"period_id": period.json()["id"]},
     )
     assert run.status_code == 201, run.text
     run_id = run.json()["id"]
 
     # Preparer owns calculate → validate → submit (maker side of maker-checker).
     await _auth_as(client, session, dev_settings, org_id=org_id, user_id=roles["preparer"])
+
+    roster = await client.put(
+        f"/api/payroll-runs/{run_id}/roster",
+        json={
+            "employees": [
+                {
+                    "employee_id": str(emp_id),
+                    "payable_days": "30.00",
+                }
+                for emp_id in employee_ids.values()
+            ]
+        },
+    )
+    assert roster.status_code == 200, roster.text
 
     calc1 = await client.post(f"/api/payroll-runs/{run_id}/calculate")
     assert calc1.status_code == 200, calc1.text

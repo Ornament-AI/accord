@@ -12,8 +12,17 @@ Critical-path browser suite against the **real local stack** (Vite + FastAPI + P
 
 ## One-time / reset: `accord_e2e` database
 
+Prefer the opt-in helper (refuses non-allowlisted DB names; never runs automatically):
+
 ```bash
-# From repo root
+# From repo root — REQUIRED flag; prints host/db before destroying data
+./scripts/reset_e2e_db.sh --i-understand-this-deletes-data --db accord_e2e
+# then re-apply grants/roles as needed (see script output) and start the stack
+```
+
+Manual equivalent:
+
+```bash
 dropdb -h 127.0.0.1 --if-exists accord_e2e
 createdb -h 127.0.0.1 accord_e2e
 psql -h 127.0.0.1 -d postgres -v ON_ERROR_STOP=1 \
@@ -26,6 +35,16 @@ psql -h 127.0.0.1 -d accord_e2e -v ON_ERROR_STOP=1 \
 ```
 
 Migrations run automatically when you start the stack (`alembic upgrade head`).
+
+After migrate, bootstrap the **singleton** organization (no UI create):
+
+```bash
+MIGRATIONS_DATABASE_URL=postgresql+asyncpg://accord_migrator:accord@127.0.0.1:5432/accord_e2e \
+backend/.venv/bin/python scripts/provision_organization.py \
+  --name "E2E Org" --slug e2e-org --admin-email "${DEV_AUTH_EMAIL:-dev@accord.local}"
+```
+
+Normal e2e runs **reuse** that singleton. Do not create additional orgs. If `COUNT(organizations) > 1`, reset with the opt-in script above.
 
 ## Install browsers (once per machine / after Playwright bump)
 
@@ -72,7 +91,7 @@ Config: `frontend/playwright.config.ts` — `baseURL` `http://127.0.0.1:5173`, `
 
 | Spec | Role |
 | --- | --- |
-| `auth-and-org.spec.ts` | **Setup project**: dev-bypass login, create unique org, save `e2e/.auth/user.json` + run context |
+| `auth-and-org.spec.ts` | **Setup project**: dev-bypass login, reuse singleton org, save `e2e/.auth/user.json` + run context |
 | `master-data.spec.ts` | Office, pay component, employee (+ regime), schedule pay change, masked PAN |
 | `payroll-flow.spec.ts` | Period → run → input → Calculate → Validate → Submit → self-approve blocked |
 | `reports.spec.ts` | Empty posted-run state; generate-report journey `test.skip` (see below) |
@@ -139,5 +158,4 @@ Three real defects were driven out and fixed:
   helper now waits for the no-org title *or* the capability-aware authenticated
   landing page before branching and opens dialogs via `clickUntilDialog` (Base
   UI portal retry). payroll-flow is
-  serial and retry-safe (shared regular draft; supplemental for the
-  Idempotency-Key case).
+  serial and retry-safe around the single monthly payroll run.

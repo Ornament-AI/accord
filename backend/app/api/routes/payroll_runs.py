@@ -21,6 +21,9 @@ from app.schemas.payroll_runs import (
     PayrollRunDetail,
     PayrollRunInputResponse,
     PayrollRunInputUpsert,
+    PayrollRunEmployeeResponse,
+    PayrollRunRosterHistoryResponse,
+    PayrollRunRosterUpdate,
     PayrollRunListItem,
 )
 from app.services import payroll_runs as payroll_runs_service
@@ -128,6 +131,76 @@ async def get_payroll_run(
     ),
 ) -> dict[str, Any]:
     return await payroll_runs_service.get_run(
+        db,
+        organization_id=_org_id(tenant),
+        run_id=run_id,
+    )
+
+
+@router.get(
+    "/payroll-runs/{run_id}/roster",
+    response_model=list[PayrollRunEmployeeResponse],
+)
+async def list_payroll_run_roster(
+    run_id: UUID,
+    tenant: TenantCtx,
+    db: Session,
+    # Match run detail: approvers/releasers must see roster content without
+    # view_master_data.
+    _: AuthPrincipal = Depends(
+        require_any_capability(
+            "view_master_data",
+            "create_run",
+            "submit_run",
+            "approve_run",
+            "post_run",
+        )
+    ),
+) -> list[dict[str, Any]]:
+    return await payroll_runs_service.list_run_roster(
+        db, organization_id=_org_id(tenant), run_id=run_id
+    )
+
+
+@router.put(
+    "/payroll-runs/{run_id}/roster",
+    response_model=list[PayrollRunEmployeeResponse],
+)
+async def replace_payroll_run_roster(
+    run_id: UUID,
+    body: PayrollRunRosterUpdate,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("create_run")),
+) -> list[dict[str, Any]]:
+    return await payroll_runs_service.replace_run_roster(
+        db,
+        organization_id=_org_id(tenant),
+        run_id=run_id,
+        actor_user_id=_user_id(tenant),
+        body=body,
+    )
+
+
+@router.get(
+    "/payroll-runs/{run_id}/roster-history",
+    response_model=list[PayrollRunRosterHistoryResponse],
+)
+async def list_payroll_run_roster_history(
+    run_id: UUID,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(
+        require_any_capability(
+            "view_master_data",
+            "create_run",
+            "submit_run",
+            "approve_run",
+            "post_run",
+        )
+    ),
+) -> list[dict[str, Any]]:
+    return await payroll_runs_service.list_run_roster_history(
         db,
         organization_id=_org_id(tenant),
         run_id=run_id,
