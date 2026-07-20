@@ -59,6 +59,7 @@ from app.models.platform import Job as JobRow
 from app.reports.base import ReportContext, ReportDTO, ReportRegistration, ReportRegistry
 from app.reports.registry_setup import PRODUCT_REPORT_SHEET_TITLES, PRODUCT_REPORT_SHEETS
 from app.services.artifacts import create_artifact
+from app.services.audit_events import write_access_event
 from app.storage.protocol import ObjectStorage
 
 DEFAULT_TEMPLATE_VERSION = "v1"
@@ -321,6 +322,7 @@ async def preview_report(
     report_type: str,
     posted_run_id: UUID,
     registry: ReportRegistry,
+    actor_user_id: UUID | None = None,
     template_version: str | None = None,
     engine_version: str = DEFAULT_ENGINE_VERSION,
 ) -> dict[str, Any]:
@@ -328,6 +330,11 @@ async def preview_report(
 
     Any registered type is allowed (preview is not limited to the product
     allowlist). Frontend only links product sheets via the catalog.
+
+    Previews expose the same unmasked report rows an artifact download would,
+    so a ``report.preview`` access event is written before the payload is
+    returned, mirroring ``artifact.download``. The audit row is committed so it
+    survives even though preview is otherwise read-only.
     """
     if report_type not in registry:
         raise ReportTypeNotFoundError(f"Unknown report type: {report_type!r}.")
@@ -347,7 +354,30 @@ async def preview_report(
         engine_version=engine_version,
     )
     dto = await registration.builder.build(session, ctx)
-    return registration.formatters.to_json(dto)
+    payload = registration.formatters.to_json(dto)
+
+    await write_access_event(
+        session,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="report.preview",
+        entity_type="report_preview",
+        entity_id=posted_run_id,
+        entity_label=report_type.replace("_", " ").title(),
+        resource_state={
+            "report_type": report_type,
+            "posted_run_id": str(posted_run_id),
+            "template_version": resolved_version,
+        },
+        metadata={"accessed_at": ctx.generated_at.isoformat()},
+        summary={
+            "report_type": report_type,
+            "template_version": resolved_version,
+        },
+    )
+    await session.commit()
+
+    return payload
 
 
 async def _find_reusable_artifact(

@@ -239,5 +239,6 @@ async def preview_report(
         report_type=report_type,
         posted_run_id=posted_run_id,
         registry=registry,
+        actor_user_id=_user_id(tenant),
     )
     return ReportPreviewResponse.model_validate(payload)

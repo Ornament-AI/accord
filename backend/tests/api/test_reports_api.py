@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,7 @@ from app.jobs.handlers import configure_generate_report
 from app.jobs.memory import InMemoryJobQueue
 from app.main import create_app
 from app.models.payroll_runs import PayrollPeriod, PayrollRun
+from app.models.platform import AuditEvent
 from app.reports.base import (
     ColumnKind,
     ReportColumn,
@@ -199,6 +201,24 @@ async def test_preview_report_returns_json(client, session, dev_settings, regist
     assert body["title"] == "API Fake Report"
     assert isinstance(body["sections"], list)
     assert body["sections"][0]["title"] == "Rows"
+
+    # Previews expose unmasked report rows, so they must leave an access audit
+    # trail just like artifact downloads.
+    await _bind(session, org.id, admin.id)
+    audit = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "report.preview",
+                AuditEvent.entity_type == "report_preview",
+                AuditEvent.entity_id == run_id,
+            )
+        )
+    ).scalar_one()
+    assert audit.actor_user_id == admin.id
+    assert audit.event_kind == "access"
+    assert audit.metadata_["resource"]["report_type"] == FAKE_REPORT_TYPE
+    assert audit.summary["report_type"] == FAKE_REPORT_TYPE
 
 
 @pytest.mark.asyncio
