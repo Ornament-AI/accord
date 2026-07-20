@@ -33,7 +33,7 @@ def _valid_env_lines() -> list[str]:
         "WORKOS_CLIENT_ID=client_test",
         "WORKOS_API_KEY=sk_test",
         "WORKOS_WEBHOOK_SECRET=whsec_test",
-        "SESSION_SECRET_KEY=session-secret-that-is-long-enough",
+        "SESSION_SECRET_KEY=session-secret-$with-(safe)-metacharacters;",
         "OBJECT_STORAGE_ACCESS_KEY=accord-storage",
         "OBJECT_STORAGE_SECRET_KEY=strong-storage-secret",
         "PUBLIC_APP_URL=https://accord.innovastra.app",
@@ -63,6 +63,9 @@ def test_setup_requires_immutable_images_and_production_auth() -> None:
     assert "org.opencontainers.image.revision" in setup
     assert "trap diagnose_failure EXIT" in setup
     assert "guard_persistent_volume_ownership" in setup
+    assert "contains unsafe shell metacharacters" not in setup
+    assert "for _ in $(seq 1 15)" in setup
+    assert '$WORKER_READY || die "Worker startup proof is missing"' in setup
 
 
 def test_deploy_bundle_never_uploads_the_host_env() -> None:
