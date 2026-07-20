@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Navigate, useLocation, useRouteError } from "react-router";
 
-import { LoadingState } from "@/components/loading-state";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { AppShellProvider } from "@/contexts/AppShellContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
@@ -18,7 +18,7 @@ export function ProtectedLayout() {
 	const location = useLocation();
 
 	if (isLoading) {
-		return <LoadingState />;
+		return <PageSkeleton fullScreen />;
 	}
 
 	if (!user) {
@@ -28,7 +28,7 @@ export function ProtectedLayout() {
 
 	if (accessState === "unbootstrapped") {
 		return (
-			<Suspense fallback={<LoadingState />}>
+			<Suspense fallback={<PageSkeleton fullScreen />}>
 				<DeploymentNotReadyPage />
 			</Suspense>
 		);
@@ -36,7 +36,7 @@ export function ProtectedLayout() {
 
 	if (accessState === "unprovisioned") {
 		return (
-			<Suspense fallback={<LoadingState />}>
+			<Suspense fallback={<PageSkeleton fullScreen />}>
 				<NotProvisionedPage />
 			</Suspense>
 		);
@@ -44,7 +44,7 @@ export function ProtectedLayout() {
 
 	return (
 		<AppShellProvider>
-			<Suspense fallback={<LoadingState />}>
+			<Suspense fallback={<PageSkeleton fullScreen />}>
 				<ProtectedShell />
 			</Suspense>
 		</AppShellProvider>
@@ -106,7 +106,9 @@ export const PayComponentDetailPage = lazy(
 export { OfficesPage, OrgSetupIndexRedirect, PostsPage };
 export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
-export const ReportsPage = lazy(() => import("@/pages/reports/ReportsPage"));
+export const ReportsLayout = lazy(() => import("@/pages/reports/ReportsLayout"));
+export const ReportSheetPage = lazy(() => import("@/pages/reports/ReportSheetPage"));
+export const ReportsIndexRedirect = lazy(() => import("@/pages/reports/ReportsIndexRedirect"));
 export const AuditPage = lazy(() => import("@/pages/audit/AuditPage"));
 export { DeploymentNotReadyPage, NotProvisionedPage };
 export const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));

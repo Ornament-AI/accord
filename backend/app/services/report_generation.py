@@ -6,6 +6,10 @@ Request path
 enqueues ``job_type='generate_report'`` with org-scoped in-flight dedupe on
 ``{report_type}:{posted_run_id}:{format}:{template_version}``.
 
+``request_consolidated_export`` enqueues ``consolidated_xlsx`` for the
+product-sheet allowlist; dedupe key is
+``consolidated_xlsx:{posted_run_id}:{manifest_hash}``.
+
 Execution path
 --------------
 ``execute_generate_report`` is the handler body. Before regenerating it looks
@@ -26,13 +30,21 @@ Listing
 -------
 :func:`list_registered_reports` iterates ``registry._entries`` (private) because
 ``ReportRegistry`` has no public iterator yet — do not widen ``base.py`` here.
+
+Preview latency note
+--------------------
+``PayBillBuilder`` resolves employee name/designation per row (~2 queries each).
+Acceptable at ~28 employees; batch resolve is a follow-up, not a ship blocker.
 """
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+import zipfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -41,10 +53,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.jobs.protocol import Job, JobQueue
-from app.models.payroll_runs import PayrollRun
+from app.models.payroll_runs import PayrollPeriod, PayrollRun
 from app.models.platform import ExportArtifact
 from app.models.platform import Job as JobRow
 from app.reports.base import ReportContext, ReportDTO, ReportRegistration, ReportRegistry
+from app.reports.registry_setup import PRODUCT_REPORT_SHEET_TITLES, PRODUCT_REPORT_SHEETS
 from app.services.artifacts import create_artifact
 from app.storage.protocol import ObjectStorage
 
@@ -53,6 +66,11 @@ DEFAULT_ENGINE_VERSION = "0.1.0"
 
 SUPPORTED_FORMATS = frozenset({"excel", "pdf", "json"})
 JOB_TYPE_GENERATE_REPORT = "generate_report"
+JOB_TYPE_CONSOLIDATED_XLSX = "consolidated_xlsx"
+REPORT_TYPE_CONSOLIDATED_XLSX = "consolidated_xlsx"
+ZIP_CONTENT_TYPE = "application/zip"
+
+_REPORT_JOB_TYPES = frozenset({JOB_TYPE_GENERATE_REPORT, JOB_TYPE_CONSOLIDATED_XLSX})
 
 
 class ReportTypeNotFoundError(NotFoundError):
@@ -96,6 +114,9 @@ class RegisteredReportInfo:
 
     report_type: str
     formats: tuple[str, ...]
+    title: str | None = None
+    product_sheet: bool = False
+    template_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,11 +137,37 @@ def list_registered_reports(registry: ReportRegistry) -> list[RegisteredReportIn
     """
     # Private access: ReportRegistry._entries until a public iterator lands.
     entries = registry._entries  # noqa: SLF001
+    product_set = frozenset(PRODUCT_REPORT_SHEETS)
     items: list[RegisteredReportInfo] = []
     for report_type, registration in sorted(entries.items()):
         formats = tuple(sorted(registration.formatters.content_types.keys()))
-        items.append(RegisteredReportInfo(report_type=report_type, formats=formats))
+        is_product = report_type in product_set
+        items.append(
+            RegisteredReportInfo(
+                report_type=report_type,
+                formats=formats,
+                title=PRODUCT_REPORT_SHEET_TITLES.get(report_type),
+                product_sheet=is_product,
+                template_version=DEFAULT_TEMPLATE_VERSION if is_product else None,
+            )
+        )
     return items
+
+
+def product_sheet_manifest(
+    *,
+    template_version: str = DEFAULT_TEMPLATE_VERSION,
+) -> tuple[tuple[str, str], ...]:
+    """Sorted ``(report_type, template_version)`` pairs for the product pack."""
+    return tuple(
+        sorted((report_type, template_version) for report_type in PRODUCT_REPORT_SHEETS)
+    )
+
+
+def manifest_hash(manifest: tuple[tuple[str, str], ...]) -> str:
+    """Stable short hash of a product-sheet manifest."""
+    payload = "|".join(f"{report_type}:{version}" for report_type, version in manifest)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 async def _require_posted_run(
@@ -151,6 +198,27 @@ def _dedupe_key(
     template_version: str,
 ) -> str:
     return f"{report_type}:{posted_run_id}:{format}:{template_version}"
+
+
+def _period_label(year: int, month: int) -> str:
+    return date(year, month, 1).strftime("%B %Y")
+
+
+async def _period_for_run(session: AsyncSession, run: PayrollRun) -> PayrollPeriod:
+    period = await session.get(PayrollPeriod, run.period_id)
+    if period is None:
+        raise PostedRunNotFoundError("Payroll period for posted run not found.")
+    return period
+
+
+def _zip_filename(*, period_label: str, posted_run_id: UUID) -> str:
+    # No bill_no on PayrollRun yet — use short run id for download identity.
+    short_id = str(posted_run_id).replace("-", "")[:8]
+    return f"Payroll Reports - {period_label} - {short_id}.zip"
+
+
+def _zip_entry_name(*, title: str, period_label: str) -> str:
+    return f"{title} - {period_label}.xlsx"
 
 
 async def request_report(
@@ -201,6 +269,89 @@ async def request_report(
         ),
         created_by=requested_by,
     )
+
+
+async def request_consolidated_export(
+    session: AsyncSession,
+    queue: JobQueue,
+    *,
+    organization_id: UUID,
+    posted_run_id: UUID,
+    requested_by: UUID,
+    registry: ReportRegistry,
+    template_version: str | None = None,
+) -> Job:
+    """Validate and enqueue a consolidated ZIP-of-xlsx export job."""
+    resolved_version = _resolve_template_version(template_version)
+    missing = [rt for rt in PRODUCT_REPORT_SHEETS if rt not in registry]
+    if missing:
+        raise ReportTypeNotFoundError(
+            f"Product report sheets missing from registry: {missing!r}."
+        )
+    for report_type in PRODUCT_REPORT_SHEETS:
+        registration = registry.get(report_type)
+        if "excel" not in registration.formatters.content_types:
+            raise UnsupportedReportFormatError(
+                f"Format 'excel' is not supported for report type {report_type!r}."
+            )
+
+    await _require_posted_run(
+        session,
+        organization_id=organization_id,
+        posted_run_id=posted_run_id,
+    )
+
+    manifest = product_sheet_manifest(template_version=resolved_version)
+    m_hash = manifest_hash(manifest)
+    payload = {
+        "posted_run_id": str(posted_run_id),
+        "template_version": resolved_version,
+        "manifest_hash": m_hash,
+        "requested_by": str(requested_by),
+    }
+    return await queue.enqueue(
+        organization_id,
+        JOB_TYPE_CONSOLIDATED_XLSX,
+        payload,
+        dedupe_key=f"consolidated_xlsx:{posted_run_id}:{m_hash}",
+        created_by=requested_by,
+    )
+
+
+async def preview_report(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    report_type: str,
+    posted_run_id: UUID,
+    registry: ReportRegistry,
+    template_version: str | None = None,
+    engine_version: str = DEFAULT_ENGINE_VERSION,
+) -> dict[str, Any]:
+    """Synchronously build a report and return its ``to_json`` payload.
+
+    Any registered type is allowed (preview is not limited to the product
+    allowlist). Frontend only links product sheets via the catalog.
+    """
+    if report_type not in registry:
+        raise ReportTypeNotFoundError(f"Unknown report type: {report_type!r}.")
+
+    registration = registry.get(report_type)
+    await _require_posted_run(
+        session,
+        organization_id=organization_id,
+        posted_run_id=posted_run_id,
+    )
+    resolved_version = _resolve_template_version(template_version)
+    ctx = ReportContext(
+        organization_id=organization_id,
+        posted_run_id=posted_run_id,
+        template_version=resolved_version,
+        generated_at=datetime.now(timezone.utc),
+        engine_version=engine_version,
+    )
+    dto = await registration.builder.build(session, ctx)
+    return registration.formatters.to_json(dto)
 
 
 async def _find_reusable_artifact(
@@ -315,6 +466,96 @@ async def execute_generate_report(
     return {"artifact_id": str(artifact.id)}
 
 
+async def execute_consolidated_xlsx(
+    session: AsyncSession,
+    storage: ObjectStorage,
+    job: Job,
+    *,
+    registry: ReportRegistry,
+    engine_version: str = DEFAULT_ENGINE_VERSION,
+) -> dict[str, Any]:
+    """Build all product sheets as xlsx and persist a ZIP artifact.
+
+    Idempotency: reuse a finalized ``consolidated_xlsx`` artifact whose
+    ``template_version`` embeds the manifest hash
+    (``{base_version}+{manifest_hash}``).
+    """
+    payload = job.payload
+    posted_run_id = UUID(str(payload["posted_run_id"]))
+    base_template_version = str(payload.get("template_version") or DEFAULT_TEMPLATE_VERSION)
+    requested_by = UUID(str(payload["requested_by"]))
+    organization_id = job.organization_id
+
+    manifest = product_sheet_manifest(template_version=base_template_version)
+    m_hash = str(payload.get("manifest_hash") or manifest_hash(manifest))
+    pack_template_version = f"{base_template_version}+{m_hash}"
+
+    existing = await _find_reusable_artifact(
+        session,
+        organization_id=organization_id,
+        report_type=REPORT_TYPE_CONSOLIDATED_XLSX,
+        posted_run_id=posted_run_id,
+        template_version=pack_template_version,
+        content_type=ZIP_CONTENT_TYPE,
+    )
+    run = await _require_posted_run(
+        session,
+        organization_id=organization_id,
+        posted_run_id=posted_run_id,
+    )
+    period = await _period_for_run(session, run)
+    period_label = _period_label(period.period_year, period.period_month)
+    zip_name = _zip_filename(period_label=period_label, posted_run_id=posted_run_id)
+
+    if existing is not None:
+        return {
+            "artifact_id": str(existing.id),
+            "reused": True,
+            "manifest_hash": m_hash,
+            "filename": zip_name,
+        }
+
+    ctx = ReportContext(
+        organization_id=organization_id,
+        posted_run_id=posted_run_id,
+        template_version=base_template_version,
+        generated_at=datetime.now(timezone.utc),
+        engine_version=engine_version,
+    )
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for report_type in PRODUCT_REPORT_SHEETS:
+            registration = registry.get(report_type)
+            dto = await registration.builder.build(session, ctx)
+            xlsx_bytes = registration.formatters.to_excel(dto)
+            title = PRODUCT_REPORT_SHEET_TITLES.get(report_type, report_type)
+            archive.writestr(
+                _zip_entry_name(title=title, period_label=period_label),
+                xlsx_bytes,
+            )
+
+    zip_bytes = buffer.getvalue()
+
+    artifact = await create_artifact(
+        session,
+        storage,
+        organization_id=organization_id,
+        report_type=REPORT_TYPE_CONSOLIDATED_XLSX,
+        template_version=pack_template_version,
+        content=zip_bytes,
+        content_type=ZIP_CONTENT_TYPE,
+        requested_by=requested_by,
+        posted_run_id=posted_run_id,
+        engine_version=engine_version,
+    )
+    return {
+        "artifact_id": str(artifact.id),
+        "manifest_hash": m_hash,
+        "filename": zip_name,
+    }
+
+
 def _job_info_from_protocol(job: Job) -> ReportJobInfo:
     return ReportJobInfo(
         job_id=job.id,
@@ -340,7 +581,7 @@ async def get_report_job(
     organization_id: UUID,
     job_id: UUID,
 ) -> ReportJobInfo:
-    """Return org-scoped job status.
+    """Return org-scoped job status for report generation / consolidated export.
 
     ``JobQueue`` has no get-by-id. Prefer the in-memory queue's private
     ``_jobs`` map when present (tests); otherwise query the ``jobs`` table.
@@ -352,14 +593,14 @@ async def get_report_job(
             raise ReportJobNotFoundError()
         if job.organization_id != organization_id:
             raise ReportJobNotFoundError()
-        if job.job_type != JOB_TYPE_GENERATE_REPORT:
+        if job.job_type not in _REPORT_JOB_TYPES:
             raise ReportJobNotFoundError()
         return _job_info_from_protocol(job)
 
     stmt = sa.select(JobRow).where(
         JobRow.organization_id == organization_id,
         JobRow.id == job_id,
-        JobRow.job_type == JOB_TYPE_GENERATE_REPORT,
+        JobRow.job_type.in_(_REPORT_JOB_TYPES),
     )
     row = (await session.execute(stmt)).scalar_one_or_none()
     if row is None:
@@ -370,8 +611,11 @@ async def get_report_job(
 __all__ = [
     "DEFAULT_ENGINE_VERSION",
     "DEFAULT_TEMPLATE_VERSION",
+    "JOB_TYPE_CONSOLIDATED_XLSX",
     "JOB_TYPE_GENERATE_REPORT",
+    "REPORT_TYPE_CONSOLIDATED_XLSX",
     "SUPPORTED_FORMATS",
+    "ZIP_CONTENT_TYPE",
     "PostedRunNotFoundError",
     "RegisteredReportInfo",
     "ReportJobInfo",
@@ -379,8 +623,13 @@ __all__ = [
     "ReportTypeNotFoundError",
     "RunNotPostedError",
     "UnsupportedReportFormatError",
+    "execute_consolidated_xlsx",
     "execute_generate_report",
     "get_report_job",
     "list_registered_reports",
+    "manifest_hash",
+    "preview_report",
+    "product_sheet_manifest",
+    "request_consolidated_export",
     "request_report",
 ]

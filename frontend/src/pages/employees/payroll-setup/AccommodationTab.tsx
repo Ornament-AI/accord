@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import { InfoTip } from "@/components/info-tip";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -23,7 +24,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Table,
 	TableBody,
@@ -74,12 +74,7 @@ export function AccommodationTab({
 
 	return (
 		<div className="grid gap-4" data-testid="accommodation-tab">
-			{accommodationQuery.isLoading ? (
-				<div className="grid gap-2">
-					<Skeleton className="h-10 w-full" />
-					<Skeleton className="h-10 w-full" />
-				</div>
-			) : null}
+			{accommodationQuery.isLoading ? <PageSkeleton /> : null}
 
 			{accommodationQuery.isError ? (
 				<ErrorWithRetry

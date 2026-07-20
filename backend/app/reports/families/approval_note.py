@@ -53,7 +53,7 @@ _PLACEHOLDER_NAME = "____________________"
 
 DEFAULT_CONTENT_TYPES: dict[str, str] = {
     "json": "application/json",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pdf": "application/pdf",
 }
 FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"

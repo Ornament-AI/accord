@@ -3,6 +3,10 @@
 Every report family registers here exactly once; API and worker processes
 share this single construction path so the catalog can never diverge
 between them.
+
+``PRODUCT_REPORT_SHEETS`` is the canonical product-surface allowlist (13
+sheets). Payslips and advance_schedule remain registered for later work
+but are excluded from catalog product sheets and consolidated export.
 """
 
 from __future__ import annotations
@@ -14,6 +18,40 @@ from app.reports.families.payments import register_payment_reports
 from app.reports.families.recovery import register_recovery_reports
 from app.reports.families.retirement import register_retirement_reports
 from app.reports.families.statutory import register as register_statutory
+
+# Canonical product-surface allowlist. Order is stable for ZIP entry order
+# and catalog presentation. Do not invent a second list on the frontend.
+PRODUCT_REPORT_SHEETS: tuple[str, ...] = (
+    "pay_bill",
+    "treasury_face",
+    "bank_rtgs_advice",
+    "gpf_mumbai_schedule",
+    "gpf_nagpur_schedule",
+    "nps_contribution_schedule",
+    "income_tax_schedule",
+    "professional_tax_schedule",
+    "gis_schedule",
+    "hba_schedule",
+    "accommodation_mumbai_schedule",
+    "accommodation_worli_schedule",
+    "approval_note",
+)
+
+PRODUCT_REPORT_SHEET_TITLES: dict[str, str] = {
+    "pay_bill": "Pay Bill",
+    "treasury_face": "Treasury Face",
+    "bank_rtgs_advice": "Bank RTGS Advice",
+    "gpf_mumbai_schedule": "GPF Mumbai Schedule",
+    "gpf_nagpur_schedule": "GPF Nagpur Schedule",
+    "nps_contribution_schedule": "NPS Contribution Schedule",
+    "income_tax_schedule": "Income Tax Schedule",
+    "professional_tax_schedule": "Professional Tax Schedule",
+    "gis_schedule": "GIS Schedule",
+    "hba_schedule": "HBA Schedule",
+    "accommodation_mumbai_schedule": "Accommodation Mumbai Schedule",
+    "accommodation_worli_schedule": "Accommodation Worli Schedule",
+    "approval_note": "Approval Note",
+}
 
 
 def _register_payroll_register(registry: ReportRegistry) -> None:

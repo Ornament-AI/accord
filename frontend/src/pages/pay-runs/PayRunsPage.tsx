@@ -12,9 +12,9 @@ import { toast } from "sonner";
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
 import { DataTableShell } from "@/components/data-table-shell";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageSection, PageShell } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -128,8 +128,8 @@ export default function PayRunsPage() {
 				}
 			>
 				<PageShell data-testid="pay-runs-page">
-					<PageSection className="grid gap-3">
-						{runsQuery.isLoading ? <DataTableSkeleton /> : null}
+					<PageSection className="gap-3">
+						{runsQuery.isLoading ? <PageSkeleton /> : null}
 
 						{runsQuery.isError ? (
 							<ErrorWithRetry

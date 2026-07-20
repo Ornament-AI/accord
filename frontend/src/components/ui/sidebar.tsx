@@ -26,8 +26,8 @@ const LEGACY_SIDEBAR_WIDTH_STORAGE_KEYS = [
 	"accord:sidebar:width:px",
 	"ornament:sidebar:width:px",
 ] as const;
-// Short nav labels (Employees, Pay Runs, …) don't need the shadcn-default ~296px rail.
-const SIDEBAR_WIDTH = "14rem";
+// Wide enough for Reports child titles (e.g. "Accommodation Mumbai Schedule").
+const SIDEBAR_WIDTH = "20rem";
 const SIDEBAR_WIDTH_MOBILE = SIDEBAR_WIDTH;
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";

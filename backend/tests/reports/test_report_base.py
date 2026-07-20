@@ -74,7 +74,7 @@ def test_registry_register_and_lookup() -> None:
         to_pdf=lambda dto: b"%PDF",
         content_types={
             "json": "application/json",
-            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "pdf": "application/pdf",
         },
         filename_pattern="{report_type}_{posted_run_id}.{ext}",

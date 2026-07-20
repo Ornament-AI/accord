@@ -21,7 +21,17 @@ function PageShell({ className, children, "data-testid": testId }: PageShellProp
 }
 
 function PageSection({ className, ...props }: React.ComponentProps<"section">) {
-	return <section data-slot="page-section" className={cn("min-w-0", className)} {...props} />;
+	return (
+		<section
+			data-slot="page-section"
+			className={cn(
+				"flex min-h-0 min-w-0 flex-col",
+				"has-[[data-slot=empty]]:flex-1 has-[[data-slot=page-skeleton]]:flex-1",
+				className,
+			)}
+			{...props}
+		/>
+	);
 }
 
 export { PageSection, PageShell };

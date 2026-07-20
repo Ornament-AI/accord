@@ -73,7 +73,7 @@ _DEDUCTION_COLUMN_CODES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 DEFAULT_CONTENT_TYPES: dict[str, str] = {
     "json": "application/json",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pdf": "application/pdf",
 }
 PAY_BILL_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"

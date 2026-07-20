@@ -14,9 +14,9 @@ import {
 	usePersistedColumnVisibility,
 } from "@/components/column-visibility";
 import { DataTableShell } from "@/components/data-table-shell";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageSection } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
@@ -157,7 +157,7 @@ export function ArtifactsSection({
 				<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
 			</div>
 
-			{isLoading ? <DataTableSkeleton /> : null}
+			{isLoading ? <PageSkeleton /> : null}
 
 			{isError ? (
 				<ErrorWithRetry

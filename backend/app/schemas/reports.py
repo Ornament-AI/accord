@@ -14,7 +14,10 @@ class ReportTypeItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     report_type: str
+    title: str | None = None
     formats: list[str]
+    product_sheet: bool = False
+    template_version: str | None = None
 
 
 class ReportTypeListResponse(BaseModel):
@@ -39,6 +42,19 @@ class GenerateReportResponse(BaseModel):
     status: str
 
 
+class ExportReportsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    posted_run_id: UUID
+
+
+class ExportReportsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: UUID
+    status: str
+
+
 class ReportJobResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -46,3 +62,16 @@ class ReportJobResponse(BaseModel):
     status: str
     result: dict[str, Any] | None = None
     last_error: str | None = None
+
+
+class ReportPreviewResponse(BaseModel):
+    """Synchronous JSON preview of a report (``to_json`` shape)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    report_type: str
+    template_version: str
+    title: str
+    organization_name: str
+    subtitle: str
+    sections: list[dict[str, Any]]

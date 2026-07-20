@@ -1,6 +1,7 @@
 import { FieldsValueTable } from "@/components/fields-value-table";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
-import { Skeleton } from "@/components/ui/skeleton";
+
 import {
 	Table,
 	TableBody,
@@ -165,9 +166,8 @@ export function AuditEventDetail({ eventId }: { eventId: string }) {
 
 	if (detailQuery.isLoading) {
 		return (
-			<div className="grid gap-4" data-testid="audit-event-detail-loading">
-				<Skeleton className="h-40 w-full" />
-				<Skeleton className="h-48 w-full" />
+			<div data-testid="audit-event-detail-loading">
+				<PageSkeleton />
 			</div>
 		);
 	}

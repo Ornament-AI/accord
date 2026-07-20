@@ -3,7 +3,7 @@ import { Suspense, useEffect } from "react";
 import { useLocation, useMatches, useOutlet } from "react-router";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { LoadingState } from "@/components/loading-state";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useAppShellHeader } from "@/contexts/AppShellContext";
@@ -39,7 +39,9 @@ function hasStableRouteTransition(handle: unknown): handle is RouteTransitionHan
 const routeContentClassName = "relative flex min-h-0 min-w-0 flex-1 flex-col";
 
 function RouteSuspense({ children }: { children: ReactNode }) {
-	return <Suspense fallback={<LoadingState fullScreen={false} />}>{children}</Suspense>;
+	return (
+		<Suspense fallback={<PageSkeleton className="p-4 md:py-6 lg:px-6" />}>{children}</Suspense>
+	);
 }
 
 /**
@@ -118,7 +120,7 @@ export function ProtectedShell() {
 			className="min-h-screen w-full min-w-0 bg-background text-foreground"
 		>
 			<AppSidebar variant="inset" />
-			<SidebarInset className="flex min-w-0 flex-col overflow-x-hidden">
+			<SidebarInset className="flex min-h-0 min-w-0 flex-col overflow-x-hidden">
 				<SiteHeaderHost />
 				<RouteScrollReset />
 				<AnimatedOutlet />

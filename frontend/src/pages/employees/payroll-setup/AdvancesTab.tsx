@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-
+import { PageSkeleton } from "@/components/page-skeleton";
 import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +26,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Table,
 	TableBody,
@@ -81,12 +80,7 @@ export function AdvancesTab({
 
 	return (
 		<div className="grid gap-4" data-testid="advances-tab">
-			{advancesQuery.isLoading ? (
-				<div className="grid gap-2">
-					<Skeleton className="h-10 w-full" />
-					<Skeleton className="h-10 w-full" />
-				</div>
-			) : null}
+			{advancesQuery.isLoading ? <PageSkeleton /> : null}
 
 			{advancesQuery.isError ? (
 				<ErrorWithRetry

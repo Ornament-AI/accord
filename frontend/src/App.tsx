@@ -1,11 +1,11 @@
-import { IconContext } from "@phosphor-icons/react/dist/lib/context";
+import { IconContext } from "@phosphor-icons/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { LazyMotion, MotionConfig } from "motion/react";
 import { lazy, Suspense } from "react";
 import { RouterProvider } from "react-router";
 
 import { ErrorBoundary } from "@/components/error-boundary";
-import { LoadingState } from "@/components/loading-state";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { AuthProvider, AuthShellBoundary } from "@/contexts/AuthContext";
 import { accordMotion, loadMotionFeatures } from "@/lib/motion";
 import { queryClient } from "@/lib/query-client";
@@ -39,7 +39,7 @@ export function App() {
 								</Suspense>
 								<AuthProvider>
 									<AuthShellBoundary>
-										<Suspense fallback={<LoadingState />}>
+										<Suspense fallback={<PageSkeleton fullScreen />}>
 											<RouterProvider router={router} />
 										</Suspense>
 									</AuthShellBoundary>

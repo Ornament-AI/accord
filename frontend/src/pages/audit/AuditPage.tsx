@@ -7,6 +7,7 @@ import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
 import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { PaginationControls } from "@/components/pagination-controls";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,6 @@ import {
 } from "@/components/ui/drawer";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
 	type AuditActor,
 	type AuditEventListItem,
@@ -155,24 +155,6 @@ function SelectFilter({
 				</ComboboxList>
 			</ComboboxContent>
 		</Combobox>
-	);
-}
-
-function AuditWorkspaceSkeleton() {
-	return (
-		<div className="grid min-h-[32rem] grid-cols-1 gap-2 p-2 lg:grid-cols-[340px_minmax(0,1fr)]">
-			<div className="grid content-start gap-3 rounded-lg border border-border bg-muted/20 p-4">
-				<Skeleton className="h-4 w-28" />
-				{["one", "two", "three", "four", "five", "six"].map((key) => (
-					<Skeleton key={key} className="h-14 w-full rounded-md" />
-				))}
-			</div>
-			<div className="hidden content-start gap-5 rounded-lg p-3 lg:grid">
-				<Skeleton className="h-4 w-48" />
-				<Skeleton className="h-4 w-36" />
-				<Skeleton className="h-56 w-full rounded-md" />
-			</div>
-		</div>
 	);
 }
 
@@ -330,7 +312,11 @@ export default function AuditPage() {
 							className="app-table-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-card"
 							data-testid="audit-workspace"
 						>
-							{listQuery.isLoading ? <AuditWorkspaceSkeleton /> : null}
+							{listQuery.isLoading ? (
+								<div className="p-4">
+									<PageSkeleton />
+								</div>
+							) : null}
 							{listQuery.isError ? (
 								<div className="p-6">
 									<ErrorWithRetry

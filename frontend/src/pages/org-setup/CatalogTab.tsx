@@ -7,8 +7,8 @@ import {
 import type { ReactNode } from "react";
 
 import { DataTableShell } from "@/components/data-table-shell";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { PageToolbar } from "@/components/page-toolbar";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { getErrorMessage } from "@/lib/errors";
@@ -63,7 +63,7 @@ export function CatalogTab<T extends { id: string }>({
 		<div className="flex min-h-0 flex-1 flex-col gap-4" data-testid={testId}>
 			{toolbar ? <PageToolbar>{toolbar}</PageToolbar> : null}
 
-			{isLoading ? <DataTableSkeleton /> : null}
+			{isLoading ? <PageSkeleton /> : null}
 
 			{isError ? (
 				<ErrorWithRetry

@@ -14,9 +14,9 @@ import {
 	usePersistedColumnVisibility,
 } from "@/components/column-visibility";
 import { DataTableShell } from "@/components/data-table-shell";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageSection, PageShell } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import {
 	type ComponentRateVersionResponse,
@@ -160,12 +159,7 @@ export default function PayComponentDetailPage() {
 				}
 			>
 				<PageShell data-testid="pay-component-detail-page">
-					{componentQuery.isLoading ? (
-						<div className="grid gap-4">
-							<Skeleton className="h-20 w-full" />
-							<DataTableSkeleton />
-						</div>
-					) : null}
+					{componentQuery.isLoading ? <PageSkeleton /> : null}
 
 					{componentQuery.isError ? (
 						<ErrorWithRetry
@@ -197,7 +191,7 @@ export default function PayComponentDetailPage() {
 									/>
 								</div>
 
-								{rateVersionsQuery.isLoading ? <DataTableSkeleton /> : null}
+								{rateVersionsQuery.isLoading ? <PageSkeleton /> : null}
 
 								{rateVersionsQuery.isError ? (
 									<ErrorWithRetry
