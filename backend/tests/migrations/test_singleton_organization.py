@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import psycopg
-import pytest
 
 from .conftest import as_psycopg_url, diag, run_alembic
 

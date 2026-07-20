@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select, text
 
 from app.exceptions import ConflictError
-from app.models.identity import Organization, OrganizationInvitation, OrganizationMembership, User
+from app.models.identity import Organization, OrganizationInvitation, OrganizationMembership
 from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_user
