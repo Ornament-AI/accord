@@ -76,6 +76,7 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - 'pyproject.toml'
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
