@@ -24,6 +24,7 @@ import {
 	CLASSIFICATIONS,
 	type Classification,
 	classificationLabel,
+	type ScheduleKind,
 	useCreatePayComponent,
 	usePayComponentsList,
 } from "@/lib/api/pay-setup";
@@ -42,6 +43,9 @@ type FormState = {
 	display_order: string;
 	employer_transfer: boolean;
 	transfer_of: string;
+	schedule_kind: ScheduleKind | "";
+	schedule_title: string;
+	schedule_account_head: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -51,6 +55,9 @@ const emptyForm = (): FormState => ({
 	display_order: "0",
 	employer_transfer: false,
 	transfer_of: "",
+	schedule_kind: "",
+	schedule_title: "",
+	schedule_account_head: "",
 });
 
 const OFF_BILL_VALUE = "__offbill__";
@@ -102,6 +109,11 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 				display_order: displayOrder,
 				employer_transfer: form.employer_transfer,
 				transfer_of: form.employer_transfer ? form.transfer_of || null : null,
+				schedule_kind: form.schedule_kind || null,
+				schedule_title: form.schedule_kind ? form.schedule_title.trim() || null : null,
+				schedule_account_head: form.schedule_kind
+					? form.schedule_account_head.trim() || null
+					: null,
 			});
 			onOpenChange(false);
 		} catch (error) {
@@ -217,6 +229,49 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 								disabled={isSubmitting}
 							/>
 						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="create-pc-schedule-kind">Export Schedule</Label>
+							<Select
+								value={form.schedule_kind || "none"}
+								onValueChange={(value) =>
+									setField("schedule_kind", value === "none" ? "" : (value as ScheduleKind))
+								}
+								disabled={isSubmitting}
+							>
+								<SelectTrigger id="create-pc-schedule-kind" className="w-full">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="none">No separate schedule</SelectItem>
+									<SelectItem value="simple_component">Component schedule</SelectItem>
+									<SelectItem value="loan_installment">Loan installment schedule</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+
+						{form.schedule_kind ? (
+							<>
+								<div className="grid gap-2">
+									<Label htmlFor="create-pc-schedule-title">Schedule Title</Label>
+									<Input
+										id="create-pc-schedule-title"
+										value={form.schedule_title}
+										onChange={(event) => setField("schedule_title", event.target.value)}
+										disabled={isSubmitting}
+									/>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="create-pc-schedule-account-head">Account Head</Label>
+									<Input
+										id="create-pc-schedule-account-head"
+										value={form.schedule_account_head}
+										onChange={(event) => setField("schedule_account_head", event.target.value)}
+										disabled={isSubmitting}
+									/>
+								</div>
+							</>
+						) : null}
 
 						{["ag_deduction", "treasury_deduction", "external_recovery"].includes(
 							form.classification,

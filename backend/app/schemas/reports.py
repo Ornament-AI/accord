@@ -33,6 +33,7 @@ class GenerateReportRequest(BaseModel):
     posted_run_id: UUID
     format: Literal["excel", "pdf", "json"]
     template_version: str | None = None
+    variant_key: str | None = Field(default=None, min_length=1)
 
 
 class GenerateReportResponse(BaseModel):

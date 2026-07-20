@@ -48,6 +48,7 @@ from app.models.payroll_runs import (
     PayrollRunEmployee,
     PayrollRunInput,
     payroll_employee_results,
+    payroll_report_snapshots,
     payroll_result_lines,
     payroll_run_versions,
 )
@@ -103,6 +104,7 @@ __all__ = [
     "employee_posting_versions",
     "employee_profile_versions",
     "payroll_employee_results",
+    "payroll_report_snapshots",
     "payroll_result_lines",
     "payroll_run_versions",
     "recurring_instruction_versions",

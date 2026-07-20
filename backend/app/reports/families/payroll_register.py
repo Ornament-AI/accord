@@ -31,6 +31,8 @@ from app.models.reports import ReportConfiguration
 from app.reports.amount_in_words import amount_in_words
 from app.reports.base import (
     ColumnKind,
+    FormulaScope,
+    FormulaSpec,
     ReportColumn,
     ReportContext,
     ReportDTO,
@@ -39,6 +41,7 @@ from app.reports.base import (
 )
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.pdf import to_pdf as base_to_pdf
+from app.reports.snapshots import load_report_snapshot
 
 # Report type strings for orchestrator registration.
 REPORT_TYPE_PAY_BILL = "pay_bill"
@@ -283,17 +286,194 @@ def _pay_bill_columns() -> tuple[ReportColumn, ...]:
     return tuple(cols)
 
 
+_REGISTER_GROUPS = (
+    "earning",
+    "employer_contribution",
+    "gross_adjustment",
+    "ag_deduction",
+    "treasury_deduction",
+    "external_recovery",
+)
+
+
+def _line_classification(line: Any) -> str:
+    trace = line["trace"] or {}
+    value = str(trace.get("classification") or line["classification"])
+    return "ag_deduction" if value == "AG_deduction" else value
+
+
+def _v2_component_groups(
+    snapshot: dict[str, Any], packed: list[dict[str, Any]]
+) -> dict[str, list[dict[str, Any]]]:
+    by_code: dict[str, dict[str, Any]] = {}
+    for item in snapshot.get("component_catalog", []):
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code") or "")
+        classification = str(item.get("classification") or "")
+        if not code or classification == "informational" or code == "FOREGONE_HRA":
+            continue
+        by_code[code] = {
+            "code": code,
+            "name": str(item.get("name") or code),
+            "classification": classification,
+            "display_order": int(item.get("display_order") or 0),
+        }
+
+    min_sequence: dict[str, int] = {}
+    line_classes: dict[str, str] = {}
+    for packed_item in packed:
+        for line in packed_item["lines"]:
+            code = str(line["component_code"])
+            classification = _line_classification(line)
+            if classification == "informational" or code == "FOREGONE_HRA":
+                continue
+            previous = line_classes.get(code)
+            if previous is not None and previous != classification:
+                raise ConflictError(
+                    f"Component {code!r} appears under multiple classifications.",
+                    details={"code": code, "classifications": sorted({previous, classification})},
+                )
+            line_classes[code] = classification
+            min_sequence[code] = min(min_sequence.get(code, 10**9), int(line["sequence"]))
+            catalog_item = by_code.get(code)
+            if catalog_item is not None and catalog_item["classification"] != classification:
+                raise ConflictError(
+                    f"Component {code!r} snapshot classification does not match posted lines.",
+                    details={
+                        "code": code,
+                        "snapshot_classification": catalog_item["classification"],
+                        "posted_classification": classification,
+                    },
+                )
+            if catalog_item is None:
+                by_code[code] = {
+                    "code": code,
+                    "name": code,
+                    "classification": classification,
+                    "display_order": 1_000_000 + min_sequence[code],
+                }
+
+    groups = {classification: [] for classification in _REGISTER_GROUPS}
+    for code in line_classes:
+        item = by_code[code]
+        classification = item["classification"]
+        if classification in groups:
+            groups[classification].append(item)
+    for items in groups.values():
+        items.sort(key=lambda item: (item["display_order"], item["code"]))
+    return groups
+
+
+def _component_key(code: str) -> str:
+    return f"component:{code}"
+
+
+def _v2_columns_and_formulas(
+    groups: dict[str, list[dict[str, Any]]],
+) -> tuple[tuple[ReportColumn, ...], tuple[FormulaSpec, ...]]:
+    columns: list[ReportColumn] = [
+        ReportColumn("employee_number", "Employee No."),
+        ReportColumn("name", "Name"),
+        ReportColumn("designation", "Designation"),
+        ReportColumn("pan", "PAN"),
+        ReportColumn("gpf_account_number", "GPF Account No."),
+    ]
+    formulas: list[FormulaSpec] = []
+
+    def add_group(classification: str, total_key: str, total_header: str) -> None:
+        keys: list[str] = []
+        for item in groups[classification]:
+            key = _component_key(item["code"])
+            keys.append(key)
+            columns.append(ReportColumn(key, item["name"], ColumnKind.MONEY))
+            formulas.append(FormulaSpec(key, FormulaScope.COLUMN_TOTAL))
+        columns.append(ReportColumn(total_key, total_header, ColumnKind.MONEY))
+        formulas.extend(
+            (
+                FormulaSpec(total_key, FormulaScope.ROWS, tuple(keys)),
+                FormulaSpec(total_key, FormulaScope.TOTALS, tuple(keys)),
+            )
+        )
+
+    add_group("earning", "earnings_total", "Earnings Total")
+    add_group("employer_contribution", "employer_share_total", "Employer Share Total")
+    add_group("gross_adjustment", "gross_adjustment_total", "Gross Adjustment Total")
+    columns.append(ReportColumn("gross_bill", "Gross Bill", ColumnKind.MONEY))
+    formulas.extend(
+        (
+            FormulaSpec(
+                "gross_bill",
+                FormulaScope.ROWS,
+                ("earnings_total", "employer_share_total", "gross_adjustment_total"),
+            ),
+            FormulaSpec(
+                "gross_bill",
+                FormulaScope.TOTALS,
+                ("earnings_total", "employer_share_total", "gross_adjustment_total"),
+            ),
+        )
+    )
+    add_group("ag_deduction", "ag_total", "AG Total")
+    add_group("treasury_deduction", "treasury_total", "Treasury Total")
+    add_group("external_recovery", "external_recovery_total", "External Recovery Total")
+    columns.append(ReportColumn("deductions_total", "Deductions Total", ColumnKind.MONEY))
+    columns.append(ReportColumn("net_payable", "Net Payable", ColumnKind.MONEY))
+    formulas.extend(
+        (
+            FormulaSpec(
+                "deductions_total",
+                FormulaScope.ROWS,
+                ("ag_total", "treasury_total", "external_recovery_total"),
+            ),
+            FormulaSpec(
+                "deductions_total",
+                FormulaScope.TOTALS,
+                ("ag_total", "treasury_total", "external_recovery_total"),
+            ),
+            FormulaSpec(
+                "net_payable",
+                FormulaScope.ROWS,
+                ("gross_bill",),
+                ("deductions_total",),
+            ),
+            FormulaSpec(
+                "net_payable",
+                FormulaScope.TOTALS,
+                ("gross_bill",),
+                ("deductions_total",),
+            ),
+        )
+    )
+    return tuple(columns), tuple(formulas)
+
+
 class PayBillBuilder:
     """Build the Pay Bill register DTO from a posted run snapshot."""
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> PayBillDTO:
         _run, version, period, org = await _require_posted_run(session, ctx)
-        as_of = _month_end(period.period_year, period.period_month)
         packed = await _load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
         )
+        if ctx.template_version == "v2":
+            snapshot = await load_report_snapshot(
+                session,
+                organization_id=ctx.organization_id,
+                run_version_id=version["id"],
+            )
+            return self._build_v2(
+                ctx=ctx,
+                version=version,
+                period=period,
+                org=org,
+                packed=packed,
+                snapshot=snapshot,
+            )
+
+        as_of = _month_end(period.period_year, period.period_month)
         columns = _pay_bill_columns()
         rows: list[tuple[Any, ...]] = []
         footer_earnings = [_ZERO] * len(_EARNING_CODES)
@@ -383,12 +563,165 @@ class PayBillBuilder:
             ),
         )
 
+    def _build_v2(
+        self,
+        *,
+        ctx: ReportContext,
+        version: Any,
+        period: PayrollPeriod,
+        org: Organization,
+        packed: list[dict[str, Any]],
+        snapshot: dict[str, Any],
+    ) -> PayBillDTO:
+        groups = _v2_component_groups(snapshot, packed)
+        columns, formulas = _v2_columns_and_formulas(groups)
+        identities = snapshot.get("employee_identity") or {}
+        if not isinstance(identities, dict):
+            raise ConflictError("Immutable report snapshot employee identity is malformed.")
+
+        component_codes = {item["code"] for group in groups.values() for item in group}
+        rows: list[tuple[Any, ...]] = []
+        footer: dict[str, Decimal] = {
+            column.key: _ZERO for column in columns if column.kind is ColumnKind.MONEY
+        }
+
+        for item in packed:
+            result = item["result"]
+            amounts = _line_amount_by_code(item["lines"])
+            identity = identities.get(str(result["employee_id"])) or {}
+            if not isinstance(identity, dict):
+                raise ConflictError(
+                    "Immutable report snapshot contains malformed employee identity."
+                )
+
+            values: dict[str, Any] = {
+                "employee_number": str(result["employee_number"]),
+                "name": str(identity.get("name") or ""),
+                "designation": str(identity.get("designation") or ""),
+                "pan": str(identity.get("pan") or ""),
+                "gpf_account_number": str(identity.get("gpf_account_number") or ""),
+            }
+            for code in component_codes:
+                values[_component_key(code)] = _money(amounts.get(code, _ZERO))
+
+            group_totals = {
+                classification: _money(
+                    sum(
+                        (amounts.get(component["code"], _ZERO) for component in components),
+                        _ZERO,
+                    )
+                )
+                for classification, components in groups.items()
+            }
+            values.update(
+                {
+                    "earnings_total": group_totals["earning"],
+                    "employer_share_total": group_totals["employer_contribution"],
+                    "gross_adjustment_total": group_totals["gross_adjustment"],
+                    "gross_bill": _money(
+                        group_totals["earning"]
+                        + group_totals["employer_contribution"]
+                        + group_totals["gross_adjustment"]
+                    ),
+                    "ag_total": group_totals["ag_deduction"],
+                    "treasury_total": group_totals["treasury_deduction"],
+                    "external_recovery_total": group_totals["external_recovery"],
+                }
+            )
+            values["deductions_total"] = _money(
+                values["ag_total"] + values["treasury_total"] + values["external_recovery_total"]
+            )
+            values["net_payable"] = _money(values["gross_bill"] - values["deductions_total"])
+
+            expected = {
+                "earnings_total": _money(result["earnings_total"]),
+                "employer_share_total": _money(result["employer_contribution_total"]),
+                "gross_bill": _money(result["gross_total"]),
+                "deductions_total": _money(result["deductions_total"]),
+                "net_payable": _money(result["net_payable"]),
+            }
+            mismatches = {
+                key: {"visible": str(values[key]), "posted": str(posted)}
+                for key, posted in expected.items()
+                if values[key] != posted
+            }
+            if mismatches:
+                raise ConflictError(
+                    "Pay Bill component columns do not reconcile to posted totals.",
+                    details={
+                        "employee_number": str(result["employee_number"]),
+                        "mismatches": mismatches,
+                    },
+                )
+
+            row = tuple(values.get(column.key) for column in columns)
+            rows.append(row)
+            for column, value in zip(columns, row, strict=True):
+                if column.kind is ColumnKind.MONEY:
+                    footer[column.key] += value
+
+        totals = tuple(
+            "TOTAL"
+            if column.key == "employee_number"
+            else footer[column.key]
+            if column.kind is ColumnKind.MONEY
+            else None
+            for column in columns
+        )
+        footer_net = footer["net_payable"]
+        organization = snapshot.get("organization") or {}
+        organization_name = (
+            str(organization.get("name") or org.name)
+            if isinstance(organization, dict)
+            else org.name
+        )
+        snapshot_note = (
+            f"engine_version={version['engine_version']}; template_version={ctx.template_version}"
+        )
+
+        return ReportDTO(
+            report_type=REPORT_TYPE_PAY_BILL,
+            template_version=ctx.template_version,
+            title="Payroll Register — Pay Bill",
+            organization_name=organization_name,
+            subtitle=_period_label(period.period_year, period.period_month),
+            sections=(
+                TableSection(
+                    title="Register",
+                    columns=columns,
+                    rows=tuple(rows),
+                    totals=totals,
+                    formulas=formulas,
+                ),
+                TableSection(
+                    title="Amount in words",
+                    columns=(
+                        ReportColumn("label", "Label"),
+                        ReportColumn("value", "Value"),
+                    ),
+                    rows=(("Net payable", amount_in_words(footer_net)),),
+                ),
+                TableSection(
+                    title="Rate / rule snapshot",
+                    columns=(ReportColumn("note", "Note"),),
+                    rows=((snapshot_note,),),
+                ),
+            ),
+        )
+
 
 class TreasuryFaceBuilder:
     """Build the Treasury Face summary DTO from a posted run snapshot."""
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> TreasuryFaceDTO:
         _run, version, period, org = await _require_posted_run(session, ctx)
+        snapshot = None
+        if ctx.template_version == "v2":
+            snapshot = await load_report_snapshot(
+                session,
+                organization_id=ctx.organization_id,
+                run_version_id=version["id"],
+            )
         packed = await _load_result_rows(
             session,
             organization_id=ctx.organization_id,
@@ -397,6 +730,7 @@ class TreasuryFaceBuilder:
 
         earnings_total = _ZERO
         employer_share = _ZERO
+        gross_adjustments = _ZERO
         ag_deductions = _ZERO
         treasury_deductions = _ZERO
         external_recoveries = _ZERO
@@ -412,32 +746,99 @@ class TreasuryFaceBuilder:
                 trace = line["trace"] or {}
                 if trace.get("classification") == "informational" or code == "FOREGONE_HRA":
                     continue
-                classification = str(line["classification"])
+                # Trace-aware normalization ("AG_deduction" → "ag_deduction"),
+                # identical to the Pay Bill grouping path.
+                classification = _line_classification(line)
                 amount = _money(line["amount"])
-                if classification == "ag_deduction":
+                if classification == "gross_adjustment":
+                    gross_adjustments += amount
+                elif classification == "ag_deduction":
                     ag_deductions += amount
                 elif classification == "treasury_deduction":
                     treasury_deductions += amount
                 elif classification == "external_recovery":
                     external_recoveries += amount
 
-        gross_bill = _money(earnings_total + employer_share)
+        # Engine identity (ADR 0007): gross = earnings + employer share
+        # + gross adjustments. Omitting gross adjustments here would silently
+        # break "gross − deductions = net" as soon as a gross_adjustment
+        # component (e.g. DA_DIFFERENCE) posts.
+        gross_bill = _money(earnings_total + employer_share + gross_adjustments)
         total_deductions = _money(ag_deductions + treasury_deductions + external_recoveries)
         employer_share = _money(employer_share)
+        gross_adjustments = _money(gross_adjustments)
         net_payable = _money(net_payable)
         ag_deductions = _money(ag_deductions)
         treasury_deductions = _money(treasury_deductions)
         external_recoveries = _money(external_recoveries)
 
-        signatory_rows = await _load_signatory_rows(session, organization_id=ctx.organization_id)
+        # Defense in depth: the face must reconcile to the posted per-employee
+        # nets. Raise (not assert) so the invariant holds under `python -O`.
+        if _money(gross_bill - total_deductions) != net_payable:
+            raise ConflictError(
+                "Treasury Face does not reconcile: "
+                f"gross {gross_bill} − deductions {total_deductions} "
+                f"!= posted net payable {net_payable}",
+                details={
+                    "gross_bill": str(gross_bill),
+                    "total_deductions": str(total_deductions),
+                    "net_payable": str(net_payable),
+                },
+            )
+
+        if snapshot is None:
+            signatory_rows = await _load_signatory_rows(
+                session, organization_id=ctx.organization_id
+            )
+            header_section: tuple[TableSection, ...] = ()
+            organization_name = org.name
+        else:
+            profile = snapshot.get("report_profile") or {}
+            metadata = snapshot.get("run_metadata") or {}
+            heads = profile.get("head_of_account") or {}
+            signatory_rows = tuple(
+                (
+                    str(item.get("role") or item.get("designation") or ""),
+                    str(item.get("name") or ""),
+                )
+                for item in profile.get("signatories", [])
+                if isinstance(item, dict)
+            )
+            header_section = (
+                TableSection(
+                    title="Bill header",
+                    columns=(ReportColumn("field", "Field"), ReportColumn("value", "Value")),
+                    rows=(
+                        ("Bill No.", str(metadata.get("bill_number") or "")),
+                        ("Bill date", str(metadata.get("bill_date") or "")),
+                        (
+                            "Demand No.",
+                            str(metadata.get("demand_number") or heads.get("demand_number") or ""),
+                        ),
+                        (
+                            "Major head",
+                            str(metadata.get("major_head") or heads.get("major_head") or ""),
+                        ),
+                        ("Sub head", str(metadata.get("sub_head") or heads.get("sub_head") or "")),
+                        (
+                            "Detailed head",
+                            str(metadata.get("detailed_head") or heads.get("detailed_head") or ""),
+                        ),
+                        ("DDO code", str(profile.get("ddo_code") or "")),
+                        ("Treasury code", str(profile.get("treasury_code") or "")),
+                    ),
+                ),
+            )
+            organization_name = str((snapshot.get("organization") or {}).get("name") or org.name)
 
         return ReportDTO(
             report_type=REPORT_TYPE_TREASURY_FACE,
             template_version=ctx.template_version,
             title="Payroll Register — Treasury Face",
-            organization_name=org.name,
+            organization_name=organization_name,
             subtitle=_period_label(period.period_year, period.period_month),
-            sections=(
+            sections=header_section
+            + (
                 TableSection(
                     title="Treasury Face Summary",
                     columns=(
@@ -446,6 +847,7 @@ class TreasuryFaceBuilder:
                     ),
                     rows=(
                         ("Gross bill", gross_bill),
+                        ("Gross adjustments (in gross bill)", gross_adjustments),
                         ("AG deductions", ag_deductions),
                         ("Treasury deductions", treasury_deductions),
                         ("External recoveries", external_recoveries),

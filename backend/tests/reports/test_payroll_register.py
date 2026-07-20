@@ -30,6 +30,7 @@ from app.models.payroll_runs import (
     PayrollRun,
     payroll_employee_results,
     payroll_result_lines,
+    payroll_run_versions,
 )
 from app.models.platform import PayrollApproval
 from app.models.recurring_instructions import (
@@ -440,11 +441,16 @@ async def _june_world(session: AsyncSession) -> dict:
     return _CACHED_WORLD
 
 
-def _ctx(world: dict, *, run_id: UUID | None = None) -> ReportContext:
+def _ctx(
+    world: dict,
+    *,
+    run_id: UUID | None = None,
+    template_version: str = TEMPLATE_VERSION,
+) -> ReportContext:
     return ReportContext(
         organization_id=world["org_id"],
         posted_run_id=run_id or world["run_id"],
-        template_version=TEMPLATE_VERSION,
+        template_version=template_version,
         generated_at=datetime.now(UTC),
         engine_version=str(world["engine_version"]),
     )
@@ -559,6 +565,52 @@ async def test_pay_bill_rows_reconcile_to_db_results(session):
 
 
 @pytest.mark.asyncio
+async def test_pay_bill_v2_dynamic_columns_reconcile_and_excel_uses_formulas(session):
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    dto = await pay_bill_builder.build(session, _ctx(world, template_version="v2"))
+    register = _section_by_title(dto, "Register")
+
+    keys = [column.key for column in register.columns]
+    assert len(keys) == len(set(keys))
+    assert "component:EPF_EMPLOYER" in keys
+    assert "pan" in keys
+    assert "gpf_account_number" in keys
+    assert register.formulas
+
+    earning_keys = [
+        column.key
+        for column in register.columns
+        if column.key.startswith("component:")
+        and column.key
+        in {
+            "component:BASIC",
+            "component:DA",
+            "component:HRA",
+            "component:TRANSPORT",
+            "component:OTHER_ALLOWANCE",
+        }
+    ]
+    for row in register.rows:
+        visible_earnings = sum(
+            (row[_col_index(register, key)] for key in earning_keys),
+            _ZERO,
+        )
+        assert _dec(visible_earnings) == _dec(row[_col_index(register, "earnings_total")])
+        assert _dec(row[_col_index(register, "gross_bill")]) - _dec(
+            row[_col_index(register, "deductions_total")]
+        ) == _dec(row[_col_index(register, "net_payable")])
+
+    workbook = load_workbook(BytesIO(pay_bill_to_excel(dto)), data_only=False)
+    sheet = workbook["Register"]
+    header_to_col = {sheet.cell(5, col).value: col for col in range(1, sheet.max_column + 1)}
+    first_data_row = 6
+    assert str(sheet.cell(first_data_row, header_to_col["Earnings Total"]).value).startswith("=")
+    assert str(sheet.cell(first_data_row, header_to_col["Gross Bill"]).value).startswith("=")
+    assert str(sheet.cell(first_data_row, header_to_col["Net Payable"]).value).startswith("=")
+
+
+@pytest.mark.asyncio
 async def test_pay_bill_amount_in_words_matches_numeric(session):
     world = await _june_world(session)
     await _bind(session, world["org_id"], world["user_id"])
@@ -596,6 +648,118 @@ async def test_treasury_face_totals_and_reconciliation(session):
     words_by_label = {row[0]: row[1] for row in words.rows}
     assert words_by_label["Gross bill"] == amount_in_words(by_label["Gross bill"])
     assert words_by_label["Net payable"] == amount_in_words(by_label["Net payable"])
+
+
+async def _seed_minimal_posted_run_with_gross_adjustment(session: AsyncSession) -> dict:
+    """Minimal posted run: one employee with earning + gross_adjustment + deduction.
+
+    Inserted directly (posting-shaped rows) to prove Treasury Face includes
+    gross_adjustment lines in Gross bill — the June fixture has none.
+    """
+    org = await seed_organization(session, name="Gross Adj Org", slug=f"ga-{uuid4().hex[:10]}")
+    user = await seed_user(session, workos_user_id=f"ga_{uuid4().hex[:10]}")
+    await session.commit()
+    await _bind(session, org.id, user.id)
+
+    employee = Employee(organization_id=org.id, employee_number="GA-01")
+    session.add(employee)
+    period = PayrollPeriod(
+        organization_id=org.id,
+        period_year=PERIOD_YEAR,
+        period_month=PERIOD_MONTH,
+        status="open",
+    )
+    session.add(period)
+    await session.flush()
+    run = PayrollRun(organization_id=org.id, period_id=period.id, status="posted")
+    session.add(run)
+    await session.flush()
+
+    version_id = (
+        await session.execute(
+            sa.insert(payroll_run_versions)
+            .values(
+                organization_id=org.id,
+                run_id=run.id,
+                version_number=1,
+                engine_version="0.1.0",
+                content_hash="ga-test-hash",
+                calculated_at=datetime.now(UTC),
+                calculated_by=user.id,
+                inputs_snapshot={},
+                totals={
+                    "earnings_total": "1000.00",
+                    "employer_contribution_total": "0.00",
+                    "gross_adjustment_total": "50.00",
+                    "gross_total": "1050.00",
+                    "deductions_total": "100.00",
+                    "net_payable": "950.00",
+                    "offbill_employer_remittance": "0.00",
+                    "disbursement": "950.00",
+                },
+            )
+            .returning(payroll_run_versions.c.id)
+        )
+    ).scalar_one()
+    run.current_version_id = version_id
+
+    result_id = (
+        await session.execute(
+            sa.insert(payroll_employee_results)
+            .values(
+                organization_id=org.id,
+                run_version_id=version_id,
+                employee_id=employee.id,
+                employee_number="GA-01",
+                earnings_total=Decimal("1000.00"),
+                employer_contribution_total=Decimal("0.00"),
+                gross_total=Decimal("1050.00"),
+                deductions_total=Decimal("100.00"),
+                net_payable=Decimal("950.00"),
+                offbill_employer_remittance=Decimal("0.00"),
+                disbursement=Decimal("950.00"),
+            )
+            .returning(payroll_employee_results.c.id)
+        )
+    ).scalar_one()
+
+    lines = (
+        ("BASIC", "earning", "earning", Decimal("1000.00"), 1),
+        ("DA_DIFFERENCE", "gross_adjustment", "gross_adjustment", Decimal("50.00"), 2),
+        ("INCOME_TAX", "treasury_deduction", "treasury_deduction", Decimal("100.00"), 3),
+    )
+    for code, db_class, trace_class, amount, sequence in lines:
+        await session.execute(
+            sa.insert(payroll_result_lines).values(
+                organization_id=org.id,
+                employee_result_id=result_id,
+                component_code=code,
+                classification=db_class,
+                calc_kind="fixed_recurring_amount",
+                amount=amount,
+                sequence=sequence,
+                trace={"classification": trace_class},
+            )
+        )
+    await session.commit()
+    return {"org_id": org.id, "user_id": user.id, "run_id": run.id, "engine_version": "0.1.0"}
+
+
+@pytest.mark.asyncio
+async def test_treasury_face_includes_gross_adjustment_in_gross_bill(session):
+    """Regression: gross_adjustment lines must be part of Gross bill so that
+    gross − deductions = posted net payable (engine identity, ADR 0007)."""
+    world = await _seed_minimal_posted_run_with_gross_adjustment(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    dto = await treasury_face_builder.build(session, _ctx(world))
+
+    summary = _section_by_title(dto, "Treasury Face Summary")
+    by_label = {row[0]: _dec(row[1]) for row in summary.rows}
+    assert by_label["Gross bill"] == _dec("1050.00")
+    assert by_label["Gross adjustments (in gross bill)"] == _dec("50.00")
+    assert by_label["Total deductions"] == _dec("100.00")
+    assert by_label["Net payable"] == _dec("950.00")
+    assert by_label["Gross bill"] - by_label["Total deductions"] == by_label["Net payable"]
 
 
 @pytest.mark.asyncio

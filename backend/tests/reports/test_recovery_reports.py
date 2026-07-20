@@ -512,6 +512,49 @@ async def test_june_recovery_schedules_golden_and_formatters(session, posted_jun
 
 
 @pytest.mark.asyncio
+async def test_v2_recovery_reports_ignore_later_master_header_edits(session, posted_june_recovery):
+    world = posted_june_recovery
+    ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v2",
+        generated_at=datetime.now(timezone.utc),
+        engine_version="test",
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+    hba_before = await build_hba_schedule(session, ctx)
+    mumbai_before = await build_accommodation_schedule(
+        session,
+        ctx,
+        location="mumbai",
+        report_type=REPORT_TYPE_ACCOMMODATION_MUMBAI,
+    )
+
+    await session.execute(
+        sa.update(AdvanceAccount)
+        .where(AdvanceAccount.organization_id == world["org_id"])
+        .values(reference="CHANGED", principal=Decimal("999999.00"))
+    )
+    await session.execute(
+        sa.update(AccommodationAssignment)
+        .where(AccommodationAssignment.organization_id == world["org_id"])
+        .values(quarters_identifier="CHANGED")
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    hba_after = await build_hba_schedule(session, ctx)
+    mumbai_after = await build_accommodation_schedule(
+        session,
+        ctx,
+        location="mumbai",
+        report_type=REPORT_TYPE_ACCOMMODATION_MUMBAI,
+    )
+    assert hba_after.sections[0].rows == hba_before.sections[0].rows
+    assert mumbai_after.sections[0].rows == mumbai_before.sections[0].rows
+
+
+@pytest.mark.asyncio
 async def test_unposted_run_raises_conflict_error(session):
     await _truncate_identity_with_retry()
     if session.in_transaction():

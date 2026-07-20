@@ -10,6 +10,10 @@ import LoginPage from "@/pages/LoginPage";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { server } from "@/test/msw-server";
 
+vi.mock("@paper-design/shaders-react", () => ({
+	GrainGradient: () => <div data-testid="grain-gradient" />,
+}));
+
 function renderLogin(path = "/login") {
 	return render(
 		<QueryClientProvider client={queryClient}>
@@ -53,6 +57,7 @@ describe("LoginPage", () => {
 
 		renderLogin("/login?returnTo=%2Fpay-runs");
 		await screen.findByRole("button", { name: "Sign In" });
+		expect(screen.getByTestId("grain-gradient")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 

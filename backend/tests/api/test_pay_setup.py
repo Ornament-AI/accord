@@ -92,9 +92,9 @@ async def _create_component(client, *, code: str = "BASIC", name: str = "Basic P
 @pytest.mark.asyncio
 async def test_pay_component_crud_and_rate_versioning(client, session):
     await _admin_context(client, session)
-    created = await _create_component(client, code="BASIC")
+    created = await _create_component(client, code="CUSTOM_BASIC")
     component_id = created["id"]
-    assert created["code"] == "BASIC"
+    assert created["code"] == "CUSTOM_BASIC"
     assert created["classification"] == "earning"
 
     listed = (await client.get("/api/pay-components")).json()
@@ -133,7 +133,7 @@ async def test_pay_component_employer_transfer_metadata_is_validated_and_editabl
     contribution = await client.post(
         "/api/pay-components",
         json={
-            "code": "EPF_EMPLOYER",
+            "code": "CUSTOM_EPF_EMPLOYER",
             "name": "EPF Employer",
             "classification": "employer_contribution",
         },
@@ -143,17 +143,17 @@ async def test_pay_component_employer_transfer_metadata_is_validated_and_editabl
     transfer = await client.post(
         "/api/pay-components",
         json={
-            "code": "EPF_EMPLOYER_TRANSFER",
+            "code": "CUSTOM_EPF_EMPLOYER_TRANSFER",
             "name": "EPF Employer Transfer",
             "classification": "ag_deduction",
             "employer_transfer": True,
-            "transfer_of": "EPF_EMPLOYER",
+            "transfer_of": "CUSTOM_EPF_EMPLOYER",
         },
     )
     assert transfer.status_code == 201, transfer.text
     body = transfer.json()
     assert body["employer_transfer"] is True
-    assert body["transfer_of"] == "EPF_EMPLOYER"
+    assert body["transfer_of"] == "CUSTOM_EPF_EMPLOYER"
 
     patched = await client.patch(
         f"/api/pay-components/{body['id']}",
@@ -346,6 +346,71 @@ async def test_report_configuration_upsert_and_list(client, session):
     keys = {row["key"]: row["value"] for row in listed}
     assert keys["signatories"]["chair"] == "Director"
     assert keys["account_heads"]["salary"] == "4100"
+
+
+@pytest.mark.asyncio
+async def test_payroll_export_profile_round_trip(client, session):
+    await _admin_context(client, session)
+
+    initial = await client.get("/api/report-profile")
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["value"]["ddo_code"] is None
+
+    saved = await client.put(
+        "/api/report-profile",
+        json={
+            "legal_name": "Acme Corporation",
+            "office_name": "Payroll Office",
+            "address_lines": ["Mumbai"],
+            "ddo_code": "DDO-42",
+            "head_of_account": {
+                "demand_number": "17",
+                "major_head": "2052",
+                "sub_head": "090",
+                "detailed_head": "01",
+            },
+            "bank_advice_recipient": {
+                "bank_name": "State Bank",
+                "branch": "Fort",
+                "address_lines": ["Mumbai"],
+            },
+            "signatories": [{"role": "maker", "name": "A. Maker", "designation": "Accountant"}],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["value"]["ddo_code"] == "DDO-42"
+
+    fetched = await client.get("/api/report-profile")
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["value"] == saved.json()["value"]
+
+
+@pytest.mark.asyncio
+async def test_payroll_export_profile_reserved_from_generic_configuration(client, session):
+    await _admin_context(client, session)
+
+    response = await client.put(
+        "/api/report-configurations/payroll_export_profile",
+        json={"value": {"head_of_account": "invalid"}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "ValidationError"
+
+
+@pytest.mark.asyncio
+async def test_standard_component_transfer_rules_are_immutable(client, session):
+    await _admin_context(client, session)
+    components = (await client.get("/api/pay-components")).json()
+    transfer = next(item for item in components if item["code"] == "NPS_EMPLOYER_TRANSFER")
+
+    response = await client.patch(
+        f"/api/pay-components/{transfer['id']}",
+        json={"employer_transfer": False, "transfer_of": None},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "ConflictError"
 
 
 # --- calc_kind matrix ---------------------------------------------------------

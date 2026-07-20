@@ -30,6 +30,7 @@ import { getErrorMessage } from "@/lib/errors";
 
 import { CreatePayComponentDialog } from "./CreatePayComponentDialog";
 import { EditPayComponentDialog } from "./EditPayComponentDialog";
+import { ReportProfileDialog } from "./ReportProfileDialog";
 
 declare module "@tanstack/react-table" {
 	interface ColumnMeta<TData extends RowData, TValue> {
@@ -54,20 +55,17 @@ const columns: ColumnDef<PayComponentResponse>[] = [
 			<Badge variant="secondary">{classificationLabel(row.original.classification)}</Badge>
 		),
 	},
-	{
-		accessorKey: "is_active",
-		header: "Active",
-		cell: ({ row }) => (row.original.is_active ? "Yes" : "No"),
-	},
 ];
 
 export default function PayComponentsPage() {
 	const { hasCapability } = useAuth();
 	const canManage = hasCapability("manage_master_data");
+	const canManageOrganization = hasCapability("manage_organization");
 
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
 	const [editing, setEditing] = useState<PayComponentResponse | null>(null);
+	const [profileOpen, setProfileOpen] = useState(false);
 
 	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
 		"accord:pay-components:columns",
@@ -97,10 +95,19 @@ export default function PayComponentsPage() {
 			<AppLayout
 				title="Pay Components"
 				actions={
-					canManage ? (
-						<Button size="xs" onClick={() => setCreateOpen(true)}>
-							Add
-						</Button>
+					canManage || canManageOrganization ? (
+						<div className="flex items-center gap-2">
+							{canManageOrganization ? (
+								<Button size="xs" variant="outline" onClick={() => setProfileOpen(true)}>
+									Report Defaults
+								</Button>
+							) : null}
+							{canManage ? (
+								<Button size="xs" onClick={() => setCreateOpen(true)}>
+									Add
+								</Button>
+							) : null}
+						</div>
 					) : undefined
 				}
 			>
@@ -149,6 +156,9 @@ export default function PayComponentsPage() {
 							component={editing}
 						/>
 					</>
+				) : null}
+				{canManageOrganization ? (
+					<ReportProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 				) : null}
 			</AppLayout>
 		</CapabilityGate>

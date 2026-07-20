@@ -87,3 +87,25 @@ def test_to_excel_neutralizes_formula_injection() -> None:
         if text.startswith(("=", "+", "@")):
             # Must not be executable formula type.
             assert cell.data_type in {"s", "str", "inlineStr"}
+
+
+def test_to_excel_neutralizes_formula_injection_in_titles_and_headers() -> None:
+    dto = ReportDTO(
+        report_type="component_schedule",
+        template_version="v2",
+        title="=1+1",
+        organization_name="+cmd",
+        subtitle="June 2026",
+        sections=(
+            TableSection(
+                title="@SUM(A1:A2)",
+                columns=(ReportColumn(key="value", header='=HYPERLINK("https://evil")'),),
+                rows=(("safe",),),
+            ),
+        ),
+    )
+
+    ws = load_workbook(BytesIO(to_excel(dto))).active
+    assert ws is not None
+    for coordinate in ("A1", "A2", "A3", "A5"):
+        assert ws[coordinate].data_type != "f"

@@ -120,31 +120,22 @@ async def _seed_calculate_world(session, *, org_id: UUID, user_id: UUID) -> UUID
             created_by=user_id,
         )
 
-        basic = PayComponent(
-            organization_id=org_id,
-            code="BASIC",
-            name="Basic Pay",
-            classification="earning",
-        )
+        standard_components = {
+            row.code: row
+            for row in (
+                await session.execute(
+                    sa.select(PayComponent).where(PayComponent.organization_id == org_id)
+                )
+            ).scalars()
+        }
+        basic = standard_components["BASIC"]
         allowance = PayComponent(
             organization_id=org_id,
             code="FIXED_ALLOWANCE",
             name="Fixed Allowance",
             classification="earning",
         )
-        hba = PayComponent(
-            organization_id=org_id,
-            code="HBA_INSTALLMENT",
-            name="HBA",
-            classification="external_recovery",
-        )
-        license_fee = PayComponent(
-            organization_id=org_id,
-            code="ACCOMMODATION_LICENSE_FEE",
-            name="License Fee",
-            classification="external_recovery",
-        )
-        session.add_all([basic, allowance, hba, license_fee])
+        session.add(allowance)
         await session.flush()
 
         for component, amount in (

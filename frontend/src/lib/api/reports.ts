@@ -28,6 +28,7 @@ export type GenerateReportRequest = {
 	report_type: string;
 	posted_run_id: string;
 	format: ReportFormat;
+	variant_key?: string | null;
 };
 
 export type GenerateReportResponse = {

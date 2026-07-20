@@ -49,9 +49,15 @@ from app.reports.base import (
 )
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.pdf import to_pdf as base_to_pdf
+from app.reports.snapshots import load_report_snapshot
 
 REPORT_TYPE_HBA_SCHEDULE = "hba_schedule"
 REPORT_TYPE_ADVANCE_SCHEDULE = "advance_schedule"
+REPORT_TYPE_GPF_ADVANCE_SCHEDULE = "gpf_advance_schedule"
+REPORT_TYPE_FESTIVAL_ADVANCE_SCHEDULE = "festival_advance_schedule"
+REPORT_TYPE_MOTOR_CAR_ADVANCE_SCHEDULE = "motor_car_advance_schedule"
+REPORT_TYPE_MOTORCYCLE_ADVANCE_SCHEDULE = "motorcycle_advance_schedule"
+REPORT_TYPE_COMPONENT_SCHEDULE = "component_schedule"
 REPORT_TYPE_ACCOMMODATION_MUMBAI = "accommodation_mumbai_schedule"
 REPORT_TYPE_ACCOMMODATION_WORLI = "accommodation_worli_schedule"
 
@@ -219,6 +225,21 @@ async def build_advance_schedule(
 
     _run, version, period, org = await _require_posted_run(session, ctx)
     as_of = _month_end(period.period_year, period.period_month)
+    snapshot = (
+        await load_report_snapshot(
+            session,
+            organization_id=ctx.organization_id,
+            run_version_id=version["id"],
+        )
+        if ctx.template_version == "v2"
+        else None
+    )
+    advance_sources = (
+        (snapshot.get("recovery_sources") or {}).get("advance_installments") or {}
+        if snapshot is not None
+        else {}
+    )
+    identities = snapshot.get("employee_identity") or {} if snapshot is not None else {}
 
     lines = (
         (
@@ -261,7 +282,21 @@ async def build_advance_schedule(
         reference = ""
         principal = _ZERO
         progress = ""
-        if installment_version_id is not None:
+        if installment_version_id is not None and snapshot is not None:
+            advance = advance_sources.get(str(installment_version_id))
+            if not isinstance(advance, dict):
+                raise ConflictError(
+                    "Posted report snapshot is missing advance presentation data.",
+                    details={"source_version_id": str(installment_version_id)},
+                )
+            if advance.get("advance_type") != advance_type:
+                continue
+            opening = int(advance["installments_recovered_opening"])
+            total = int(advance["installments_total"])
+            progress = f"{opening + 1}/{total}"
+            reference = str(advance.get("reference") or "")
+            principal = _money(advance["principal"])
+        elif installment_version_id is not None:
             inst = (
                 (
                     await session.execute(
@@ -287,12 +322,16 @@ async def build_advance_schedule(
                 reference = advance.reference or ""
                 principal = _money(advance.principal)
 
-        name = await _resolve_employee_name(
-            session,
-            organization_id=ctx.organization_id,
-            employee_id=line["employee_id"],
-            as_of=as_of,
-        )
+        if snapshot is not None:
+            identity = identities.get(str(line["employee_id"]), {})
+            name = str(identity.get("name") or "")
+        else:
+            name = await _resolve_employee_name(
+                session,
+                organization_id=ctx.organization_id,
+                employee_id=line["employee_id"],
+                as_of=as_of,
+            )
         schedule_total += installment_amount
         rows.append(
             (
@@ -324,7 +363,11 @@ async def build_advance_schedule(
         report_type=report_type,
         template_version=ctx.template_version,
         title=title,
-        organization_name=org.name,
+        organization_name=(
+            str((snapshot.get("organization") or {}).get("name") or org.name)
+            if snapshot is not None
+            else org.name
+        ),
         subtitle=_period_label(period.period_year, period.period_month),
         sections=(
             TableSection(
@@ -368,6 +411,21 @@ async def build_accommodation_schedule(
 
     _run, version, period, org = await _require_posted_run(session, ctx)
     as_of = _month_end(period.period_year, period.period_month)
+    snapshot = (
+        await load_report_snapshot(
+            session,
+            organization_id=ctx.organization_id,
+            run_version_id=version["id"],
+        )
+        if ctx.template_version == "v2"
+        else None
+    )
+    accommodation_sources = (
+        (snapshot.get("recovery_sources") or {}).get("accommodation_charges") or {}
+        if snapshot is not None
+        else {}
+    )
+    identities = snapshot.get("employee_identity") or {} if snapshot is not None else {}
 
     result_rows = (
         (
@@ -437,12 +495,23 @@ async def build_accommodation_schedule(
     for line in lines:
         lines_by_result[line["employee_result_id"]].append(line)
 
-    async def _assignment_for_line(line: Any) -> AccommodationAssignment | None:
+    async def _assignment_for_line(line: Any) -> tuple[str, str] | None:
         # Result-line traces currently omit accommodation_location (engine gap);
         # resolve location + quarters from the charge version pinned in source_version_ids.
         source_ids = list((line["trace"] or {}).get("source_version_ids") or [])
         if not source_ids:
             return None
+        if snapshot is not None:
+            assignment = accommodation_sources.get(str(source_ids[0]))
+            if not isinstance(assignment, dict):
+                raise ConflictError(
+                    "Posted report snapshot is missing accommodation presentation data.",
+                    details={"source_version_id": str(source_ids[0])},
+                )
+            return (
+                str(assignment.get("quarters_location") or ""),
+                str(assignment.get("quarters_identifier") or ""),
+            )
         charge = (
             (
                 await session.execute(
@@ -460,7 +529,7 @@ async def build_accommodation_schedule(
         assignment = await session.get(AccommodationAssignment, charge["header_id"])
         if assignment is None or assignment.organization_id != ctx.organization_id:
             return None
-        return assignment
+        return assignment.quarters_location, assignment.quarters_identifier
 
     schedule_rows: list[tuple[Any, ...]] = []
     actual_recovery_total = _ZERO
@@ -470,13 +539,13 @@ async def build_accommodation_schedule(
         emp_lines = lines_by_result.get(result["id"], [])
         license_line = None
         foregone_line = None
-        assignment: AccommodationAssignment | None = None
+        assignment: tuple[str, str] | None = None
 
         for line in emp_lines:
             code = str(line["component_code"])
             line_assignment = await _assignment_for_line(line)
             if line_assignment is not None:
-                if line_assignment.quarters_location != location:
+                if line_assignment[0] != location:
                     continue
             else:
                 # Fallback when charge version is missing: use trace if present.
@@ -500,14 +569,18 @@ async def build_accommodation_schedule(
         actual_recovery_total += license_fee
         informational_foregone_hra_total += foregone
 
-        quarters_identifier = assignment.quarters_identifier if assignment is not None else ""
+        quarters_identifier = assignment[1] if assignment is not None else ""
 
-        name = await _resolve_employee_name(
-            session,
-            organization_id=ctx.organization_id,
-            employee_id=result["employee_id"],
-            as_of=as_of,
-        )
+        if snapshot is not None:
+            identity = identities.get(str(result["employee_id"]), {})
+            name = str(identity.get("name") or "")
+        else:
+            name = await _resolve_employee_name(
+                session,
+                organization_id=ctx.organization_id,
+                employee_id=result["employee_id"],
+                as_of=as_of,
+            )
         schedule_rows.append(
             (
                 str(result["employee_number"]),
@@ -526,7 +599,11 @@ async def build_accommodation_schedule(
         report_type=report_type,
         template_version=ctx.template_version,
         title=f"Accommodation schedule — {location.title()}",
-        organization_name=org.name,
+        organization_name=(
+            str((snapshot.get("organization") or {}).get("name") or org.name)
+            if snapshot is not None
+            else org.name
+        ),
         subtitle=_period_label(period.period_year, period.period_month),
         sections=(
             TableSection(
@@ -603,11 +680,121 @@ class AccommodationScheduleBuilder:
         )
 
 
+class ComponentScheduleBuilder:
+    """Build a custom schedule variant declared by snapshotted catalog metadata."""
+
+    async def build(self, session: AsyncSession, ctx: ReportContext) -> ReportDTO:
+        code = (ctx.variant_key or "").strip()
+        if not code:
+            raise ConflictError("component_schedule requires a component-code variant_key.")
+        _run, version, period, org = await _require_posted_run(session, ctx)
+        snapshot = await load_report_snapshot(
+            session,
+            organization_id=ctx.organization_id,
+            run_version_id=version["id"],
+        )
+        catalog = {
+            str(item.get("code")): item
+            for item in snapshot.get("component_catalog", [])
+            if isinstance(item, dict) and item.get("code")
+        }
+        component = catalog.get(code)
+        if component is None or not component.get("schedule_kind"):
+            raise ConflictError(
+                f"Component {code!r} has no schedule in the posted report snapshot.",
+                details={"component_code": code},
+            )
+
+        line_rows = (
+            (
+                await session.execute(
+                    sa.select(
+                        payroll_employee_results.c.employee_id,
+                        payroll_employee_results.c.employee_number,
+                        payroll_result_lines.c.amount,
+                    )
+                    .select_from(
+                        payroll_result_lines.join(
+                            payroll_employee_results,
+                            payroll_result_lines.c.employee_result_id
+                            == payroll_employee_results.c.id,
+                        )
+                    )
+                    .where(
+                        payroll_employee_results.c.organization_id == ctx.organization_id,
+                        payroll_employee_results.c.run_version_id == version["id"],
+                        payroll_result_lines.c.organization_id == ctx.organization_id,
+                        payroll_result_lines.c.component_code == code,
+                    )
+                    .order_by(payroll_employee_results.c.employee_number)
+                )
+            )
+            .mappings()
+            .all()
+        )
+        identities = snapshot.get("employee_identity") or {}
+        rows: list[tuple[Any, ...]] = []
+        total = _ZERO
+        for line in line_rows:
+            identity = identities.get(str(line["employee_id"]), {})
+            amount = _money(line["amount"])
+            total += amount
+            rows.append(
+                (
+                    str(line["employee_number"]),
+                    str(identity.get("name") or ""),
+                    amount,
+                )
+            )
+
+        title = str(component.get("schedule_title") or component.get("name") or code)
+        account_head = str(component.get("schedule_account_head") or "")
+        return ReportDTO(
+            report_type=REPORT_TYPE_COMPONENT_SCHEDULE,
+            template_version=ctx.template_version,
+            title=title,
+            organization_name=str((snapshot.get("organization") or {}).get("name") or org.name),
+            subtitle=_period_label(period.period_year, period.period_month),
+            sections=(
+                TableSection(
+                    title="Schedule",
+                    columns=(
+                        ReportColumn("employee_number", "Employee No."),
+                        ReportColumn("name", "Name"),
+                        ReportColumn(
+                            "amount", str(component.get("name") or code), ColumnKind.MONEY
+                        ),
+                    ),
+                    rows=tuple(rows),
+                    totals=("TOTAL", None, _money(total)),
+                ),
+                TableSection(
+                    title="Accounting",
+                    columns=(ReportColumn("account_head", "Account Head"),),
+                    rows=((account_head,),),
+                ),
+            ),
+        )
+
+
 hba_schedule_builder = HbaScheduleBuilder()
 # Registered ``advance_schedule`` entry is infrastructure; type is set by the caller /
 # orchestrator when constructing :class:`AdvanceScheduleBuilder`. The module-level
 # instance defaults to ``other`` so the closed registry has a concrete builder.
 advance_schedule_builder = AdvanceScheduleBuilder("other")
+gpf_advance_schedule_builder = AdvanceScheduleBuilder(
+    "gpf_advance", report_type=REPORT_TYPE_GPF_ADVANCE_SCHEDULE
+)
+festival_advance_schedule_builder = AdvanceScheduleBuilder(
+    "festival", report_type=REPORT_TYPE_FESTIVAL_ADVANCE_SCHEDULE
+)
+motor_car_advance_schedule_builder = AdvanceScheduleBuilder(
+    "motor_car", report_type=REPORT_TYPE_MOTOR_CAR_ADVANCE_SCHEDULE
+)
+motorcycle_advance_schedule_builder = AdvanceScheduleBuilder(
+    "motorcycle", report_type=REPORT_TYPE_MOTORCYCLE_ADVANCE_SCHEDULE
+)
+component_schedule_builder = ComponentScheduleBuilder()
 accommodation_mumbai_builder = AccommodationScheduleBuilder(
     "mumbai", report_type=REPORT_TYPE_ACCOMMODATION_MUMBAI
 )
@@ -639,6 +826,31 @@ def register_recovery_reports(registry: ReportRegistry) -> None:
     )
     registry.register(REPORT_TYPE_HBA_SCHEDULE, builder=hba_schedule_builder, **shared)
     registry.register(REPORT_TYPE_ADVANCE_SCHEDULE, builder=advance_schedule_builder, **shared)
+    registry.register(
+        REPORT_TYPE_GPF_ADVANCE_SCHEDULE,
+        builder=gpf_advance_schedule_builder,
+        **shared,
+    )
+    registry.register(
+        REPORT_TYPE_FESTIVAL_ADVANCE_SCHEDULE,
+        builder=festival_advance_schedule_builder,
+        **shared,
+    )
+    registry.register(
+        REPORT_TYPE_MOTOR_CAR_ADVANCE_SCHEDULE,
+        builder=motor_car_advance_schedule_builder,
+        **shared,
+    )
+    registry.register(
+        REPORT_TYPE_MOTORCYCLE_ADVANCE_SCHEDULE,
+        builder=motorcycle_advance_schedule_builder,
+        **shared,
+    )
+    registry.register(
+        REPORT_TYPE_COMPONENT_SCHEDULE,
+        builder=component_schedule_builder,
+        **shared,
+    )
     registry.register(
         REPORT_TYPE_ACCOMMODATION_MUMBAI, builder=accommodation_mumbai_builder, **shared
     )

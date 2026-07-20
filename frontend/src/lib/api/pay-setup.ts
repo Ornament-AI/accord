@@ -11,6 +11,9 @@ export type ComponentRateVersionResponse = components["schemas"]["ComponentRateV
 export type CalcKind = components["schemas"]["CalcKind"];
 export type Classification = components["schemas"]["Classification"];
 export type RoundingRule = components["schemas"]["RoundingRule"];
+export type ScheduleKind = components["schemas"]["ScheduleKind"];
+export type PayrollExportProfile = components["schemas"]["PayrollExportProfile"];
+export type PayrollExportProfileResponse = components["schemas"]["PayrollExportProfileResponse"];
 
 export type PayComponentUpdate = {
 	name?: string;
@@ -18,6 +21,9 @@ export type PayComponentUpdate = {
 	is_active?: boolean;
 	employer_transfer?: boolean;
 	transfer_of?: string | null;
+	schedule_kind?: ScheduleKind | null;
+	schedule_title?: string | null;
+	schedule_account_head?: string | null;
 };
 
 export const CLASSIFICATIONS: Classification[] = [
@@ -27,6 +33,7 @@ export const CLASSIFICATIONS: Classification[] = [
 	"treasury_deduction",
 	"gross_adjustment",
 	"external_recovery",
+	"informational",
 ];
 
 export const CALC_KINDS: CalcKind[] = [
@@ -82,6 +89,7 @@ const CLASSIFICATION_LABELS: Record<Classification, string> = {
 	treasury_deduction: "Treasury Deduction",
 	gross_adjustment: "Gross Adjustment",
 	external_recovery: "External Recovery",
+	informational: "Informational",
 };
 
 export function classificationLabel(value: string): string {
@@ -120,10 +128,23 @@ export const paySetupQueryKeys = {
 	component: (componentId: string) => ["pay-setup", "components", componentId] as const,
 	rateVersions: (componentId: string) =>
 		["pay-setup", "components", componentId, "rate-versions"] as const,
+	reportProfile: () => ["pay-setup", "report-profile"] as const,
 };
 
 export function listPayComponents() {
 	return fetchJson<PayComponentResponse[]>("/api/pay-components");
+}
+
+export function getPayrollExportProfile() {
+	return fetchJson<PayrollExportProfileResponse>("/api/report-profile");
+}
+
+export function updatePayrollExportProfile(body: PayrollExportProfile) {
+	return fetchJson<PayrollExportProfileResponse>("/api/report-profile", {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	});
 }
 
 /** Resolve a single component from the list endpoint (OpenAPI has no GET-by-id). */
@@ -176,6 +197,23 @@ export function usePayComponentsList() {
 	return useQuery({
 		queryKey: paySetupQueryKeys.components(),
 		queryFn: listPayComponents,
+	});
+}
+
+export function usePayrollExportProfile() {
+	return useQuery({
+		queryKey: paySetupQueryKeys.reportProfile(),
+		queryFn: getPayrollExportProfile,
+	});
+}
+
+export function useUpdatePayrollExportProfile() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: updatePayrollExportProfile,
+		onSuccess: (data) => {
+			queryClient.setQueryData(paySetupQueryKeys.reportProfile(), data);
+		},
 	});
 }
 

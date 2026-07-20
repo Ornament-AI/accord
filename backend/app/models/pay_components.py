@@ -42,7 +42,8 @@ class PayComponent(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, 
             "'ag_deduction',"
             "'treasury_deduction',"
             "'gross_adjustment',"
-            "'external_recovery'"
+            "'external_recovery',"
+            "'informational'"
             ")",
             name="ck_pay_components_classification",
         ),
@@ -54,6 +55,10 @@ class PayComponent(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, 
         CheckConstraint(
             "transfer_of IS NULL OR employer_transfer",
             name="ck_pay_components_transfer_of_requires_employer_transfer",
+        ),
+        CheckConstraint(
+            "schedule_kind IS NULL OR schedule_kind IN ('simple_component','loan_installment')",
+            name="ck_pay_components_schedule_kind",
         ),
     )
 
@@ -95,6 +100,16 @@ class PayComponent(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, 
             nullable=False,
             server_default=text("0"),
         ),
+    )
+    is_standard: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+    )
+    schedule_kind: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    schedule_title: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    schedule_account_head: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
     )
 
 

@@ -172,6 +172,7 @@ async def generate_report(
         "posted_run_id": str(body.posted_run_id),
         "format": body.format,
         "template_version": body.template_version,
+        "variant_key": body.variant_key,
     }
 
     async def _execute() -> dict[str, Any]:
@@ -183,6 +184,7 @@ async def generate_report(
             posted_run_id=body.posted_run_id,
             format=body.format,
             template_version=body.template_version,
+            variant_key=body.variant_key,
             requested_by=user_id,
             registry=registry,
         )
@@ -230,6 +232,7 @@ async def preview_report(
     db: Session,
     registry: ReportRegistryDep,
     posted_run_id: UUID = Query(...),
+    variant_key: str | None = Query(default=None),
     _: AuthPrincipal = Depends(require_capability("generate_reports")),
 ) -> ReportPreviewResponse:
     """Sync JSON preview. Declared after static ``/reports/...`` paths."""
@@ -238,6 +241,7 @@ async def preview_report(
         organization_id=_org_id(tenant),
         report_type=report_type,
         posted_run_id=posted_run_id,
+        variant_key=variant_key,
         registry=registry,
         actor_user_id=_user_id(tenant),
     )

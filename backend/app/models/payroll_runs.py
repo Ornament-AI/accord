@@ -181,6 +181,10 @@ class PayrollRun(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, ta
             server_default=text("false"),
         ),
     )
+    report_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    )
 
 
 class PayrollRunEmployee(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, table=True):
@@ -359,6 +363,50 @@ payroll_run_versions = Table(
         "run_id",
         "version_number",
         name="uq_payroll_run_versions_organization_id_run_id_version_number",
+    ),
+)
+
+
+payroll_report_snapshots = Table(
+    "payroll_report_snapshots",
+    SQLModel.metadata,
+    Column(
+        "id",
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        nullable=False,
+        server_default=text("gen_random_uuid()"),
+    ),
+    Column(
+        "organization_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        nullable=False,
+    ),
+    Column(
+        "run_version_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("payroll_run_versions.id"),
+        nullable=False,
+    ),
+    Column("snapshot", JSONB, nullable=False),
+    Column("provenance", Text, nullable=False),
+    Column("source_checksum", Text, nullable=False),
+    Column("created_by", PG_UUID(as_uuid=True), nullable=False),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    ),
+    UniqueConstraint(
+        "organization_id",
+        "run_version_id",
+        name="uq_payroll_report_snapshots_org_run_version",
+    ),
+    CheckConstraint(
+        "provenance IN ('posting','workbook_backfill','current_master_backfill')",
+        name="ck_payroll_report_snapshots_provenance",
     ),
 )
 

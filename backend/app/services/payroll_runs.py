@@ -17,10 +17,19 @@ from app.exceptions import ConflictError, NotFoundError, StaleRowError, Validati
 from app.models.base import utcnow
 from app.models.employees import Employee, employee_pay_versions, employee_profile_versions
 from app.models.platform import AuditEvent
-from app.models.payroll_runs import PayrollPeriod, PayrollRun, PayrollRunEmployee, PayrollRunInput
+from app.models.payroll_runs import (
+    PayrollPeriod,
+    PayrollRun,
+    PayrollRunEmployee,
+    PayrollRunInput,
+    payroll_report_snapshots,
+    payroll_run_versions,
+)
+from app.models.reports import ReportConfiguration
 from app.schemas.payroll_runs import (
     PayrollPeriodCreate,
     PayrollRunCreate,
+    PayrollRunReportMetadata,
     PayrollRunRosterUpdate,
     PayrollRunInputUpsert,
     _serialize_money,
@@ -180,9 +189,169 @@ def _run_detail(run: PayrollRun, period: PayrollPeriod) -> dict[str, Any]:
         "current_version": None,
         "lock_version": run.lock_version,
         "roster_initialized": run.roster_initialized,
+        "report_metadata": run.report_metadata,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
     }
+
+
+async def get_run_report_metadata(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+) -> dict[str, Any]:
+    run = await _get_run(db, organization_id=organization_id, run_id=run_id)
+    return PayrollRunReportMetadata.model_validate(run.report_metadata or {}).model_dump(
+        mode="json"
+    )
+
+
+async def update_run_report_metadata(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+    body: PayrollRunReportMetadata,
+) -> dict[str, Any]:
+    run = await _get_run_for_update(db, organization_id=organization_id, run_id=run_id)
+    if run.status not in {"draft", "calculated"}:
+        raise ConflictError(
+            "Payroll run report metadata is immutable after the run is submitted. "
+            "Withdraw it before making changes."
+        )
+    run.report_metadata = body.model_dump(mode="json")
+    run.lock_version += 1
+    run.updated_at = utcnow()
+    await db.commit()
+    return body.model_dump(mode="json")
+
+
+async def get_report_readiness(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+) -> dict[str, Any]:
+    run = await _get_run(db, organization_id=organization_id, run_id=run_id)
+    metadata = PayrollRunReportMetadata.model_validate(run.report_metadata or {})
+    profile: dict[str, Any] = {}
+    if run.current_version_id is not None:
+        version_inputs = (
+            await db.execute(
+                sa.select(payroll_run_versions.c.inputs_snapshot).where(
+                    payroll_run_versions.c.organization_id == organization_id,
+                    payroll_run_versions.c.id == run.current_version_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if isinstance(version_inputs, dict) and isinstance(
+            version_inputs.get("report_profile"), dict
+        ):
+            profile = version_inputs["report_profile"]
+        if run.status in {"posted", "reversed"}:
+            posted_snapshot = (
+                await db.execute(
+                    sa.select(payroll_report_snapshots.c.snapshot).where(
+                        payroll_report_snapshots.c.organization_id == organization_id,
+                        payroll_report_snapshots.c.run_version_id == run.current_version_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if isinstance(posted_snapshot, dict) and isinstance(
+                posted_snapshot.get("report_profile"), dict
+            ):
+                profile = posted_snapshot["report_profile"]
+    if not profile and run.current_version_id is None:
+        profile_row = (
+            await db.execute(
+                sa.select(ReportConfiguration).where(
+                    ReportConfiguration.organization_id == organization_id,
+                    ReportConfiguration.key == "payroll_export_profile",
+                )
+            )
+        ).scalar_one_or_none()
+        profile = (
+            profile_row.value
+            if profile_row is not None and isinstance(profile_row.value, dict)
+            else {}
+        )
+    issues = report_readiness_issues(metadata=metadata, profile=profile)
+    return {"ready": not issues, "issues": issues}
+
+
+def report_readiness_issues(
+    *,
+    metadata: PayrollRunReportMetadata,
+    profile: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Return missing fields that would make final report exports incomplete."""
+    heads = profile.get("head_of_account") or {}
+    issues: list[dict[str, str]] = []
+    for field, code, label in (
+        (metadata.bill_number, "bill_number_missing", "Bill number"),
+        (metadata.bill_date, "bill_date_missing", "Bill date"),
+        (
+            metadata.demand_number or heads.get("demand_number"),
+            "demand_number_missing",
+            "Demand number",
+        ),
+        (metadata.major_head or heads.get("major_head"), "major_head_missing", "Major head"),
+        (metadata.sub_head or heads.get("sub_head"), "sub_head_missing", "Sub head"),
+        (
+            metadata.detailed_head or heads.get("detailed_head"),
+            "detailed_head_missing",
+            "Detailed head",
+        ),
+    ):
+        if field is None or (isinstance(field, str) and not field.strip()):
+            issues.append(
+                {
+                    "report_type": "treasury_face",
+                    "code": code,
+                    "message": f"{label} is required for final Treasury Face export.",
+                }
+            )
+    for field, report_type, code, label in (
+        (profile.get("ddo_code"), "treasury_face", "ddo_code_missing", "DDO code"),
+        (
+            (profile.get("bank_advice_recipient") or {}).get("bank_name"),
+            "bank_rtgs_advice",
+            "advice_bank_missing",
+            "Advice recipient bank",
+        ),
+    ):
+        if not field:
+            issues.append(
+                {
+                    "report_type": report_type,
+                    "code": code,
+                    "message": f"{label} is required for a complete export.",
+                }
+            )
+    signatories = {
+        str(item.get("role")): item
+        for item in (profile.get("signatories") or [])
+        if isinstance(item, dict)
+    }
+    for role, label in (
+        ("maker", "Maker signatory"),
+        ("checker", "Checker signatory"),
+        ("approving_officer", "Approving officer signatory"),
+    ):
+        signatory = signatories.get(role) or {}
+        if (
+            not str(signatory.get("name") or "").strip()
+            or not str(signatory.get("designation") or "").strip()
+        ):
+            issues.append(
+                {
+                    "report_type": "approval_note",
+                    "code": f"{role}_signatory_missing",
+                    "message": f"{label} name and designation are required.",
+                }
+            )
+    return issues
 
 
 def _input_response(row: PayrollRunInput) -> dict[str, Any]:

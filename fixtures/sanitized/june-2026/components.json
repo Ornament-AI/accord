@@ -25,6 +25,11 @@
       "classification": "earning"
     },
     {
+      "code": "CLA",
+      "name": "City Compensatory Allowance",
+      "classification": "earning"
+    },
+    {
       "code": "HRA",
       "name": "House Rent Allowance",
       "classification": "earning"
@@ -32,6 +37,11 @@
     {
       "code": "TRANSPORT",
       "name": "Transport Allowance",
+      "classification": "earning"
+    },
+    {
+      "code": "WASH_ALLOWANCE",
+      "name": "Wash Allowance",
       "classification": "earning"
     },
     {

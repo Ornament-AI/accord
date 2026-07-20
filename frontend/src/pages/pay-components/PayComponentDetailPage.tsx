@@ -175,9 +175,6 @@ export default function PayComponentDetailPage() {
 									<h2 className="text-xl font-semibold tracking-tight">{component.code}</h2>
 									<span className="text-muted-foreground">{component.name}</span>
 									<Badge variant="secondary">{classificationLabel(component.classification)}</Badge>
-									<Badge variant={component.is_active ? "default" : "outline"}>
-										{component.is_active ? "Active" : "Inactive"}
-									</Badge>
 								</div>
 							</PageSection>
 

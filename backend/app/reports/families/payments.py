@@ -7,8 +7,7 @@ Bank advice rows include **full** bank account numbers and IFSC codes. Artifact
 access control (ADR 0010 downloads / audit) is the protection layer — this
 report intentionally does not mask payment credentials.
 
-Payslip Excel export is intentionally skipped; use JSON preview or PDF
-(one page per employee via the generic tabular renderer).
+Payslip Excel uses one worksheet per employee; PDF uses one page per employee.
 """
 
 from __future__ import annotations
@@ -50,6 +49,7 @@ from app.reports.base import (
 )
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.pdf import to_pdf as base_to_pdf
+from app.reports.snapshots import load_report_snapshot
 from app.schemas.employees import mask_value
 
 # Report type strings for orchestrator registration.
@@ -67,11 +67,7 @@ DEFAULT_CONTENT_TYPES: dict[str, str] = {
     "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pdf": "application/pdf",
 }
-# Payslips Excel is intentionally unimplemented; advertise only formats that work.
-PAYSLIP_CONTENT_TYPES: dict[str, str] = {
-    "json": "application/json",
-    "pdf": "application/pdf",
-}
+PAYSLIP_CONTENT_TYPES = DEFAULT_CONTENT_TYPES
 BANK_ADVICE_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
 PAYSLIPS_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
 
@@ -363,23 +359,44 @@ class BankAdviceBuilder:
         # not on treasury-face net payable.
         paid = [item for item in packed if _money(item["result"]["disbursement"]) > _ZERO]
 
-        employee_ids = [item["result"]["employee_id"] for item in paid]
-        number_by_id = {
-            item["result"]["employee_id"]: str(item["result"]["employee_number"]) for item in paid
-        }
-
-        try:
-            accounts = await _resolve_primary_salary_accounts(
+        snapshot = None
+        identities: dict[str, Any] = {}
+        if ctx.template_version == "v2":
+            snapshot = await load_report_snapshot(
                 session,
                 organization_id=ctx.organization_id,
-                employee_ids=employee_ids,
-                as_of=as_of,
+                run_version_id=version["id"],
             )
-        except _PrimaryAccountLookupError as exc:
-            raise MissingPrimarySalaryAccountError(
-                [number_by_id[eid] for eid in exc.employee_ids if eid in number_by_id]
-                or [str(eid) for eid in exc.employee_ids]
-            ) from exc
+            identities = snapshot.get("employee_identity") or {}
+            missing = [
+                str(item["result"]["employee_number"])
+                for item in paid
+                if not (identities.get(str(item["result"]["employee_id"])) or {}).get(
+                    "bank_account_number"
+                )
+                or not (identities.get(str(item["result"]["employee_id"])) or {}).get("bank_ifsc")
+            ]
+            if missing:
+                raise MissingPrimarySalaryAccountError(missing)
+            accounts = {}
+        else:
+            employee_ids = [item["result"]["employee_id"] for item in paid]
+            number_by_id = {
+                item["result"]["employee_id"]: str(item["result"]["employee_number"])
+                for item in paid
+            }
+            try:
+                accounts = await _resolve_primary_salary_accounts(
+                    session,
+                    organization_id=ctx.organization_id,
+                    employee_ids=employee_ids,
+                    as_of=as_of,
+                )
+            except _PrimaryAccountLookupError as exc:
+                raise MissingPrimarySalaryAccountError(
+                    [number_by_id[eid] for eid in exc.employee_ids if eid in number_by_id]
+                    or [str(eid) for eid in exc.employee_ids]
+                ) from exc
 
         columns = _bank_advice_columns()
         rows: list[tuple[Any, ...]] = []
@@ -388,22 +405,30 @@ class BankAdviceBuilder:
         for item in paid:
             result = item["result"]
             employee_id = result["employee_id"]
-            profile = await _resolve_profile(
-                session,
-                organization_id=ctx.organization_id,
-                employee_id=employee_id,
-                as_of=as_of,
-            )
-            name = str(profile["name"]) if profile is not None else ""
-            account = accounts[employee_id]
+            if snapshot is not None:
+                identity = identities[str(employee_id)]
+                name = str(identity.get("name") or "")
+                account_number = str(identity["bank_account_number"])
+                ifsc = str(identity["bank_ifsc"])
+            else:
+                profile = await _resolve_profile(
+                    session,
+                    organization_id=ctx.organization_id,
+                    employee_id=employee_id,
+                    as_of=as_of,
+                )
+                name = str(profile["name"]) if profile is not None else ""
+                account = accounts[employee_id]
+                account_number = str(account["account_number"])
+                ifsc = str(account["ifsc"])
             credit = _money(result["disbursement"])
             advice_total += credit
             rows.append(
                 (
                     str(result["employee_number"]),
                     name,
-                    str(account["account_number"]),
-                    str(account["ifsc"]),
+                    account_number,
+                    ifsc,
                     credit,
                 )
             )
@@ -428,21 +453,56 @@ class BankAdviceBuilder:
             advice_total,
         )
 
+        sections: list[TableSection] = []
+        if snapshot is not None:
+            recipient = (snapshot.get("report_profile") or {}).get("bank_advice_recipient") or {}
+            sections.append(
+                TableSection(
+                    title="Advice recipient",
+                    columns=(ReportColumn("field", "Field"), ReportColumn("value", "Value")),
+                    rows=(
+                        ("Bank", str(recipient.get("bank_name") or "")),
+                        ("Branch", str(recipient.get("branch") or "")),
+                        ("Address", ", ".join(recipient.get("address_lines") or [])),
+                    ),
+                )
+            )
+        sections.append(
+            TableSection(
+                title="Payment credits",
+                columns=columns,
+                rows=tuple(rows),
+                totals=totals,
+            )
+        )
         return ReportDTO(
             report_type=REPORT_TYPE_BANK_ADVICE,
             template_version=ctx.template_version,
             title="Bank / RTGS Advice",
-            organization_name=org.name,
-            subtitle=_period_label(period.period_year, period.period_month),
-            sections=(
-                TableSection(
-                    title="Payment credits",
-                    columns=columns,
-                    rows=tuple(rows),
-                    totals=totals,
-                ),
+            organization_name=(
+                str((snapshot.get("organization") or {}).get("name") or org.name)
+                if snapshot is not None
+                else org.name
             ),
+            subtitle=_period_label(period.period_year, period.period_month),
+            sections=tuple(sections),
         )
+
+
+def _line_display_classification(line: Any) -> str:
+    """Trace-aware classification for display.
+
+    Informational lines are stored under the legacy ``earning`` DB bucket
+    (see ``run_calculation._to_db_classification``); the immutable trace keeps
+    the true ``informational`` classification, which is what a payslip must
+    show. ``AG_deduction`` (trace) normalizes to the DB ``ag_deduction`` form.
+    """
+    trace = line["trace"] or {}
+    code = str(line["component_code"])
+    if code == "FOREGONE_HRA" or trace.get("classification") == "informational":
+        return "informational"
+    value = str(trace.get("classification") or line["classification"])
+    return "ag_deduction" if value == "AG_deduction" else value
 
 
 def _line_kind_for_payslip(line: Any) -> str:
@@ -450,7 +510,7 @@ def _line_kind_for_payslip(line: Any) -> str:
     trace = line["trace"] or {}
     if code == "FOREGONE_HRA" or trace.get("classification") == "informational":
         return "informational"
-    classification = str(line["classification"])
+    classification = _line_display_classification(line)
     if classification == "earning":
         return "earning"
     if classification == "employer_contribution":
@@ -474,27 +534,44 @@ class PayslipBundleBuilder:
 
         columns = _payslip_columns()
         sections: list[TableSection] = []
+        snapshot = None
+        identities: dict[str, Any] = {}
+        if ctx.template_version == "v2":
+            snapshot = await load_report_snapshot(
+                session,
+                organization_id=ctx.organization_id,
+                run_version_id=version["id"],
+            )
+            identities = snapshot.get("employee_identity") or {}
 
         for item in packed:
             result = item["result"]
             employee_id = result["employee_id"]
             employee_number = str(result["employee_number"])
-            profile = await _resolve_profile(
-                session,
-                organization_id=ctx.organization_id,
-                employee_id=employee_id,
-                as_of=as_of,
-            )
-            name = str(profile["name"]) if profile is not None else ""
-            tax_regime = str(profile["retirement_regime"]) if profile is not None else ""
-            pan_masked = mask_value(profile["pan"] if profile is not None else None)
-            pran_masked = mask_value(profile["pran"] if profile is not None else None)
-            designation = await _resolve_designation(
-                session,
-                organization_id=ctx.organization_id,
-                employee_id=employee_id,
-                as_of=as_of,
-            )
+            if snapshot is not None:
+                identity = identities.get(str(employee_id)) or {}
+                name = str(identity.get("name") or "")
+                tax_regime = str(identity.get("retirement_regime") or "")
+                pan_masked = mask_value(identity.get("pan"))
+                pran_masked = mask_value(identity.get("pran"))
+                designation = str(identity.get("designation") or "")
+            else:
+                profile = await _resolve_profile(
+                    session,
+                    organization_id=ctx.organization_id,
+                    employee_id=employee_id,
+                    as_of=as_of,
+                )
+                name = str(profile["name"]) if profile is not None else ""
+                tax_regime = str(profile["retirement_regime"]) if profile is not None else ""
+                pan_masked = mask_value(profile["pan"] if profile is not None else None)
+                pran_masked = mask_value(profile["pran"] if profile is not None else None)
+                designation = await _resolve_designation(
+                    session,
+                    organization_id=ctx.organization_id,
+                    employee_id=employee_id,
+                    as_of=as_of,
+                )
             # Payslip take-home is the disbursement (what reaches the bank
             # account), not the treasury-face net payable.
             net = _money(result["net_payable"])
@@ -515,7 +592,7 @@ class PayslipBundleBuilder:
                     (
                         kind,
                         str(line["component_code"]),
-                        str(line["classification"]),
+                        _line_display_classification(line),
                         _money(line["amount"]),
                     )
                 )
@@ -545,7 +622,11 @@ class PayslipBundleBuilder:
             report_type=REPORT_TYPE_PAYSLIPS,
             template_version=ctx.template_version,
             title="Payslips",
-            organization_name=org.name,
+            organization_name=(
+                str((snapshot.get("organization") or {}).get("name") or org.name)
+                if snapshot is not None
+                else org.name
+            ),
             subtitle=_period_label(period.period_year, period.period_month),
             sections=tuple(sections),
         )
@@ -574,11 +655,8 @@ def payslip_to_json(dto: ReportDTO) -> dict[str, Any]:
 
 
 def payslip_to_excel(dto: ReportDTO) -> bytes:
-    # Excel for payslips is intentionally skipped — multi-page payslip bundles
-    # are delivered as PDF (one page per employee) or JSON preview.
-    raise NotImplementedError(
-        "Excel export for payslips is intentionally skipped; use PDF or JSON preview."
-    )
+    """One worksheet per employee, matching the PDF bundle section boundary."""
+    return base_to_excel(dto)
 
 
 def payslip_to_pdf(dto: ReportDTO) -> bytes:

@@ -38,6 +38,7 @@ from app.reports.base import (
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.formatting import format_inr
 from app.reports.pdf import to_pdf as base_to_pdf
+from app.reports.snapshots import load_report_snapshot
 from app.services.run_workflow import URN_MAKER_CHECKER
 
 # Report type string for orchestrator / registry registration.
@@ -246,7 +247,42 @@ class ApprovalNoteBuilder:
             organization_id=ctx.organization_id,
             run_id=run.id,
         )
-        signatories = await _load_signatories(session, organization_id=ctx.organization_id)
+        snapshot = None
+        header_sections: tuple[TableSection, ...] = ()
+        organization_name = org.name
+        if ctx.template_version == "v2":
+            snapshot = await load_report_snapshot(
+                session,
+                organization_id=ctx.organization_id,
+                run_version_id=version["id"],
+            )
+            profile = snapshot.get("report_profile") or {}
+            metadata = snapshot.get("run_metadata") or {}
+            signatories = tuple(
+                (
+                    str(item.get("role") or "signatory"),
+                    str(item.get("name") or ""),
+                    str(item.get("designation") or item.get("role") or ""),
+                )
+                for item in profile.get("signatories", [])
+                if isinstance(item, dict)
+            )
+            header_sections = (
+                TableSection(
+                    title="Bill reference",
+                    columns=(ReportColumn("field", "Field"), ReportColumn("value", "Value")),
+                    rows=(
+                        ("Approval note No.", str(metadata.get("approval_note_number") or "")),
+                        ("Approval note date", str(metadata.get("approval_note_date") or "")),
+                        ("Bill No.", str(metadata.get("bill_number") or "")),
+                        ("Bill date", str(metadata.get("bill_date") or "")),
+                        ("DDO code", str(profile.get("ddo_code") or "")),
+                    ),
+                ),
+            )
+            organization_name = str((snapshot.get("organization") or {}).get("name") or org.name)
+        else:
+            signatories = await _load_signatories(session, organization_id=ctx.organization_id)
 
         # Words are a pure function of the numeric DTO amounts (never stored).
         gross_words = amount_in_words(gross)
@@ -268,9 +304,10 @@ class ApprovalNoteBuilder:
             report_type=REPORT_TYPE_APPROVAL_NOTE,
             template_version=ctx.template_version,
             title="Office Approval Note",
-            organization_name=org.name,
+            organization_name=organization_name,
             subtitle=period_label,
-            sections=(
+            sections=header_sections
+            + (
                 TableSection(
                     title="Run identity",
                     columns=(

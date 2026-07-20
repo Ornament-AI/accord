@@ -10,11 +10,17 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import Range
 
 from app.exceptions import ConflictError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
-from app.models.employees import Employee, employee_pay_versions, employee_profile_versions
+from app.models.employees import (
+    Employee,
+    employee_bank_account_versions,
+    employee_pay_versions,
+    employee_profile_versions,
+)
 from app.models.pay_components import PayComponent, component_rate_versions
 from app.models.payroll_runs import (
     PayrollPeriod,
@@ -344,6 +350,61 @@ async def test_calculate_persists_version_results_and_totals(session):
     assert run.status == "calculated"
     assert run.current_version_id == result["version_id"]
     assert run.lock_version == 1
+
+
+@pytest.mark.asyncio
+async def test_calculate_snapshots_only_primary_salary_bank_account(session):
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    await session.execute(
+        sa.insert(employee_bank_account_versions),
+        [
+            {
+                "organization_id": world["org_id"],
+                "header_id": world["employee_id"],
+                "validity": Range(date(2026, 1, 1), None, bounds="[)"),
+                "account_number": "PRIMARY-001",
+                "ifsc": "PRIMARY0001",
+                "bank_name": "Primary Bank",
+                "branch": "Payroll",
+                "is_primary_salary": True,
+                "created_by": world["user_id"],
+            },
+            {
+                "organization_id": world["org_id"],
+                "header_id": world["employee_id"],
+                "validity": Range(date(2026, 1, 1), None, bounds="[)"),
+                "account_number": "SECONDARY-002",
+                "ifsc": "SECOND0002",
+                "bank_name": "Secondary Bank",
+                "branch": "Savings",
+                "is_primary_salary": False,
+                "created_by": world["user_id"],
+            },
+        ],
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    inputs_snapshot = (
+        await session.execute(
+            sa.select(payroll_run_versions.c.inputs_snapshot).where(
+                payroll_run_versions.c.id == result["version_id"]
+            )
+        )
+    ).scalar_one()
+    identity = inputs_snapshot["employee_identity"][str(world["employee_id"])]
+    assert identity["bank_account_number"] == "PRIMARY-001"
+    assert identity["bank_ifsc"] == "PRIMARY0001"
+    assert identity["bank_name"] == "Primary Bank"
 
 
 @pytest.mark.asyncio

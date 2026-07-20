@@ -178,6 +178,67 @@ async def test_run_create_duplicate_409_and_legacy_type_rejected(client, session
     assert unknown.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_run_report_metadata_round_trip_and_readiness(client, session):
+    await _admin_context(client, session)
+    period = await _create_period(client)
+    run = await _create_run(client, period_id=period["id"])
+
+    initial = await client.get(f"/api/payroll-runs/{run['id']}/report-metadata")
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["bill_number"] is None
+
+    saved = await client.put(
+        f"/api/payroll-runs/{run['id']}/report-metadata",
+        json={
+            "bill_number": "PB-2026-06",
+            "bill_date": "2026-06-30",
+            "demand_number": "17",
+            "major_head": "2052",
+            "sub_head": "090",
+            "detailed_head": "01",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["bill_number"] == "PB-2026-06"
+
+    readiness = await client.get(f"/api/payroll-runs/{run['id']}/report-readiness")
+    assert readiness.status_code == 200, readiness.text
+    assert readiness.json()["ready"] is False
+    assert {issue["code"] for issue in readiness.json()["issues"]} == {
+        "ddo_code_missing",
+        "advice_bank_missing",
+        "maker_signatory_missing",
+        "checker_signatory_missing",
+        "approving_officer_signatory_missing",
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_report_metadata_is_locked_after_submission(client, session):
+    ctx = await _admin_context(client, session)
+    period = await _create_period(client)
+    run = await _create_run(client, period_id=period["id"])
+
+    if session.in_transaction():
+        await session.rollback()
+    async with session.begin():
+        await bind_tenant_context(
+            session,
+            organization_id=ctx["org_id"],
+            user_id=ctx["user_id"],
+        )
+        await session.execute(
+            update(PayrollRun).where(PayrollRun.id == UUID(run["id"])).values(status="submitted")
+        )
+
+    response = await client.put(
+        f"/api/payroll-runs/{run['id']}/report-metadata",
+        json={"bill_number": "CHANGED"},
+    )
+    assert response.status_code == 409
+
+
 # --- Inputs -------------------------------------------------------------------
 
 

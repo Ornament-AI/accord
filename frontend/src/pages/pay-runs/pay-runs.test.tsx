@@ -217,6 +217,37 @@ describe("Pay run detail — calculate gating", () => {
 	});
 
 	it(
+		"renders an empty-state placeholder when the run has no employees",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				details: {
+					"run-1": buildRunDetail({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "draft",
+					}),
+				},
+				rosters: { "run-1": [] },
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+
+			const roster = await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT });
+			expect(within(roster).getByText("No Employees Found")).toBeInTheDocument();
+			expect(
+				within(roster).getByText("No Employees Found").closest('[data-slot="empty"]'),
+			).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
 		"selects employees and saves monthly payroll values from the table",
 		async () => {
 			const onReplaceRoster = vi.fn();
@@ -253,6 +284,13 @@ describe("Pay run detail — calculate gating", () => {
 			expect(
 				await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
+			const billDate = screen.getByRole("button", { name: "Bill date (required)" });
+			expect(billDate).toHaveAttribute("data-slot", "date-picker-trigger");
+			expect(screen.getByLabelText(/Bill No\./)).toBeRequired();
+			expect(screen.getByLabelText("Payment date")).not.toHaveAttribute("aria-required");
+			expect(screen.getAllByText("*")).toHaveLength(6);
+			expect(screen.queryByText("Some exports are incomplete")).not.toBeInTheDocument();
+			expect(document.querySelector('input[type="date"]')).not.toBeInTheDocument();
 			expect(screen.queryByPlaceholderText("Master")).not.toBeInTheDocument();
 			expect(screen.getByRole("columnheader", { name: "Regime" })).toHaveClass("text-center");
 			expect(screen.getByRole("columnheader", { name: "Paid Days" })).toHaveClass("text-center");

@@ -62,7 +62,8 @@ from app.services.artifacts import create_artifact
 from app.services.audit_events import write_access_event
 from app.storage.protocol import ObjectStorage
 
-DEFAULT_TEMPLATE_VERSION = "v1"
+DEFAULT_TEMPLATE_VERSION = "v2"
+SUPPORTED_TEMPLATE_VERSIONS = frozenset({"v2"})
 DEFAULT_ENGINE_VERSION = "0.1.0"
 
 SUPPORTED_FORMATS = frozenset({"excel", "pdf", "json"})
@@ -184,9 +185,17 @@ async def _require_posted_run(
 
 
 def _resolve_template_version(template_version: str | None) -> str:
-    if template_version is None or not template_version.strip():
-        return DEFAULT_TEMPLATE_VERSION
-    return template_version
+    resolved = (
+        DEFAULT_TEMPLATE_VERSION
+        if template_version is None or not template_version.strip()
+        else template_version.strip()
+    )
+    if resolved not in SUPPORTED_TEMPLATE_VERSIONS:
+        raise ValidationError(
+            f"Template version {resolved!r} is not available for generation. "
+            "Existing finalized artifacts remain downloadable."
+        )
+    return resolved
 
 
 def _dedupe_key(
@@ -195,8 +204,10 @@ def _dedupe_key(
     posted_run_id: UUID,
     format: str,
     template_version: str,
+    variant_key: str | None = None,
 ) -> str:
-    return f"{report_type}:{posted_run_id}:{format}:{template_version}"
+    variant = "" if variant_key is None else f":{variant_key}"
+    return f"{report_type}{variant}:{posted_run_id}:{format}:{template_version}"
 
 
 def _period_label(year: int, month: int) -> str:
@@ -231,6 +242,7 @@ async def request_report(
     requested_by: UUID,
     registry: ReportRegistry,
     template_version: str | None = None,
+    variant_key: str | None = None,
 ) -> Job:
     """Validate and enqueue a ``generate_report`` job (in-flight dedupe)."""
     if report_type not in registry:
@@ -254,6 +266,7 @@ async def request_report(
         "posted_run_id": str(posted_run_id),
         "format": format,
         "template_version": resolved_version,
+        "variant_key": variant_key,
         "requested_by": str(requested_by),
     }
     return await queue.enqueue(
@@ -265,6 +278,7 @@ async def request_report(
             posted_run_id=posted_run_id,
             format=format,
             template_version=resolved_version,
+            variant_key=variant_key,
         ),
         created_by=requested_by,
     )
@@ -281,7 +295,6 @@ async def request_consolidated_export(
     template_version: str | None = None,
 ) -> Job:
     """Validate and enqueue a consolidated ZIP-of-xlsx export job."""
-    resolved_version = _resolve_template_version(template_version)
     missing = [rt for rt in PRODUCT_REPORT_SHEETS if rt not in registry]
     if missing:
         raise ReportTypeNotFoundError(f"Product report sheets missing from registry: {missing!r}.")
@@ -297,6 +310,7 @@ async def request_consolidated_export(
         organization_id=organization_id,
         posted_run_id=posted_run_id,
     )
+    resolved_version = _resolve_template_version(template_version)
 
     manifest = product_sheet_manifest(template_version=resolved_version)
     m_hash = manifest_hash(manifest)
@@ -325,6 +339,7 @@ async def preview_report(
     actor_user_id: UUID | None = None,
     template_version: str | None = None,
     engine_version: str = DEFAULT_ENGINE_VERSION,
+    variant_key: str | None = None,
 ) -> dict[str, Any]:
     """Synchronously build a report and return its ``to_json`` payload.
 
@@ -352,6 +367,7 @@ async def preview_report(
         template_version=resolved_version,
         generated_at=datetime.now(timezone.utc),
         engine_version=engine_version,
+        variant_key=variant_key,
     )
     dto = await registration.builder.build(session, ctx)
     payload = registration.formatters.to_json(dto)
@@ -368,11 +384,13 @@ async def preview_report(
             "report_type": report_type,
             "posted_run_id": str(posted_run_id),
             "template_version": resolved_version,
+            "variant_key": variant_key,
         },
         metadata={"accessed_at": ctx.generated_at.isoformat()},
         summary={
             "report_type": report_type,
             "template_version": resolved_version,
+            "variant_key": variant_key,
         },
     )
     await session.commit()
@@ -388,6 +406,7 @@ async def _find_reusable_artifact(
     posted_run_id: UUID,
     template_version: str,
     content_type: str,
+    variant_key: str | None = None,
 ) -> ExportArtifact | None:
     stmt = sa.select(ExportArtifact).where(
         ExportArtifact.organization_id == organization_id,
@@ -397,6 +416,10 @@ async def _find_reusable_artifact(
         ExportArtifact.content_type == content_type,
         ExportArtifact.status == "finalized",
     )
+    if variant_key is None:
+        stmt = stmt.where(ExportArtifact.variant_key.is_(None))
+    else:
+        stmt = stmt.where(ExportArtifact.variant_key == variant_key)
     return (await session.execute(stmt)).scalars().first()
 
 
@@ -437,8 +460,8 @@ async def execute_generate_report(
     report_type = str(payload["report_type"])
     posted_run_id = UUID(str(payload["posted_run_id"]))
     format_name = str(payload["format"])
-    template_version = str(payload.get("template_version") or DEFAULT_TEMPLATE_VERSION)
     requested_by = UUID(str(payload["requested_by"]))
+    variant_key = None if payload.get("variant_key") is None else str(payload["variant_key"])
     organization_id = job.organization_id
 
     if report_type not in registry:
@@ -450,6 +473,15 @@ async def execute_generate_report(
         )
     content_type = registration.formatters.content_types[format_name]
 
+    await _require_posted_run(
+        session,
+        organization_id=organization_id,
+        posted_run_id=posted_run_id,
+    )
+    template_version = _resolve_template_version(
+        None if payload.get("template_version") is None else str(payload["template_version"])
+    )
+
     existing = await _find_reusable_artifact(
         session,
         organization_id=organization_id,
@@ -457,15 +489,10 @@ async def execute_generate_report(
         posted_run_id=posted_run_id,
         template_version=template_version,
         content_type=content_type,
+        variant_key=variant_key,
     )
     if existing is not None:
         return {"artifact_id": str(existing.id), "reused": True}
-
-    await _require_posted_run(
-        session,
-        organization_id=organization_id,
-        posted_run_id=posted_run_id,
-    )
 
     ctx = ReportContext(
         organization_id=organization_id,
@@ -473,6 +500,7 @@ async def execute_generate_report(
         template_version=template_version,
         generated_at=datetime.now(timezone.utc),
         engine_version=engine_version,
+        variant_key=variant_key,
     )
     dto = await registration.builder.build(session, ctx)
     content, content_type = _render_content(registration, dto, format=format_name)
@@ -488,6 +516,7 @@ async def execute_generate_report(
         requested_by=requested_by,
         posted_run_id=posted_run_id,
         engine_version=engine_version,
+        variant_key=variant_key,
     )
     return {"artifact_id": str(artifact.id)}
 
@@ -508,9 +537,17 @@ async def execute_consolidated_xlsx(
     """
     payload = job.payload
     posted_run_id = UUID(str(payload["posted_run_id"]))
-    base_template_version = str(payload.get("template_version") or DEFAULT_TEMPLATE_VERSION)
     requested_by = UUID(str(payload["requested_by"]))
     organization_id = job.organization_id
+
+    run = await _require_posted_run(
+        session,
+        organization_id=organization_id,
+        posted_run_id=posted_run_id,
+    )
+    base_template_version = _resolve_template_version(
+        None if payload.get("template_version") is None else str(payload["template_version"])
+    )
 
     manifest = product_sheet_manifest(template_version=base_template_version)
     m_hash = str(payload.get("manifest_hash") or manifest_hash(manifest))
@@ -523,11 +560,6 @@ async def execute_consolidated_xlsx(
         posted_run_id=posted_run_id,
         template_version=pack_template_version,
         content_type=ZIP_CONTENT_TYPE,
-    )
-    run = await _require_posted_run(
-        session,
-        organization_id=organization_id,
-        posted_run_id=posted_run_id,
     )
     period = await _period_for_run(session, run)
     period_label = _period_label(period.period_year, period.period_month)
@@ -641,6 +673,7 @@ __all__ = [
     "JOB_TYPE_GENERATE_REPORT",
     "REPORT_TYPE_CONSOLIDATED_XLSX",
     "SUPPORTED_FORMATS",
+    "SUPPORTED_TEMPLATE_VERSIONS",
     "ZIP_CONTENT_TYPE",
     "PostedRunNotFoundError",
     "RegisteredReportInfo",

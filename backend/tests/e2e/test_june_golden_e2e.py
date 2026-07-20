@@ -16,9 +16,7 @@ Seeding mapping (fixture line type → API / resolution source)
 | FOREGONE_HRA                   | Same accommodation charge                              |
 |                                |   ``informational_hra_foregone`` (resolver emits       |
 |                                |   informational / excluded_from_totals line)           |
-| Catalog FOREGONE_HRA row       | **Not creatable** via POST /api/pay-components —       |
-|                                |   classification ``informational`` is absent from the  |
-|                                |   PayComponentCreate enum (product gap; documented)    |
+| Catalog FOREGONE_HRA row       | Standard informational component created at bootstrap   |
 
 Org-wide component_rate_versions alone are out of scope for resolution; every
 non-BASIC amount is seeded per-employee as above.
@@ -177,31 +175,32 @@ async def _create_org_structure(
 
 
 async def _create_components(client: AsyncClient, fixture: JuneFixture) -> dict[str, UUID]:
-    """Create catalog rows the API accepts; skip informational FOREGONE_HRA."""
+    """Reuse standard catalog rows and create fixture-specific rows when needed."""
+    listed = await client.get("/api/pay-components")
+    assert listed.status_code == 200, listed.text
+    existing = {item["code"]: item for item in listed.json()}
     component_ids: dict[str, UUID] = {}
     display_order = 0
     for comp in fixture.components:
         display_order += 1
-        if comp.api_classification is None:
-            # Product gap: informational FOREGONE_HRA cannot be catalogued via API.
-            # Resolver still emits FOREGONE_HRA from accommodation charge versions.
-            assert comp.code == "FOREGONE_HRA"
-            continue
-        resp = await client.post(
-            "/api/pay-components",
-            json={
-                "code": comp.code,
-                "name": comp.name,
-                "classification": comp.api_classification,
-                "display_order": display_order,
-                "employer_transfer": comp.employer_transfer,
-                "transfer_of": comp.transfer_of,
-            },
-        )
-        assert resp.status_code == 201, (
-            f"create component {comp.code}: {resp.status_code} {resp.text}"
-        )
-        component_id = UUID(resp.json()["id"])
+        row = existing.get(comp.code)
+        if row is None:
+            resp = await client.post(
+                "/api/pay-components",
+                json={
+                    "code": comp.code,
+                    "name": comp.name,
+                    "classification": comp.api_classification,
+                    "display_order": display_order,
+                    "employer_transfer": comp.employer_transfer,
+                    "transfer_of": comp.transfer_of,
+                },
+            )
+            assert resp.status_code == 201, (
+                f"create component {comp.code}: {resp.status_code} {resp.text}"
+            )
+            row = resp.json()
+        component_id = UUID(row["id"])
         component_ids[comp.code] = component_id
 
         # Rate versions required for recurring-instruction resolution.
@@ -219,8 +218,9 @@ async def _create_components(client: AsyncClient, fixture: JuneFixture) -> dict[
                 f"rate version {comp.code}: {rate.status_code} {rate.text}"
             )
 
-    assert len(component_ids) == 16, (
-        f"expected 16 API-creatable components, got {len(component_ids)}: {sorted(component_ids)}"
+    assert len(component_ids) == len(fixture.components), (
+        f"expected {len(fixture.components)} components, got "
+        f"{len(component_ids)}: {sorted(component_ids)}"
     )
     return component_ids
 

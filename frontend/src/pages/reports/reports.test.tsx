@@ -86,7 +86,7 @@ describe("Reports page", () => {
 		for (const sheet of PRODUCT_REPORT_SHEETS) {
 			expect(productTypes.has(sheet.reportType)).toBe(true);
 		}
-		expect(PRODUCT_REPORT_SHEETS).toHaveLength(13);
+		expect(PRODUCT_REPORT_SHEETS).toHaveLength(18);
 	});
 
 	it("nav children match product sheet slugs", () => {

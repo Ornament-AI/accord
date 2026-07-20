@@ -36,6 +36,7 @@ class ReportContext:
     template_version: str
     generated_at: datetime
     engine_version: str
+    variant_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +46,22 @@ class ReportColumn:
     key: str
     header: str
     kind: ColumnKind = ColumnKind.TEXT
+
+
+class FormulaScope(StrEnum):
+    ROWS = "rows"
+    TOTALS = "totals"
+    COLUMN_TOTAL = "column_total"
+
+
+@dataclass(frozen=True, slots=True)
+class FormulaSpec:
+    """Trusted formula relationship compiled by the Excel formatter."""
+
+    target_key: str
+    scope: FormulaScope
+    add_keys: tuple[str, ...] = ()
+    subtract_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +76,7 @@ class TableSection:
     columns: tuple[ReportColumn, ...]
     rows: tuple[tuple[CellValue, ...], ...]
     totals: tuple[CellValue, ...] | None = None
+    formulas: tuple[FormulaSpec, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

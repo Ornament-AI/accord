@@ -361,6 +361,7 @@ class ExportArtifact(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin
         ),
     )
     report_type: str = Field(sa_column=Column(Text, nullable=False))
+    variant_key: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     template_version: str = Field(sa_column=Column(Text, nullable=False))
     engine_version: Optional[str] = Field(
         default=None,

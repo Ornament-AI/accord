@@ -645,6 +645,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll-runs/{run_id}/report-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Payroll Run Report Metadata */
+        get: operations["get_payroll_run_report_metadata_api_payroll_runs__run_id__report_metadata_get"];
+        /** Update Payroll Run Report Metadata */
+        put: operations["update_payroll_run_report_metadata_api_payroll_runs__run_id__report_metadata_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payroll-runs/{run_id}/report-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Payroll Run Report Readiness */
+        get: operations["get_payroll_run_report_readiness_api_payroll_runs__run_id__report_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll-runs/{run_id}/results": {
         parameters: {
             query?: never;
@@ -879,6 +914,24 @@ export interface paths {
         get?: never;
         /** Upsert Report Configuration */
         put: operations["upsert_report_configuration_api_report_configurations__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Payroll Export Profile */
+        get: operations["get_payroll_export_profile_api_report_profile_get"];
+        /** Upsert Payroll Export Profile */
+        put: operations["upsert_payroll_export_profile_api_report_profile_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1257,6 +1310,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Variant Key */
+            variant_key?: string | null;
         };
         /** AuditActor */
         AuditActor: {
@@ -1361,6 +1416,15 @@ export interface components {
             /** Entity Types */
             entity_types: string[];
         };
+        /** BankAdviceRecipient */
+        BankAdviceRecipient: {
+            /** Address Lines */
+            address_lines?: string[];
+            /** Bank Name */
+            bank_name?: string | null;
+            /** Branch */
+            branch?: string | null;
+        };
         /** BankInput */
         BankInput: {
             /** Account Number */
@@ -1449,7 +1513,7 @@ export interface components {
          * Classification
          * @enum {string}
          */
-        Classification: "earning" | "employer_contribution" | "ag_deduction" | "treasury_deduction" | "gross_adjustment" | "external_recovery";
+        Classification: "earning" | "employer_contribution" | "ag_deduction" | "treasury_deduction" | "gross_adjustment" | "external_recovery" | "informational";
         /** ComponentRateVersionCreate */
         ComponentRateVersionCreate: {
             /** Amount */
@@ -1681,6 +1745,8 @@ export interface components {
             report_type: string;
             /** Template Version */
             template_version?: string | null;
+            /** Variant Key */
+            variant_key?: string | null;
         };
         /** GenerateReportResponse */
         GenerateReportResponse: {
@@ -1701,6 +1767,17 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HeadOfAccount */
+        HeadOfAccount: {
+            /** Demand Number */
+            demand_number?: string | null;
+            /** Detailed Head */
+            detailed_head?: string | null;
+            /** Major Head */
+            major_head?: string | null;
+            /** Sub Head */
+            sub_head?: string | null;
         };
         /**
          * InputKind
@@ -1802,6 +1879,11 @@ export interface components {
             employer_transfer: boolean;
             /** Name */
             name: string;
+            /** Schedule Account Head */
+            schedule_account_head?: string | null;
+            schedule_kind?: components["schemas"]["ScheduleKind"] | null;
+            /** Schedule Title */
+            schedule_title?: string | null;
             /** Transfer Of */
             transfer_of?: string | null;
         };
@@ -1827,8 +1909,16 @@ export interface components {
             id: string;
             /** Is Active */
             is_active: boolean;
+            /** Is Standard */
+            is_standard: boolean;
             /** Name */
             name: string;
+            /** Schedule Account Head */
+            schedule_account_head: string | null;
+            /** Schedule Kind */
+            schedule_kind: string | null;
+            /** Schedule Title */
+            schedule_title: string | null;
             /** Transfer Of */
             transfer_of: string | null;
             /**
@@ -1874,6 +1964,41 @@ export interface components {
             id: string;
             /** Pay Matrix Level */
             pay_matrix_level: string | null;
+        };
+        /** PayrollExportProfile */
+        PayrollExportProfile: {
+            /** Address Lines */
+            address_lines?: string[];
+            bank_advice_recipient?: components["schemas"]["BankAdviceRecipient"];
+            /** Cin */
+            cin?: string | null;
+            /** Ddo Code */
+            ddo_code?: string | null;
+            /** Ddo Name */
+            ddo_name?: string | null;
+            /** Department Code */
+            department_code?: string | null;
+            head_of_account?: components["schemas"]["HeadOfAccount"];
+            /** Legal Name */
+            legal_name?: string | null;
+            /** Office Name */
+            office_name?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Salary Reference Prefix */
+            salary_reference_prefix?: string | null;
+            /** Signatories */
+            signatories?: components["schemas"]["ReportSignatory"][];
+            /** Treasury Code */
+            treasury_code?: string | null;
+            /** Website */
+            website?: string | null;
+        };
+        /** PayrollExportProfileResponse */
+        PayrollExportProfileResponse: {
+            /** Updated At */
+            updated_at?: string | null;
+            value: components["schemas"]["PayrollExportProfile"];
         };
         /** PayrollPeriodCreate */
         PayrollPeriodCreate: {
@@ -1940,6 +2065,7 @@ export interface components {
             period_status: string;
             /** Period Year */
             period_year: number;
+            report_metadata?: components["schemas"]["PayrollRunReportMetadata"];
             /**
              * Roster Initialized
              * @default false
@@ -2105,6 +2231,31 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** PayrollRunReportMetadata */
+        PayrollRunReportMetadata: {
+            /** Approval Note Date */
+            approval_note_date?: string | null;
+            /** Approval Note Number */
+            approval_note_number?: string | null;
+            /** Bank Advice Date */
+            bank_advice_date?: string | null;
+            /** Bank Advice Number */
+            bank_advice_number?: string | null;
+            /** Bill Date */
+            bill_date?: string | null;
+            /** Bill Number */
+            bill_number?: string | null;
+            /** Demand Number */
+            demand_number?: string | null;
+            /** Detailed Head */
+            detailed_head?: string | null;
+            /** Major Head */
+            major_head?: string | null;
+            /** Payment Date */
+            payment_date?: string | null;
+            /** Sub Head */
+            sub_head?: string | null;
         };
         /** PayrollRunRosterHistoryResponse */
         PayrollRunRosterHistoryResponse: {
@@ -2462,6 +2613,31 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** ReportReadinessIssue */
+        ReportReadinessIssue: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Report Type */
+            report_type: string;
+        };
+        /** ReportReadinessResponse */
+        ReportReadinessResponse: {
+            /** Issues */
+            issues: components["schemas"]["ReportReadinessIssue"][];
+            /** Ready */
+            ready: boolean;
+        };
+        /** ReportSignatory */
+        ReportSignatory: {
+            /** Designation */
+            designation: string;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+        };
         /**
          * ReportTypeItem
          * @description One registered report type and the formats it supports.
@@ -2526,6 +2702,11 @@ export interface components {
             };
             version: components["schemas"]["CurrentVersion"];
         };
+        /**
+         * ScheduleKind
+         * @enum {string}
+         */
+        ScheduleKind: "simple_component" | "loan_installment";
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -4030,6 +4211,103 @@ export interface operations {
             };
         };
     };
+    get_payroll_run_report_metadata_api_payroll_runs__run_id__report_metadata_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRunReportMetadata"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_payroll_run_report_metadata_api_payroll_runs__run_id__report_metadata_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollRunReportMetadata"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRunReportMetadata"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payroll_run_report_readiness_api_payroll_runs__run_id__report_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportReadinessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_payroll_run_results_api_payroll_runs__run_id__results_get: {
         parameters: {
             query?: {
@@ -4573,6 +4851,59 @@ export interface operations {
             };
         };
     };
+    get_payroll_export_profile_api_report_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollExportProfileResponse"];
+                };
+            };
+        };
+    };
+    upsert_payroll_export_profile_api_report_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollExportProfile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollExportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_reports_api_reports_get: {
         parameters: {
             query?: never;
@@ -4698,6 +5029,7 @@ export interface operations {
         parameters: {
             query: {
                 posted_run_id: string;
+                variant_key?: string | null;
             };
             header?: never;
             path: {
