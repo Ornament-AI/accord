@@ -30,7 +30,10 @@ export default function DeploymentNotReadyPage() {
 			</div>
 			<div className="relative z-10 w-full max-w-md space-y-6 text-center">
 				<p className="text-sm text-muted-foreground">{APP_NAME}</p>
-				<h1 className="text-2xl font-semibold tracking-tight" data-testid="deployment-not-ready-page">
+				<h1
+					className="text-2xl font-semibold tracking-tight"
+					data-testid="deployment-not-ready-page"
+				>
 					Deployment Not Ready
 				</h1>
 				<p className="text-sm text-muted-foreground">

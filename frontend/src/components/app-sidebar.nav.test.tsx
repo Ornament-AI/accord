@@ -93,10 +93,7 @@ describe("capability-aware sidebar nav", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Organization")).toBeInTheDocument();
 		});
-		expect(screen.getByRole("link", { name: "Employees" })).toHaveAttribute(
-			"href",
-			"/employees",
-		);
+		expect(screen.getByRole("link", { name: "Employees" })).toHaveAttribute("href", "/employees");
 		expect(screen.getByRole("link", { name: "Offices" })).toHaveAttribute(
 			"href",
 			"/organization/offices",
@@ -124,10 +121,7 @@ describe("capability-aware sidebar nav", () => {
 		await waitFor(() => {
 			expect(screen.getByRole("link", { name: "Employees" })).toBeInTheDocument();
 		});
-		expect(screen.getByRole("link", { name: "Employees" })).toHaveAttribute(
-			"data-active",
-			"true",
-		);
+		expect(screen.getByRole("link", { name: "Employees" })).toHaveAttribute("data-active", "true");
 	});
 
 	it("exposes Organization children from a compact-sidebar flyout", async () => {

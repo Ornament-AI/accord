@@ -122,10 +122,12 @@ describe("Org setup capability gating", () => {
 		"denies direct access without view_master_data",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "report_releaser",
 					capabilities: ROLE_CAPABILITIES.report_releaser,
 				},

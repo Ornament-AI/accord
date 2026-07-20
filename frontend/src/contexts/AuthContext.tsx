@@ -83,8 +83,7 @@ function parseAuthMeResponse(payload: unknown): AuthMeResponse | null {
 		payload.organization === null ? null : parseOrganization(payload.organization);
 	if (payload.organization !== null && organization === null) return null;
 
-	const membership =
-		payload.membership === null ? null : parseMembership(payload.membership);
+	const membership = payload.membership === null ? null : parseMembership(payload.membership);
 	if (payload.membership !== null && membership === null) return null;
 
 	if (accessState === "unbootstrapped" && organization !== null) return null;
@@ -139,9 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [accessState, setAccessState] = useState<AccessState | null>(null);
 	const [organization, setOrganization] = useState<MeOrganization | null>(null);
 	const [membership, setMembership] = useState<MeMembership | null>(null);
-	const [activeOrganization, setActiveOrganization] = useState<ActiveOrganization | null>(
-		null,
-	);
+	const [activeOrganization, setActiveOrganization] = useState<ActiveOrganization | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [shellEpoch, setShellEpoch] = useState(0);
 	const authSeq = useRef(0);

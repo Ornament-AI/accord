@@ -185,10 +185,12 @@ describe("Pay Runs list page", () => {
 		"hides create actions without create_run capability",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_reviewer",
 					capabilities: ROLE_CAPABILITIES.payroll_reviewer,
 				},
@@ -437,10 +439,12 @@ describe("Pay run detail — calculate gating", () => {
 		"hides Calculate without create_run capability",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_reviewer",
 					capabilities: ROLE_CAPABILITIES.payroll_reviewer,
 				},
@@ -574,10 +578,12 @@ describe("Pay Runs capability gate", () => {
 		"denies direct URL access without create_run",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "report_releaser",
 					capabilities: ROLE_CAPABILITIES.report_releaser,
 				},

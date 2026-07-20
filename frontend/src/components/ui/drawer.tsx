@@ -95,9 +95,7 @@ function DrawerContent({ className, children, ...props }: DrawerPrimitive.Popup.
 
 	return (
 		<DrawerPortal data-slot="drawer-portal">
-			{modal === true && (
-				<DrawerOverlay data-snap-points={hasSnapPoints ? "" : undefined} />
-			)}
+			{modal === true && <DrawerOverlay data-snap-points={hasSnapPoints ? "" : undefined} />}
 			<DrawerPrimitive.Viewport
 				data-slot="drawer-viewport"
 				data-modal={modal}

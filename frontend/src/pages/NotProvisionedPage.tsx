@@ -41,8 +41,8 @@ export default function NotProvisionedPage() {
 					) : null}
 					{organization ? (
 						<>
-							Ask an administrator of{" "}
-							<span className="text-foreground">{organization.name}</span> to invite you.
+							Ask an administrator of <span className="text-foreground">{organization.name}</span>{" "}
+							to invite you.
 						</>
 					) : (
 						<>Ask an administrator to invite you.</>

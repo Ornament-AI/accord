@@ -38,12 +38,7 @@ import {
 	useAuditFilterOptions,
 } from "@/lib/api/audit";
 import { getErrorMessage } from "@/lib/errors";
-import {
-	ACCORD_TIME_ZONE,
-	cn,
-	formatDateInAccordTimeZone,
-	parseApiDateTime,
-} from "@/lib/utils";
+import { ACCORD_TIME_ZONE, cn, formatDateInAccordTimeZone, parseApiDateTime } from "@/lib/utils";
 
 import { AuditEventDetail } from "./AuditEventDetail";
 import { commandBadgeVariant } from "./CommandBadge";

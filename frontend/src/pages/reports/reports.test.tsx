@@ -250,10 +250,12 @@ describe("Reports page", () => {
 		"capability gate blocks without generate_reports",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_preparer",
 					capabilities: ["view_master_data", "create_run"],
 				},

@@ -1,16 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { setupServer } from "msw/node";
-import { http, HttpResponse } from "msw";
 
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { ProtectedLayout } from "@/route-components";
-import {
-	buildAuthMe,
-	buildNoOrgAuthMe,
-	buildUnprovisionedAuthMe,
-} from "@/test/auth-fixtures";
+import { buildAuthMe, buildNoOrgAuthMe, buildUnprovisionedAuthMe } from "@/test/auth-fixtures";
 
 vi.mock("@/components/protected-shell", () => ({
 	ProtectedShell: () => <div data-testid="protected-shell">shell</div>,
@@ -25,14 +22,16 @@ describe("ProtectedLayout", () => {
 
 	function renderLayout() {
 		return render(
-			<AuthProvider>
-				<MemoryRouter initialEntries={["/"]}>
-					<Routes>
-						<Route path="/" element={<ProtectedLayout />} />
-						<Route path="/login" element={<div>login</div>} />
-					</Routes>
-				</MemoryRouter>
-			</AuthProvider>,
+			<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME">
+				<AuthProvider>
+					<MemoryRouter initialEntries={["/"]}>
+						<Routes>
+							<Route path="/" element={<ProtectedLayout />} />
+							<Route path="/login" element={<div>login</div>} />
+						</Routes>
+					</MemoryRouter>
+				</AuthProvider>
+			</ThemeProvider>,
 		);
 	}
 

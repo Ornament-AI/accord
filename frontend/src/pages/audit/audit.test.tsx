@@ -172,10 +172,12 @@ describe("Atlas-parity audit history", () => {
 
 	it("blocks access without view_audit", async () => {
 		const me = buildAuthMe({
-			active_organization: {
+			organization: {
 				id: "org-acme",
 				name: "Acme Payroll",
 				slug: "acme-payroll",
+			},
+			membership: {
 				role: "payroll_preparer",
 				capabilities: ["view_master_data", "create_run"] as Capability[],
 			},

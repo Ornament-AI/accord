@@ -150,19 +150,23 @@ describe("Employee detail page", () => {
 		"shows reveal toggle only when reveal_sensitive_fields is granted",
 		async () => {
 			const withRevealCaps = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "organization_administrator",
 					capabilities: ROLE_CAPABILITIES.organization_administrator,
 				},
 			});
 			const withoutReveal = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_preparer",
 					capabilities: ROLE_CAPABILITIES.payroll_preparer.filter(
 						(cap): cap is Capability => cap !== "reveal_sensitive_fields",
@@ -443,10 +447,12 @@ describe("Employees capability gate", () => {
 		"denies direct URL access without view_master_data",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "report_releaser",
 					capabilities: ROLE_CAPABILITIES.report_releaser,
 				},

@@ -256,10 +256,12 @@ describe("Pay component detail page", () => {
 		"renders rate version history and gates Add rate version",
 		async () => {
 			const withoutManage = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "payroll_reviewer",
 					capabilities: ROLE_CAPABILITIES.payroll_reviewer,
 				},
@@ -454,10 +456,12 @@ describe("Pay Components capability gate", () => {
 		"denies direct URL access without view_master_data",
 		async () => {
 			const me = buildAuthMe({
-				active_organization: {
+				organization: {
 					id: "org-acme",
 					name: "Acme Payroll",
 					slug: "acme-payroll",
+				},
+				membership: {
 					role: "report_releaser",
 					capabilities: ROLE_CAPABILITIES.report_releaser,
 				},

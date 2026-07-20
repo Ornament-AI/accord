@@ -55,11 +55,9 @@ export function buildAuthMe(overrides: Partial<AuthMeResponse> = {}): AuthMeResp
 	const merged: AuthMeResponse = {
 		...base,
 		...overrides,
-		organization:
-			overrides.organization === undefined ? base.organization : overrides.organization,
+		organization: overrides.organization === undefined ? base.organization : overrides.organization,
 		membership: overrides.membership === undefined ? base.membership : overrides.membership,
-		access_state:
-			overrides.access_state === undefined ? base.access_state : overrides.access_state,
+		access_state: overrides.access_state === undefined ? base.access_state : overrides.access_state,
 	};
 	return merged;
 }
