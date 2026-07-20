@@ -17,16 +17,19 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 
 from app.api.deps import Session, TenantCtx, require_capability
 from app.auth.principal import AuthPrincipal
 from app.jobs.protocol import JobQueue
 from app.reports.base import ReportRegistry
 from app.schemas.reports import (
+    ExportReportsRequest,
+    ExportReportsResponse,
     GenerateReportRequest,
     GenerateReportResponse,
     ReportJobResponse,
+    ReportPreviewResponse,
     ReportTypeItem,
     ReportTypeListResponse,
 )
@@ -93,10 +96,58 @@ async def list_reports(
     items = report_generation_service.list_registered_reports(registry)
     return ReportTypeListResponse(
         items=[
-            ReportTypeItem(report_type=item.report_type, formats=list(item.formats))
+            ReportTypeItem(
+                report_type=item.report_type,
+                title=item.title,
+                formats=list(item.formats),
+                product_sheet=item.product_sheet,
+                template_version=item.template_version,
+            )
             for item in items
         ]
     )
+
+
+@router.post(
+    "/reports/export",
+    response_model=ExportReportsResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def export_reports(
+    body: ExportReportsRequest,
+    tenant: TenantCtx,
+    db: Session,
+    registry: ReportRegistryDep,
+    queue: JobQueueDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _: AuthPrincipal = Depends(require_capability("generate_reports")),
+) -> ExportReportsResponse:
+    org_id = _org_id(tenant)
+    user_id = _user_id(tenant)
+    request_payload = {
+        "command": "export_reports",
+        "posted_run_id": str(body.posted_run_id),
+    }
+
+    async def _execute() -> dict[str, Any]:
+        job = await report_generation_service.request_consolidated_export(
+            db,
+            queue,
+            organization_id=org_id,
+            posted_run_id=body.posted_run_id,
+            requested_by=user_id,
+            registry=registry,
+        )
+        return {"job_id": str(job.id), "status": str(job.status)}
+
+    result = await _maybe_idempotent(
+        db,
+        organization_id=org_id,
+        idempotency_key=idempotency_key,
+        request_payload=request_payload,
+        executor=_execute,
+    )
+    return ExportReportsResponse(job_id=UUID(result["job_id"]), status=result["status"])
 
 
 @router.post(
@@ -167,3 +218,27 @@ async def get_report_job(
         result=info.result,
         last_error=info.last_error,
     )
+
+
+@router.get(
+    "/reports/{report_type}/preview",
+    response_model=ReportPreviewResponse,
+)
+async def preview_report(
+    report_type: str,
+    tenant: TenantCtx,
+    db: Session,
+    registry: ReportRegistryDep,
+    posted_run_id: UUID = Query(...),
+    _: AuthPrincipal = Depends(require_capability("generate_reports")),
+) -> ReportPreviewResponse:
+    """Sync JSON preview. Declared after static ``/reports/...`` paths."""
+    payload = await report_generation_service.preview_report(
+        db,
+        organization_id=_org_id(tenant),
+        report_type=report_type,
+        posted_run_id=posted_run_id,
+        registry=registry,
+        actor_user_id=_user_id(tenant),
+    )
+    return ReportPreviewResponse.model_validate(payload)

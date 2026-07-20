@@ -2,22 +2,31 @@ import { HttpResponse, http } from "msw";
 
 import type {
 	ArtifactResponse,
+	ExportReportsRequest,
 	GenerateReportRequest,
 	ReportCatalogEntry,
 	ReportCatalogResponse,
 	ReportJobResponse,
 	ReportJobStatus,
+	ReportPreviewResponse,
 } from "@/lib/api/reports";
+
+import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
 
 export type ReportHandlersOptions = {
 	catalog?: ReportCatalogEntry[];
 	artifacts?: ArtifactResponse[];
+	preview?:
+		| ReportPreviewResponse
+		| ((reportType: string, postedRunId: string) => ReportPreviewResponse);
 	/** Ordered statuses returned by successive GET /api/reports/jobs/:id polls. */
 	jobStatusSequence?: ReportJobStatus[];
 	/** Error message when the terminal status is failed/dead_letter. */
 	jobError?: string;
 	generateError?: { status: number; body: Record<string, unknown> };
+	exportError?: { status: number; body: Record<string, unknown> };
 	onGenerate?: (body: GenerateReportRequest) => void;
+	onExport?: (body: ExportReportsRequest) => void;
 };
 
 export function buildCatalogEntry(
@@ -27,7 +36,8 @@ export function buildCatalogEntry(
 		report_type: overrides.report_type,
 		title: overrides.title,
 		formats: overrides.formats ?? ["excel", "pdf", "json"],
-		template_version: overrides.template_version ?? "2026.1",
+		product_sheet: overrides.product_sheet ?? false,
+		template_version: overrides.template_version ?? "v1",
 	};
 }
 
@@ -41,7 +51,7 @@ export function buildArtifact(
 		report_type: overrides.report_type,
 		posted_run_id: overrides.posted_run_id ?? null,
 		status: overrides.status ?? "ready",
-		template_version: overrides.template_version ?? "2026.1",
+		template_version: overrides.template_version ?? "v1",
 		content_type:
 			overrides.content_type ?? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		size_bytes: overrides.size_bytes ?? 12_345,
@@ -58,66 +68,97 @@ export function buildArtifact(
 }
 
 export function defaultReportCatalog(): ReportCatalogEntry[] {
+	const product = PRODUCT_REPORT_SHEETS.map((sheet) =>
+		buildCatalogEntry({
+			report_type: sheet.reportType,
+			title: sheet.title,
+			product_sheet: true,
+		}),
+	);
 	return [
+		...product,
 		buildCatalogEntry({
-			report_type: "payroll_register.pay_bill",
-			title: "Pay Bill",
+			report_type: "payslips",
+			title: "Payslips",
+			product_sheet: false,
+			formats: ["pdf", "json"],
 		}),
 		buildCatalogEntry({
-			report_type: "payroll_register.treasury_face",
-			title: "Treasury Face",
-		}),
-		buildCatalogEntry({
-			report_type: "payments.bank_rtgs_advice",
-			title: "Bank RTGS Advice",
-		}),
-		buildCatalogEntry({
-			report_type: "retirement.gpf_mumbai",
-			title: "GPF Mumbai Schedule",
-			formats: ["excel", "pdf"],
-		}),
-		buildCatalogEntry({
-			report_type: "statutory.income_tax",
-			title: "Income Tax Schedule",
-		}),
-		buildCatalogEntry({
-			report_type: "recovery.hba",
-			title: "HBA Schedule",
-		}),
-		buildCatalogEntry({
-			report_type: "accommodation.mumbai",
-			title: "Accommodation — Mumbai",
-		}),
-		buildCatalogEntry({
-			report_type: "approval.office_note",
-			title: "Office Approval Note",
+			report_type: "advance_schedule",
+			title: "Advance Schedule",
+			product_sheet: false,
 		}),
 	];
 }
 
+export function defaultPreview(reportType: string, _postedRunId: string): ReportPreviewResponse {
+	return {
+		report_type: reportType,
+		template_version: "v1",
+		title: PRODUCT_REPORT_SHEETS.find((s) => s.reportType === reportType)?.title ?? reportType,
+		organization_name: "Acme Payroll",
+		subtitle: "June 2026",
+		sections: [
+			{
+				title: "Rows",
+				columns: [
+					{ key: "name", header: "Name", kind: "text" },
+					{ key: "amount", header: "Amount", kind: "money" },
+				],
+				rows: [
+					{ name: "Ada Lovelace", amount: "100.00" },
+					{ name: "Grace Hopper", amount: "200.00" },
+				],
+				totals: { name: null, amount: "300.00" },
+			},
+		],
+	};
+}
+
+type JobRecord = {
+	pollCount: number;
+	kind: "generate" | "export";
+	request: GenerateReportRequest | ExportReportsRequest;
+	artifactId?: string;
+};
+
 export function createReportHandlers(options: ReportHandlersOptions = {}) {
 	const catalog: ReportCatalogResponse = {
-		report_types: options.catalog ?? defaultReportCatalog(),
+		items: options.catalog ?? defaultReportCatalog(),
 	};
 	const artifacts = new Map<string, ArtifactResponse>();
 	for (const artifact of options.artifacts ?? []) {
 		artifacts.set(artifact.id, artifact);
 	}
 
-	const jobs = new Map<
-		string,
-		{
-			pollCount: number;
-			request: GenerateReportRequest;
-			artifactId?: string;
-		}
-	>();
+	const jobs = new Map<string, JobRecord>();
 	const statusSequence = options.jobStatusSequence ?? ["queued", "running", "succeeded"];
 	let jobCounter = 0;
+
+	function resolvePreview(reportType: string, postedRunId: string): ReportPreviewResponse {
+		if (typeof options.preview === "function") {
+			return options.preview(reportType, postedRunId);
+		}
+		if (options.preview) return options.preview;
+		return defaultPreview(reportType, postedRunId);
+	}
 
 	return {
 		handlers: [
 			http.get("/api/reports", () => HttpResponse.json(catalog)),
+
+			http.get("/api/reports/:reportType/preview", ({ params, request }) => {
+				const reportType = String(params.reportType);
+				const url = new URL(request.url);
+				const postedRunId = url.searchParams.get("posted_run_id");
+				if (!postedRunId) {
+					return HttpResponse.json(
+						{ detail: "posted_run_id is required", error: "ValidationError" },
+						{ status: 422 },
+					);
+				}
+				return HttpResponse.json(resolvePreview(reportType, postedRunId));
+			}),
 
 			http.post("/api/reports/generate", async ({ request }) => {
 				if (options.generateError) {
@@ -129,7 +170,21 @@ export function createReportHandlers(options: ReportHandlersOptions = {}) {
 				options.onGenerate?.(body);
 				jobCounter += 1;
 				const jobId = `job-${jobCounter}`;
-				jobs.set(jobId, { pollCount: 0, request: body });
+				jobs.set(jobId, { pollCount: 0, kind: "generate", request: body });
+				return HttpResponse.json({ job_id: jobId, status: "queued" }, { status: 202 });
+			}),
+
+			http.post("/api/reports/export", async ({ request }) => {
+				if (options.exportError) {
+					return HttpResponse.json(options.exportError.body, {
+						status: options.exportError.status,
+					});
+				}
+				const body = (await request.json()) as ExportReportsRequest;
+				options.onExport?.(body);
+				jobCounter += 1;
+				const jobId = `job-${jobCounter}`;
+				jobs.set(jobId, { pollCount: 0, kind: "export", request: body });
 				return HttpResponse.json({ job_id: jobId, status: "queued" }, { status: 202 });
 			}),
 
@@ -147,31 +202,43 @@ export function createReportHandlers(options: ReportHandlersOptions = {}) {
 				const response: ReportJobResponse = {
 					job_id: jobId,
 					status,
+					result: null,
+					last_error: null,
 				};
 
 				if (status === "succeeded") {
 					if (!job.artifactId) {
 						const artifactId = `artifact-from-${jobId}`;
 						job.artifactId = artifactId;
+						const reportType =
+							job.kind === "export"
+								? "consolidated_xlsx"
+								: (job.request as GenerateReportRequest).report_type;
+						const postedRunId =
+							job.kind === "export"
+								? (job.request as ExportReportsRequest).posted_run_id
+								: (job.request as GenerateReportRequest).posted_run_id;
 						const created = buildArtifact({
 							id: artifactId,
-							report_type: job.request.report_type,
-							posted_run_id: job.request.posted_run_id,
+							report_type: reportType,
+							posted_run_id: postedRunId,
 							content_type:
-								job.request.format === "pdf"
-									? "application/pdf"
-									: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+								job.kind === "export"
+									? "application/zip"
+									: (job.request as GenerateReportRequest).format === "pdf"
+										? "application/pdf"
+										: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 							size_bytes: 4_096,
 							created_at: "2026-07-18T12:00:00Z",
 							updated_at: "2026-07-18T12:00:00Z",
 						});
 						artifacts.set(artifactId, created);
 					}
-					response.artifact_id = job.artifactId;
+					response.result = { artifact_id: job.artifactId };
 				}
 
 				if (status === "failed" || status === "dead_letter") {
-					response.error = options.jobError ?? "Renderer exploded";
+					response.last_error = options.jobError ?? "Renderer exploded";
 				}
 
 				return HttpResponse.json(response);
@@ -215,11 +282,12 @@ export function createReportHandlers(options: ReportHandlersOptions = {}) {
 					);
 				}
 				const body = new Uint8Array([80, 75, 3, 4]); // ZIP/XLSX magic-ish
+				const ext = artifact.content_type === "application/zip" ? "zip" : "xlsx";
 				return new HttpResponse(body, {
 					status: 200,
 					headers: {
 						"Content-Type": artifact.content_type,
-						"Content-Disposition": `attachment; filename="${artifact.report_type}.xlsx"`,
+						"Content-Disposition": `attachment; filename="${artifact.report_type}.${ext}"`,
 					},
 				});
 			}),

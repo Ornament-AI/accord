@@ -30,7 +30,16 @@ function renderSidebar(initialPath = "/", { open = true }: { open?: boolean } = 
 	);
 }
 
-function expectedTitlesForRole(role: Role): string[] {
+const RENDER_PATH = "/organization/offices";
+
+function isPathActive(currentPath: string, itemPath: string) {
+	if (itemPath === "/") {
+		return currentPath === "/";
+	}
+	return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`);
+}
+
+function expectedTitlesForRole(role: Role, pathname: string): string[] {
 	const capabilities = new Set(ROLE_CAPABILITIES[role]);
 	const titles: string[] = [];
 	for (const item of NAV_REGISTRY) {
@@ -39,10 +48,18 @@ function expectedTitlesForRole(role: Role): string[] {
 		}
 		titles.push(item.title);
 		if (item.children) {
-			for (const child of item.children) {
-				if (child.capability === undefined || capabilities.has(child.capability as Capability)) {
-					titles.push(child.title);
-				}
+			const visibleChildren = item.children.filter(
+				(child) =>
+					child.capability === undefined || capabilities.has(child.capability as Capability),
+			);
+			// A folder's children only mount when the folder is expanded, which the
+			// sidebar does when one of its child routes is active for the current path.
+			const sectionOpen = visibleChildren.some((child) => isPathActive(pathname, child.path));
+			if (!sectionOpen) {
+				continue;
+			}
+			for (const child of visibleChildren) {
+				titles.push(child.title);
 			}
 		}
 	}
@@ -55,13 +72,14 @@ describe("capability-aware sidebar nav", () => {
 	});
 
 	it.each([
-		["organization_administrator", expectedTitlesForRole("organization_administrator")],
-		["auditor", expectedTitlesForRole("auditor")],
-	] as const)("shows the expected nav for %s", async (role, expectedTitles) => {
+		"organization_administrator",
+		"auditor",
+	] as const)("shows the expected nav for %s", async (role) => {
+		const expectedTitles = expectedTitlesForRole(role, RENDER_PATH);
 		const { handlers } = createAuthHandlers({ me: buildRoleAuthMe(role) });
 		server.use(...handlers);
 
-		renderSidebar("/organization/offices");
+		renderSidebar(RENDER_PATH);
 
 		await waitFor(() => {
 			expect(screen.getByText(expectedTitles[0])).toBeInTheDocument();

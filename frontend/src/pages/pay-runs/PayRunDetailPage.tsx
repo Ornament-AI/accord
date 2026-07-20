@@ -12,9 +12,9 @@ import { toast } from "sonner";
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
 import { DataTableShell } from "@/components/data-table-shell";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageSection, PageShell } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import {
 	isCalculateAllowedStatus,
@@ -273,12 +272,7 @@ export default function PayRunDetailPage() {
 				}
 			>
 				<PageShell data-testid="pay-run-detail-page">
-					{runQuery.isLoading ? (
-						<div className="grid gap-4">
-							<Skeleton className="h-20 w-full" />
-							<DataTableSkeleton />
-						</div>
-					) : null}
+					{runQuery.isLoading ? <PageSkeleton /> : null}
 
 					{runQuery.isError ? (
 						<ErrorWithRetry
@@ -317,7 +311,7 @@ export default function PayRunDetailPage() {
 							<PageSection className="grid gap-3">
 								<h2 className="text-base font-semibold">Change History</h2>
 
-								{rosterHistoryQuery.isLoading ? <DataTableSkeleton /> : null}
+								{rosterHistoryQuery.isLoading ? <PageSkeleton /> : null}
 
 								{rosterHistoryQuery.isError ? (
 									<ErrorWithRetry

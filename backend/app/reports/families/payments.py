@@ -64,7 +64,12 @@ _ZERO = Decimal("0.00")
 
 DEFAULT_CONTENT_TYPES: dict[str, str] = {
     "json": "application/json",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+}
+# Payslips Excel is intentionally unimplemented; advertise only formats that work.
+PAYSLIP_CONTENT_TYPES: dict[str, str] = {
+    "json": "application/json",
     "pdf": "application/pdf",
 }
 BANK_ADVICE_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
@@ -598,6 +603,6 @@ def register_payment_reports(registry: ReportRegistry) -> None:
         to_json=payslip_to_json,
         to_excel=payslip_to_excel,
         to_pdf=payslip_to_pdf,
-        content_types=DEFAULT_CONTENT_TYPES,
+        content_types=PAYSLIP_CONTENT_TYPES,
         filename_pattern=PAYSLIPS_FILENAME_PATTERN,
     )

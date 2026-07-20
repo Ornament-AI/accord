@@ -14,13 +14,14 @@ export type ReportFormat = "excel" | "pdf" | "json";
 
 export type ReportCatalogEntry = {
 	report_type: string;
-	title?: string;
+	title?: string | null;
 	formats: ReportFormat[];
-	template_version: string;
+	product_sheet?: boolean;
+	template_version?: string | null;
 };
 
 export type ReportCatalogResponse = {
-	report_types: ReportCatalogEntry[];
+	items: ReportCatalogEntry[];
 };
 
 export type GenerateReportRequest = {
@@ -30,6 +31,15 @@ export type GenerateReportRequest = {
 };
 
 export type GenerateReportResponse = {
+	job_id: string;
+	status: string;
+};
+
+export type ExportReportsRequest = {
+	posted_run_id: string;
+};
+
+export type ExportReportsResponse = {
 	job_id: string;
 	status: string;
 };
@@ -45,8 +55,30 @@ export type ReportJobStatus =
 export type ReportJobResponse = {
 	job_id: string;
 	status: ReportJobStatus;
-	artifact_id?: string;
-	error?: string;
+	result?: { artifact_id?: string; reused?: boolean; filename?: string } | null;
+	last_error?: string | null;
+};
+
+export type ReportPreviewColumn = {
+	key: string;
+	header: string;
+	kind: string;
+};
+
+export type ReportPreviewSection = {
+	title: string;
+	columns: ReportPreviewColumn[];
+	rows: Record<string, string | number | null>[];
+	totals?: Record<string, string | number | null>;
+};
+
+export type ReportPreviewResponse = {
+	report_type: string;
+	template_version: string;
+	title: string;
+	organization_name: string;
+	subtitle: string;
+	sections: ReportPreviewSection[];
 };
 
 export type ArtifactResponse = components["schemas"]["ArtifactResponse"];
@@ -67,6 +99,8 @@ export const reportQueryKeys = {
 	all: () => ["reports"] as const,
 	catalog: () => ["reports", "catalog"] as const,
 	job: (jobId: string) => ["reports", "job", jobId] as const,
+	preview: (reportType: string, postedRunId: string) =>
+		["reports", "preview", reportType, postedRunId] as const,
 	artifacts: () => ["artifacts"] as const,
 	artifactList: (params: ListArtifactsParams) => ["artifacts", "list", params] as const,
 };
@@ -96,12 +130,33 @@ export function isTerminalJobStatus(status: ReportJobStatus | undefined): boolea
 	);
 }
 
+export function jobArtifactId(job: ReportJobResponse | undefined): string | undefined {
+	return job?.result?.artifact_id;
+}
+
+export function jobErrorMessage(job: ReportJobResponse | undefined): string | undefined {
+	return job?.last_error ?? undefined;
+}
+
 export function listReportCatalog() {
 	return fetchJson<ReportCatalogResponse>("/api/reports");
 }
 
+export function getReportPreview(reportType: string, postedRunId: string) {
+	const qs = buildQueryString({ posted_run_id: postedRunId });
+	return fetchJson<ReportPreviewResponse>(`/api/reports/${reportType}/preview${qs}`);
+}
+
 export function generateReport(body: GenerateReportRequest) {
 	return fetchJson<GenerateReportResponse>("/api/reports/generate", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
+export function exportReports(body: ExportReportsRequest) {
+	return fetchJson<ExportReportsResponse>("/api/reports/export", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(body),
@@ -123,19 +178,31 @@ export function listArtifacts(params: ListArtifactsParams = {}) {
 	return fetchJson<PaginatedArtifactResponse>(`/api/artifacts${qs}`);
 }
 
-export async function downloadArtifact(artifactId: string, fallbackFilename = "report") {
+export async function downloadArtifact(
+	artifactId: string,
+	fallbackFilename = "report",
+	options?: { preferFilename?: string },
+) {
 	const { blob, filename } = await fetchDownload(
 		`/api/artifacts/${artifactId}/download`,
 		undefined,
 		fallbackFilename,
 	);
-	downloadBlob(blob, filename);
+	downloadBlob(blob, options?.preferFilename?.trim() || filename);
 }
 
 export function useReportCatalog() {
 	return useQuery({
 		queryKey: reportQueryKeys.catalog(),
 		queryFn: listReportCatalog,
+	});
+}
+
+export function useReportPreview(reportType: string | undefined, postedRunId: string | null) {
+	return useQuery({
+		queryKey: reportQueryKeys.preview(reportType ?? "", postedRunId ?? ""),
+		queryFn: () => getReportPreview(reportType!, postedRunId!),
+		enabled: Boolean(reportType && postedRunId),
 	});
 }
 
@@ -170,8 +237,25 @@ export function useGenerateReport() {
 	});
 }
 
+export function useExportReports() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: exportReports,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: reportQueryKeys.artifacts() });
+		},
+	});
+}
+
 export function useDownloadArtifact() {
 	return useMutation({
-		mutationFn: (artifactId: string) => downloadArtifact(artifactId),
+		mutationFn: (input: string | { artifactId: string; preferFilename?: string }) => {
+			if (typeof input === "string") {
+				return downloadArtifact(input);
+			}
+			return downloadArtifact(input.artifactId, "report", {
+				preferFilename: input.preferFilename,
+			});
+		},
 	});
 }

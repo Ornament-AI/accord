@@ -13,12 +13,12 @@ import { toast } from "sonner";
 import { usePersistedColumnVisibility } from "@/components/column-visibility";
 import { DataSearchControl } from "@/components/data-search-control";
 import { DataTableShell } from "@/components/data-table-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
 	formatCanonicalMoney,
 	isDraftStatus,
@@ -543,7 +543,7 @@ export const PayrollRunRosterTable = forwardRef<
 	);
 
 	if (rosterQuery.isLoading) {
-		return <Skeleton className="h-72 w-full" />;
+		return <PageSkeleton />;
 	}
 
 	if (rosterQuery.isError) {

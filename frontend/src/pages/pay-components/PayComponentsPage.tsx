@@ -14,9 +14,9 @@ import {
 	usePersistedColumnVisibility,
 } from "@/components/column-visibility";
 import { DataTableShell } from "@/components/data-table-shell";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
@@ -105,11 +105,7 @@ export default function PayComponentsPage() {
 				}
 			>
 				<PageShell data-testid="pay-components-page">
-					<div className="flex flex-wrap items-center justify-end gap-2">
-						<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
-					</div>
-
-					{listQuery.isLoading ? <DataTableSkeleton /> : null}
+					{listQuery.isLoading ? <PageSkeleton /> : null}
 
 					{listQuery.isError ? (
 						<ErrorWithRetry
@@ -118,20 +114,26 @@ export default function PayComponentsPage() {
 						/>
 					) : null}
 
-					{!listQuery.isLoading && !listQuery.isError && isEmpty ? (
-						<EmptyState
-							icon={Wallet}
-							title="No Pay Components"
-							description="Create a pay component to get started."
-						/>
-					) : null}
+					{!listQuery.isLoading && !listQuery.isError ? (
+						<>
+							<div className="flex flex-wrap items-center justify-end gap-2">
+								<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
+							</div>
 
-					{!listQuery.isLoading && !listQuery.isError && !isEmpty ? (
-						<DataTableShell
-							table={table}
-							onRowClick={canManage ? openEdit : undefined}
-							getRowAriaLabel={(row) => `Edit Pay Component ${row.code}`}
-						/>
+							{isEmpty ? (
+								<EmptyState
+									icon={Wallet}
+									title="No Pay Components"
+									description="Create a pay component to get started."
+								/>
+							) : (
+								<DataTableShell
+									table={table}
+									onRowClick={canManage ? openEdit : undefined}
+									getRowAriaLabel={(row) => `Edit Pay Component ${row.code}`}
+								/>
+							)}
+						</>
 					) : null}
 				</PageShell>
 

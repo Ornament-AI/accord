@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-
+import { PageSkeleton } from "@/components/page-skeleton";
 import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -22,7 +22,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Table,
 	TableBody,
@@ -84,12 +83,7 @@ export function RecurringItemsTab({
 
 	return (
 		<div className="grid gap-4" data-testid="recurring-items-tab">
-			{instructionsQuery.isLoading ? (
-				<div className="grid gap-2">
-					<Skeleton className="h-10 w-full" />
-					<Skeleton className="h-10 w-full" />
-				</div>
-			) : null}
+			{instructionsQuery.isLoading ? <PageSkeleton /> : null}
 
 			{instructionsQuery.isError ? (
 				<ErrorWithRetry

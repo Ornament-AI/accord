@@ -28,6 +28,6 @@ test.describe("reports", () => {
 	test("reports page shows empty posted-run state without a posted run", async ({ page }) => {
 		await page.goto("/reports");
 		await expect(page.getByTestId("reports-page")).toBeVisible({ timeout: 30_000 });
-		await expect(page.getByText("No posted runs yet")).toBeVisible();
+		await expect(page.getByText("No Posted Runs Yet")).toBeVisible();
 	});
 });

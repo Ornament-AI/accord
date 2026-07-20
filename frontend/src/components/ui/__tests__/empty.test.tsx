@@ -9,6 +9,7 @@ describe("Empty", () => {
 
 		expect(container.firstChild).toHaveClass(
 			"h-full",
+			"min-h-0",
 			"w-full",
 			"flex-1",
 			"border",

@@ -65,11 +65,13 @@ export async function openNav(page: Page, title: string): Promise<void> {
 		await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
 	}
 
-	// Nested items live under Organization (expanded collapsible or compact flyout).
+	// Nested items live under Organization / Reports (expanded collapsible or compact flyout).
 	if (!(await target.first().isVisible().catch(() => false))) {
-		const folder = page.getByRole("button", { name: /^Organization$/i });
-		if (await folder.isVisible().catch(() => false)) {
-			await folder.click();
+		for (const folderName of [/^Organization$/i, /^Reports$/i]) {
+			const folder = page.getByRole("button", { name: folderName });
+			if (await folder.isVisible().catch(() => false)) {
+				await folder.click();
+			}
 		}
 	}
 

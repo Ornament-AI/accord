@@ -16,9 +16,9 @@ import {
 } from "@/components/column-visibility";
 import { DataSearchControl } from "@/components/data-search-control";
 import { DataTableShell } from "@/components/data-table-shell";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -137,34 +137,7 @@ export default function EmployeeListPage() {
 				}
 			>
 				<PageShell data-testid="employee-list-page">
-					<PageToolbar
-						trailing={
-							<ColumnVisibilityToggle table={table} iconOnly triggerClassName="justify-center" />
-						}
-					>
-						<DataSearchControl
-							search={search || undefined}
-							title="Search Employees"
-							placeholder="Employee Number or Name…"
-							onSearchChange={(next) => {
-								setSearch(next ?? "");
-								setPage(1);
-							}}
-						/>
-						<DatePicker
-							value={asOfDate}
-							onValueChange={(date) => {
-								if (date) {
-									setAsOf(toApiDate(date));
-									setPage(1);
-								}
-							}}
-							aria-label="As of Date"
-							placeholder="As of"
-						/>
-					</PageToolbar>
-
-					{listQuery.isLoading ? <DataTableSkeleton /> : null}
+					{listQuery.isLoading ? <PageSkeleton /> : null}
 
 					{listQuery.isError ? (
 						<ErrorWithRetry
@@ -173,30 +146,63 @@ export default function EmployeeListPage() {
 						/>
 					) : null}
 
-					{!listQuery.isLoading && !listQuery.isError && isEmpty ? (
-						<EmptyState
-							icon={Users}
-							title="No Employees Found"
-							description={
-								search.trim()
-									? "Try a different search term or as-of date."
-									: "Create an employee to get started."
-							}
-						/>
-					) : null}
+					{!listQuery.isLoading && !listQuery.isError ? (
+						<>
+							<PageToolbar
+								trailing={
+									<ColumnVisibilityToggle
+										table={table}
+										iconOnly
+										triggerClassName="justify-center"
+									/>
+								}
+							>
+								<DataSearchControl
+									search={search || undefined}
+									title="Search Employees"
+									placeholder="Employee Number or Name…"
+									onSearchChange={(next) => {
+										setSearch(next ?? "");
+										setPage(1);
+									}}
+								/>
+								<DatePicker
+									value={asOfDate}
+									onValueChange={(date) => {
+										if (date) {
+											setAsOf(toApiDate(date));
+											setPage(1);
+										}
+									}}
+									aria-label="As of Date"
+									placeholder="As of"
+								/>
+							</PageToolbar>
 
-					{!listQuery.isLoading && !listQuery.isError && !isEmpty ? (
-						<DataTableShell
-							table={table}
-							isPlaceholderData={listQuery.isPlaceholderData}
-							page={page}
-							totalPages={totalPages}
-							onPageChange={setPage}
-							onRowClick={(row) => void navigate(`/employees/${row.id}`)}
-							getRowAriaLabel={(row) =>
-								`Open employee ${row.employee_number}${row.name ? `, ${row.name}` : ""}`
-							}
-						/>
+							{isEmpty ? (
+								<EmptyState
+									icon={Users}
+									title="No Employees Found"
+									description={
+										search.trim()
+											? "Try a different search term or as-of date."
+											: "Create an employee to get started."
+									}
+								/>
+							) : (
+								<DataTableShell
+									table={table}
+									isPlaceholderData={listQuery.isPlaceholderData}
+									page={page}
+									totalPages={totalPages}
+									onPageChange={setPage}
+									onRowClick={(row) => void navigate(`/employees/${row.id}`)}
+									getRowAriaLabel={(row) =>
+										`Open employee ${row.employee_number}${row.name ? `, ${row.name}` : ""}`
+									}
+								/>
+							)}
+						</>
 					) : null}
 				</PageShell>
 

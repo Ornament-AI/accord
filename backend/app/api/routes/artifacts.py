@@ -28,6 +28,7 @@ _CONTENT_TYPE_EXTENSIONS: dict[str, str] = {
     "application/pdf": "pdf",
     "application/xml": "xml",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/zip": "zip",
 }
 
 

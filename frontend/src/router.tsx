@@ -15,7 +15,9 @@ import {
 	PayRunsPage,
 	PostsPage,
 	ProtectedLayout,
-	ReportsPage,
+	ReportSheetPage,
+	ReportsIndexRedirect,
+	ReportsLayout,
 	RouteErrorFallback,
 } from "@/route-components";
 
@@ -45,7 +47,14 @@ export const routes: RouteObject[] = [
 			{ path: "pay-components/:componentId", element: <PayComponentDetailPage /> },
 			{ path: "pay-runs", element: <PayRunsPage /> },
 			{ path: "pay-runs/:runId", element: <PayRunDetailPage /> },
-			{ path: "reports", element: <ReportsPage /> },
+			{
+				path: "reports",
+				element: <ReportsLayout />,
+				children: [
+					{ index: true, element: <ReportsIndexRedirect /> },
+					{ path: ":reportSlug", element: <ReportSheetPage /> },
+				],
+			},
 			{ path: "audit", element: <AuditPage /> },
 			{ path: "*", element: <NotFoundPage /> },
 		],

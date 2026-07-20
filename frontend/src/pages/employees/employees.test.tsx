@@ -255,7 +255,7 @@ describe("CreateEmployeeDialog", () => {
 			expect(screen.getByLabelText("GPF Jurisdiction")).toBeInTheDocument();
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: "Create Employee" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
 		expect(
 			await screen.findByText("GPF jurisdiction is required when regime is GPF"),
 		).toBeInTheDocument();
@@ -263,7 +263,7 @@ describe("CreateEmployeeDialog", () => {
 		openBaseUiSelect(screen.getByLabelText("GPF Jurisdiction"));
 		pickBaseUiOption("Mumbai");
 
-		fireEvent.click(screen.getByRole("button", { name: "Create Employee" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
 		expect(await screen.findByText("This employee number is already in use")).toBeInTheDocument();
 	});
 
@@ -290,7 +290,7 @@ describe("CreateEmployeeDialog", () => {
 		renderCreateDialog();
 		await screen.findByRole("heading", { name: "New Employee" });
 
-		fireEvent.click(screen.getByRole("button", { name: "Posting" }));
+		fireEvent.click(screen.getByRole("tab", { name: "Posting" }));
 
 		expect(screen.getByText("Office")).toBeInTheDocument();
 		expect(screen.getByText("Post")).toBeInTheDocument();

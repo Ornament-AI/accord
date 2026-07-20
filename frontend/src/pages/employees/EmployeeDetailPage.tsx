@@ -3,10 +3,10 @@ import { Link, useParams } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
-import { DataTableSkeleton } from "@/components/data-table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { FieldsValueTable } from "@/components/fields-value-table";
 import { PageSection, PageShell } from "@/components/page-shell";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
@@ -19,7 +19,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -283,12 +282,7 @@ export default function EmployeeDetailPage() {
 				}
 			>
 				<PageShell data-testid="employee-detail-page">
-					{detailQuery.isLoading ? (
-						<div className="grid gap-4">
-							<Skeleton className="h-20 w-full" />
-							<DataTableSkeleton />
-						</div>
-					) : null}
+					{detailQuery.isLoading ? <PageSkeleton /> : null}
 
 					{detailQuery.isError ? (
 						<ErrorWithRetry

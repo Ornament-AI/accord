@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,7 @@ from app.jobs.handlers import configure_generate_report
 from app.jobs.memory import InMemoryJobQueue
 from app.main import create_app
 from app.models.payroll_runs import PayrollPeriod, PayrollRun
+from app.models.platform import AuditEvent
 from app.reports.base import (
     ColumnKind,
     ReportColumn,
@@ -181,6 +183,69 @@ async def test_list_reports_returns_fake_type_and_formats(client, session, dev_s
     item = body["items"][0]
     assert item["report_type"] == FAKE_REPORT_TYPE
     assert set(item["formats"]) == set(CONTENT_TYPES.keys())
+    assert item["product_sheet"] is False
+
+
+@pytest.mark.asyncio
+async def test_preview_report_returns_json(client, session, dev_settings, registry):
+    org, admin = await _admin_world(session, dev_settings, client)
+    run_id = await _seed_run(session, org_id=org.id, user_id=admin.id, status="posted")
+
+    resp = await client.get(
+        f"/api/reports/{FAKE_REPORT_TYPE}/preview",
+        params={"posted_run_id": str(run_id)},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["report_type"] == FAKE_REPORT_TYPE
+    assert body["title"] == "API Fake Report"
+    assert isinstance(body["sections"], list)
+    assert body["sections"][0]["title"] == "Rows"
+
+    # Previews expose unmasked report rows, so they must leave an access audit
+    # trail just like artifact downloads.
+    await _bind(session, org.id, admin.id)
+    audit = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "report.preview",
+                AuditEvent.entity_type == "report_preview",
+                AuditEvent.entity_id == run_id,
+            )
+        )
+    ).scalar_one()
+    assert audit.actor_user_id == admin.id
+    assert audit.event_kind == "access"
+    assert audit.metadata_["resource"]["report_type"] == FAKE_REPORT_TYPE
+    assert audit.summary["report_type"] == FAKE_REPORT_TYPE
+
+
+@pytest.mark.asyncio
+async def test_export_reports_enqueues_consolidated_job(
+    client, session, dev_settings, registry, queue, monkeypatch
+):
+    from app.services import report_generation as rg
+
+    monkeypatch.setattr(rg, "PRODUCT_REPORT_SHEETS", (FAKE_REPORT_TYPE,))
+    monkeypatch.setattr(
+        rg,
+        "PRODUCT_REPORT_SHEET_TITLES",
+        {FAKE_REPORT_TYPE: "Fake API Report"},
+    )
+
+    org, admin = await _admin_world(session, dev_settings, client)
+    run_id = await _seed_run(session, org_id=org.id, user_id=admin.id, status="posted")
+
+    resp = await client.post("/api/reports/export", json={"posted_run_id": str(run_id)})
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    job_id = UUID(body["job_id"])
+    assert body["status"] == "queued"
+    job = queue._jobs[job_id]
+    assert job.job_type == rg.JOB_TYPE_CONSOLIDATED_XLSX
+    assert str(run_id) in (job.dedupe_key or "")
+    assert FAKE_REPORT_TYPE in registry
 
 
 @pytest.mark.asyncio

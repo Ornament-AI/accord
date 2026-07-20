@@ -144,6 +144,24 @@ async def handle_generate_report(job: Job) -> dict[str, Any] | None:
     )
 
 
+async def handle_consolidated_xlsx(job: Job) -> dict[str, Any] | None:
+    """Build the product-sheet ZIP pack for a ``consolidated_xlsx`` job."""
+    from app.services.report_generation import (
+        DEFAULT_ENGINE_VERSION,
+        execute_consolidated_xlsx,
+    )
+
+    session = current_job_session()
+    storage, report_registry, engine_version = _require_generate_report_deps()
+    return await execute_consolidated_xlsx(
+        session,
+        storage,
+        job,
+        registry=report_registry,
+        engine_version=engine_version or DEFAULT_ENGINE_VERSION,
+    )
+
+
 def register_handlers(target: JobHandlerRegistry) -> JobHandlerRegistry:
     """Register built-in worker handlers onto ``target``.
 
@@ -153,6 +171,7 @@ def register_handlers(target: JobHandlerRegistry) -> JobHandlerRegistry:
     """
     target.register("noop")(handle_noop)
     target.register("generate_report")(handle_generate_report)
+    target.register("consolidated_xlsx")(handle_consolidated_xlsx)
     return target
 
 
