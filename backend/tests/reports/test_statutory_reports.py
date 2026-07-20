@@ -24,6 +24,7 @@ from app.models.employees import (
     employee_posting_versions,
     employee_profile_versions,
 )
+from app.models.identity import Organization
 from app.models.org_structure import Office, Post
 from app.models.pay_components import PayComponent, component_rate_versions
 from app.models.payroll_runs import (
@@ -431,8 +432,14 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
 
 async def _june_world(session: AsyncSession) -> dict:
     global _CACHED_WORLD
-    if _CACHED_WORLD is None:
-        _CACHED_WORLD = await _seed_posted_june(session)
+    # Re-seed when the cached org was truncated away (singleton-org isolation).
+    if _CACHED_WORLD is not None:
+        await _bind(session, _CACHED_WORLD["org_id"], _CACHED_WORLD["user_id"])
+        org = await session.get(Organization, _CACHED_WORLD["org_id"])
+        if org is not None:
+            return _CACHED_WORLD
+        _CACHED_WORLD = None
+    _CACHED_WORLD = await _seed_posted_june(session)
     return _CACHED_WORLD
 
 
