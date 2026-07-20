@@ -19,7 +19,8 @@ FRESH_INSTALL="${ACCORD_CONFIRMED_FRESH_INSTALL:-false}"
 command -v git >/dev/null 2>&1 || die "git is required"
 command -v ssh >/dev/null 2>&1 || die "ssh is required"
 
-git -C "$ROOT" fetch --quiet origin main
+git -C "$ROOT" fetch --quiet origin \
+	+refs/heads/main:refs/remotes/origin/main
 
 if [[ $# -gt 1 ]]; then
 	die "Usage: scripts/deploy.sh [40-character-git-sha]"

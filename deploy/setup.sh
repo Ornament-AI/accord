@@ -95,14 +95,15 @@ if [[ ! -f .env ]]; then
 fi
 chmod 600 .env
 safe_source_env .env
+ACCORD_WEB_PORT_VALUE="${ACCORD_WEB_PORT:-8085}"
 
 [[ "${ACCORD_TAG:-}" =~ ^sha-[0-9a-f]{40}$ ]] \
 	|| die "ACCORD_TAG must be an immutable sha-<40 lowercase hex> tag"
 if [[ -n "${ACCORD_EXPECTED_SHA:-}" && "$ACCORD_TAG" != "sha-$ACCORD_EXPECTED_SHA" ]]; then
 	die "ACCORD_TAG does not match the requested deployment SHA"
 fi
-[[ "${ACCORD_WEB_PORT:-8085}" =~ ^[0-9]+$ ]] \
-	&& (( ACCORD_WEB_PORT >= 1 && ACCORD_WEB_PORT <= 65535 )) \
+[[ "$ACCORD_WEB_PORT_VALUE" =~ ^[0-9]+$ ]] \
+	&& (( ACCORD_WEB_PORT_VALUE >= 1 && ACCORD_WEB_PORT_VALUE <= 65535 )) \
 	|| die "ACCORD_WEB_PORT must be a valid TCP port"
 [[ "${ENVIRONMENT:-}" == "production" ]] || die "ENVIRONMENT must be production"
 [[ "${DEV_AUTH_BYPASS:-}" == "false" ]] || die "DEV_AUTH_BYPASS must be false"

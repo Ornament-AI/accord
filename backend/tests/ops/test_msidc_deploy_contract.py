@@ -69,6 +69,7 @@ def test_deploy_bundle_never_uploads_the_host_env() -> None:
     deploy = (ROOT / "scripts/deploy.sh").read_text()
 
     assert 'git -C "$ROOT" archive' in deploy
+    assert "+refs/heads/main:refs/remotes/origin/main" in deploy
     assert "merge-base --is-ancestor" in deploy
     assert "ls-tree -r --name-only" in deploy
     assert "ACCORD_EXPECTED_SHA" in deploy
@@ -91,6 +92,7 @@ def test_setup_reports_missing_public_url_before_docker_mutation(tmp_path: Path)
         capture_output=True,
         check=False,
         env={
+            "ACCORD_CONFIRMED_FRESH_INSTALL": "true",
             "FAKE_DOCKER_LOG": str(docker_log),
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
         },
@@ -102,6 +104,34 @@ def test_setup_reports_missing_public_url_before_docker_mutation(tmp_path: Path)
     docker_calls = docker_log.read_text()
     assert "compose pull" not in docker_calls
     assert "compose up" not in docker_calls
+
+
+def test_setup_accepts_default_web_port_when_env_omits_it(tmp_path: Path) -> None:
+    deploy_dir = tmp_path / "deploy"
+    fake_bin = tmp_path / "bin"
+    docker_log = tmp_path / "docker.log"
+    deploy_dir.mkdir()
+    fake_bin.mkdir()
+    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _write_fake_docker(fake_bin, docker_log)
+    (deploy_dir / ".env").write_text(
+        "\n".join(line for line in _valid_env_lines() if not line.startswith("ACCORD_WEB_PORT="))
+    )
+
+    result = subprocess.run(
+        ["bash", str(deploy_dir / "setup.sh")],
+        capture_output=True,
+        check=False,
+        env={
+            "ACCORD_CONFIRMED_FRESH_INSTALL": "true",
+            "FAKE_DOCKER_LOG": str(docker_log),
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        },
+        text=True,
+    )
+
+    assert "ACCORD_WEB_PORT" not in result.stderr
+    assert "compose --env-file .env pull --quiet" in docker_log.read_text()
 
 
 @pytest.mark.parametrize(
