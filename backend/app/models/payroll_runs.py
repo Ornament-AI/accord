@@ -200,6 +200,17 @@ class PayrollRunEmployee(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedM
             "hra_percent IS NULL OR (hra_percent >= 0 AND hra_percent <= 1000)",
             name="ck_payroll_run_employees_hra_percent",
         ),
+        CheckConstraint(
+            "transport_amount IS NULL OR transport_amount >= 0",
+            name="ck_payroll_run_employees_transport_amount",
+        ),
+        # da_difference stays signed: it is a gross adjustment that may recover
+        # overpaid dearness allowance from a prior period.
+        CheckConstraint(
+            "da_difference IS NULL OR (da_difference >= -99999999.99 AND da_difference <= 99999999.99)",
+            name="ck_payroll_run_employees_da_difference",
+        ),
+        Index("ix_payroll_run_employees_employee_id", "employee_id"),
         UniqueConstraint(
             "organization_id",
             "run_id",
