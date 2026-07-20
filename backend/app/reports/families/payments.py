@@ -489,12 +489,28 @@ class BankAdviceBuilder:
         )
 
 
+def _line_display_classification(line: Any) -> str:
+    """Trace-aware classification for display.
+
+    Informational lines are stored under the legacy ``earning`` DB bucket
+    (see ``run_calculation._to_db_classification``); the immutable trace keeps
+    the true ``informational`` classification, which is what a payslip must
+    show. ``AG_deduction`` (trace) normalizes to the DB ``ag_deduction`` form.
+    """
+    trace = line["trace"] or {}
+    code = str(line["component_code"])
+    if code == "FOREGONE_HRA" or trace.get("classification") == "informational":
+        return "informational"
+    value = str(trace.get("classification") or line["classification"])
+    return "ag_deduction" if value == "AG_deduction" else value
+
+
 def _line_kind_for_payslip(line: Any) -> str:
     code = str(line["component_code"])
     trace = line["trace"] or {}
     if code == "FOREGONE_HRA" or trace.get("classification") == "informational":
         return "informational"
-    classification = str(line["classification"])
+    classification = _line_display_classification(line)
     if classification == "earning":
         return "earning"
     if classification == "employer_contribution":
@@ -576,7 +592,7 @@ class PayslipBundleBuilder:
                     (
                         kind,
                         str(line["component_code"]),
-                        str(line["classification"]),
+                        _line_display_classification(line),
                         _money(line["amount"]),
                     )
                 )

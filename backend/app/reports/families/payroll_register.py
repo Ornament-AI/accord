@@ -730,6 +730,7 @@ class TreasuryFaceBuilder:
 
         earnings_total = _ZERO
         employer_share = _ZERO
+        gross_adjustments = _ZERO
         ag_deductions = _ZERO
         treasury_deductions = _ZERO
         external_recoveries = _ZERO
@@ -745,22 +746,45 @@ class TreasuryFaceBuilder:
                 trace = line["trace"] or {}
                 if trace.get("classification") == "informational" or code == "FOREGONE_HRA":
                     continue
-                classification = str(line["classification"])
+                # Trace-aware normalization ("AG_deduction" → "ag_deduction"),
+                # identical to the Pay Bill grouping path.
+                classification = _line_classification(line)
                 amount = _money(line["amount"])
-                if classification == "ag_deduction":
+                if classification == "gross_adjustment":
+                    gross_adjustments += amount
+                elif classification == "ag_deduction":
                     ag_deductions += amount
                 elif classification == "treasury_deduction":
                     treasury_deductions += amount
                 elif classification == "external_recovery":
                     external_recoveries += amount
 
-        gross_bill = _money(earnings_total + employer_share)
+        # Engine identity (ADR 0007): gross = earnings + employer share
+        # + gross adjustments. Omitting gross adjustments here would silently
+        # break "gross − deductions = net" as soon as a gross_adjustment
+        # component (e.g. DA_DIFFERENCE) posts.
+        gross_bill = _money(earnings_total + employer_share + gross_adjustments)
         total_deductions = _money(ag_deductions + treasury_deductions + external_recoveries)
         employer_share = _money(employer_share)
+        gross_adjustments = _money(gross_adjustments)
         net_payable = _money(net_payable)
         ag_deductions = _money(ag_deductions)
         treasury_deductions = _money(treasury_deductions)
         external_recoveries = _money(external_recoveries)
+
+        # Defense in depth: the face must reconcile to the posted per-employee
+        # nets. Raise (not assert) so the invariant holds under `python -O`.
+        if _money(gross_bill - total_deductions) != net_payable:
+            raise ConflictError(
+                "Treasury Face does not reconcile: "
+                f"gross {gross_bill} − deductions {total_deductions} "
+                f"!= posted net payable {net_payable}",
+                details={
+                    "gross_bill": str(gross_bill),
+                    "total_deductions": str(total_deductions),
+                    "net_payable": str(net_payable),
+                },
+            )
 
         if snapshot is None:
             signatory_rows = await _load_signatory_rows(
@@ -823,6 +847,7 @@ class TreasuryFaceBuilder:
                     ),
                     rows=(
                         ("Gross bill", gross_bill),
+                        ("Gross adjustments (in gross bill)", gross_adjustments),
                         ("AG deductions", ag_deductions),
                         ("Treasury deductions", treasury_deductions),
                         ("External recoveries", external_recoveries),
