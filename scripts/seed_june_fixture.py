@@ -78,13 +78,9 @@ def _assert_empty(client: httpx.Client) -> None:
 			f"Org already has {employees['total']} employees. "
 			"Seed into an empty org, or wipe master data first."
 		)
-	components = _require(client.get("/api/pay-components"), context="list components")
-	assert isinstance(components, list)
-	if components:
-		raise SeedError(
-			f"Org already has {len(components)} pay components. "
-			"Seed into an empty org, or wipe master data first."
-		)
+	# Standard pay components are seeded at organization bootstrap and are
+	# expected to exist; _create_components reuses them by code (as the golden
+	# e2e test does) and only creates the fixture components that are missing.
 
 
 def _create_org_structure(
@@ -120,46 +116,55 @@ def _create_org_structure(
 
 
 def _create_components(client: httpx.Client, fixture: JuneFixture) -> dict[str, UUID]:
+	listing = _require(client.get("/api/pay-components"), context="list components")
+	assert isinstance(listing, list)
+	existing: dict[str, dict[str, Any]] = {row["code"]: row for row in listing}
+
 	component_ids: dict[str, UUID] = {}
 	display_order = 0
 	for comp in fixture.components:
 		display_order += 1
-		if comp.api_classification is None:
-			assert comp.code == "FOREGONE_HRA"
-			continue
-		body = _require(
-			client.post(
-				"/api/pay-components",
-				json={
-					"code": comp.code,
-					"name": comp.name,
-					"classification": comp.api_classification,
-					"display_order": display_order,
-				},
-			),
-			context=f"create component {comp.code}",
-		)
+		body = existing.get(comp.code)
+		if body is None:
+			body = _require(
+				client.post(
+					"/api/pay-components",
+					json={
+						"code": comp.code,
+						"name": comp.name,
+						"classification": comp.api_classification,
+						"display_order": display_order,
+						"employer_transfer": comp.employer_transfer,
+						"transfer_of": comp.transfer_of,
+					},
+				),
+				context=f"create component {comp.code}",
+			)
 		assert isinstance(body, dict)
 		component_id = UUID(body["id"])
 		component_ids[comp.code] = component_id
 
 		if comp.code in RECURRING_COMPONENT_CODES or comp.code == BASIC_CODE:
-			_require(
-				client.post(
-					f"/api/pay-components/{component_id}/rate-versions",
-					json={
-						"effective_from": EFFECTIVE_FROM,
-						"calc_kind": "fixed_recurring_amount",
-						"amount": "0.00",
-						"rounding_rule": "ROUND_HALF_UP_RUPEE",
-					},
-				),
-				context=f"rate version {comp.code}",
+			resp = client.post(
+				f"/api/pay-components/{component_id}/rate-versions",
+				json={
+					"effective_from": EFFECTIVE_FROM,
+					"calc_kind": "fixed_recurring_amount",
+					"amount": "0.00",
+					"rounding_rule": "ROUND_HALF_UP_RUPEE",
+				},
 			)
+			# 409 means a rate version already covers EFFECTIVE_FROM (e.g. a
+			# previous seed run); the resolver only needs one to exist.
+			if resp.status_code not in {201, 409}:
+				raise SeedError(f"rate version {comp.code}: {resp.status_code} {resp.text}")
 		print(f"  component {comp.code}")
 
-	if len(component_ids) != 16:
-		raise SeedError(f"expected 16 components, got {len(component_ids)}")
+	if len(component_ids) != len(fixture.components):
+		raise SeedError(
+			f"expected {len(fixture.components)} components, got "
+			f"{len(component_ids)}: {sorted(component_ids)}"
+		)
 	return component_ids
 
 
