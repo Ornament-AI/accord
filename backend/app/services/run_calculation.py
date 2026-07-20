@@ -58,6 +58,7 @@ from app.domain.payroll.rounding import ROUND_HALF_UP_PAISE, ROUND_NONE, apply a
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
+from app.models.effective import effective_on
 from app.models.employees import (
     Employee,
     employee_bank_account_versions,
@@ -221,13 +222,21 @@ async def _employee_report_identity_snapshot(
         organization_id=organization_id,
         on_date=on_date,
     )
-    banks = await versioning.get_active_versions_map(
-        db,
-        employee_bank_account_versions,
-        header_ids=employee_ids,
-        organization_id=organization_id,
-        on_date=on_date,
+    bank_rows = (
+        (
+            await db.execute(
+                sa.select(employee_bank_account_versions).where(
+                    employee_bank_account_versions.c.organization_id == organization_id,
+                    employee_bank_account_versions.c.header_id.in_(employee_ids),
+                    effective_on(employee_bank_account_versions.c.validity, on_date),
+                    employee_bank_account_versions.c.is_primary_salary.is_(True),
+                )
+            )
+        )
+        .mappings()
+        .all()
     )
+    banks = {row["header_id"]: row for row in bank_rows}
     post_ids = {posting["post_id"] for posting in postings.values()}
     office_ids = {posting["office_id"] for posting in postings.values()}
     posts = (
