@@ -22,6 +22,7 @@ case "${1:-}" in
 		[[ $# -eq 4 ]] || { usage >&2; exit 2; }
 		docker compose -f "$SCRIPT_DIR/docker-compose.yml" --env-file "$SCRIPT_DIR/.env" \
 			run --rm --no-deps \
+			-e PYTHONPATH=/app \
 			-v "$ROOT/scripts:/provision/scripts:ro" \
 			api python /provision/scripts/provision_organization.py \
 			--name "$2" --slug "$3" --admin-email "$4"
@@ -30,6 +31,7 @@ case "${1:-}" in
 		[[ $# -eq 3 ]] || { usage >&2; exit 2; }
 		docker compose -f "$SCRIPT_DIR/docker-compose.yml" --env-file "$SCRIPT_DIR/.env" \
 			run --rm --no-deps \
+			-e PYTHONPATH=/app \
 			-v "$ROOT/scripts:/provision/scripts:ro" \
 			api python /provision/scripts/provision_member.py \
 			--email "$2" --role "$3"
