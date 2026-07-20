@@ -331,7 +331,7 @@ def report_readiness_issues(
             )
     signatories = {
         str(item.get("role")): item
-        for item in profile.get("signatories", [])
+        for item in (profile.get("signatories") or [])
         if isinstance(item, dict)
     }
     for role, label in (

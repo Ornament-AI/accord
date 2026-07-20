@@ -206,31 +206,51 @@ async def _employee_report_identity_snapshot(
     employee_by_ref: Mapping[str, Employee],
     on_date: date,
 ) -> dict[str, dict[str, Any]]:
+    employee_ids = [employee.id for employee in employee_by_ref.values()]
+    profiles = await versioning.get_active_versions_map(
+        db,
+        employee_profile_versions,
+        header_ids=employee_ids,
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    postings = await versioning.get_active_versions_map(
+        db,
+        employee_posting_versions,
+        header_ids=employee_ids,
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    banks = await versioning.get_active_versions_map(
+        db,
+        employee_bank_account_versions,
+        header_ids=employee_ids,
+        organization_id=organization_id,
+        on_date=on_date,
+    )
+    post_ids = {posting["post_id"] for posting in postings.values()}
+    office_ids = {posting["office_id"] for posting in postings.values()}
+    posts = (
+        {post.id: post for post in (await db.execute(sa.select(Post).where(Post.id.in_(post_ids)))).scalars()}
+        if post_ids
+        else {}
+    )
+    offices = (
+        {
+            office.id: office
+            for office in (await db.execute(sa.select(Office).where(Office.id.in_(office_ids)))).scalars()
+        }
+        if office_ids
+        else {}
+    )
+
     snapshot: dict[str, dict[str, Any]] = {}
     for employee in employee_by_ref.values():
-        profile = await versioning.get_active_version(
-            db,
-            employee_profile_versions,
-            header_id=employee.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
-        posting = await versioning.get_active_version(
-            db,
-            employee_posting_versions,
-            header_id=employee.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
-        bank = await versioning.get_active_version(
-            db,
-            employee_bank_account_versions,
-            header_id=employee.id,
-            organization_id=organization_id,
-            on_date=on_date,
-        )
-        post = None if posting is None else await db.get(Post, posting["post_id"])
-        office = None if posting is None else await db.get(Office, posting["office_id"])
+        profile = profiles.get(employee.id)
+        posting = postings.get(employee.id)
+        bank = banks.get(employee.id)
+        post = None if posting is None else posts.get(posting["post_id"])
+        office = None if posting is None else offices.get(posting["office_id"])
         snapshot[str(employee.id)] = {
             "employee_number": employee.employee_number,
             "name": None if profile is None else profile.get("name"),

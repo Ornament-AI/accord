@@ -25,12 +25,15 @@ const GRAIN_GRADIENT_COLORS = {
 
 function useResolvedDarkTheme() {
 	const { theme } = useTheme();
-	const [systemPrefersDark, setSystemPrefersDark] = useState(
-		() => window.matchMedia("(prefers-color-scheme: dark)").matches,
+	const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+		typeof window !== "undefined" && window.matchMedia
+			? window.matchMedia("(prefers-color-scheme: dark)").matches
+			: false,
 	);
 
 	useEffect(() => {
 		if (theme !== "system") return;
+		if (typeof window === "undefined" || !window.matchMedia) return;
 
 		const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 		const handleChange = () => setSystemPrefersDark(mediaQuery.matches);
