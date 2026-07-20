@@ -210,9 +210,7 @@ async def test_consolidated_export_zip_has_thirteen_entries(session) -> None:
     )
     assert job.job_type == "consolidated_xlsx"
     assert job.dedupe_key.startswith(f"consolidated_xlsx:{world['posted_run_id']}:")
-    expected_hash = manifest_hash(
-        product_sheet_manifest(template_version=DEFAULT_TEMPLATE_VERSION)
-    )
+    expected_hash = manifest_hash(product_sheet_manifest(template_version=DEFAULT_TEMPLATE_VERSION))
     assert job.dedupe_key == f"consolidated_xlsx:{world['posted_run_id']}:{expected_hash}"
 
     result = await execute_consolidated_xlsx(

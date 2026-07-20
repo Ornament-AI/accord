@@ -159,9 +159,7 @@ def product_sheet_manifest(
     template_version: str = DEFAULT_TEMPLATE_VERSION,
 ) -> tuple[tuple[str, str], ...]:
     """Sorted ``(report_type, template_version)`` pairs for the product pack."""
-    return tuple(
-        sorted((report_type, template_version) for report_type in PRODUCT_REPORT_SHEETS)
-    )
+    return tuple(sorted((report_type, template_version) for report_type in PRODUCT_REPORT_SHEETS))
 
 
 def manifest_hash(manifest: tuple[tuple[str, str], ...]) -> str:
@@ -285,9 +283,7 @@ async def request_consolidated_export(
     resolved_version = _resolve_template_version(template_version)
     missing = [rt for rt in PRODUCT_REPORT_SHEETS if rt not in registry]
     if missing:
-        raise ReportTypeNotFoundError(
-            f"Product report sheets missing from registry: {missing!r}."
-        )
+        raise ReportTypeNotFoundError(f"Product report sheets missing from registry: {missing!r}.")
     for report_type in PRODUCT_REPORT_SHEETS:
         registration = registry.get(report_type)
         if "excel" not in registration.formatters.content_types:
