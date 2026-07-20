@@ -37,6 +37,7 @@ from app.schemas.employees import (
 )
 from app.schemas.pagination import page_count, page_offset
 from app.services.versioning import get_active_version, insert_version, list_versions
+from app.services.db_errors import integrity_is
 
 VERSION_TABLES: dict[VersionKind, sa.Table] = {
     "profile": employee_profile_versions,
@@ -44,18 +45,6 @@ VERSION_TABLES: dict[VersionKind, sa.Table] = {
     "pay": employee_pay_versions,
     "bank": employee_bank_account_versions,
 }
-
-
-def _integrity_is(exc: BaseException, *types: type[BaseException]) -> bool:
-    """Walk SQLAlchemy/asyncpg exception wrappers for a concrete PG error type."""
-    current: BaseException | None = exc
-    seen: set[int] = set()
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        if isinstance(current, types):
-            return True
-        current = current.__cause__ or getattr(current, "orig", None)
-    return False
 
 
 def _profile_values(profile: ProfileInput) -> dict[str, Any]:
@@ -167,7 +156,7 @@ async def create_employee(
         await db.flush()
     except IntegrityError as exc:
         await db.rollback()
-        if _integrity_is(exc, UniqueViolationError):
+        if integrity_is(exc, UniqueViolationError):
             raise ConflictError(
                 "An employee with this employee_number already exists in this organization."
             ) from exc
@@ -231,7 +220,7 @@ async def create_employee(
         raise
     except IntegrityError as exc:
         await db.rollback()
-        if _integrity_is(exc, ExclusionViolationError):
+        if integrity_is(exc, ExclusionViolationError):
             raise ConflictError("Version periods overlap.") from exc
         raise ConflictError("Could not create employee versions.") from exc
 
@@ -436,7 +425,7 @@ async def create_employee_version(
         raise
     except IntegrityError as exc:
         await db.rollback()
-        if _integrity_is(exc, ExclusionViolationError):
+        if integrity_is(exc, ExclusionViolationError):
             if parsed == "bank":
                 raise ConflictError(
                     "Primary salary bank account versions overlap for this employee."

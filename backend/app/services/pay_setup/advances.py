@@ -18,8 +18,8 @@ from app.models.effective import select_active_version
 from app.schemas.pay_setup import (
     AdvanceCreate,
     AdvanceInstallmentVersionCreate,
-    _serialize_money,
 )
+from app.schemas.money import serialize_money
 from app.services import versioning
 from app.services.db_errors import raise_integrity_error
 from app.services.pay_setup._shared import get_employee, serialize_version_row
@@ -30,7 +30,7 @@ def _advance_response(header: AdvanceAccount, version: dict[str, Any]) -> dict[s
         "id": header.id,
         "employee_id": header.employee_id,
         "advance_type": header.advance_type,
-        "principal": _serialize_money(header.principal),
+        "principal": serialize_money(header.principal),
         "sanctioned_on": header.sanctioned_on,
         "reference": header.reference,
         "created_at": header.created_at,

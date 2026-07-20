@@ -5,51 +5,17 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated
 from uuid import UUID
 
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     ConfigDict,
     Field,
-    PlainSerializer,
     field_validator,
 )
+from app.schemas.money import MoneyAmount, RateValue
 
 from app.schemas.run_results import CurrentVersion
-
-
-def _require_decimal_string(value: object) -> Decimal:
-    if isinstance(value, bool) or not isinstance(value, str):
-        raise ValueError("Must be a decimal string")
-    try:
-        parsed = Decimal(value)
-    except Exception as exc:
-        raise ValueError("Invalid decimal string") from exc
-    if not parsed.is_finite():
-        raise ValueError("Decimal must be finite")
-    return parsed
-
-
-def _serialize_money(value: Decimal) -> str:
-    return f"{value.quantize(Decimal('0.01'))}"
-
-
-def _serialize_rate(value: Decimal) -> str:
-    return f"{value.quantize(Decimal('0.0001'))}"
-
-
-MoneyAmount = Annotated[
-    Decimal,
-    BeforeValidator(_require_decimal_string),
-    PlainSerializer(_serialize_money, return_type=str),
-]
-RateValue = Annotated[
-    Decimal,
-    BeforeValidator(_require_decimal_string),
-    PlainSerializer(_serialize_rate, return_type=str),
-]
 
 
 class InputKind(StrEnum):

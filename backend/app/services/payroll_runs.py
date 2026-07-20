@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import sqlalchemy as sa
-from asyncpg.exceptions import CheckViolationError, UniqueViolationError
+from asyncpg.exceptions import UniqueViolationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,49 +32,23 @@ from app.schemas.payroll_runs import (
     PayrollRunReportMetadata,
     PayrollRunRosterUpdate,
     PayrollRunInputUpsert,
-    _serialize_money,
-    _serialize_rate,
 )
+from app.schemas.money import serialize_money, serialize_rate
 from app.services import audit_events, run_results as run_results_service
 from app.services import versioning
+from app.services.db_errors import integrity_is, raise_integrity_error
 
 
 def _serialize_optional_money(value: Decimal | None) -> str | None:
     if value is None:
         return None
-    return _serialize_money(value)
+    return serialize_money(value)
 
 
 def _serialize_optional_rate(value: Decimal | None) -> str | None:
     if value is None:
         return None
-    return _serialize_rate(value)
-
-
-def _integrity_is(exc: BaseException, *types: type[BaseException]) -> bool:
-    """Walk SQLAlchemy/asyncpg exception wrappers for a concrete PG error type."""
-    stack: list[BaseException | None] = [exc]
-    seen: set[int] = set()
-    while stack:
-        current = stack.pop()
-        if current is None or id(current) in seen:
-            continue
-        seen.add(id(current))
-        if isinstance(current, types):
-            return True
-        if isinstance(current, BaseExceptionGroup):
-            stack.extend(current.exceptions)
-        stack.append(current.__cause__)
-        stack.append(getattr(current, "orig", None))
-    return False
-
-
-def _raise_integrity_error(exc: IntegrityError) -> None:
-    if _integrity_is(exc, UniqueViolationError):
-        raise ConflictError("A conflicting record already exists.") from exc
-    if _integrity_is(exc, CheckViolationError):
-        raise ValidationError("Request violates a database constraint.") from exc
-    raise ConflictError("Database constraint violation.") from exc
+    return serialize_rate(value)
 
 
 def _period_response(period: PayrollPeriod) -> dict[str, Any]:
@@ -126,7 +100,7 @@ def _roster_response(
         "selected": row is not None or default_selected,
         "eligible": eligible,
         "ineligible_reason": None if eligible else INELIGIBLE_NO_PROFILE,
-        "payable_days": _serialize_money(row.payable_days if row else Decimal(period_days)),
+        "payable_days": serialize_money(row.payable_days if row else Decimal(period_days)),
         "da_percent": _serialize_optional_rate(row.da_percent if row else None),
         "da_difference": _serialize_optional_money(row.da_difference if row else None),
         "hra_percent": _serialize_optional_rate(row.hra_percent if row else None),
@@ -453,11 +427,11 @@ async def create_period(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        if _integrity_is(exc, UniqueViolationError):
+        if integrity_is(exc, UniqueViolationError):
             raise ConflictError(
                 "A payroll period for this organization, year, and month already exists."
             ) from exc
-        _raise_integrity_error(exc)
+        raise_integrity_error(exc)
     return _period_response(period)
 
 
@@ -493,9 +467,9 @@ async def create_run(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        if _integrity_is(exc, UniqueViolationError):
+        if integrity_is(exc, UniqueViolationError):
             raise ConflictError("A payroll run already exists for this period.") from exc
-        _raise_integrity_error(exc)
+        raise_integrity_error(exc)
     return _run_list_item(run, period)
 
 
@@ -873,7 +847,7 @@ async def upsert_run_input(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        _raise_integrity_error(exc)
+        raise_integrity_error(exc)
     return response
 
 

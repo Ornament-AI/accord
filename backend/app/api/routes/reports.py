@@ -19,7 +19,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.auth.principal import AuthPrincipal
 from app.jobs.protocol import JobQueue
 from app.reports.base import ReportRegistry
@@ -57,14 +57,6 @@ def get_job_queue(request: Request) -> JobQueue:
 
 ReportRegistryDep = Annotated[ReportRegistry, Depends(get_report_registry)]
 JobQueueDep = Annotated[JobQueue, Depends(get_job_queue)]
-
-
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
-
-
-def _user_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.user_id)
 
 
 async def _maybe_idempotent(
@@ -122,8 +114,8 @@ async def export_reports(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     _: AuthPrincipal = Depends(require_capability("generate_reports")),
 ) -> ExportReportsResponse:
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
     request_payload = {
         "command": "export_reports",
         "posted_run_id": str(body.posted_run_id),
@@ -164,8 +156,8 @@ async def generate_report(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     _: AuthPrincipal = Depends(require_capability("generate_reports")),
 ) -> GenerateReportResponse:
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
     request_payload = {
         "command": "generate_report",
         "report_type": body.report_type,
@@ -211,7 +203,7 @@ async def get_report_job(
     info = await report_generation_service.get_report_job(
         db,
         queue,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         job_id=job_id,
     )
     return ReportJobResponse(
@@ -238,11 +230,11 @@ async def preview_report(
     """Sync JSON preview. Declared after static ``/reports/...`` paths."""
     payload = await report_generation_service.preview_report(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         report_type=report_type,
         posted_run_id=posted_run_id,
         variant_key=variant_key,
         registry=registry,
-        actor_user_id=_user_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
     )
     return ReportPreviewResponse.model_validate(payload)

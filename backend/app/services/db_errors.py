@@ -15,7 +15,25 @@ from sqlalchemy.exc import IntegrityError
 
 from app.exceptions import ConflictError, ValidationError
 
-__all__ = ["raise_integrity_error"]
+__all__ = ["integrity_is", "raise_integrity_error"]
+
+
+def integrity_is(exc: BaseException, *types: type[BaseException]) -> bool:
+    """Walk SQLAlchemy/asyncpg exception wrappers for a concrete PG error type."""
+    stack: list[BaseException | None] = [exc]
+    seen: set[int] = set()
+    while stack:
+        current = stack.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, types):
+            return True
+        if isinstance(current, BaseExceptionGroup):
+            stack.extend(current.exceptions)
+        stack.append(current.__cause__)
+        stack.append(getattr(current, "orig", None))
+    return False
 
 
 def raise_integrity_error(exc: IntegrityError) -> NoReturn:
@@ -24,11 +42,10 @@ def raise_integrity_error(exc: IntegrityError) -> NoReturn:
     Unique -> 409 conflict; exclusion (version-range overlap) -> 409 conflict;
     check -> 422 validation; anything else -> generic 409 conflict.
     """
-    orig = exc.orig
-    if isinstance(orig, UniqueViolationError):
+    if integrity_is(exc, UniqueViolationError):
         raise ConflictError("A conflicting record already exists.") from exc
-    if isinstance(orig, ExclusionViolationError):
+    if integrity_is(exc, ExclusionViolationError):
         raise ConflictError("Version periods overlap.") from exc
-    if isinstance(orig, CheckViolationError):
+    if integrity_is(exc, CheckViolationError):
         raise ValidationError("Request violates a database constraint.") from exc
     raise ConflictError("Database constraint violation.") from exc

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import NotFoundError
 from app.models.employees import Employee
 from app.models.pay_components import PayComponent
-from app.schemas.pay_setup import _serialize_money, _serialize_rate
+from app.schemas.money import serialize_money, serialize_rate
 
 
 def validity_bounds(validity: Any) -> tuple[date, date | None]:
@@ -53,9 +53,9 @@ def serialize_version_row(row: Mapping[str, Any]) -> dict[str, Any]:
             continue
         if isinstance(value, Decimal):
             if key == "rate":
-                payload[key] = _serialize_rate(value)
+                payload[key] = serialize_rate(value)
             else:
-                payload[key] = _serialize_money(value)
+                payload[key] = serialize_money(value)
         elif key == "basis" and value is not None and not isinstance(value, list):
             payload[key] = list(value)
         else:

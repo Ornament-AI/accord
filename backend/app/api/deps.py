@@ -167,3 +167,13 @@ async def require_tenant_context(
 CurrentUser = Annotated[AuthPrincipal, Depends(get_current_user)]
 OptionalUser = Annotated[AuthPrincipal | None, Depends(get_current_user_optional)]
 TenantCtx = Annotated[TenantContext, Depends(require_tenant_context)]
+
+
+def tenant_org_id(tenant: TenantContext) -> UUID:
+    """The tenant's organization id as a UUID (context stores strings)."""
+    return UUID(tenant.organization_id)
+
+
+def tenant_user_id(tenant: TenantContext) -> UUID:
+    """The acting user's id as a UUID (context stores strings)."""
+    return UUID(tenant.user_id)

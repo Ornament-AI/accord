@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Header
 from pydantic import BaseModel, Field
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.auth.principal import AuthPrincipal
 from app.services import run_workflow as run_workflow_service
 from app.services.idempotency import idempotent_command
@@ -21,14 +21,6 @@ router = APIRouter(tags=["payroll-run-workflow"])
 
 class ReasonBody(BaseModel):
     reason: str | None = Field(default=None)
-
-
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
-
-
-def _user_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.user_id)
 
 
 async def _maybe_idempotent(
@@ -59,7 +51,7 @@ async def validate_payroll_run(
 ) -> dict[str, Any]:
     return await run_workflow_service.validate_run(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
     )
 
@@ -74,8 +66,8 @@ async def submit_payroll_run(
     _: AuthPrincipal = Depends(require_capability("submit_run")),
 ) -> dict[str, Any]:
     reason = None if body is None else body.reason
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
     payload = {
         "command": "submit",
         "run_id": str(run_id),
@@ -111,8 +103,8 @@ async def withdraw_payroll_run(
     _: AuthPrincipal = Depends(require_capability("submit_run")),
 ) -> dict[str, Any]:
     reason = None if body is None else body.reason
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
     payload = {
         "command": "withdraw",
         "run_id": str(run_id),
@@ -148,8 +140,8 @@ async def approve_payroll_run(
     _: AuthPrincipal = Depends(require_capability("approve_run")),
 ) -> dict[str, Any]:
     reason = None if body is None else body.reason
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
     payload = {
         "command": "approve",
         "run_id": str(run_id),
@@ -185,8 +177,8 @@ async def reject_payroll_run(
     _: AuthPrincipal = Depends(require_capability("approve_run")),
 ) -> dict[str, Any]:
     reason = None if body is None else body.reason
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
     payload = {
         "command": "reject",
         "run_id": str(run_id),
