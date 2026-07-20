@@ -23,7 +23,7 @@ from app.models.employees import (
     employee_posting_versions,
     employee_profile_versions,
 )
-from app.models.org_structure import Office, PayrollUnit, Post
+from app.models.org_structure import Office, Post
 from app.models.pay_components import PayComponent, component_rate_versions
 from app.models.payroll_runs import (
     PayrollPeriod,
@@ -58,6 +58,7 @@ from app.services import versioning
 from app.services.run_calculation import calculate_run_command
 from app.services.run_posting import post_run
 from app.tenancy import bind_tenant_context
+from tests.roster_helpers import initialize_run_roster
 from tests.e2e.fixture_loader import (
     ACCOMMODATION_COMPONENT_CODES,
     ADVANCE_COMPONENT_CODES,
@@ -133,20 +134,12 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
         row = Office(
             organization_id=org.id,
             name=office.name,
-            code=office.code,
             jurisdiction=office.jurisdiction,
         )
         session.add(row)
         await session.flush()
         office_ids[office.fixture_id] = row.id
 
-    unit = PayrollUnit(
-        organization_id=org.id,
-        name=fixture.organization.pay_unit_name,
-        code=fixture.organization.pay_unit_code,
-    )
-    session.add(unit)
-    await session.flush()
 
     post = Post(
         organization_id=org.id,
@@ -205,7 +198,6 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
             user_id=user.id,
             employee=emp,
             office_ids=office_ids,
-            unit_id=unit.id,
             post_id=post.id,
             component_ids=component_ids,
             seed_bank=True,
@@ -224,10 +216,19 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status="draft",
     )
     session.add(run)
+    await session.flush()
+    session.add_all(
+        initialize_run_roster(
+            organization_id=org.id,
+            run=run,
+            employee_ids=list(employee_ids.values()),
+            period_year=period.period_year,
+            period_month=period.period_month,
+        )
+    )
     await session.commit()
 
     await _bind(session, org.id, user.id)
@@ -285,7 +286,6 @@ async def _seed_one_employee(
     user_id: UUID,
     employee: EmployeeSeed,
     office_ids: dict[str, UUID],
-    unit_id: UUID,
     post_id: UUID,
     component_ids: dict[str, UUID],
     seed_bank: bool = True,
@@ -338,9 +338,7 @@ async def _seed_one_employee(
         effective_from=EFFECTIVE_FROM,
         values={
             "office_id": office_ids[employee.office_id],
-            "payroll_unit_id": unit_id,
             "post_id": post_id,
-            "employee_group_id": None,
         },
         change_reason=None,
         created_by=user_id,
@@ -790,7 +788,6 @@ async def test_unposted_run_raises_conflict(session):
     draft = PayrollRun(
         organization_id=world["org_id"],
         period_id=period.id,
-        run_type="supplemental",
         status="draft",
     )
     session.add(draft)

@@ -3,7 +3,6 @@ import { BuildingsIcon as Building2 } from "@phosphor-icons/react/dist/csr/Build
 import { ChartBarIcon as FileBarChart2 } from "@phosphor-icons/react/dist/csr/ChartBar";
 import { ClipboardTextIcon as ClipboardList } from "@phosphor-icons/react/dist/csr/ClipboardText";
 import { MoneyIcon as Banknote } from "@phosphor-icons/react/dist/csr/Money";
-import { UsersThreeIcon as Users } from "@phosphor-icons/react/dist/csr/UsersThree";
 import { WalletIcon as WalletCards } from "@phosphor-icons/react/dist/csr/Wallet";
 
 import type { Capability } from "@/types/auth";
@@ -26,17 +25,15 @@ export type NavRegistryEntry = {
 
 /** Ordered primary navigation using the most direct capability from the frozen contract. */
 export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
-	{ title: "Employees", icon: Users, path: "/employees", capability: "view_master_data" },
 	{
 		title: "Organization",
 		icon: Building2,
 		path: "/organization",
 		capability: "view_master_data",
 		children: [
+			{ title: "Employees", path: "/employees" },
 			{ title: "Offices", path: "/organization/offices" },
-			{ title: "Payroll Units", path: "/organization/payroll-units" },
 			{ title: "Posts", path: "/organization/posts" },
-			{ title: "Employee Groups", path: "/organization/employee-groups" },
 		],
 	},
 	{

@@ -82,7 +82,6 @@ async def test_platform_models_orm_roundtrip(scratch_db: str) -> None:
             run = PayrollRun(
                 organization_id=org_id,
                 period_id=period.id,
-                run_type="regular",
                 status="draft",
             )
             session.add(run)

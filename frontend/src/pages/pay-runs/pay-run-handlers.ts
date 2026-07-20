@@ -5,10 +5,13 @@ import type {
 	PayrollRunCalculateResult,
 	PayrollRunCreate,
 	PayrollRunDetail,
+	PayrollRunEmployeeResponse,
 	PayrollRunInputResponse,
 	PayrollRunInputUpsert,
 	PayrollRunListItem,
 	PayrollRunResults,
+	PayrollRunRosterHistoryResponse,
+	PayrollRunRosterUpdate,
 	PayrollRunTotals,
 } from "@/lib/api/payroll-runs";
 import type { components } from "@/types/api.generated";
@@ -19,6 +22,8 @@ export type PayRunHandlersOptions = {
 	details?: Record<string, PayrollRunDetail>;
 	inputs?: Record<string, PayrollRunInputResponse[]>;
 	results?: Record<string, PayrollRunResults>;
+	rosters?: Record<string, PayrollRunEmployeeResponse[]>;
+	rosterHistory?: Record<string, PayrollRunRosterHistoryResponse[]>;
 	/** When set, POST /api/payroll-periods returns this status/body (e.g. 409). */
 	createPeriodError?: { status: number; body: Record<string, unknown> };
 	/** When set, POST /api/payroll-runs returns this status/body. */
@@ -29,6 +34,7 @@ export type PayRunHandlersOptions = {
 	calculateResult?: Partial<PayrollRunCalculateResult>;
 	onCreatePeriod?: (body: PayrollPeriodCreate) => void;
 	onCreateRun?: (body: PayrollRunCreate) => void;
+	onReplaceRoster?: (runId: string, body: PayrollRunRosterUpdate) => void;
 	onCalculate?: (runId: string) => void;
 	onUpsertInput?: (
 		runId: string,
@@ -83,7 +89,6 @@ export function buildRun(
 		period_id: overrides.period_id,
 		period_year: overrides.period_year,
 		period_month: overrides.period_month,
-		run_type: overrides.run_type ?? "regular",
 		status: overrides.status ?? "draft",
 		lock_version: overrides.lock_version ?? 1,
 		created_at: overrides.created_at ?? now,
@@ -106,10 +111,10 @@ export function buildRunDetail(
 		period_year: overrides.period_year,
 		period_month: overrides.period_month,
 		period_status: overrides.period_status ?? "open",
-		run_type: overrides.run_type ?? "regular",
 		status: overrides.status ?? "draft",
 		current_version: overrides.current_version ?? null,
 		lock_version: overrides.lock_version ?? 1,
+		roster_initialized: overrides.roster_initialized ?? true,
 		created_at: overrides.created_at ?? now,
 		updated_at: overrides.updated_at ?? now,
 	};
@@ -140,6 +145,28 @@ export function buildRunInput(
 		updated_by: overrides.updated_by ?? null,
 		created_at: overrides.created_at ?? now,
 		updated_at: overrides.updated_at ?? now,
+	};
+}
+
+export function buildRosterRow(
+	overrides: Partial<PayrollRunEmployeeResponse> & {
+		employee_id: string;
+		employee_number: string;
+	},
+): PayrollRunEmployeeResponse {
+	return {
+		employee_id: overrides.employee_id,
+		employee_number: overrides.employee_number,
+		employee_name: overrides.employee_name ?? `Employee ${overrides.employee_number}`,
+		sevarth_id: overrides.sevarth_id ?? null,
+		retirement_regime: overrides.retirement_regime ?? "nps",
+		basic_pay: overrides.basic_pay ?? "50000.00",
+		selected: overrides.selected ?? true,
+		payable_days: overrides.payable_days ?? "31.00",
+		da_percent: overrides.da_percent ?? null,
+		da_difference: overrides.da_difference ?? null,
+		hra_percent: overrides.hra_percent ?? null,
+		transport_amount: overrides.transport_amount ?? null,
 	};
 }
 
@@ -193,6 +220,8 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 	const details = new Map<string, PayrollRunDetail>();
 	const inputs = new Map<string, PayrollRunInputResponse[]>();
 	const results = new Map<string, PayrollRunResults>();
+	const rosters = new Map<string, PayrollRunEmployeeResponse[]>();
+	const rosterHistory = new Map<string, PayrollRunRosterHistoryResponse[]>();
 
 	const seedPeriods = options.periods ?? [
 		buildPeriod({ id: "period-1", period_year: 2026, period_month: 7 }),
@@ -209,7 +238,6 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 			period_id: "period-1",
 			period_year: 2026,
 			period_month: 7,
-			run_type: "regular",
 			status: "draft",
 		}),
 		buildRun({
@@ -217,7 +245,6 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 			period_id: "period-2",
 			period_year: 2026,
 			period_month: 6,
-			run_type: "supplemental",
 			status: "calculated",
 		}),
 	];
@@ -231,13 +258,20 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 				period_id: run.period_id,
 				period_year: run.period_year,
 				period_month: run.period_month,
-				run_type: run.run_type,
 				status: run.status,
 				lock_version: run.lock_version,
 				current_version: null,
 			});
 		details.set(run.id, detail);
 		inputs.set(run.id, options.inputs?.[run.id] ?? []);
+		rosters.set(
+			run.id,
+			options.rosters?.[run.id] ?? [
+				buildRosterRow({ employee_id: "emp-1", employee_number: "E-001" }),
+				buildRosterRow({ employee_id: "emp-2", employee_number: "E-002" }),
+			],
+		);
+		rosterHistory.set(run.id, options.rosterHistory?.[run.id] ?? []);
 		if (options.results?.[run.id]) {
 			results.set(run.id, options.results[run.id]);
 		} else if (detail.current_version) {
@@ -262,7 +296,6 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 						period_id: detail.period_id,
 						period_year: detail.period_year,
 						period_month: detail.period_month,
-						run_type: detail.run_type,
 						status: detail.status,
 						lock_version: detail.lock_version,
 					}),
@@ -270,6 +303,9 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 			}
 			if (!inputs.has(runId)) {
 				inputs.set(runId, options.inputs?.[runId] ?? []);
+			}
+			if (!rosterHistory.has(runId)) {
+				rosterHistory.set(runId, options.rosterHistory?.[runId] ?? []);
 			}
 		}
 	}
@@ -283,6 +319,12 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 	if (options.results) {
 		for (const [runId, value] of Object.entries(options.results)) {
 			results.set(runId, value);
+		}
+	}
+
+	if (options.rosters) {
+		for (const [runId, value] of Object.entries(options.rosters)) {
+			rosters.set(runId, value);
 		}
 	}
 
@@ -359,7 +401,6 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 				period_id: period.id,
 				period_year: period.period_year,
 				period_month: period.period_month,
-				run_type: body.run_type,
 				status: "draft",
 				created_at: now,
 				updated_at: now,
@@ -372,14 +413,78 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 					period_id: period.id,
 					period_year: period.period_year,
 					period_month: period.period_month,
-					run_type: body.run_type,
 					status: "draft",
+					roster_initialized: false,
 					created_at: now,
 					updated_at: now,
 				}),
 			);
 			inputs.set(id, []);
+			rosters.set(id, [
+				buildRosterRow({ employee_id: "emp-1", employee_number: "E-001", selected: false }),
+				buildRosterRow({ employee_id: "emp-2", employee_number: "E-002", selected: false }),
+			]);
+			rosterHistory.set(id, []);
 			return HttpResponse.json(created, { status: 201 });
+		}),
+
+		http.get("/api/payroll-runs/:runId/roster", ({ params }) => {
+			const runId = String(params.runId);
+			if (!details.has(runId)) {
+				return HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
+			}
+			return HttpResponse.json(rosters.get(runId) ?? []);
+		}),
+
+		http.get("/api/payroll-runs/:runId/roster-history", ({ params }) => {
+			const runId = String(params.runId);
+			if (!details.has(runId)) {
+				return HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
+			}
+			return HttpResponse.json(rosterHistory.get(runId) ?? []);
+		}),
+
+		http.put("/api/payroll-runs/:runId/roster", async ({ params, request }) => {
+			const runId = String(params.runId);
+			const detail = details.get(runId);
+			if (!detail) {
+				return HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
+			}
+			const body = (await request.json()) as PayrollRunRosterUpdate;
+			options.onReplaceRoster?.(runId, body);
+			const selectedById = new Map(
+				body.employees.map((employee) => [employee.employee_id, employee]),
+			);
+			const next = (rosters.get(runId) ?? []).map((row) => {
+				const selected = selectedById.get(row.employee_id);
+				return selected
+					? {
+							...row,
+							selected: true,
+							payable_days: String(selected.payable_days),
+							da_percent: selected.da_percent != null ? String(selected.da_percent) : null,
+							da_difference: selected.da_difference != null ? String(selected.da_difference) : null,
+							hra_percent: selected.hra_percent != null ? String(selected.hra_percent) : null,
+							transport_amount:
+								selected.transport_amount != null ? String(selected.transport_amount) : null,
+						}
+					: { ...row, selected: false };
+			});
+			rosters.set(runId, next);
+			rosterHistory.set(runId, [
+				{
+					id: `history-${runId}-${(rosterHistory.get(runId)?.length ?? 0) + 1}`,
+					action: detail.roster_initialized ? "Updated roster" : "Created roster",
+					changed_employees: body.employees.length,
+					selected_employees: body.employees.length,
+					changed_fields: detail.roster_initialized ? ["Paid Days"] : ["Employees"],
+					actor_name: "Dev Test User",
+					created_at: "2026-07-18T12:30:00Z",
+				},
+				...(rosterHistory.get(runId) ?? []),
+			]);
+			details.set(runId, { ...detail, roster_initialized: true });
+			return HttpResponse.json(next);
 		}),
 
 		http.get("/api/payroll-runs/:runId", ({ params }) => {

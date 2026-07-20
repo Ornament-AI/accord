@@ -32,17 +32,10 @@ import {
 	todayApiDate,
 	useCreateEmployee,
 } from "@/lib/api/employees";
-import {
-	useEmployeeGroupsList,
-	useOfficesList,
-	usePayrollUnitsList,
-	usePostsList,
-} from "@/lib/api/org-structure";
+import { useOfficesList, usePostsList } from "@/lib/api/org-structure";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
-
-const NONE_VALUE = "__none__";
 
 function labelForId(
 	id: string | null | undefined,
@@ -72,9 +65,7 @@ type FormState = {
 	date_of_birth: string;
 	date_of_joining: string;
 	office_id: string;
-	payroll_unit_id: string;
 	post_id: string;
-	employee_group_id: string;
 	pay_matrix_level: string;
 	basic_pay: string;
 	account_number: string;
@@ -97,9 +88,7 @@ const emptyForm = (): FormState => ({
 	date_of_birth: "",
 	date_of_joining: "",
 	office_id: "",
-	payroll_unit_id: "",
 	post_id: "",
-	employee_group_id: "",
 	pay_matrix_level: "",
 	basic_pay: "",
 	account_number: "",
@@ -112,30 +101,18 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 	const navigate = useNavigate();
 	const createEmployee = useCreateEmployee();
 	const officesQuery = useOfficesList();
-	const payrollUnitsQuery = usePayrollUnitsList();
 	const postsQuery = usePostsList();
-	const employeeGroupsQuery = useEmployeeGroupsList();
 
 	const offices = officesQuery.data ?? [];
-	const payrollUnits = payrollUnitsQuery.data ?? [];
 	const posts = postsQuery.data ?? [];
-	const employeeGroups = employeeGroupsQuery.data ?? [];
 
 	const officeLabels = useMemo(
 		() => Object.fromEntries(offices.map((item) => [item.id, namedEntityLabel(item)])),
 		[offices],
 	);
-	const payrollUnitLabels = useMemo(
-		() => Object.fromEntries(payrollUnits.map((item) => [item.id, namedEntityLabel(item)])),
-		[payrollUnits],
-	);
 	const postLabels = useMemo(
 		() => Object.fromEntries(posts.map((item) => [item.id, postEntityLabel(item)])),
 		[posts],
-	);
-	const employeeGroupLabels = useMemo(
-		() => Object.fromEntries(employeeGroups.map((item) => [item.id, namedEntityLabel(item)])),
-		[employeeGroups],
 	);
 
 	const [form, setForm] = useState<FormState>(emptyForm);
@@ -162,11 +139,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 		setForm((prev) => ({ ...prev, [key]: value }));
 	};
 
-	const postingCatalogLoading =
-		officesQuery.isLoading ||
-		payrollUnitsQuery.isLoading ||
-		postsQuery.isLoading ||
-		employeeGroupsQuery.isLoading;
+	const postingCatalogLoading = officesQuery.isLoading || postsQuery.isLoading;
 
 	const handleSubmit = async (event: FormEvent) => {
 		event.preventDefault();
@@ -209,12 +182,10 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 			},
 		};
 
-		if (form.office_id.trim() && form.payroll_unit_id.trim() && form.post_id.trim()) {
+		if (form.office_id.trim() && form.post_id.trim()) {
 			body.posting = {
 				office_id: form.office_id.trim(),
-				payroll_unit_id: form.payroll_unit_id.trim(),
 				post_id: form.post_id.trim(),
-				employee_group_id: form.employee_group_id.trim() || null,
 			};
 		}
 
@@ -472,29 +443,6 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 								</Select>
 							</div>
 							<div className="grid gap-2">
-								<Label htmlFor="create-emp-payroll-unit">Payroll Unit</Label>
-								<Select
-									value={form.payroll_unit_id || null}
-									onValueChange={(value) => setField("payroll_unit_id", value ?? "")}
-									disabled={isSubmitting || postingCatalogLoading}
-								>
-									<SelectTrigger id="create-emp-payroll-unit" className="w-full">
-										<SelectValue placeholder="Select payroll unit">
-											{(value: string | null) =>
-												labelForId(value, payrollUnitLabels, "Select payroll unit")
-											}
-										</SelectValue>
-									</SelectTrigger>
-									<SelectContent>
-										{payrollUnits.map((unit) => (
-											<SelectItem key={unit.id} value={unit.id}>
-												{namedEntityLabel(unit)}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-							<div className="grid gap-2">
 								<Label htmlFor="create-emp-post">Post</Label>
 								<Select
 									value={form.post_id || null}
@@ -510,34 +458,6 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 										{posts.map((post) => (
 											<SelectItem key={post.id} value={post.id}>
 												{postEntityLabel(post)}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-							<div className="grid gap-2">
-								<Label htmlFor="create-emp-employee-group">Employee Group</Label>
-								<Select
-									value={form.employee_group_id || NONE_VALUE}
-									onValueChange={(value) =>
-										setField("employee_group_id", !value || value === NONE_VALUE ? "" : value)
-									}
-									disabled={isSubmitting || postingCatalogLoading}
-								>
-									<SelectTrigger id="create-emp-employee-group" className="w-full">
-										<SelectValue placeholder="None">
-											{(value: string | null) =>
-												!value || value === NONE_VALUE
-													? "None"
-													: labelForId(value, employeeGroupLabels, "None")
-											}
-										</SelectValue>
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value={NONE_VALUE}>None</SelectItem>
-										{employeeGroups.map((group) => (
-											<SelectItem key={group.id} value={group.id}>
-												{namedEntityLabel(group)}
 											</SelectItem>
 										))}
 									</SelectContent>
@@ -619,7 +539,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Creating…" : "Create employee"}
+							{isSubmitting ? "Creating…" : "Create Employee"}
 						</Button>
 					</DialogFooter>
 				</form>

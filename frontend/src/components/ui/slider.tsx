@@ -77,7 +77,7 @@ function Slider({
 						className={cn(
 							"block size-3 rounded-full bg-foreground/90 outline-none",
 							"shadow-[0_1px_2px_oklch(0_0_0_/_0.15)] dark:shadow-[0_1px_2px_oklch(0_0_0_/_0.5)]",
-							"transition-[transform,background-color] duration-150 ease-out",
+							"transition-[transform,background-color,scale] duration-[var(--accord-motion-fast)] ease-[var(--accord-motion-ease)]",
 							"hover:scale-110 hover:bg-foreground",
 							"data-dragging:scale-110 data-dragging:bg-primary",
 							"has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/35",

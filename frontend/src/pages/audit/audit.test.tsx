@@ -37,12 +37,12 @@ describe("Atlas-parity audit history", () => {
 	it("groups the rail by date and automatically selects the newest desktop event", async () => {
 		const newest = buildAuditEvent({
 			id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-			entity_label: "July Regular run",
+			entity_label: "July payroll run",
 			created_at: "2026-07-18T12:00:00",
 		});
 		const older = buildAuditEvent({
 			id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-			entity_label: "June Regular run",
+			entity_label: "June payroll run",
 			created_at: "2026-07-17T12:00:00",
 		});
 		useAuditor(createAuditHandlers({ events: [older, newest] }));
@@ -56,7 +56,7 @@ describe("Atlas-parity audit history", () => {
 		);
 		expect(screen.getByText("17 Jul, 2026")).toBeInTheDocument();
 		expect(await screen.findByTestId("audit-event-detail")).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: /July Regular run/i })).toHaveAttribute(
+		expect(screen.getByRole("button", { name: /July payroll run/i })).toHaveAttribute(
 			"aria-current",
 			"true",
 		);
@@ -66,7 +66,7 @@ describe("Atlas-parity audit history", () => {
 	it("renders changed mutation fields only without raw JSON", async () => {
 		const event = buildAuditEvent({
 			id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
-			entity_label: "2026-07 Regular run",
+			entity_label: "2026-07 payroll run",
 			command: "payroll_run.reverse",
 			request_id: "req-reverse-001",
 			before_state: { status: "posted", lock_version: 4, organization_id: "org" },
@@ -80,8 +80,8 @@ describe("Atlas-parity audit history", () => {
 		renderAuditPage();
 
 		const detail = await screen.findByTestId("audit-event-detail", {}, { timeout: PAGE_TIMEOUT });
-		expect(within(detail).getByText(/Ada Lovelace \(ada@example.com\)/)).toBeInTheDocument();
-		expect(within(detail).getByText("Payroll run")).toBeInTheDocument();
+		expect(within(detail).getByText("ada@example.com")).toBeInTheDocument();
+		expect(within(detail).getByText("Payroll Run")).toBeInTheDocument();
 		expect(within(detail).getByText(event.entity_id)).toBeInTheDocument();
 		expect(within(detail).getByText("req-reverse-001")).toBeInTheDocument();
 		expect(within(detail).getByText("Context")).toBeInTheDocument();
@@ -111,33 +111,14 @@ describe("Atlas-parity audit history", () => {
 		const detail = await screen.findByTestId("audit-event-detail", {}, { timeout: PAGE_TIMEOUT });
 		expect(within(detail).getByText("Resource")).toBeInTheDocument();
 		expect(within(detail).getByText("Access Details")).toBeInTheDocument();
-		expect(within(detail).getByText("Report type")).toBeInTheDocument();
+		expect(within(detail).getByText("Report Type")).toBeInTheDocument();
 		expect(within(detail).queryByText("Before")).not.toBeInTheDocument();
-	});
-
-	it("shows the minimal legacy message", async () => {
-		const event = buildAuditEvent({
-			id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-			event_kind: null,
-			has_structured_detail: false,
-			before_state: null,
-			after_state: null,
-		});
-		useAuditor(createAuditHandlers({ events: [event] }));
-		renderAuditPage();
-		expect(
-			await screen.findByText(
-				"Detailed changes were not recorded for this legacy event.",
-				{},
-				{ timeout: PAGE_TIMEOUT },
-			),
-		).toBeInTheDocument();
 	});
 
 	it("debounces entity ID, resets filters, and replaces selection across pages", async () => {
 		const audit = useAuditor(createAuditHandlers({ pageSize: 20 }));
 		renderAuditPage();
-		await screen.findByText("2026-07 Regular run 1", {}, { timeout: PAGE_TIMEOUT });
+		await screen.findByText("2026-07 payroll run 1", {}, { timeout: PAGE_TIMEOUT });
 
 		const entityId = "22222222-2222-2222-2222-000000000001";
 		fireEvent.change(screen.getByLabelText("Filter by Entity ID"), { target: { value: entityId } });
@@ -153,7 +134,7 @@ describe("Atlas-parity audit history", () => {
 			await screen.findByRole("button", { name: "Go to page 2" }, { timeout: PAGE_TIMEOUT }),
 		);
 		await waitFor(() => {
-			expect(screen.getByRole("button", { name: /2026-07 Regular run 21/i })).toHaveAttribute(
+			expect(screen.getByRole("button", { name: /2026-07 payroll run 21/i })).toHaveAttribute(
 				"aria-current",
 				"true",
 			);
@@ -164,7 +145,7 @@ describe("Atlas-parity audit history", () => {
 		useAuditor(createAuditHandlers({ empty: true }));
 		renderAuditPage();
 		expect(
-			await screen.findByText("No audit events", {}, { timeout: PAGE_TIMEOUT }),
+			await screen.findByText("No Audit Events", {}, { timeout: PAGE_TIMEOUT }),
 		).toBeInTheDocument();
 		expect(screen.queryByTestId("audit-detail-panel")).not.toBeInTheDocument();
 		expect(screen.queryByText("Select an event")).not.toBeInTheDocument();
@@ -174,7 +155,7 @@ describe("Atlas-parity audit history", () => {
 		Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
 		const event = buildAuditEvent({
 			id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
-			entity_label: "Mobile Regular run",
+			entity_label: "Mobile payroll run",
 			command: "approve",
 		});
 		useAuditor(createAuditHandlers({ events: [event] }));
@@ -182,10 +163,10 @@ describe("Atlas-parity audit history", () => {
 
 		expect(screen.queryByTestId("audit-event-detail")).not.toBeInTheDocument();
 		fireEvent.click(
-			await screen.findByRole("button", { name: /Mobile Regular run/i }, { timeout: PAGE_TIMEOUT }),
+			await screen.findByRole("button", { name: /Mobile payroll run/i }, { timeout: PAGE_TIMEOUT }),
 		);
 		const dialog = await screen.findByRole("dialog");
-		expect(within(dialog).getByText("Mobile Regular run")).toBeInTheDocument();
+		expect(within(dialog).getByText("Mobile payroll run")).toBeInTheDocument();
 		expect(await within(dialog).findByTestId("audit-event-detail")).toBeInTheDocument();
 	});
 
@@ -202,7 +183,7 @@ describe("Atlas-parity audit history", () => {
 		server.use(...createAuthHandlers({ me }).handlers);
 		renderAuditPage();
 		expect(
-			await screen.findByText("You don't have access", {}, { timeout: PAGE_TIMEOUT }),
+			await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 		).toBeInTheDocument();
 	});
 });

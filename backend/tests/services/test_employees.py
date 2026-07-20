@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError
-from app.models.org_structure import EmployeeGroup, Office, PayrollUnit, Post
+from app.models.org_structure import Office, Post
 from app.schemas.employees import (
     BankInput,
     CreateEmployeeRequest,
@@ -35,14 +35,12 @@ async def _world(session: AsyncSession):
     org = await seed_organization(session, name="Emp Svc Org", slug=f"emp-svc-{uuid4().hex[:10]}")
     user = await seed_user(session, workos_user_id=f"emp_svc_{uuid4().hex[:10]}")
     office = Office(
-        organization_id=org.id, name="HQ", code=f"O-{uuid4().hex[:6]}", jurisdiction="mumbai"
+        organization_id=org.id, name="HQ", jurisdiction="mumbai"
     )
-    unit = PayrollUnit(organization_id=org.id, name="PU1", code=f"PU-{uuid4().hex[:6]}")
     post = Post(organization_id=org.id, designation=f"Clerk-{uuid4().hex[:6]}", class_="III")
-    group = EmployeeGroup(organization_id=org.id, name="Group A", code=f"G-{uuid4().hex[:6]}")
-    session.add_all([office, unit, post, group])
+    session.add_all([office, post])
     await session.commit()
-    return org, user, office, unit, post, group
+    return org, user, office, post
 
 
 async def _bind(session: AsyncSession, org, user) -> None:
@@ -79,7 +77,7 @@ def _profile(regime: RetirementRegime = RetirementRegime.GPF, **overrides) -> Pr
     ],
 )
 async def test_create_employee_all_regimes(session, clean_identity_tables, regime, jurisdiction):
-    org, user, office, unit, post, group = await _world(session)
+    org, user, office, post = await _world(session)
     await _bind(session, org, user)
     body = CreateEmployeeRequest(
         employee_number=f"E-{uuid4().hex[:6]}",
@@ -87,9 +85,7 @@ async def test_create_employee_all_regimes(session, clean_identity_tables, regim
         profile=_profile(regime, gpf_jurisdiction=jurisdiction),
         posting=PostingInput(
             office_id=office.id,
-            payroll_unit_id=unit.id,
             post_id=post.id,
-            employee_group_id=group.id,
         ),
         pay=PayInput(pay_matrix_level="L10", basic_pay=Decimal("50732.00")),
         bank=BankInput(
@@ -129,7 +125,7 @@ async def test_duplicate_employee_number_conflicts(session, clean_identity_table
 
 @pytest.mark.asyncio
 async def test_unknown_office_fk_not_found(session, clean_identity_tables):
-    org, user, _office, unit, post, _group = await _world(session)
+    org, user, _office, post = await _world(session)
     await _bind(session, org, user)
     body = CreateEmployeeRequest(
         employee_number="E-FK",
@@ -137,7 +133,6 @@ async def test_unknown_office_fk_not_found(session, clean_identity_tables):
         profile=_profile(),
         posting=PostingInput(
             office_id=uuid4(),
-            payroll_unit_id=unit.id,
             post_id=post.id,
         ),
     )

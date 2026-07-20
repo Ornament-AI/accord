@@ -566,7 +566,7 @@ function NewChargeVersionDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : "Create version"}
+							{isSubmitting ? "Saving…" : "Create Version"}
 						</Button>
 					</DialogFooter>
 				</form>

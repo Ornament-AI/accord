@@ -256,7 +256,7 @@ function MonthPicker({
 								onClick={() => handleMonthClick(month)}
 								aria-label={`${name} ${displayYear}`}
 								className={cn(
-									"h-9 px-2 text-sm font-medium rounded-md transition-colors",
+									"accord-motion-highlight h-9 px-2 text-sm font-medium rounded-md",
 									"hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
 									"disabled:pointer-events-none disabled:opacity-40",
 									isSelected && "bg-primary text-primary-foreground hover:bg-primary/90",

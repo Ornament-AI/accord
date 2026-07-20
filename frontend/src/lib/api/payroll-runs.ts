@@ -10,12 +10,14 @@ export type PayrollRunListItem = components["schemas"]["PayrollRunListItem"];
 export type PayrollRunDetail = components["schemas"]["PayrollRunDetail"];
 export type PayrollRunInputResponse = components["schemas"]["PayrollRunInputResponse"];
 export type PayrollRunInputUpsert = components["schemas"]["PayrollRunInputUpsert"];
+export type PayrollRunEmployeeResponse = components["schemas"]["PayrollRunEmployeeResponse"];
+export type PayrollRunRosterUpdate = components["schemas"]["PayrollRunRosterUpdate"];
+export type PayrollRunRosterHistoryResponse =
+	components["schemas"]["PayrollRunRosterHistoryResponse"];
 export type PayrollRunResults = components["schemas"]["RunResultsResponse"];
 export type PayrollEmployeeResult = components["schemas"]["EmployeeResultSummary"];
-export type RunType = components["schemas"]["RunType"];
 export type InputKind = components["schemas"]["InputKind"];
 
-export const RUN_TYPES: RunType[] = ["regular", "supplemental", "reversal"];
 export const INPUT_KINDS: InputKind[] = ["exception", "override", "one_time"];
 
 /** Backend-visible payroll run statuses (DB check constraint). */
@@ -71,18 +73,16 @@ export const payrollRunQueryKeys = {
 	runs: (filters: PayrollRunFilters = {}) => ["payroll-runs", filters] as const,
 	run: (runId: string) => ["payroll-run", runId] as const,
 	inputs: (runId: string) => ["payroll-run-inputs", runId] as const,
+	roster: (runId: string) => ["payroll-run-roster", runId] as const,
+	rosterHistory: (runId: string) => ["payroll-run-roster-history", runId] as const,
 	results: (runId: string) => ["payroll-run-results", runId] as const,
 };
 
 export function periodLabel(year: number, month: number): string {
-	return `${year}-${String(month).padStart(2, "0")}`;
-}
-
-export function runTypeLabel(value: string): string {
-	return value
-		.split("_")
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join(" ");
+	return new Date(year, month - 1).toLocaleDateString("en-US", {
+		month: "long",
+		year: "numeric",
+	});
 }
 
 export function inputKindLabel(value: string): string {
@@ -235,6 +235,22 @@ export function listPayrollRunInputs(runId: string) {
 	return fetchJson<PayrollRunInputResponse[]>(`/api/payroll-runs/${runId}/inputs`);
 }
 
+export function listPayrollRunRoster(runId: string) {
+	return fetchJson<PayrollRunEmployeeResponse[]>(`/api/payroll-runs/${runId}/roster`);
+}
+
+export function listPayrollRunRosterHistory(runId: string) {
+	return fetchJson<PayrollRunRosterHistoryResponse[]>(`/api/payroll-runs/${runId}/roster-history`);
+}
+
+export function replacePayrollRunRoster(runId: string, body: PayrollRunRosterUpdate) {
+	return fetchJson<PayrollRunEmployeeResponse[]>(`/api/payroll-runs/${runId}/roster`, {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
 export function getPayrollRunResults(runId: string) {
 	return fetchJson<PayrollRunResults>(`/api/payroll-runs/${runId}/results`);
 }
@@ -315,6 +331,35 @@ export function usePayrollRunInputs(runId: string | undefined) {
 		queryKey: payrollRunQueryKeys.inputs(runId ?? ""),
 		queryFn: () => listPayrollRunInputs(runId!),
 		enabled: Boolean(runId),
+	});
+}
+
+export function usePayrollRunRoster(runId: string | undefined) {
+	return useQuery({
+		queryKey: payrollRunQueryKeys.roster(runId ?? ""),
+		queryFn: () => listPayrollRunRoster(runId!),
+		enabled: Boolean(runId),
+	});
+}
+
+export function usePayrollRunRosterHistory(runId: string | undefined) {
+	return useQuery({
+		queryKey: payrollRunQueryKeys.rosterHistory(runId ?? ""),
+		queryFn: () => listPayrollRunRosterHistory(runId!),
+		enabled: Boolean(runId),
+	});
+}
+
+export function useReplacePayrollRunRoster(runId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (body: PayrollRunRosterUpdate) => replacePayrollRunRoster(runId, body),
+		onSuccess: (data) => {
+			queryClient.setQueryData(payrollRunQueryKeys.roster(runId), data);
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.rosterHistory(runId) });
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.run(runId) });
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
+		},
 	});
 }
 

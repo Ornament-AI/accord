@@ -19,10 +19,10 @@ type FieldsValueTableProps = {
 	rows: FieldsValueRow[];
 };
 
-/** Compact two-column Field | Value table; Value column is right-aligned. */
+/** Compact two-column Field | Value table on the shared app table surface. */
 export function FieldsValueTable({ rows }: FieldsValueTableProps) {
 	return (
-		<Table surface={false}>
+		<Table>
 			<TableHeader>
 				<TableRow>
 					<TableHead className="w-44 min-w-40">Field</TableHead>

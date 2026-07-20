@@ -114,7 +114,6 @@ async def _seed_posted_june_world(
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status=run_status if run_status != "posted" else "approved",
     )
     session.add(run)

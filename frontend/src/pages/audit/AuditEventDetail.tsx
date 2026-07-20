@@ -1,3 +1,4 @@
+import { FieldsValueTable } from "@/components/fields-value-table";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -31,7 +32,10 @@ function humanize(value: string): string {
 	return value
 		.replaceAll("_", " ")
 		.replace(/([a-z])([A-Z])/g, "$1 $2")
-		.replace(/^./, (character) => character.toUpperCase());
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+		.join(" ");
 }
 
 function displayValue(value: unknown): string {
@@ -44,34 +48,30 @@ function displayValue(value: unknown): string {
 
 function actorDisplay(event: AuditEventDetailData): string {
 	if (!event.actor) return "System";
-	const name = event.actor.name?.trim();
-	const email = event.actor.email?.trim();
-	if (name && email) return `${name} (${email})`;
-	return name || email || "System";
+	return event.actor.email?.trim() || event.actor.name?.trim() || "System";
 }
 
 function EventMetadata({ event }: { event: AuditEventDetailData }) {
 	const date = parseApiDateTime(event.created_at);
-	return (
-		<dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-			<dt className="text-muted-foreground">Actor</dt>
-			<dd>{actorDisplay(event)}</dd>
-			<dt className="text-muted-foreground">Entity</dt>
-			<dd>{humanize(event.entity_type)}</dd>
-			<dt className="text-muted-foreground">Entity ID</dt>
-			<dd className="min-w-0 break-all font-mono text-xs">{event.entity_id}</dd>
-			<dt className="text-muted-foreground">Date</dt>
-			<dd>{formatDateInAccordTimeZone(event.created_at)}</dd>
-			<dt className="text-muted-foreground">Time</dt>
-			<dd>{date ? timeFormatter.format(date) : "—"}</dd>
-			{event.request_id ? (
-				<>
-					<dt className="text-muted-foreground">Request</dt>
-					<dd className="min-w-0 break-all font-mono text-xs">{event.request_id}</dd>
-				</>
-			) : null}
-		</dl>
-	);
+	const rows = [
+		{ label: "Actor", value: actorDisplay(event) },
+		{ label: "Entity", value: humanize(event.entity_type) },
+		{
+			label: "Entity ID",
+			value: <span className="break-all font-mono">{event.entity_id}</span>,
+		},
+		{ label: "Date", value: formatDateInAccordTimeZone(event.created_at) },
+		{ label: "Time", value: date ? timeFormatter.format(date) : "—" },
+		...(event.request_id
+			? [
+					{
+						label: "Request",
+						value: <span className="break-all font-mono">{event.request_id}</span>,
+					},
+				]
+			: []),
+	];
+	return <FieldsValueTable rows={rows} />;
 }
 
 function MutationDetail({ event }: { event: AuditEventDetailData }) {
@@ -121,19 +121,13 @@ function MutationDetail({ event }: { event: AuditEventDetailData }) {
 }
 
 function KeyValueDetails({ values }: { values: Record<string, unknown> }) {
-	const entries = Object.entries(values).filter(
-		([key]) => !HIDDEN_DIFF_FIELDS.has(key) && key !== "object_key",
-	);
-	return (
-		<dl className="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-			{entries.map(([key, value]) => (
-				<div key={key} className="contents">
-					<dt className="text-muted-foreground">{humanize(key)}</dt>
-					<dd className="min-w-0 break-words">{displayValue(value)}</dd>
-				</div>
-			))}
-		</dl>
-	);
+	const rows = Object.entries(values)
+		.filter(([key]) => !HIDDEN_DIFF_FIELDS.has(key) && key !== "object_key")
+		.map(([key, value]) => ({
+			label: humanize(key),
+			value: <span className="break-words">{displayValue(value)}</span>,
+		}));
+	return <FieldsValueTable rows={rows} />;
 }
 
 function AccessDetail({ event }: { event: AuditEventDetailData }) {
@@ -157,15 +151,11 @@ function AuditEventDetailBody({ event }: { event: AuditEventDetailData }) {
 	return (
 		<div className="grid gap-6" data-testid="audit-event-detail">
 			<EventMetadata event={event} />
-			{!event.has_structured_detail ? (
-				<p className="rounded-md border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-					Detailed changes were not recorded for this legacy event.
-				</p>
-			) : event.event_kind === "access" ? (
+			{event.event_kind === "access" ? (
 				<AccessDetail event={event} />
-			) : (
+			) : event.event_kind === "mutation" ? (
 				<MutationDetail event={event} />
-			)}
+			) : null}
 		</div>
 	);
 }
@@ -176,12 +166,7 @@ export function AuditEventDetail({ eventId }: { eventId: string }) {
 	if (detailQuery.isLoading) {
 		return (
 			<div className="grid gap-4" data-testid="audit-event-detail-loading">
-				<div className="grid grid-cols-[5rem_1fr] gap-3">
-					<Skeleton className="h-4 w-12" />
-					<Skeleton className="h-4 w-40" />
-					<Skeleton className="h-4 w-12" />
-					<Skeleton className="h-4 w-28" />
-				</div>
+				<Skeleton className="h-40 w-full" />
 				<Skeleton className="h-48 w-full" />
 			</div>
 		);

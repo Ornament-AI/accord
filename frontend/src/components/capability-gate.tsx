@@ -30,7 +30,7 @@ export function CapabilityGate({
 				<div className="flex min-h-0 flex-1 flex-col p-6">
 					<EmptyState
 						icon={ShieldOff}
-						title="You don't have access"
+						title="You Don't Have Access"
 						description="Your role in this organization does not include permission to view this page."
 					/>
 				</div>

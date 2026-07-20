@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -36,6 +36,8 @@ type WorkflowActionBarProps = {
 	versionInfo?: PayrollRunCalculateResult | null;
 	onValidated: (result: PayrollRunValidateResult) => void;
 	onRefresh?: () => void;
+	/** Inserted before Submit when present; otherwise after other workflow actions. */
+	children?: ReactNode;
 };
 
 export function WorkflowActionBar({
@@ -43,6 +45,7 @@ export function WorkflowActionBar({
 	versionInfo = null,
 	onValidated,
 	onRefresh,
+	children = null,
 }: WorkflowActionBarProps) {
 	const { hasCapability } = useAuth();
 	const [confirmCommand, setConfirmCommand] = useState<WorkflowConfirmCommand | null>(null);
@@ -182,12 +185,43 @@ export function WorkflowActionBar({
 		}
 	};
 
+	const submitVisible = visibleActions.some((action) => action.id === "submit");
+
 	if (visibleActions.length === 0) {
-		return null;
+		return children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null;
 	}
 
-	return (
-		<div className="grid gap-3" data-testid="workflow-action-bar">
+	const actionButtons = (
+		<div className="flex flex-wrap items-center gap-2" data-testid="workflow-action-bar">
+			{visibleActions.map((action) => {
+				const disabledReason = workflowActionDisabledReason(action, run.status);
+				const disabled = Boolean(disabledReason) || anyPending;
+				return (
+					<Fragment key={action.id}>
+						{action.id === "submit" ? children : null}
+						<Button
+							type="button"
+							size="xs"
+							variant={action.variant ?? "default"}
+							disabled={disabled}
+							title={disabledReason ?? undefined}
+							aria-label={`${action.label} pay run`}
+							data-testid={`workflow-action-${action.id}`}
+							onClick={() => handleActionClick(action.id)}
+						>
+							{action.id === "validate" && validateMutation.isPending
+								? "Validating…"
+								: action.label}
+						</Button>
+					</Fragment>
+				);
+			})}
+			{!submitVisible ? children : null}
+		</div>
+	);
+
+	const alerts = (
+		<>
 			{makerCheckerAlert ? (
 				<Alert variant="destructive" data-testid="maker-checker-alert">
 					<AlertTitle>Maker/checker conflict</AlertTitle>
@@ -199,7 +233,7 @@ export function WorkflowActionBar({
 
 			{staleAlert ? (
 				<Alert variant="warning" data-testid="stale-version-alert">
-					<AlertTitle>Run is out of date</AlertTitle>
+					<AlertTitle>Run Is Out of Date</AlertTitle>
 					<AlertDescription className="flex flex-wrap items-center gap-3">
 						<span>This run changed since you loaded it. Refresh to see the latest version.</span>
 						<Button
@@ -217,30 +251,19 @@ export function WorkflowActionBar({
 					</AlertDescription>
 				</Alert>
 			) : null}
+		</>
+	);
 
-			<div className="flex flex-wrap items-center gap-2">
-				{visibleActions.map((action) => {
-					const disabledReason = workflowActionDisabledReason(action, run.status);
-					const disabled = Boolean(disabledReason) || anyPending;
-					return (
-						<Button
-							key={action.id}
-							type="button"
-							size="xs"
-							variant={action.variant ?? "default"}
-							disabled={disabled}
-							title={disabledReason ?? undefined}
-							aria-label={`${action.label} pay run`}
-							data-testid={`workflow-action-${action.id}`}
-							onClick={() => handleActionClick(action.id)}
-						>
-							{action.id === "validate" && validateMutation.isPending
-								? "Validating…"
-								: action.label}
-						</Button>
-					);
-				})}
-			</div>
+	return (
+		<>
+			{makerCheckerAlert || staleAlert ? (
+				<div className="grid gap-3">
+					{alerts}
+					{actionButtons}
+				</div>
+			) : (
+				actionButtons
+			)}
 
 			<WorkflowConfirmDialog
 				open={Boolean(confirmCommand)}
@@ -256,6 +279,6 @@ export function WorkflowActionBar({
 				versionInfo={versionInfo}
 				formError={dialogError}
 			/>
-		</div>
+		</>
 	);
 }

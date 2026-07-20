@@ -11,89 +11,33 @@ import { clickUntilDialog, selectWithin } from "./helpers/ui";
  * restarting the backend with a different DEV_AUTH_EMAIL. This suite therefore
  * asserts submit + maker-checker denial and does not attempt a successful Approve.
  *
- * Regular pay runs are unique per period. The serial chain shares one regular
- * draft (add input → calculate/validate/submit). The Idempotency-Key case uses
- * a supplemental run so it does not collide with that unique constraint.
+ * Payroll runs are unique per period. The serial chain shares one monthly
+ * draft (add input → calculate/validate/submit).
  */
 
 test.describe.configure({ mode: "serial" });
 
-function currentYearMonth(): { year: string; month: string } {
+function currentYearMonth(): { year: string; month: string; label: string } {
 	const now = new Date();
 	return {
 		year: String(now.getFullYear()),
 		// Current calendar month so employee versions (effective_from ≈ today) are in-range.
 		month: String(now.getMonth() + 1),
+		label: now.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
 	};
 }
 
-/** Create the current payroll period, or dismiss the dialog if it already exists. */
-async function ensurePayrollPeriod(page: Page): Promise<void> {
-	const { year, month } = currentYearMonth();
+/** Open the current monthly payroll run, creating its period and draft when needed. */
+async function createOrOpenPayRun(page: Page): Promise<void> {
+	const { label } = currentYearMonth();
 	await page.goto("/pay-runs");
 	await expect(page.getByTestId("pay-runs-page")).toBeVisible({ timeout: 30_000 });
 
-	const dialog = await clickUntilDialog(
-		page,
-		page.getByRole("button", { name: "New period" }).first(),
-	);
-	await expect(dialog.getByRole("heading", { name: "New Payroll Period" })).toBeVisible();
-	await dialog.getByLabel("Year").fill(year);
-	await dialog.getByLabel("Month").fill(month);
-	await dialog.getByRole("button", { name: "Create period" }).click();
-
-	const closed = await dialog
-		.waitFor({ state: "hidden", timeout: 5_000 })
-		.then(() => true)
-		.catch(() => false);
-	if (!closed) {
-		await expect(dialog.getByRole("alert")).toBeVisible({ timeout: 5_000 });
-		await dialog.getByRole("button", { name: "Cancel" }).click();
-		await expect(dialog).toBeHidden({ timeout: 10_000 });
-	}
-
-	await expect(page.getByTestId("payroll-periods-list")).toBeVisible();
-}
-
-/**
- * Create a pay run (regular or supplemental). If a regular run already exists
- * for the period, cancel and open the newest matching list row instead.
- */
-async function createOrOpenPayRun(
-	page: Page,
-	opts: { runType?: "regular" | "supplemental" } = {},
-): Promise<void> {
-	const runType = opts.runType ?? "regular";
-	const typeLabel = runType === "supplemental" ? "Supplemental" : "Regular";
-	const runDialog = await clickUntilDialog(
-		page,
-		page.locator("header").getByRole("button", { name: "New Pay Run" }),
-	);
-	await expect(runDialog.getByRole("heading", { name: "New Pay Run" })).toBeVisible();
-
-	if (runType !== "regular") {
-		await selectWithin(runDialog, "Run Type", typeLabel);
-		// Trigger accessible text is the raw enum value ("supplemental"), not the label.
-		await expect(runDialog.getByRole("combobox", { name: "Run Type" })).toContainText(
-			new RegExp(runType, "i"),
-		);
-	}
-
-	await runDialog.getByRole("button", { name: "Create run" }).click();
-
-	const closed = await runDialog
-		.waitFor({ state: "hidden", timeout: 5_000 })
-		.then(() => true)
-		.catch(() => false);
-	if (!closed) {
-		await expect(runDialog.getByRole("alert")).toBeVisible({ timeout: 5_000 });
-		await runDialog.getByRole("button", { name: "Cancel" }).click();
-		await expect(runDialog).toBeHidden({ timeout: 10_000 });
-	}
-
-	const runRow = page.locator("table tbody tr", { hasText: typeLabel }).first();
-	await expect(runRow).toBeVisible({ timeout: 30_000 });
-	await runRow.click();
+	const dialog = await clickUntilDialog(page, page.getByRole("button", { name: "Add" }).first());
+	await expect(dialog.getByRole("heading", { name: "Add Pay Run" })).toBeVisible();
+	await dialog.getByRole("button", { name: "Payroll Month" }).click();
+	await page.getByRole("button", { name: label }).click();
+	await dialog.getByRole("button", { name: "Continue" }).click();
 	await expect(page.getByTestId("pay-run-detail-page")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -136,11 +80,10 @@ test("add direct run input lists component after save", async ({ page }) => {
 	expect(ctx.employeeNumber, "master-data.spec must create an employee first").toBeTruthy();
 	expect(ctx.componentCode, "master-data.spec must create a pay component first").toBeTruthy();
 
-	await ensurePayrollPeriod(page);
-	await createOrOpenPayRun(page, { runType: "regular" });
+	await createOrOpenPayRun(page);
 
 	const status = await page.getByTestId("run-status-badge").getAttribute("data-status");
-	// Retry-safe: a prior worker may have already advanced this regular run.
+	// Retry-safe: a prior worker may have already advanced this monthly run.
 	if (status !== "draft") {
 		return;
 	}
@@ -171,7 +114,7 @@ test("period + run → calculate → validate → submit; self-approve blocked",
 	const ctx = readRunContext();
 	expect(ctx.employeeNumber, "master-data.spec must create an employee first").toBeTruthy();
 
-	// Reuse the regular draft from the add-input test (regular is unique per period).
+	// Reuse the monthly draft from the add-input test (one run per period).
 	await openNewestPayRun(page);
 
 	const status = await page.getByTestId("run-status-badge").getAttribute("data-status");
@@ -202,35 +145,4 @@ test("period + run → calculate → validate → submit; self-approve blocked",
 	await approveConfirm.getByTestId("workflow-confirm-submit").click();
 	await expect(page.getByTestId("maker-checker-alert")).toBeVisible({ timeout: 30_000 });
 	await expect(page.getByTestId("maker-checker-alert")).toContainText(/Maker\/checker/i);
-});
-
-test("submit with Idempotency-Key does not 404 after calculate", async ({ page }) => {
-	/**
-	 * FIXED: submit with Idempotency-Key previously 404'd
-	 * "Payroll run not found." after a successful calculate+validate on the
-	 * same run. Cause: idempotent_command commits the lease before executor,
-	 * clearing SET LOCAL tenant GUCs so FOR UPDATE in _lock_run sees no row.
-	 * Suspect: backend/app/services/idempotency.py + tenancy bind.
-	 * Repro: calculated run → Submit (UI always sends Idempotency-Key) → error
-	 * in confirm dialog.
-	 *
-	 * Uses a supplemental run because the period's regular run was already
-	 * submitted by the previous test.
-	 */
-	await ensurePayrollPeriod(page);
-	await createOrOpenPayRun(page, { runType: "supplemental" });
-	const status = await page.getByTestId("run-status-badge").getAttribute("data-status");
-	if (status === "draft" || status === "rejected") {
-		await calculateAndValidate(page);
-		await submitRun(page);
-	} else if (status === "calculated") {
-		await page.getByTestId("workflow-action-validate").click();
-		await expect(page.getByTestId("validation-findings-panel")).toBeVisible({
-			timeout: 30_000,
-		});
-		await submitRun(page);
-	}
-	await expect(page.getByTestId("run-status-badge")).toHaveAttribute("data-status", "submitted", {
-		timeout: 30_000,
-	});
 });

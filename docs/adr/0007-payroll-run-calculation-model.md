@@ -118,5 +118,4 @@ Allowed transitions and authorization matrices are **out of scope** here.
 
 **Open questions:**
 
-- Whether supplemental runs share draft exception space with the main run or are isolated (decide with workflow doc).
 - Resolution of NPS employer vs narrow employer share in gross bill (see Proven June 2026 invariants open question in payroll-domain.md)—calculator `employer_employee_contribution` must not assume an answer until finance signs off.

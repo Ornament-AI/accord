@@ -1,19 +1,20 @@
 import { cva } from "class-variance-authority";
 
 export const buttonVariants = cva(
-	"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/35 focus-visible:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+	"accord-motion-interactive inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/35 focus-visible:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
 	{
 		variants: {
 			variant: {
 				default:
-					"bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:shadow-md dark:shadow-md dark:hover:shadow-lg",
+					"accord-motion-pressable bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:shadow-md dark:shadow-md dark:hover:shadow-lg",
 				destructive:
-					"bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/92 hover:shadow-md focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/72 dark:shadow-md dark:hover:shadow-lg",
+					"accord-motion-pressable bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/92 hover:shadow-md focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/72 dark:shadow-md dark:hover:shadow-lg",
 				outline:
-					"border border-border bg-background/86 shadow-xs hover:bg-accent/62 hover:shadow-sm hover:text-foreground dark:bg-input/44 dark:border-border dark:shadow-sm dark:hover:bg-input/62 dark:hover:shadow-md dark:hover:text-foreground",
+					"accord-motion-pressable border border-border bg-background/86 shadow-xs hover:bg-accent/62 hover:shadow-sm hover:text-foreground dark:bg-input/44 dark:border-border dark:shadow-sm dark:hover:bg-input/62 dark:hover:shadow-md dark:hover:text-foreground",
 				secondary:
-					"bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/84 hover:shadow-sm dark:shadow-sm dark:hover:shadow-md",
-				ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+					"accord-motion-pressable bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/84 hover:shadow-sm dark:shadow-sm dark:hover:shadow-md",
+				ghost:
+					"accord-motion-pressable hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
 				link: "text-primary-text underline-offset-4 hover:underline",
 			},
 			size: {

@@ -19,7 +19,7 @@ describe("capability-gated direct URL access", () => {
 
 		renderApp({ initialEntries: ["/organization/offices"] });
 
-		expect(await screen.findByText("You don't have access")).toBeInTheDocument();
+		expect(await screen.findByText("You Don't Have Access")).toBeInTheDocument();
 	});
 
 	it("renders the organization offices page when the user has the capability", async () => {

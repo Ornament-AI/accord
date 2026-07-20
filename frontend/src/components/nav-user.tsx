@@ -110,7 +110,7 @@ export function NavUser({
 							<Separator />
 							<button
 								type="button"
-								className="flex w-full items-center gap-2 rounded-md p-2 text-sm text-destructive outline-none hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring/35"
+								className="accord-motion-highlight flex w-full items-center gap-2 rounded-md p-2 text-sm text-destructive outline-none hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring/35"
 								onClick={() => {
 									setOpen(false);
 									onSignOut();

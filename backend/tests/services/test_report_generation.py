@@ -112,7 +112,6 @@ async def _seed_world(session: AsyncSession, *, run_status: str = "posted") -> d
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status=run_status,
     )
     session.add(run)

@@ -1,21 +1,21 @@
 # ADR-0002: WorkOS Authentication and Sessions
 
-**Status:** Proposed
+**Status:** Accepted (identity/session); multi-org switch/selection product claims superseded by [0011-single-organization.md](0011-single-organization.md)
 
 ## Context
 
-Accord needs authentication for a multi-organization payroll SaaS. Atlas uses Firebase Auth in a single-tenant deployment. Accord instead uses **WorkOS** (AuthKit / SSO) for identity, with **true multi-org tenancy** backed by Accord’s own Postgres membership and role model (see [0001-tenancy-rls-database-roles.md](0001-tenancy-rls-database-roles.md)).
+Accord needs authentication for a single-organization payroll deployment. Accord uses **WorkOS** (AuthKit / SSO) for identity, with authorization from local `organization_memberships` and capabilities (see [0001-tenancy-rls-database-roles.md](0001-tenancy-rls-database-roles.md) kernel debt and [0011](0011-single-organization.md) product contract).
 
 Requirements:
 
 1. Browser login via WorkOS without exposing WorkOS tokens to frontend JavaScript.
 2. Accord-minted secure session cookies as the only credential the SPA sees.
 3. Authorization sourced exclusively from local `organization_memberships` and capabilities — not from WorkOS Organization membership alone.
-4. Active organization selection with safe switching and bounded staleness when memberships are deactivated.
-5. Verified, idempotent WorkOS webhooks.
+4. Auto-bind the singleton organization when the user has an active membership; no multi-org switch/selection UX ([0011](0011-single-organization.md)).
+5. Verified, idempotent WorkOS webhooks (identity updates only unless later extended).
 6. Fail-closed production configuration and a non-production test-identity adapter (mirroring Atlas’s `DEV_AUTH_BYPASS` fail-closed rules).
 
-Related: [0003-backend-bootstrap-environment.md](0003-backend-bootstrap-environment.md), [0004-organization-url-session-context.md](0004-organization-url-session-context.md).
+Related: [0003-backend-bootstrap-environment.md](0003-backend-bootstrap-environment.md), [0004-organization-url-session-context.md](0004-organization-url-session-context.md), [0011-single-organization.md](0011-single-organization.md).
 
 ## Decision
 
@@ -67,28 +67,25 @@ Server-side session payload includes at minimum: `user_id`, `active_organization
   - `organization_memberships.role` (and any future capabilities table)
 - Even if WorkOS Directory Sync / Organizations says a user belongs to a WorkOS Organization, Accord **does not** grant access until a corresponding local membership row exists and is active. WorkOS org linkage may be used as a provisioning signal (via webhooks), never as a live authz check bypass.
 
-### 4. Organization context selection
+### 4. Organization context (single-organization product)
 
-Active organization lives in the **server-side session** (not in a client-trusted header/body). Selection rules:
+Active organization lives in the **server-side session** (not in a client-trusted header/body). Under [ADR 0011](0011-single-organization.md), the deployment has at most one organization; there is no switch/select UX.
 
-| Memberships at login | Behavior |
+| Login situation | Behavior |
 | --- | --- |
-| Exactly one active membership | Auto-select that organization; proceed |
-| Multiple active memberships | Session created with `active_organization_id = null` until explicit selection; APIs that require org context return 409/403 with a clear error until switched |
-| Zero active memberships | Authenticated but unauthorized for tenant data; `/api/auth/me` reports empty memberships |
+| No organization row | `/api/auth/me` → `access_state=unbootstrapped` (ops must run `scripts/provision_organization.py`) |
+| Org exists; user has no membership and no pending invite | `/api/auth/me` → `access_state=unprovisioned` |
+| Org exists; pending invite for user email | Claim invite atomically on login; bind session; `access_state=active` |
+| Org exists; active membership | Auto-bind session `active_organization_id` to the singleton; `access_state=active` |
 
-**Canonical switch endpoint:** `POST /api/auth/switch-organization` (body: `{ "organization_id": "<uuid>" }`).
-
-- Re-validates target membership exists and `is_active = true` for the current user.
-- Updates session `active_organization_id`, rotates session id.
-- Alias (optional, same handler): `POST /api/organizations/{id}/switch` — if exposed, it must call the same service; prefer documenting **one** canonical path in clients (`/api/auth/switch-organization`). See [0004-organization-url-session-context.md](0004-organization-url-session-context.md).
+~~`POST /api/auth/switch-organization`~~ is **removed**. Session `active_organization_id` remains as kernel debt for RLS GUC binding until Phase 2.
 
 **Membership deactivation staleness:**
 
 - Deactivation by an admin is **not** required to abort an in-flight request mid-handler.
 - Enforcement: every authenticated request loads the session, then **re-checks** that the membership for `active_organization_id` is still `is_active` (and role still permits the action).
-- If inactive: clear active org / reject with 401/403 and force re-selection or logout.
-- **Maximum staleness window:** end of the current request only for already-authorized handlers; **next authenticated request** must observe deactivation. Combined with idle timeout (2h) and absolute TTL (12h), worst-case session persistence without a subsequent request is the remaining TTL — but any API call within that window revalidates membership. Optional: webhook-driven session revocation for the affected user shortens this further (recommended when membership webhooks are wired).
+- If inactive: clear active org / reject with 401/403.
+- **Maximum staleness window:** end of the current request only for already-authorized handlers; **next authenticated request** must observe deactivation. Combined with idle timeout (2h) and absolute TTL (12h), worst-case session persistence without a subsequent request is the remaining TTL — but any API call within that window revalidates membership.
 
 ### 5. WorkOS webhooks
 
@@ -130,8 +127,7 @@ class AuthProvider(Protocol):
 | `GET` | `/api/auth/login` | Start WorkOS redirect (or dev-test login entry) | Anonymous |
 | `GET` | `/api/auth/callback` | Handle WorkOS code; mint session cookie | Anonymous (one-time code) |
 | `POST` | `/api/auth/logout` | Invalidate server session; clear cookie | Authenticated session (idempotent if already logged out) |
-| `GET` | `/api/auth/me` | Current user, memberships, active organization, capabilities | Authenticated session |
-| `POST` | `/api/auth/switch-organization` | Set active org after membership re-validation; rotate session | Authenticated session |
+| `GET` | `/api/auth/me` | Current user, `access_state`, singular organization, membership, capabilities | Authenticated session |
 | `POST` | `/api/auth/webhooks/workos` | WorkOS event ingestion | WorkOS signature (no session cookie) |
 
 ### 8. Capability matrix

@@ -42,6 +42,7 @@ from app.services.run_workflow import (
 )
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_membership, seed_organization, seed_user
+from tests.roster_helpers import initialize_run_roster
 
 
 async def _bind(session: AsyncSession, org_id, user_id) -> None:
@@ -229,11 +230,19 @@ async def _seed_world(session: AsyncSession) -> dict:
     run = PayrollRun(
         organization_id=org.id,
         period_id=period.id,
-        run_type="regular",
         status="draft",
     )
     session.add(run)
     await session.flush()
+    session.add_all(
+        initialize_run_roster(
+            organization_id=org.id,
+            run=run,
+            employee_ids=[employee.id],
+            period_year=period.period_year,
+            period_month=period.period_month,
+        )
+    )
 
     override = PayrollRunInput(
         organization_id=org.id,

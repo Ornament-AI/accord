@@ -1,6 +1,6 @@
 # Security
 
-Operational security baseline for Accord (multi-tenant payroll SaaS:
+Operational security baseline for Accord (single-organization payroll product with kernel tenancy debt — see [ADR 0011](adr/0011-single-organization.md):
 FastAPI/Python + PostgreSQL + React/TS, WorkOS AuthKit, forced RLS,
 S3-compatible storage, immutable posted payroll).
 
@@ -33,7 +33,7 @@ browser sessions.
 | Secure | Cookie sent only over HTTPS in non-local environments. | No cleartext session on the wire in staging/production. |
 | SameSite=Lax | Cookie sent on top-level navigations; withheld on most cross-site subrequests. | **Justify Lax for WorkOS redirect auth:** AuthKit login/callback requires top-level cross-site redirects that must carry the session cookie; `Strict` breaks that flow. Lax alone is **not** sufficient CSRF defense for APIs. |
 | Synchronizer CSRF | State-changing routes require a synchronizer CSRF token; request header must match server-issued token. | SameSite=Lax session cookie **plus** synchronizer CSRF token on POSTs/PUTs/PATCHes/DELETEs. Lax covers WorkOS redirect navigations; synchronizer tokens defend mutations including same-site adjacent risks. Proven by `backend/tests/security/test_csrf.py`. |
-| Expiry / refresh | Idle and absolute session TTLs; rotate session id on login and organization switch. | Stolen cookies have bounded lifetime; fixation resisted. Proven by `backend/tests/security/test_session_hardening.py`. |
+| Expiry / refresh | Idle and absolute session TTLs; rotate session id on login. | Stolen cookies have bounded lifetime; fixation resisted. Proven by `backend/tests/security/test_session_hardening.py`. |
 | Logging | Session tokens never appear in structured logs. | Redaction rules below. |
 
 ---

@@ -48,7 +48,7 @@ export function ReportCatalogSection({
 		return (
 			<EmptyState
 				icon={FileBarChart2}
-				title="No report types"
+				title="No Report Types"
 				description="No report types are available for this organization yet."
 			/>
 		);

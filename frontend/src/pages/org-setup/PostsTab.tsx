@@ -211,7 +211,7 @@ function PostFormDialog({ mode, open, onOpenChange, item }: FormDialogProps) {
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : mode === "create" ? "Create post" : "Save changes"}
+							{isSubmitting ? "Saving…" : mode === "create" ? "Create Post" : "Save Changes"}
 						</Button>
 					</DialogFooter>
 				</form>

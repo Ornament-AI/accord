@@ -1,8 +1,11 @@
-"""Behavioral RLS tests for Phase 3 master-data tables.
+"""Behavioral RLS tests for Phase 3 master-data tables (ADR 0011).
 
 Also covers GiST EXCLUDE overlap rejection, primary bank-account partial
 exclude, gpf_jurisdiction CHECK, boundary-date effective_on resolution, and
 the self_membership_read SELECT policy on organization_memberships.
+
+Isolation proofs use a single organization row: empty/wrong GUC ⇒ 0 rows;
+correct GUC ⇒ rows; second organization INSERT fails the singleton unique index.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from datetime import date
 
 import psycopg
 import pytest
-from psycopg.errors import ExclusionViolation
+from psycopg.errors import ExclusionViolation, UniqueViolation
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
@@ -35,15 +38,13 @@ RLS_SPOT_CHECK_TABLES = (
 
 @dataclass(frozen=True)
 class SeededMasterData:
-    org_a_id: uuid.UUID
-    org_b_id: uuid.UUID
+    org_id: uuid.UUID
     user_u_id: uuid.UUID
     user_v_id: uuid.UUID
-    employee_a_id: uuid.UUID
-    employee_b_id: uuid.UUID
+    employee_id: uuid.UUID
     created_by: uuid.UUID
-    recurring_header_a_id: uuid.UUID
-    component_a_id: uuid.UUID
+    recurring_header_id: uuid.UUID
+    component_id: uuid.UUID
 
 
 def _grant_table_dml(database_url: str) -> None:
@@ -55,22 +56,18 @@ def _grant_table_dml(database_url: str) -> None:
 
 
 def _seed_master_data(database_url: str) -> SeededMasterData:
-    org_a_id = uuid.uuid4()
-    org_b_id = uuid.uuid4()
+    org_id = uuid.uuid4()
     user_u_id = uuid.uuid4()
     user_v_id = uuid.uuid4()
-    employee_a_id = uuid.uuid4()
-    employee_b_id = uuid.uuid4()
+    employee_id = uuid.uuid4()
     created_by = uuid.uuid4()
-    component_a_id = uuid.uuid4()
-    component_b_id = uuid.uuid4()
-    recurring_header_a_id = uuid.uuid4()
-    recurring_header_b_id = uuid.uuid4()
+    component_id = uuid.uuid4()
+    recurring_header_id = uuid.uuid4()
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute(
-            "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s), (%s, %s, %s)",
-            (org_a_id, "Org A", "org-a", org_b_id, "Org B", "org-b"),
+            "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
+            (org_id, "Org A", "org-a"),
         )
         conn.execute(
             "INSERT INTO users (id, workos_user_id, email, name) VALUES "
@@ -86,56 +83,31 @@ def _seed_master_data(database_url: str) -> SeededMasterData:
                 "User V",
             ),
         )
-        # User U has memberships in BOTH orgs; user V has none.
+        # User U is a member; user V has no membership.
         conn.execute(
             "INSERT INTO organization_memberships "
-            "(organization_id, user_id, role) VALUES "
-            "(%s, %s, %s), (%s, %s, %s)",
-            (
-                org_a_id,
-                user_u_id,
-                "organization_administrator",
-                org_b_id,
-                user_u_id,
-                "payroll_preparer",
-            ),
+            "(organization_id, user_id, role) VALUES (%s, %s, %s)",
+            (org_id, user_u_id, "organization_administrator"),
         )
         conn.execute(
-            "INSERT INTO offices (organization_id, name, code, jurisdiction) VALUES "
-            "(%s, %s, %s, %s), (%s, %s, %s, %s)",
-            (
-                org_a_id,
-                "Office A",
-                "OFF-A",
-                "mumbai",
-                org_b_id,
-                "Office B",
-                "OFF-B",
-                "nagpur",
-            ),
+            "INSERT INTO offices (organization_id, name, jurisdiction) VALUES "
+            "(%s, %s, %s)",
+            (org_id, "Office A", "mumbai"),
         )
         conn.execute(
             "INSERT INTO employees (id, organization_id, employee_number) VALUES "
-            "(%s, %s, %s), (%s, %s, %s)",
-            (
-                employee_a_id,
-                org_a_id,
-                "E-001",
-                employee_b_id,
-                org_b_id,
-                "E-001",
-            ),
+            "(%s, %s, %s)",
+            (employee_id, org_id, "E-001"),
         )
         conn.execute(
             "INSERT INTO employee_profile_versions "
             "(organization_id, header_id, validity, name, sevarth_id, "
             "date_of_birth, date_of_joining, retirement_regime, gpf_jurisdiction, "
             "created_by) VALUES "
-            "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s), "
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
             (
-                org_a_id,
-                employee_a_id,
+                org_id,
+                employee_id,
                 date(2026, 1, 1),
                 date(2027, 1, 1),
                 "Alice",
@@ -145,83 +117,43 @@ def _seed_master_data(database_url: str) -> SeededMasterData:
                 "gpf",
                 "mumbai",
                 created_by,
-                org_b_id,
-                employee_b_id,
-                date(2026, 1, 1),
-                date(2027, 1, 1),
-                "Bob",
-                "SEV-B",
-                date(1991, 1, 1),
-                date(2016, 1, 1),
-                "nps",
-                None,
-                created_by,
             ),
         )
         conn.execute(
             "INSERT INTO pay_components "
             "(id, organization_id, code, name, classification) VALUES "
-            "(%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s)",
-            (
-                component_a_id,
-                org_a_id,
-                "HRA",
-                "HRA",
-                "earning",
-                component_b_id,
-                org_b_id,
-                "HRA",
-                "HRA",
-                "earning",
-            ),
+            "(%s, %s, %s, %s, %s)",
+            (component_id, org_id, "HRA", "HRA", "earning"),
         )
         conn.execute(
             "INSERT INTO recurring_instructions "
             "(id, organization_id, employee_id, component_id) VALUES "
-            "(%s, %s, %s, %s), (%s, %s, %s, %s)",
-            (
-                recurring_header_a_id,
-                org_a_id,
-                employee_a_id,
-                component_a_id,
-                recurring_header_b_id,
-                org_b_id,
-                employee_b_id,
-                component_b_id,
-            ),
+            "(%s, %s, %s, %s)",
+            (recurring_header_id, org_id, employee_id, component_id),
         )
         conn.execute(
             "INSERT INTO recurring_instruction_versions "
             "(organization_id, header_id, validity, amount, created_by) VALUES "
-            "(%s, %s, daterange(%s, %s, '[)'), %s, %s), "
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s)",
             (
-                org_a_id,
-                recurring_header_a_id,
+                org_id,
+                recurring_header_id,
                 date(2026, 1, 1),
                 date(2027, 1, 1),
                 "1000.00",
-                created_by,
-                org_b_id,
-                recurring_header_b_id,
-                date(2026, 1, 1),
-                date(2027, 1, 1),
-                "2000.00",
                 created_by,
             ),
         )
         conn.commit()
 
     return SeededMasterData(
-        org_a_id=org_a_id,
-        org_b_id=org_b_id,
+        org_id=org_id,
         user_u_id=user_u_id,
         user_v_id=user_v_id,
-        employee_a_id=employee_a_id,
-        employee_b_id=employee_b_id,
+        employee_id=employee_id,
         created_by=created_by,
-        recurring_header_a_id=recurring_header_a_id,
-        component_a_id=component_a_id,
+        recurring_header_id=recurring_header_id,
+        component_id=component_id,
     )
 
 
@@ -245,7 +177,7 @@ def test_master_data_select_scoped_to_organization_guc(
         conn.execute("SET ROLE accord_app")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(seed.org_id),),
         )
         offices = conn.execute("SELECT organization_id FROM offices").fetchall()
         profiles = conn.execute("SELECT organization_id FROM employee_profile_versions").fetchall()
@@ -253,27 +185,45 @@ def test_master_data_select_scoped_to_organization_guc(
             "SELECT organization_id FROM recurring_instruction_versions"
         ).fetchall()
 
-    assert {row[0] for row in offices} == {seed.org_a_id}
-    assert {row[0] for row in profiles} == {seed.org_a_id}
-    assert {row[0] for row in versions} == {seed.org_a_id}
+    assert {row[0] for row in offices} == {seed.org_id}
+    assert {row[0] for row in profiles} == {seed.org_id}
+    assert {row[0] for row in versions} == {seed.org_id}
 
 
-def test_master_data_insert_wrong_organization_blocked(
+def test_master_data_select_fail_closed_with_wrong_organization_guc(
     seeded_master_db: tuple[str, SeededMasterData],
 ) -> None:
-    database_url, seed = seeded_master_db
+    database_url, _seed = seeded_master_db
+    wrong_org_id = uuid.uuid4()
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute("SET ROLE accord_app")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(wrong_org_id),),
+        )
+        for table in RLS_SPOT_CHECK_TABLES:
+            count = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            assert count == 0, f"{table}: expected zero rows under wrong GUC"
+
+
+def test_master_data_insert_blocked_while_bound_to_wrong_organization_guc(
+    seeded_master_db: tuple[str, SeededMasterData],
+) -> None:
+    database_url, seed = seeded_master_db
+    wrong_org_id = uuid.uuid4()
+
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        conn.execute("SET ROLE accord_app")
+        conn.execute(
+            "SELECT set_config('app.organization_id', %s, false)",
+            (str(wrong_org_id),),
         )
         with pytest.raises(psycopg.Error, match="(?i)row-level security"):
             conn.execute(
-                "INSERT INTO offices (organization_id, name, code, jurisdiction) "
-                "VALUES (%s, %s, %s, %s)",
-                (seed.org_b_id, "Cross", "X", "other"),
+                "INSERT INTO offices (organization_id, name, jurisdiction) "
+                "VALUES (%s, %s, %s)",
+                (seed.org_id, "Cross", "other"),
             )
 
 
@@ -289,6 +239,19 @@ def test_master_data_select_fail_closed_without_organization_guc(
             assert count == 0, f"{table}: expected fail-closed empty result"
 
 
+def test_second_organization_insert_fails_singleton_index(
+    seeded_master_db: tuple[str, SeededMasterData],
+) -> None:
+    database_url, _seed = seeded_master_db
+
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        with pytest.raises(UniqueViolation, match="(?i)uq_organizations_singleton"):
+            conn.execute(
+                "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
+                (uuid.uuid4(), "Org B", "org-b"),
+            )
+
+
 def test_overlapping_validity_rejected_by_gist_exclude(
     seeded_master_db: tuple[str, SeededMasterData],
 ) -> None:
@@ -301,8 +264,8 @@ def test_overlapping_validity_rejected_by_gist_exclude(
                 "(organization_id, header_id, validity, amount, created_by) "
                 "VALUES (%s, %s, daterange(%s, %s, '[)'), %s, %s)",
                 (
-                    seed.org_a_id,
-                    seed.recurring_header_a_id,
+                    seed.org_id,
+                    seed.recurring_header_id,
                     date(2026, 6, 1),
                     date(2026, 9, 1),
                     "1500.00",
@@ -321,7 +284,7 @@ def test_effective_on_boundary_date_resolution(
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute(
             "INSERT INTO employees (id, organization_id, employee_number) VALUES (%s, %s, %s)",
-            (employee_id, seed.org_a_id, "E-BOUNDARY"),
+            (employee_id, seed.org_id, "E-BOUNDARY"),
         )
         conn.execute(
             "INSERT INTO employee_profile_versions "
@@ -330,7 +293,7 @@ def test_effective_on_boundary_date_resolution(
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s), "
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
+                seed.org_id,
                 employee_id,
                 date(2026, 1, 1),
                 date(2026, 4, 1),
@@ -340,7 +303,7 @@ def test_effective_on_boundary_date_resolution(
                 date(2015, 1, 1),
                 "nps",
                 created_by,
-                seed.org_a_id,
+                seed.org_id,
                 employee_id,
                 date(2026, 4, 1),
                 date(2026, 12, 31),
@@ -366,7 +329,7 @@ def test_effective_on_boundary_date_resolution(
                 select_active_version(
                     employee_profile_versions,
                     header_id=employee_id,
-                    organization_id=seed.org_a_id,
+                    organization_id=seed.org_id,
                     on_date=date(2026, 3, 31),
                 )
             ).one()
@@ -374,7 +337,7 @@ def test_effective_on_boundary_date_resolution(
                 select_active_version(
                     employee_profile_versions,
                     header_id=employee_id,
-                    organization_id=seed.org_a_id,
+                    organization_id=seed.org_id,
                     on_date=date(2026, 4, 1),
                 )
             ).one()
@@ -382,7 +345,7 @@ def test_effective_on_boundary_date_resolution(
                 select_active_version(
                     employee_profile_versions,
                     header_id=employee_id,
-                    organization_id=seed.org_a_id,
+                    organization_id=seed.org_id,
                     on_date=date(2026, 4, 2),
                 )
             ).one()
@@ -407,8 +370,8 @@ def test_primary_bank_account_partial_exclude(
             "bank_name, branch, is_primary_salary, created_by) "
             "VALUES (%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
-                seed.employee_a_id,
+                seed.org_id,
+                seed.employee_id,
                 date(2026, 1, 1),
                 date(2027, 1, 1),
                 "111",
@@ -426,8 +389,8 @@ def test_primary_bank_account_partial_exclude(
                 "bank_name, branch, is_primary_salary, created_by) "
                 "VALUES (%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s)",
                 (
-                    seed.org_a_id,
-                    seed.employee_a_id,
+                    seed.org_id,
+                    seed.employee_id,
                     date(2026, 6, 1),
                     date(2026, 9, 1),
                     "222",
@@ -448,8 +411,8 @@ def test_primary_bank_account_partial_exclude(
             "VALUES (%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s), "
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
-                seed.employee_a_id,
+                seed.org_id,
+                seed.employee_id,
                 date(2026, 1, 1),
                 date(2027, 1, 1),
                 "111",
@@ -458,8 +421,8 @@ def test_primary_bank_account_partial_exclude(
                 "Main",
                 True,
                 seed.created_by,
-                seed.org_a_id,
-                seed.employee_a_id,
+                seed.org_id,
+                seed.employee_id,
                 date(2026, 6, 1),
                 date(2026, 9, 1),
                 "222",
@@ -482,7 +445,7 @@ def test_gpf_jurisdiction_check_constraint(
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute(
             "INSERT INTO employees (id, organization_id, employee_number) VALUES (%s, %s, %s)",
-            (employee_id, seed.org_a_id, "E-GPF"),
+            (employee_id, seed.org_id, "E-GPF"),
         )
         conn.commit()
 
@@ -494,7 +457,7 @@ def test_gpf_jurisdiction_check_constraint(
                 "gpf_jurisdiction, created_by) VALUES "
                 "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    seed.org_a_id,
+                    seed.org_id,
                     employee_id,
                     date(2026, 1, 1),
                     date(2026, 2, 1),
@@ -521,7 +484,7 @@ def test_gpf_jurisdiction_check_constraint(
             "gpf_jurisdiction, created_by) VALUES "
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
+                seed.org_id,
                 employee_id,
                 date(2026, 2, 1),
                 date(2026, 3, 1),
@@ -544,7 +507,7 @@ def test_gpf_jurisdiction_check_constraint(
             "gpf_jurisdiction, created_by) VALUES "
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
+                seed.org_id,
                 employee_id,
                 date(2026, 3, 1),
                 date(2026, 4, 1),
@@ -568,7 +531,7 @@ def test_gpf_jurisdiction_check_constraint(
                 "gpf_jurisdiction, created_by) VALUES "
                 "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    seed.org_a_id,
+                    seed.org_id,
                     employee_id,
                     date(2026, 4, 1),
                     date(2026, 5, 1),
@@ -591,7 +554,7 @@ def test_gpf_jurisdiction_check_constraint(
             "gpf_jurisdiction, created_by) VALUES "
             "(%s, %s, daterange(%s, %s, '[)'), %s, %s, %s, %s, %s, %s, %s)",
             (
-                seed.org_a_id,
+                seed.org_id,
                 employee_id,
                 date(2026, 4, 1),
                 date(2026, 5, 1),
@@ -607,7 +570,7 @@ def test_gpf_jurisdiction_check_constraint(
         conn.commit()
 
 
-def test_self_membership_read_policy_cross_org(
+def test_self_membership_read_policy_with_user_guc(
     seeded_master_db: tuple[str, SeededMasterData],
 ) -> None:
     database_url, seed = seeded_master_db
@@ -621,10 +584,10 @@ def test_self_membership_read_policy_cross_org(
             (str(seed.user_u_id),),
         )
         rows = conn.execute(
-            "SELECT organization_id, user_id FROM organization_memberships ORDER BY organization_id"
+            "SELECT organization_id, user_id FROM organization_memberships"
         ).fetchall()
 
-    assert {row[0] for row in rows} == {seed.org_a_id, seed.org_b_id}
+    assert {row[0] for row in rows} == {seed.org_id}
     assert {row[1] for row in rows} == {seed.user_u_id}
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:

@@ -60,7 +60,6 @@ Every pay line item has exactly one classification:
 | **Effective-dated version** | Immutable version row with a validity period; “as of date D” resolves to at most one active version per business key (ADR 0005). |
 | **Posting** | Irreversible (except via formal reversal) commitment of an approved run version to books / remittance outputs; freezes referenced master versions for audit. |
 | **Reversal** | Formal counter-document / counter-run that negates a posted run’s effects without mutating the original posted version. |
-| **Supplemental run** | Additional run for the same period after a posted run, covering late joiners, missed employees, or approved corrections not handled by reversing the main run. |
 | **Maker / checker** | Dual-control workflow: one user prepares (maker), another reviews/approves (checker). Maps to submit / approve transitions (ADR 0007 workflow enumeration). |
 | **Gross bill** | Bill total = salary earnings + employer share (employer_contribution additions included in the bill). See Gross-to-net identity. |
 | **Net payable** | Amount actually payable to the employee (salary credit), after all employee-side deductions and after employer-contribution transfer-out lines have removed employer shares from the employee’s net. |

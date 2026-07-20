@@ -13,12 +13,12 @@ from app.api.routes.audit import router as audit_router
 from app.main import create_app
 from app.models.platform import AuditEvent
 from app.tenancy import bind_tenant_context
+from app.services.bootstrap import provision_organization
+from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
     login_dev,
     seed_membership,
-    seed_organization,
     seed_user,
-    session_cookie_from_response,
 )
 
 
@@ -38,18 +38,19 @@ async def client(dev_settings):
         yield ac
 
 
-async def _create_org_as_admin(client) -> tuple[UUID, UUID]:
-    await login_dev(client)
+async def _create_org_as_admin(client, session) -> tuple[UUID, UUID]:
     slug = f"audit-{uuid4().hex[:8]}"
-    resp = await client.post("/api/organizations", json={"name": "Audit Org", "slug": slug})
-    assert resp.status_code == 201, resp.text
-    cookie = session_cookie_from_response(resp)
-    if cookie:
-        client.cookies.set("accord_session", cookie)
-    body = resp.json()
-    org_id = UUID(body["active_organization"]["id"])
-    user_id = UUID(body["id"])
-    return org_id, user_id
+    await provision_organization(
+        session,
+        name="Audit Org",
+        slug=slug,
+        admin_email="dev@accord.local",
+    )
+    await session.commit()
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "active", body
+    return UUID(body["organization"]["id"]), UUID(body["id"])
 
 
 async def _seed_audit_event(
@@ -121,62 +122,42 @@ async def test_list_audit_events_unauthenticated_401(client):
 
 @pytest.mark.asyncio
 async def test_list_pagination_newest_first_and_actor_shapes(client, session):
-    org_a, user_a = await _create_org_as_admin(client)
-    org_b = await seed_organization(session, name="Org B", slug=f"org-b-{uuid4().hex[:8]}")
-    user_b = await seed_user(session, email=f"b-{uuid4().hex[:8]}@example.com", name="Org B Admin")
-    await seed_membership(
-        session,
-        organization_id=org_b.id,
-        user_id=user_b.id,
-        role="organization_administrator",
-    )
-    await session.commit()
+    org_id, user_id = await _create_org_as_admin(client, session)
 
     t0 = datetime(2026, 3, 1, 10, 0, 0, tzinfo=timezone.utc)
     entity = uuid4()
     e1 = await _seed_audit_event(
         session,
-        org_id=org_a,
-        actor_user_id=user_a,
+        org_id=org_id,
+        actor_user_id=user_id,
         command="submit",
         entity_type="payroll_run",
         entity_id=entity,
         created_at=t0,
         request_id="req-1",
         summary={"before": {"status": "draft"}, "after": {"status": "submitted"}},
-        bind_user_id=user_a,
+        bind_user_id=user_id,
     )
     e2 = await _seed_audit_event(
         session,
-        org_id=org_a,
+        org_id=org_id,
         actor_user_id=None,
         command="artifact.download",
         entity_type="export_artifact",
         entity_id=uuid4(),
         created_at=t0 + timedelta(hours=1),
         summary={"action": "download"},
-        bind_user_id=user_a,
+        bind_user_id=user_id,
     )
     e3 = await _seed_audit_event(
         session,
-        org_id=org_a,
-        actor_user_id=user_a,
+        org_id=org_id,
+        actor_user_id=user_id,
         command="post",
         entity_type="payroll_run",
         entity_id=entity,
         created_at=t0 + timedelta(hours=2),
-        bind_user_id=user_a,
-    )
-    # Other-org row must not appear in org A list.
-    await _seed_audit_event(
-        session,
-        org_id=org_b.id,
-        actor_user_id=user_b.id,
-        command="approve",
-        entity_type="payroll_run",
-        entity_id=uuid4(),
-        created_at=t0 + timedelta(hours=3),
-        bind_user_id=user_b.id,
+        bind_user_id=user_id,
     )
 
     page1 = await client.get("/api/audit-events", params={"page": 1, "page_size": 2})
@@ -192,7 +173,7 @@ async def test_list_pagination_newest_first_and_actor_shapes(client, session):
     assert body1["items"][1]["actor"] is None
     actor = body1["items"][0]["actor"]
     assert actor is not None
-    assert actor["id"] == str(user_a)
+    assert actor["id"] == str(user_id)
     assert actor["name"]
     assert actor["email"]
 
@@ -202,12 +183,12 @@ async def test_list_pagination_newest_first_and_actor_shapes(client, session):
     assert [item["id"] for item in body2["items"]] == [str(e1.id)]
     assert "request_id" not in body2["items"][0]
     assert "summary" not in body2["items"][0]
-    assert body2["items"][0]["has_structured_detail"] is False
+    assert "has_structured_detail" not in body2["items"][0]
 
 
 @pytest.mark.asyncio
 async def test_list_filter_entity_type(client, session):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     run_id = uuid4()
     art_id = uuid4()
     await _seed_audit_event(
@@ -239,7 +220,7 @@ async def test_list_filter_entity_type(client, session):
 
 @pytest.mark.asyncio
 async def test_list_filter_entity_id(client, session):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     target = uuid4()
     await _seed_audit_event(
         session,
@@ -269,7 +250,7 @@ async def test_list_filter_entity_id(client, session):
 
 @pytest.mark.asyncio
 async def test_list_filter_command(client, session):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     await _seed_audit_event(
         session,
         org_id=org_id,
@@ -298,7 +279,7 @@ async def test_list_filter_command(client, session):
 
 @pytest.mark.asyncio
 async def test_list_filter_actor_user_id(client, session):
-    org_id, admin_id = await _create_org_as_admin(client)
+    org_id, admin_id = await _create_org_as_admin(client, session)
     other = await seed_user(session, email=f"other-{uuid4().hex[:8]}@example.com", name="Other")
     await seed_membership(
         session,
@@ -336,7 +317,7 @@ async def test_list_filter_actor_user_id(client, session):
 
 @pytest.mark.asyncio
 async def test_list_filter_from_to_window(client, session):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     t0 = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
     early = await _seed_audit_event(
         session,
@@ -385,7 +366,7 @@ async def test_list_filter_from_to_window(client, session):
 
 @pytest.mark.asyncio
 async def test_list_from_after_to_422(client, session):
-    await _create_org_as_admin(client)
+    await _create_org_as_admin(client, session)
     resp = await client.get(
         "/api/audit-events",
         params={
@@ -398,7 +379,7 @@ async def test_list_from_after_to_422(client, session):
 
 @pytest.mark.asyncio
 async def test_list_invalid_command_pattern_422(client, session):
-    await _create_org_as_admin(client)
+    await _create_org_as_admin(client, session)
     resp = await client.get("/api/audit-events", params={"command": "Bad Command!"})
     assert resp.status_code == 422
 
@@ -408,7 +389,7 @@ async def test_list_invalid_command_pattern_422(client, session):
 
 @pytest.mark.asyncio
 async def test_detail_happy_path(client, session):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     entity_id = uuid4()
     event = await _seed_audit_event(
         session,
@@ -421,7 +402,7 @@ async def test_detail_happy_path(client, session):
         summary={"before": {"status": "approved"}, "after": {"status": "posted"}},
         bind_user_id=user_id,
         event_kind="mutation",
-        entity_label="2026-07 Regular run",
+        entity_label="July 2026 payroll run",
         actor_snapshot={
             "id": str(user_id),
             "name": "Actor at event time",
@@ -440,7 +421,7 @@ async def test_detail_happy_path(client, session):
     assert body["entity_id"] == str(entity_id)
     assert body["request_id"] == "detail-req"
     assert body["event_kind"] == "mutation"
-    assert body["entity_label"] == "2026-07 Regular run"
+    assert body["entity_label"] == "July 2026 payroll run"
     assert body["changed_count"] == 1
     assert body["before_state"]["status"] == "approved"
     assert body["after_state"]["status"] == "posted"
@@ -452,7 +433,7 @@ async def test_detail_happy_path(client, session):
 
 @pytest.mark.asyncio
 async def test_filter_options_are_exact_and_tenant_scoped(client, session):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     await _seed_audit_event(
         session,
         org_id=org_id,
@@ -461,7 +442,7 @@ async def test_filter_options_are_exact_and_tenant_scoped(client, session):
         entity_type="payroll_run",
         entity_id=uuid4(),
         event_kind="mutation",
-        entity_label="2026-07 Regular run",
+        entity_label="July 2026 payroll run",
         actor_snapshot={
             "id": str(user_id),
             "name": "Captured Actor",
@@ -487,28 +468,36 @@ async def test_filter_options_are_exact_and_tenant_scoped(client, session):
 
 
 @pytest.mark.asyncio
-async def test_detail_cross_org_404(client, session):
-    org_a, user_a = await _create_org_as_admin(client)
-    org_b = await seed_organization(session, name="Org B", slug=f"org-b-{uuid4().hex[:8]}")
-    user_b = await seed_user(session, email=f"b-{uuid4().hex[:8]}@example.com", name="Org B Admin")
-    await seed_membership(
-        session,
-        organization_id=org_b.id,
-        user_id=user_b.id,
-        role="organization_administrator",
-    )
-    await session.commit()
+async def test_detail_unknown_id_404(client, session):
+    await _create_org_as_admin(client, session)
+    resp = await client.get(f"/api/audit-events/{uuid4()}")
+    assert resp.status_code == 404
 
-    foreign = await _seed_audit_event(
+
+@pytest.mark.asyncio
+async def test_detail_unprovisioned_user_fail_closed(client, session, dev_settings):
+    org_id, user_id = await _create_org_as_admin(client, session)
+    event = await _seed_audit_event(
         session,
-        org_id=org_b.id,
-        actor_user_id=user_b.id,
+        org_id=org_id,
+        actor_user_id=user_id,
         command="post",
         entity_type="payroll_run",
         entity_id=uuid4(),
-        bind_user_id=user_b.id,
+        bind_user_id=user_id,
     )
-    # Stay authenticated as org A.
-    _ = org_a, user_a
-    resp = await client.get(f"/api/audit-events/{foreign.id}")
-    assert resp.status_code == 404
+    outsider = await seed_user(session, email=f"out-{uuid4().hex[:8]}@example.com")
+    await session.commit()
+
+    apply_session_cookie(
+        client,
+        await mint_session_cookie(
+            session,
+            dev_settings,
+            user_id=outsider.id,
+            active_organization_id=org_id,
+        ),
+    )
+    resp = await client.get(f"/api/audit-events/{event.id}")
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "OrganizationContextRequired"

@@ -1,4 +1,5 @@
 import { ClipboardTextIcon as ClipboardList } from "@phosphor-icons/react/dist/csr/ClipboardText";
+import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { DateRange } from "react-day-picker";
 
@@ -7,6 +8,7 @@ import { CapabilityGate } from "@/components/capability-gate";
 import { EmptyState } from "@/components/empty-state";
 import { PageShell } from "@/components/page-shell";
 import { PaginationControls } from "@/components/pagination-controls";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	Combobox,
@@ -17,15 +19,16 @@ import {
 	ComboboxList,
 } from "@/components/ui/combobox";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
+import {
+	Drawer,
+	DrawerClose,
+	DrawerContent,
+	DrawerDescription,
+	DrawerHeader,
+	DrawerTitle,
+} from "@/components/ui/drawer";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Input } from "@/components/ui/input";
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetTitle,
-} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	type AuditActor,
@@ -35,12 +38,30 @@ import {
 	useAuditFilterOptions,
 } from "@/lib/api/audit";
 import { getErrorMessage } from "@/lib/errors";
-import { cn, formatDateInAccordTimeZone, formatDateTime } from "@/lib/utils";
+import {
+	ACCORD_TIME_ZONE,
+	cn,
+	formatDateInAccordTimeZone,
+	parseApiDateTime,
+} from "@/lib/utils";
 
 import { AuditEventDetail } from "./AuditEventDetail";
+import { commandBadgeVariant } from "./CommandBadge";
 
 const PAGE_SIZE = 20;
 const DESKTOP_QUERY = "(min-width: 1024px)";
+
+const eventTimeFormatter = new Intl.DateTimeFormat("en-IN", {
+	timeZone: ACCORD_TIME_ZONE,
+	hour: "numeric",
+	minute: "2-digit",
+	hour12: true,
+});
+
+function formatEventTime(value: string): string {
+	const date = parseApiDateTime(value);
+	return date ? eventTimeFormatter.format(date) : "—";
+}
 
 function useDesktopLayout() {
 	return useSyncExternalStore(
@@ -67,7 +88,10 @@ function humanize(value: string): string {
 	return value
 		.replaceAll("_", " ")
 		.replaceAll(".", " ")
-		.replace(/^./, (character) => character.toUpperCase());
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+		.join(" ");
 }
 
 function actorLabel(actor: AuditActor): string {
@@ -79,6 +103,17 @@ function actorLabel(actor: AuditActor): string {
 
 function eventActionLabel(command: string): string {
 	return humanize(command.split(".").at(-1) ?? command);
+}
+
+/** Strip trailing short entity-id suffixes from fallback labels (e.g. "Payroll Run fc4f9737"). */
+function eventEntityLabel(event: AuditEventListItem): string {
+	const shortId = event.entity_id.slice(0, 8);
+	const label = event.entity_label.trim();
+	if (label.endsWith(shortId)) {
+		const withoutId = label.slice(0, -shortId.length).trim();
+		return withoutId || humanize(event.entity_type);
+	}
+	return label;
 }
 
 function indicatorClass(command: string, eventKind: AuditEventListItem["event_kind"]): string {
@@ -130,17 +165,17 @@ function SelectFilter({
 
 function AuditWorkspaceSkeleton() {
 	return (
-		<div className="grid min-h-[32rem] grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)]">
-			<div className="grid content-start gap-3 border-r border-border p-4">
+		<div className="grid min-h-[32rem] grid-cols-1 gap-2 p-2 lg:grid-cols-[340px_minmax(0,1fr)]">
+			<div className="grid content-start gap-3 rounded-lg border border-border bg-muted/20 p-4">
 				<Skeleton className="h-4 w-28" />
 				{["one", "two", "three", "four", "five", "six"].map((key) => (
-					<Skeleton key={key} className="h-14 w-full" />
+					<Skeleton key={key} className="h-14 w-full rounded-md" />
 				))}
 			</div>
-			<div className="hidden content-start gap-5 p-6 lg:grid">
+			<div className="hidden content-start gap-5 rounded-lg p-3 lg:grid">
 				<Skeleton className="h-4 w-48" />
 				<Skeleton className="h-4 w-36" />
-				<Skeleton className="h-56 w-full" />
+				<Skeleton className="h-56 w-full rounded-md" />
 			</div>
 		</div>
 	);
@@ -155,7 +190,7 @@ export default function AuditPage() {
 	const [dateRange, setDateRange] = useState<DateRange | undefined>();
 	const [page, setPage] = useState(1);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
-	const [sheetOpen, setSheetOpen] = useState(false);
+	const [drawerOpen, setDrawerOpen] = useState(false);
 	const debouncedEntityId = useDebouncedValue(entityId, 300);
 	const optionsQuery = useAuditFilterOptions();
 
@@ -209,12 +244,12 @@ export default function AuditPage() {
 		if (listQuery.isLoading || listQuery.isError) return;
 		if (events.length === 0) {
 			setSelectedId(null);
-			setSheetOpen(false);
+			setDrawerOpen(false);
 			return;
 		}
 		if (!events.some((event) => event.id === selectedId)) {
 			setSelectedId(isDesktop ? events[0].id : null);
-			setSheetOpen(false);
+			setDrawerOpen(false);
 		}
 	}, [events, isDesktop, listQuery.isError, listQuery.isLoading, selectedId]);
 
@@ -297,7 +332,7 @@ export default function AuditPage() {
 						</div>
 
 						<div
-							className="app-material-level-1 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card isolate"
+							className="app-table-surface flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-card"
 							data-testid="audit-workspace"
 						>
 							{listQuery.isLoading ? <AuditWorkspaceSkeleton /> : null}
@@ -312,14 +347,14 @@ export default function AuditPage() {
 							{!listQuery.isLoading && !listQuery.isError && events.length === 0 ? (
 								<EmptyState
 									icon={ClipboardList}
-									title="No audit events"
+									title="No Audit Events"
 									description="No events match the current filters."
 									className="min-h-[32rem] flex-1"
 								/>
 							) : null}
 							{!listQuery.isLoading && !listQuery.isError && events.length > 0 ? (
-								<div className="grid min-h-0 flex-1 overflow-hidden rounded-[inherit] lg:grid-cols-[340px_minmax(0,1fr)]">
-									<section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden border-border lg:border-r">
+								<div className="grid min-h-0 flex-1 gap-2 overflow-hidden p-2 lg:grid-cols-[340px_minmax(0,1fr)]">
+									<section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-border bg-muted/20">
 										<div
 											className={cn(
 												"app-scrollbar min-h-0 overflow-y-auto",
@@ -327,14 +362,9 @@ export default function AuditPage() {
 											)}
 											aria-busy={listQuery.isPlaceholderData || undefined}
 										>
-											{groups.map(([day, dayEvents], groupIndex) => (
+											{groups.map(([day, dayEvents]) => (
 												<div key={day}>
-													<div
-														className={cn(
-															"sticky top-0 z-10 border-b border-border bg-muted/95 px-4 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase",
-															groupIndex === 0 && "rounded-t-lg lg:rounded-tr-none",
-														)}
-													>
+													<div className="sticky top-0 z-10 border-b border-border bg-muted/95 px-4 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 														{day}
 													</div>
 													{dayEvents.map((event) => (
@@ -344,28 +374,32 @@ export default function AuditPage() {
 															disabled={listQuery.isPlaceholderData}
 															aria-current={event.id === selectedId ? "true" : undefined}
 															className={cn(
-																"grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/45",
+																"flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-accent/45",
 																event.id === selectedId && "bg-accent/60",
 																listQuery.isPlaceholderData && "cursor-wait",
 															)}
 															onClick={() => {
 																setSelectedId(event.id);
-																if (!isDesktop) setSheetOpen(true);
+																if (!isDesktop) setDrawerOpen(true);
 															}}
 														>
 															<span
 																className={cn(
-																	"mt-1.5 size-2 rounded-full",
+																	"size-2 shrink-0 rounded-full",
 																	indicatorClass(event.command, event.event_kind),
 																)}
 															/>
-															<span className="min-w-0">
-																<span className="block truncate text-sm font-medium">
-																	{event.entity_label}
+															<span className="flex min-w-0 flex-1 items-center gap-3">
+																<span className="min-w-0 flex-1 truncate text-sm font-medium">
+																	{eventEntityLabel(event)}
 																</span>
-																<span className="mt-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-																	<span>{eventActionLabel(event.command)}</span>
-																	<span>{formatDateTime(event.created_at).split(", ").at(-1)}</span>
+																<span className="flex shrink-0 items-center gap-2">
+																	<Badge variant={commandBadgeVariant(event.command)}>
+																		{eventActionLabel(event.command)}
+																	</Badge>
+																	<span className="text-xs text-muted-foreground tabular-nums">
+																		{formatEventTime(event.created_at)}
+																	</span>
 																</span>
 															</span>
 														</button>
@@ -373,7 +407,7 @@ export default function AuditPage() {
 												</div>
 											))}
 										</div>
-										<div className="rounded-b-lg border-t border-border p-2 lg:rounded-br-none">
+										<div className="rounded-b-lg border-t border-border bg-muted/30 p-2">
 											<PaginationControls
 												page={page}
 												totalPages={totalPages}
@@ -385,7 +419,7 @@ export default function AuditPage() {
 									</section>
 									{selectedId ? (
 										<main
-											className="app-scrollbar hidden min-h-0 overflow-y-auto rounded-r-lg p-6 lg:block"
+											className="app-scrollbar hidden min-h-0 overflow-y-auto rounded-lg p-3 lg:block"
 											data-testid="audit-detail-panel"
 										>
 											<AuditEventDetail eventId={selectedId} />
@@ -397,21 +431,40 @@ export default function AuditPage() {
 					</div>
 				</PageShell>
 
-				<Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-					<SheetContent side="right" className="w-full sm:max-w-lg">
-						<SheetHeader>
-							<SheetTitle>{selectedEvent?.entity_label ?? "Audit event"}</SheetTitle>
-							<SheetDescription>
+				<Drawer open={drawerOpen} onOpenChange={setDrawerOpen} swipeDirection="right">
+					<DrawerContent className="sm:[--drawer-content-width:32rem]">
+						<DrawerHeader className="relative pr-12">
+							<DrawerTitle>
+								{selectedEvent ? eventEntityLabel(selectedEvent) : "Audit event"}
+							</DrawerTitle>
+							<DrawerDescription className="sr-only">
 								{selectedEvent ? eventActionLabel(selectedEvent.command) : "Event details"}
-							</SheetDescription>
-						</SheetHeader>
+							</DrawerDescription>
+							{selectedEvent ? (
+								<Badge variant={commandBadgeVariant(selectedEvent.command)} className="w-fit">
+									{eventActionLabel(selectedEvent.command)}
+								</Badge>
+							) : null}
+							<DrawerClose
+								render={
+									<Button
+										variant="ghost"
+										size="icon"
+										aria-label="Close"
+										className="absolute top-3 right-3"
+									/>
+								}
+							>
+								<XIcon weight="bold" aria-hidden />
+							</DrawerClose>
+						</DrawerHeader>
 						{selectedId ? (
-							<div className="app-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+							<div className="app-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
 								<AuditEventDetail eventId={selectedId} />
 							</div>
 						) : null}
-					</SheetContent>
-				</Sheet>
+					</DrawerContent>
+				</Drawer>
 			</AppLayout>
 		</CapabilityGate>
 	);

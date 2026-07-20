@@ -103,7 +103,6 @@ async def test_payroll_run_orm_roundtrip(scratch_db: str) -> None:
             run = PayrollRun(
                 organization_id=org_id,
                 period_id=period.id,
-                run_type="regular",
                 status="draft",
             )
             session.add(run)
@@ -207,7 +206,6 @@ async def test_payroll_run_orm_roundtrip(scratch_db: str) -> None:
                 await session.execute(sqlmodel_select(PayrollRun).where(PayrollRun.id == run_id))
             ).scalar_one()
             assert loaded_run.lock_version == 0
-            assert loaded_run.run_type == "regular"
 
             loaded_input = (
                 await session.execute(

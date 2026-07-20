@@ -456,7 +456,7 @@ async def _write_approval_and_audit(
         command=action,
         entity_type="payroll_run",
         entity_id=run.id,
-        entity_label=f"{period_label} {run.run_type.replace('_', ' ').title()} run",
+        entity_label=f"{period_label} payroll run",
         before_state=before_state,
         after_state=after_state,
         summary={

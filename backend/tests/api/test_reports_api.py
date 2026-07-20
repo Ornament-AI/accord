@@ -164,7 +164,6 @@ async def _seed_run(
     run = PayrollRun(
         organization_id=org_id,
         period_id=period.id,
-        run_type="regular",
         status=status,
     )
     session.add(run)

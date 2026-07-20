@@ -34,16 +34,18 @@ from app.models.employees import (
 from app.models.identity import (
     IdempotencyKey,
     Organization,
+    OrganizationInvitation,
     OrganizationMembership,
     OrganizationSettings,
     Session,
     User,
 )
-from app.models.org_structure import EmployeeGroup, Office, PayrollUnit, Post
+from app.models.org_structure import Office, Post
 from app.models.pay_components import PayComponent, component_rate_versions
 from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
+    PayrollRunEmployee,
     PayrollRunInput,
     payroll_employee_results,
     payroll_result_lines,
@@ -68,12 +70,12 @@ __all__ = [
     "AdvanceAccount",
     "AuditEvent",
     "Employee",
-    "EmployeeGroup",
     "ExportArtifact",
     "IdempotencyKey",
     "Job",
     "Office",
     "Organization",
+    "OrganizationInvitation",
     "OrganizationMembership",
     "OrganizationOwnedMixin",
     "OrganizationSettings",
@@ -82,8 +84,8 @@ __all__ = [
     "PayrollApproval",
     "PayrollPeriod",
     "PayrollRun",
+    "PayrollRunEmployee",
     "PayrollRunInput",
-    "PayrollUnit",
     "Post",
     "RecurringInstruction",
     "ReportConfiguration",

@@ -1,4 +1,4 @@
-"""Identity session establishment and membership resolution."""
+"""Identity session establishment and membership resolution (ADR 0011)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from app.config import Settings
 from app.models.base import utcnow
 from app.models.identity import Organization, OrganizationMembership, User
 from app.models.identity import Session as SessionRow
+from app.services.bootstrap import get_singleton_organization
+from app.services.members import claim_pending_invitation
 from app.tenancy import bind_tenant_context
 
 
@@ -53,38 +55,38 @@ async def _ensure_txn(db: AsyncSession) -> None:
         await db.begin()
 
 
+async def get_active_membership_for_org(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    user_id: UUID,
+) -> OrganizationMembership | None:
+    await _ensure_txn(db)
+    await bind_tenant_context(db, organization_id=organization_id, user_id=user_id)
+    result = await db.execute(
+        select(OrganizationMembership).where(
+            OrganizationMembership.organization_id == organization_id,
+            OrganizationMembership.user_id == user_id,
+            OrganizationMembership.is_active.is_(True),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_active_memberships(
     db: AsyncSession,
     user_id: UUID,
 ) -> list[tuple[Organization, OrganizationMembership]]:
-    """Return active memberships in active organizations for ``user_id``.
-
-    Note: ``organization_memberships`` is forced-RLS (org-scoped). Under the
-    real ``accord_app`` role, a bare cross-org SELECT returns zero rows unless
-    ``app.organization_id`` is bound. Phase 2 discovers candidates by scanning
-    non-RLS ``organizations`` and binding each org before the membership read.
-    # TODO(Phase 3): replace with a dedicated ``user_id = app.user_id`` SELECT
-    # policy (or SECURITY DEFINER helper) so /me listing does not scan orgs.
-    """
-    org_result = await db.execute(
-        select(Organization).where(Organization.is_active.is_(True)).order_by(Organization.name)
+    """Return active memberships for ``user_id`` (singleton org only under ADR 0011)."""
+    org = await get_singleton_organization(db)
+    if org is None:
+        return []
+    membership = await get_active_membership_for_org(
+        db, organization_id=org.id, user_id=user_id
     )
-    organizations = list(org_result.scalars().all())
-    found: list[tuple[Organization, OrganizationMembership]] = []
-    for org in organizations:
-        await _ensure_txn(db)
-        await bind_tenant_context(db, organization_id=org.id, user_id=user_id)
-        mem_result = await db.execute(
-            select(OrganizationMembership).where(
-                OrganizationMembership.organization_id == org.id,
-                OrganizationMembership.user_id == user_id,
-                OrganizationMembership.is_active.is_(True),
-            )
-        )
-        membership = mem_result.scalar_one_or_none()
-        if membership is not None:
-            found.append((org, membership))
-    return found
+    if membership is None:
+        return []
+    return [(org, membership)]
 
 
 async def resolve_active_organization(
@@ -92,32 +94,21 @@ async def resolve_active_organization(
     user: User,
     active_organization_id: UUID | None,
 ) -> tuple[Organization, OrganizationMembership] | None:
-    """Resolve active org+membership, or None if inactive (self-heal).
+    """Resolve active org+membership, or None if missing/inactive membership.
 
-    Binds tenant GUCs for the candidate org before the membership read so the
-    query succeeds under forced RLS for ``accord_app``.
+    Organization ``is_active`` is ignored for product access (ADR 0011); any
+    singleton row is treated as the deployment organization.
     """
     if active_organization_id is None:
         return None
 
     org = await db.get(Organization, active_organization_id)
-    if org is None or not org.is_active:
+    if org is None:
         return None
 
-    await _ensure_txn(db)
-    await bind_tenant_context(
-        db,
-        organization_id=active_organization_id,
-        user_id=user.id,
+    membership = await get_active_membership_for_org(
+        db, organization_id=active_organization_id, user_id=user.id
     )
-    mem_result = await db.execute(
-        select(OrganizationMembership).where(
-            OrganizationMembership.organization_id == active_organization_id,
-            OrganizationMembership.user_id == user.id,
-            OrganizationMembership.is_active.is_(True),
-        )
-    )
-    membership = mem_result.scalar_one_or_none()
     if membership is None:
         return None
     return org, membership
@@ -132,12 +123,20 @@ async def establish_session_for_identity(
 ) -> tuple[User, str]:
     """Shared by login dev-bypass and callback.
 
-    upsert user → list active memberships → if exactly 1, auto-activate →
-    create DB session → commit → return (user, cookie_value).
+    upsert user → claim invite → auto-bind singleton membership → create session.
     """
     user = await upsert_user(db, identity)
-    memberships = await list_active_memberships(db, user.id)
-    active_organization_id = memberships[0][0].id if len(memberships) == 1 else None
+    org = await get_singleton_organization(db)
+    active_organization_id = None
+    if org is not None:
+        membership = await claim_pending_invitation(db, user, org)
+        if membership is None:
+            membership = await get_active_membership_for_org(
+                db, organization_id=org.id, user_id=user.id
+            )
+        if membership is not None:
+            active_organization_id = org.id
+
     store = get_session_store(settings, db)
     cookie_value = await store.create_session(
         user_id=user.id,
@@ -148,46 +147,62 @@ async def establish_session_for_identity(
     return user, cookie_value
 
 
-def _org_summary(org: Organization, membership: OrganizationMembership) -> dict:
-    return {
-        "id": str(org.id),
-        "name": org.name,
-        "slug": org.slug,
-        "role": membership.role,
-    }
-
-
 async def build_me_payload(
     db: AsyncSession,
     user: User,
     session_row: SessionRow,
 ) -> dict:
-    """Full ``GET /api/auth/me`` response shape."""
-    memberships = await list_active_memberships(db, user.id)
-    organizations = [_org_summary(org, mem) for org, mem in memberships]
+    """Full ``GET /api/auth/me`` singular-organization response (ADR 0011)."""
+    org = await get_singleton_organization(db)
+    if org is None:
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "name": user.name,
+            "is_platform_admin": bool(user.is_platform_admin),
+            "access_state": "unbootstrapped",
+            "organization": None,
+            "membership": None,
+        }
 
+    organization = {"id": str(org.id), "name": org.name, "slug": org.slug}
+
+    # Prefer session-bound membership; fall back to direct lookup (self-heal).
     active = await resolve_active_organization(
         db,
         user,
-        session_row.active_organization_id,
+        session_row.active_organization_id or org.id,
     )
     if active is None:
-        active_organization = None
+        membership_row = await get_active_membership_for_org(
+            db, organization_id=org.id, user_id=user.id
+        )
+        if membership_row is None:
+            return {
+                "id": str(user.id),
+                "email": user.email,
+                "name": user.name,
+                "is_platform_admin": bool(user.is_platform_admin),
+                "access_state": "unprovisioned",
+                "organization": organization,
+                "membership": None,
+            }
+        role = membership_row.role
     else:
-        org, membership = active
-        caps = sorted(capabilities_for_role(membership.role))
-        active_organization = {
-            **_org_summary(org, membership),
-            "capabilities": caps,
-        }
+        _, membership_row = active
+        role = membership_row.role
 
     return {
         "id": str(user.id),
         "email": user.email,
         "name": user.name,
         "is_platform_admin": bool(user.is_platform_admin),
-        "active_organization": active_organization,
-        "organizations": organizations,
+        "access_state": "active",
+        "organization": organization,
+        "membership": {
+            "role": role,
+            "capabilities": sorted(capabilities_for_role(role)),
+        },
     }
 
 
@@ -209,19 +224,25 @@ async def resolve_principal(
     if user is None:
         return None
 
-    active = await resolve_active_organization(
-        db,
-        user,
-        session_row.active_organization_id,
-    )
+    org = await get_singleton_organization(db)
+    active_org_id = session_row.active_organization_id
+    if active_org_id is None and org is not None:
+        # Self-heal: bind singleton when membership exists but session lacks it.
+        membership = await get_active_membership_for_org(
+            db, organization_id=org.id, user_id=user.id
+        )
+        if membership is not None:
+            active_org_id = org.id
+
+    active = await resolve_active_organization(db, user, active_org_id)
     if active is None:
         role: str | None = None
         organization_id: str | None = None
         caps: frozenset[str] = frozenset()
     else:
-        org, membership = active
+        resolved_org, membership = active
         role = membership.role
-        organization_id = str(org.id)
+        organization_id = str(resolved_org.id)
         caps = capabilities_for_role(role)
 
     return AuthPrincipal(

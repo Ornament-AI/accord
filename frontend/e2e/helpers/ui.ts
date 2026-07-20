@@ -56,12 +56,25 @@ export async function selectWithin(
 }
 
 export async function openNav(page: Page, title: string): Promise<void> {
-	const link = page.getByRole("link", { name: title });
-	if (!(await link.isVisible().catch(() => false))) {
+	const target = page
+		.getByRole("link", { name: title })
+		.or(page.getByRole("menuitem", { name: title }));
+
+	if (!(await target.first().isVisible().catch(() => false))) {
 		await page.goto("/");
 		await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
 	}
-	await link.click();
+
+	// Nested items live under Organization (expanded collapsible or compact flyout).
+	if (!(await target.first().isVisible().catch(() => false))) {
+		const folder = page.getByRole("button", { name: /^Organization$/i });
+		if (await folder.isVisible().catch(() => false)) {
+			await folder.click();
+		}
+	}
+
+	await expect(target.first()).toBeVisible({ timeout: 10_000 });
+	await target.first().click();
 }
 
 export function isoDate(offsetDays = 0): string {

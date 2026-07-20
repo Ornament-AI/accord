@@ -113,7 +113,7 @@ function PaginationEllipsis({ className, ...props }: React.ComponentProps<"span"
 			{...props}
 		>
 			<MoreHorizontalIcon className="size-4" />
-			<span className="sr-only">More pages</span>
+			<span className="sr-only">More Pages</span>
 		</span>
 	);
 }

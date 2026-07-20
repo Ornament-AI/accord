@@ -2,25 +2,27 @@
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import Range
 
 from app.api.routes.payroll_runs import router as payroll_runs_router
 from app.main import create_app
-from app.models.employees import Employee
+from app.models.employees import Employee, employee_pay_versions, employee_profile_versions
 from app.models.payroll_runs import PayrollRun
 from app.tenancy import bind_tenant_context
+from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
     login_dev,
     seed_membership,
-    seed_organization,
     seed_user,
-    session_cookie_from_response,
 )
 
 
@@ -39,21 +41,22 @@ async def client(dev_settings):
         yield ac
 
 
-async def _create_org_as_admin(client) -> tuple[UUID, UUID]:
-    await login_dev(client)
+async def _create_org_as_admin(client, session) -> tuple[UUID, UUID]:
     slug = f"acme-{uuid4().hex[:8]}"
-    resp = await client.post("/api/organizations", json={"name": "Acme", "slug": slug})
-    assert resp.status_code == 201, resp.text
-    cookie = session_cookie_from_response(resp)
-    if cookie:
-        client.cookies.set("accord_session", cookie)
-    body = resp.json()
-    org_id = UUID(body["active_organization"]["id"])
-    user_id = UUID(body["id"])
-    return org_id, user_id
+    await provision_organization(
+        session,
+        name="Acme",
+        slug=slug,
+        admin_email="dev@accord.local",
+    )
+    await session.commit()
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "active", body
+    return UUID(body["organization"]["id"]), UUID(body["id"])
 
 
-async def _seed_employee(session, *, org_id: UUID, user_id: UUID, number: str = "E001") -> Employee:
+async def _seed_employee(session, *, org_id: UUID, user_id: UUID, number: str = "E001") -> UUID:
     async with session.begin():
         await bind_tenant_context(session, organization_id=org_id, user_id=user_id)
         emp = Employee(organization_id=org_id, employee_number=number)
@@ -61,16 +64,42 @@ async def _seed_employee(session, *, org_id: UUID, user_id: UUID, number: str = 
         await session.flush()
         employee_id = emp.id
     await session.commit()
-    return await session.get(Employee, employee_id)
+    return employee_id
+
+
+async def _seed_employee_versions(session, *, org_id: UUID, user_id: UUID, employee_id: UUID):
+    async with session.begin():
+        await bind_tenant_context(session, organization_id=org_id, user_id=user_id)
+        validity = Range(date(2026, 1, 1), None, bounds="[)")
+        await session.execute(
+            employee_profile_versions.insert().values(
+                organization_id=org_id,
+                header_id=employee_id,
+                validity=validity,
+                name="Test Employee",
+                retirement_regime="nps",
+                created_by=user_id,
+            )
+        )
+        await session.execute(
+            employee_pay_versions.insert().values(
+                organization_id=org_id,
+                header_id=employee_id,
+                validity=validity,
+                basic_pay=Decimal("60000.00"),
+                created_by=user_id,
+            )
+        )
+    await session.commit()
 
 
 async def _admin_context(client, session) -> dict:
-    org_id, user_id = await _create_org_as_admin(client)
-    employee = await _seed_employee(session, org_id=org_id, user_id=user_id)
+    org_id, user_id = await _create_org_as_admin(client, session)
+    employee_id = await _seed_employee(session, org_id=org_id, user_id=user_id)
     return {
         "org_id": org_id,
         "user_id": user_id,
-        "employee_id": employee.id,
+        "employee_id": employee_id,
     }
 
 
@@ -83,10 +112,10 @@ async def _create_period(client, *, year: int = 2026, month: int = 6) -> dict:
     return resp.json()
 
 
-async def _create_run(client, *, period_id: str, run_type: str = "regular") -> dict:
+async def _create_run(client, *, period_id: str) -> dict:
     resp = await client.post(
         "/api/payroll-runs",
-        json={"period_id": period_id, "run_type": run_type},
+        json={"period_id": period_id},
     )
     assert resp.status_code == 201, resp.text
     return resp.json()
@@ -120,34 +149,113 @@ async def test_period_create_list_ordering_and_duplicate_409(client, session):
 
 
 @pytest.mark.asyncio
-async def test_run_create_second_regular_409_supplemental_allowed(client, session):
+async def test_run_create_duplicate_409_and_legacy_type_rejected(client, session):
     await _admin_context(client, session)
     period = await _create_period(client)
 
-    regular = await _create_run(client, period_id=period["id"], run_type="regular")
-    assert regular["status"] == "draft"
-    assert regular["run_type"] == "regular"
-    assert regular["period_year"] == 2026
-    assert regular["period_month"] == 6
+    run = await _create_run(client, period_id=period["id"])
+    assert run["status"] == "draft"
+    assert "run_type" not in run
+    assert run["period_year"] == 2026
+    assert run["period_month"] == 6
 
     second = await client.post(
         "/api/payroll-runs",
-        json={"period_id": period["id"], "run_type": "regular"},
+        json={"period_id": period["id"]},
     )
     assert second.status_code == 409
 
-    supplemental = await _create_run(client, period_id=period["id"], run_type="supplemental")
-    assert supplemental["run_type"] == "supplemental"
-    assert supplemental["period_id"] == period["id"]
+    legacy = await client.post(
+        "/api/payroll-runs",
+        json={"period_id": period["id"], "run_type": "supplemental"},
+    )
+    assert legacy.status_code == 422
 
     unknown = await client.post(
         "/api/payroll-runs",
-        json={"period_id": str(uuid4()), "run_type": "regular"},
+        json={"period_id": str(uuid4())},
     )
     assert unknown.status_code == 404
 
 
 # --- Inputs -------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_roster_selects_employees_and_saves_inline_values(client, session):
+    ctx = await _admin_context(client, session)
+    await _seed_employee_versions(
+        session,
+        org_id=ctx["org_id"],
+        user_id=ctx["user_id"],
+        employee_id=ctx["employee_id"],
+    )
+    period = await _create_period(client, year=2026, month=6)
+    run = await _create_run(client, period_id=period["id"])
+
+    initial = await client.get(f"/api/payroll-runs/{run['id']}/roster")
+    assert initial.status_code == 200, initial.text
+    assert initial.json()[0]["selected"] is False
+    assert initial.json()[0]["payable_days"] == "30.00"
+    assert initial.json()[0]["basic_pay"] == "60000.00"
+    assert initial.json()[0]["retirement_regime"] == "nps"
+
+    saved = await client.put(
+        f"/api/payroll-runs/{run['id']}/roster",
+        json={
+            "employees": [
+                {
+                    "employee_id": str(ctx["employee_id"]),
+                    "payable_days": "28.00",
+                    "da_percent": "55.0000",
+                    "da_difference": "1250.00",
+                    "hra_percent": "20.0000",
+                    "transport_amount": "1800.00",
+                }
+            ]
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    row = saved.json()[0]
+    assert row["selected"] is True
+    assert row["payable_days"] == "28.00"
+    assert row["da_percent"] == "55.0000"
+    assert row["transport_amount"] == "1800.00"
+
+    detail = await client.get(f"/api/payroll-runs/{run['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["roster_initialized"] is True
+
+    history = await client.get(f"/api/payroll-runs/{run['id']}/roster-history")
+    assert history.status_code == 200, history.text
+    assert history.json()[0]["action"] == "Created roster"
+    assert history.json()[0]["changed_employees"] == 1
+    assert history.json()[0]["selected_employees"] == 1
+    assert history.json()[0]["changed_fields"] == ["Employees"]
+
+    updated = await client.put(
+        f"/api/payroll-runs/{run['id']}/roster",
+        json={
+            "employees": [
+                {
+                    "employee_id": str(ctx["employee_id"]),
+                    "payable_days": "29.00",
+                    "da_percent": "55.0000",
+                    "da_difference": "1250.00",
+                    "hra_percent": "20.0000",
+                    "transport_amount": "1800.00",
+                }
+            ]
+        },
+    )
+    assert updated.status_code == 200, updated.text
+
+    history = await client.get(f"/api/payroll-runs/{run['id']}/roster-history")
+    assert history.status_code == 200, history.text
+    assert len(history.json()) == 2
+    assert history.json()[0]["action"] == "Updated roster"
+    assert history.json()[0]["changed_employees"] == 1
+    assert history.json()[0]["changed_fields"] == ["Paid days"]
 
 
 @pytest.mark.asyncio
@@ -345,46 +453,45 @@ async def test_payroll_reviewer_can_get_but_not_write(client, dev_settings, sess
 
     post_run = await client.post(
         "/api/payroll-runs",
-        json={"period_id": period["id"], "run_type": "supplemental"},
+        json={"period_id": period["id"]},
     )
     assert post_run.status_code == 403
     assert post_run.json()["error"] == "urn:accord:capability:create_run"
 
 
-# --- Tenant isolation ---------------------------------------------------------
+# --- Fail-closed / unknown-id isolation (single org, ADR 0011) ----------------
 
 
 @pytest.mark.asyncio
-async def test_tenant_isolation_runs_not_visible_across_orgs(client, session, dev_settings):
-    org_a_id, admin_a = await _create_org_as_admin(client)
-    period_a = await _create_period(client, year=2026, month=3)
-    run_a = await _create_run(client, period_id=period_a["id"])
+async def test_unknown_run_id_404(client, session):
+    await _create_org_as_admin(client, session)
+    await _create_period(client, year=2026, month=3)
 
-    org_b = await seed_organization(session, name="Org B", slug=f"org-b-{uuid4().hex[:8]}")
-    admin_b = await seed_user(session, email="admin-b@example.com", name="Admin B")
-    await seed_membership(
-        session,
-        organization_id=org_b.id,
-        user_id=admin_b.id,
-        role="organization_administrator",
-    )
-    await session.commit()
-
-    cookie = await mint_session_cookie(
-        session,
-        dev_settings,
-        user_id=admin_b.id,
-        active_organization_id=org_b.id,
-    )
-    apply_session_cookie(client, cookie)
-
-    listed = await client.get("/api/payroll-runs")
-    assert listed.status_code == 200
-    assert listed.json() == []
-
-    detail = await client.get(f"/api/payroll-runs/{run_a['id']}")
+    detail = await client.get(f"/api/payroll-runs/{uuid4()}")
     assert detail.status_code == 404
 
-    # Silence unused binding for clarity in dual-org setup.
-    assert org_a_id is not None
-    assert admin_a is not None
+
+@pytest.mark.asyncio
+async def test_unprovisioned_user_fail_closed_on_runs(client, session, dev_settings):
+    org_id, _admin_id = await _create_org_as_admin(client, session)
+    period = await _create_period(client, year=2026, month=3)
+    run = await _create_run(client, period_id=period["id"])
+    outsider = await seed_user(session, email=f"out-{uuid4().hex[:8]}@example.com")
+    await session.commit()
+
+    apply_session_cookie(
+        client,
+        await mint_session_cookie(
+            session,
+            dev_settings,
+            user_id=outsider.id,
+            active_organization_id=org_id,
+        ),
+    )
+
+    listed = await client.get("/api/payroll-runs")
+    assert listed.status_code == 409
+    assert listed.json()["error"] == "OrganizationContextRequired"
+
+    detail = await client.get(f"/api/payroll-runs/{run['id']}")
+    assert detail.status_code == 409

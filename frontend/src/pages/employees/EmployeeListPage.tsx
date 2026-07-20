@@ -176,7 +176,7 @@ export default function EmployeeListPage() {
 					{!listQuery.isLoading && !listQuery.isError && isEmpty ? (
 						<EmptyState
 							icon={Users}
-							title="No employees found"
+							title="No Employees Found"
 							description={
 								search.trim()
 									? "Try a different search term or as-of date."

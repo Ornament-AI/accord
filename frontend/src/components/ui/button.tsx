@@ -9,6 +9,8 @@ interface ButtonProps
 	extends React.ButtonHTMLAttributes<HTMLButtonElement>,
 		VariantProps<typeof buttonVariants> {
 	ref?: React.Ref<HTMLButtonElement>;
+	/** Disable press-scale feedback when motion would distract. */
+	static?: boolean;
 	render?:
 		| React.ReactElement
 		| ((props: React.ButtonHTMLAttributes<HTMLButtonElement>) => React.ReactElement);
@@ -18,6 +20,7 @@ function Button({
 	className,
 	variant = "default",
 	size = "default",
+	static: isStatic = false,
 	render,
 	...props
 }: ButtonProps) {
@@ -25,6 +28,7 @@ function Button({
 		"data-slot": "button",
 		"data-variant": variant,
 		"data-size": size,
+		"data-static": isStatic ? "true" : undefined,
 		className: cn(buttonVariants({ variant, size, className })),
 		...props,
 	};

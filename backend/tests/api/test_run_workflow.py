@@ -25,13 +25,13 @@ from app.models.recurring_instructions import (
     recurring_instruction_versions,
 )
 from app.services import versioning
+from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
     login_dev,
     seed_membership,
     seed_user,
-    session_cookie_from_response,
 )
 
 
@@ -52,19 +52,19 @@ async def client(dev_settings):
         yield ac
 
 
-async def _create_org_as_admin(client) -> tuple[UUID, UUID]:
-    resp, cookie = await login_dev(client)
-    assert resp.status_code in {200, 302}, resp.text
-    assert cookie, "expected accord_session cookie from login"
-    client.cookies.set("accord_session", cookie)
-
+async def _create_org_as_admin(client, session) -> tuple[UUID, UUID]:
     slug = f"wf-api-{uuid4().hex[:8]}"
-    resp = await client.post("/api/organizations", json={"name": "WF API", "slug": slug})
-    assert resp.status_code == 201, resp.text
-    cookie = session_cookie_from_response(resp) or cookie
-    client.cookies.set("accord_session", cookie)
-    body = resp.json()
-    return UUID(body["active_organization"]["id"]), UUID(body["id"])
+    await provision_organization(
+        session,
+        name="WF API",
+        slug=slug,
+        admin_email="dev@accord.local",
+    )
+    await session.commit()
+    await login_dev(client)
+    body = (await client.get("/api/auth/me")).json()
+    assert body["access_state"] == "active", body
+    return UUID(body["organization"]["id"]), UUID(body["id"])
 
 
 async def _seed_calculate_world(session, *, org_id: UUID, user_id: UUID) -> UUID:
@@ -248,7 +248,7 @@ async def _create_calculated_run(client, session, dev_settings, *, org_id, user_
     assert period.status_code == 201, period.text
     run = await client.post(
         "/api/payroll-runs",
-        json={"period_id": period.json()["id"], "run_type": "regular"},
+        json={"period_id": period.json()["id"]},
     )
     assert run.status_code == 201, run.text
     run_id = run.json()["id"]
@@ -266,6 +266,19 @@ async def _create_calculated_run(client, session, dev_settings, *, org_id, user_
     )
     assert override.status_code == 200, override.text
 
+    roster = await client.put(
+        f"/api/payroll-runs/{run_id}/roster",
+        json={
+            "employees": [
+                {
+                    "employee_id": str(employee_id),
+                    "payable_days": "30.00",
+                }
+            ]
+        },
+    )
+    assert roster.status_code == 200, roster.text
+
     calc = await client.post(f"/api/payroll-runs/{run_id}/calculate")
     assert calc.status_code == 200, calc.text
     return run_id
@@ -273,7 +286,7 @@ async def _create_calculated_run(client, session, dev_settings, *, org_id, user_
 
 @pytest.mark.asyncio
 async def test_api_happy_path_validate_submit_approve(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     run_id = await _create_calculated_run(
         client, session, dev_settings, org_id=org_id, user_id=user_id
     )
@@ -313,7 +326,7 @@ async def test_api_happy_path_validate_submit_approve(client, session, dev_setti
 
 @pytest.mark.asyncio
 async def test_api_self_approval_409(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     run_id = await _create_calculated_run(
         client, session, dev_settings, org_id=org_id, user_id=user_id
     )
@@ -327,7 +340,7 @@ async def test_api_self_approval_409(client, session, dev_settings):
 
 @pytest.mark.asyncio
 async def test_api_idempotent_submit_no_duplicate_approvals(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     run_id = await _create_calculated_run(
         client, session, dev_settings, org_id=org_id, user_id=user_id
     )
@@ -367,7 +380,7 @@ async def test_api_idempotent_submit_no_duplicate_approvals(client, session, dev
 
 @pytest.mark.asyncio
 async def test_api_capability_gates(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     run_id = await _create_calculated_run(
         client, session, dev_settings, org_id=org_id, user_id=user_id
     )
@@ -404,7 +417,7 @@ async def test_api_capability_gates(client, session, dev_settings):
 
 @pytest.mark.asyncio
 async def test_api_wrong_status_409(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     period = await client.post(
         "/api/payroll-periods",
         json={"period_year": 2026, "period_month": 7},
@@ -412,7 +425,7 @@ async def test_api_wrong_status_409(client, session, dev_settings):
     assert period.status_code == 201, period.text
     run = await client.post(
         "/api/payroll-runs",
-        json={"period_id": period.json()["id"], "run_type": "regular"},
+        json={"period_id": period.json()["id"]},
     )
     assert run.status_code == 201, run.text
     draft_run_id = run.json()["id"]
@@ -434,7 +447,7 @@ async def test_api_wrong_status_409(client, session, dev_settings):
 
 @pytest.mark.asyncio
 async def test_api_withdraw_forbidden_for_other_preparer(client, session, dev_settings):
-    org_id, user_id = await _create_org_as_admin(client)
+    org_id, user_id = await _create_org_as_admin(client, session)
     run_id = await _create_calculated_run(
         client, session, dev_settings, org_id=org_id, user_id=user_id
     )

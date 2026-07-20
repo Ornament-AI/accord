@@ -90,11 +90,11 @@ function DialogContent({
 								variant="ghost"
 								size="icon"
 								aria-label="Close"
-								className="absolute top-3 right-3 text-muted-foreground hover:text-foreground"
+								className="absolute top-3 right-3 bg-transparent text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground hover:shadow-none dark:hover:bg-transparent"
 							/>
 						}
 					>
-						<XIcon aria-hidden />
+						<XIcon weight="bold" aria-hidden />
 					</DialogPrimitive.Close>
 				)}
 			</DialogPrimitive.Popup>

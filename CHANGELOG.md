@@ -41,6 +41,11 @@ are fully met).
 - Frontend real auth flow, organization switcher, capability-aware navigation
   (`645a0b3`); OpenAPI type generation wired (`33a108a`).
 - Adversarial cross-tenant isolation matrix (`33bb895`).
+- **Single-organization product (ADR 0011):** singular `/me` (`access_state` /
+  organization / membership); CLI-only bootstrap and member provisioning
+  (`scripts/provision_organization.py`, `scripts/provision_member.py`);
+  invitations claimed on login; singleton unique index on `organizations`;
+  removed switch/create-org HTTP surface.
 
 ### Master data
 

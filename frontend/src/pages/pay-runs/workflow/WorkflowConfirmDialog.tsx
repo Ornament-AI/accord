@@ -54,8 +54,7 @@ const DESCRIPTIONS: Record<WorkflowConfirmCommand, string> = {
 	approve: "Approve this submitted run so it can be posted.",
 	reject: "Reject this submitted run and return it for correction.",
 	post: "Posting locks this run permanently. Posted results cannot be edited in place.",
-	reverse:
-		"Create a reversal run for this posted payroll. A reason is required for the audit trail.",
+	reverse: "Reverse this posted payroll. A reason is required for the audit trail.",
 };
 
 const CONFIRM_LABELS: Record<WorkflowConfirmCommand, string> = {

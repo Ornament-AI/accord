@@ -44,8 +44,9 @@ configure_engine(os.environ["DATABASE_URL"])
 app.state.auth_ready = True
 
 _IDENTITY_TRUNCATE_SQL = text(
-    "TRUNCATE TABLE sessions, organization_memberships, "
-    "organizations, users, idempotency_keys RESTART IDENTITY CASCADE"
+    "TRUNCATE TABLE sessions, organization_invitations, organization_memberships, "
+    "organization_settings, organizations, users, idempotency_keys "
+    "RESTART IDENTITY CASCADE"
 )
 
 

@@ -248,7 +248,6 @@ def _run_summary(run: PayrollRun, *, extra: dict[str, Any] | None = None) -> dic
     payload: dict[str, Any] = {
         "id": str(run.id),
         "period_id": str(run.period_id),
-        "run_type": run.run_type,
         "status": run.status,
         "current_version_id": (
             None if run.current_version_id is None else str(run.current_version_id)
@@ -379,7 +378,7 @@ async def post_run(
         command="payroll_run.post",
         entity_type="payroll_run",
         entity_id=run.id,
-        entity_label=f"{_period_label(period.period_year, period.period_month)} {run.run_type.replace('_', ' ').title()} run",
+        entity_label=f"{_period_label(period.period_year, period.period_month)} payroll run",
         before_state=before_state,
         after_state=entity_snapshot(run),
         summary={
@@ -403,7 +402,7 @@ async def reverse_run(
     reason: str,
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    """Reverse a posted run by creating a draft reversal run (immutable snapshot intact)."""
+    """Reverse a posted run with a linked draft counter-record (snapshot intact)."""
     if reason is None or not str(reason).strip():
         raise ValidationError("reason is required to reverse a payroll run.")
 
@@ -445,7 +444,6 @@ async def reverse_run(
         id=uuid4(),
         organization_id=organization_id,
         period_id=run.period_id,
-        run_type="reversal",
         original_run_id=run.id,
         status="draft",
         current_version_id=None,
@@ -499,7 +497,7 @@ async def reverse_run(
         command="payroll_run.reverse",
         entity_type="payroll_run",
         entity_id=run.id,
-        entity_label=f"{period_label} {run.run_type.replace('_', ' ').title()} run",
+        entity_label=f"{period_label} payroll run",
         before_state=before_state,
         after_state=entity_snapshot(run),
         summary={

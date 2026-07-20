@@ -146,22 +146,10 @@ employee_posting_versions = Table(
         nullable=False,
     ),
     Column(
-        "payroll_unit_id",
-        PG_UUID(as_uuid=True),
-        ForeignKey("payroll_units.id"),
-        nullable=False,
-    ),
-    Column(
         "post_id",
         PG_UUID(as_uuid=True),
         ForeignKey("posts.id"),
         nullable=False,
-    ),
-    Column(
-        "employee_group_id",
-        PG_UUID(as_uuid=True),
-        ForeignKey("employee_groups.id"),
-        nullable=True,
     ),
     Column(
         "created_at",

@@ -20,7 +20,7 @@ import { PageSection } from "@/components/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
-import { type PayrollRunListItem, periodLabel, runTypeLabel } from "@/lib/api/payroll-runs";
+import { type PayrollRunListItem, periodLabel } from "@/lib/api/payroll-runs";
 import { type ArtifactResponse, useDownloadArtifact } from "@/lib/api/reports";
 import { getErrorMessage } from "@/lib/errors";
 import { formatDateTime, formatFileSize } from "@/lib/utils";
@@ -39,7 +39,7 @@ function runLabel(
 	if (!postedRunId) return "—";
 	const run = runsById.get(postedRunId);
 	if (!run) return postedRunId.slice(0, 8);
-	return `${periodLabel(run.period_year, run.period_month)} · ${runTypeLabel(run.run_type)}`;
+	return periodLabel(run.period_year, run.period_month);
 }
 
 function DownloadArtifactButton({ artifactId }: { artifactId: string }) {
@@ -169,7 +169,7 @@ export function ArtifactsSection({
 			{!isLoading && !isError && (items?.length ?? 0) === 0 ? (
 				<EmptyState
 					icon={FileStack}
-					title="No artifacts yet"
+					title="No Artifacts Yet"
 					description={
 						selectedRunId
 							? "Generate a report for this posted run to create an artifact."

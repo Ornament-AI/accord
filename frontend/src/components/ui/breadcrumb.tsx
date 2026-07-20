@@ -44,7 +44,7 @@ function BreadcrumbLink({
 	const mergedProps = {
 		"data-slot": "breadcrumb-link",
 		className: cn(
-			"rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35",
+			"accord-motion-highlight rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35",
 			className,
 		),
 		...props,

@@ -67,18 +67,8 @@ def _protected_api_routes() -> list[tuple[str, str]]:
         if key in _PUBLIC_API_ROUTES:
             continue
         protected.append(key)
-    # Deduplicate (e.g. POST "" and POST "/" on organizations).
+    # Deduplicate when a route is registered under both "" and "/".
     return sorted(set(protected))
-
-
-def _minimal_body(method: str, path: str) -> dict | None:
-    """Return a syntactically valid JSON body so auth is exercised, not 422."""
-    normalized = path.rstrip("/") or path
-    if method == "POST" and normalized == "/api/organizations":
-        return {"name": "Unauth Sweep Org", "slug": "unauth-sweep-org"}
-    if method == "POST" and path == "/api/auth/switch-organization":
-        return {"organization_id": "00000000-0000-4000-8000-000000000001"}
-    return None
 
 
 @pytest.mark.asyncio
@@ -88,11 +78,7 @@ async def test_all_non_public_api_routes_reject_unauthenticated_requests(client)
 
     failures: list[str] = []
     for method, path in protected:
-        kwargs: dict = {}
-        body = _minimal_body(method, path)
-        if body is not None:
-            kwargs["json"] = body
-        resp = await client.request(method, path, **kwargs)
+        resp = await client.request(method, path)
         if resp.status_code != 401:
             failures.append(f"{method} {path} → {resp.status_code} (body={resp.text[:200]})")
 

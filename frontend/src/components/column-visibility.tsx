@@ -96,7 +96,7 @@ export function ColumnVisibilityToggle<TData>({
 								// biome-ignore lint/a11y/noLabelWithoutControl: the input is injected by CheckboxPrimitive.Root
 								<label
 									key={column.id}
-									className="group flex min-h-10 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors hover:bg-muted/60 focus-within:bg-muted/60"
+									className="accord-motion-highlight group flex min-h-10 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm hover:bg-muted/60 focus-within:bg-muted/60"
 								>
 									<Checkbox
 										aria-label={`Toggle ${columnLabel} column`}

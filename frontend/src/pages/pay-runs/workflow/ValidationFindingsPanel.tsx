@@ -82,7 +82,7 @@ export function ValidationFindingsPanel({ result }: ValidationFindingsPanelProps
 			<div className="flex flex-wrap items-center gap-2">
 				<h3 className="text-sm font-medium">Validation Findings</h3>
 				{result.findings.length === 0 ? (
-					<Badge variant="success">No issues</Badge>
+					<Badge variant="success">No Issues</Badge>
 				) : (
 					<Badge variant="outline">{result.findings.length} finding(s)</Badge>
 				)}
@@ -90,7 +90,7 @@ export function ValidationFindingsPanel({ result }: ValidationFindingsPanelProps
 
 			{hasErrors ? (
 				<Alert variant="destructive" data-testid="validation-blocking-banner">
-					<AlertTitle>Blocking validation errors</AlertTitle>
+					<AlertTitle>Blocking Validation Errors</AlertTitle>
 					<AlertDescription>
 						This run has error-level findings and cannot be submitted until they are resolved.
 					</AlertDescription>

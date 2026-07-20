@@ -60,7 +60,7 @@ export function CatalogTab<T extends { id: string }>({
 	const singular = title.endsWith("s") ? title.slice(0, -1) : title;
 
 	return (
-		<div className="flex flex-col gap-4" data-testid={testId}>
+		<div className="flex min-h-0 flex-1 flex-col gap-4" data-testid={testId}>
 			{toolbar ? <PageToolbar>{toolbar}</PageToolbar> : null}
 
 			{isLoading ? <DataTableSkeleton /> : null}
@@ -72,7 +72,7 @@ export function CatalogTab<T extends { id: string }>({
 				/>
 			) : null}
 
-			{isEmpty ? <EmptyState icon={Icon} title={`No ${title.toLowerCase()}`} /> : null}
+			{isEmpty ? <EmptyState icon={Icon} title={`No ${title}`} /> : null}
 
 			{!isLoading && !isError && !isEmpty ? (
 				<DataTableShell

@@ -61,11 +61,12 @@ def _login(client: httpx.Client) -> None:
 		raise SeedError(f"login failed: {resp.status_code} {resp.text}")
 	me = _require(client.get("/api/auth/me"), context="GET /api/auth/me")
 	assert isinstance(me, dict)
-	org = me.get("active_organization")
-	if not org:
+	if me.get("access_state") != "active" or not me.get("organization"):
 		raise SeedError(
-			"No active organization. Create one in the UI (e.g. MSIDC) then re-run."
+			"No active organization membership. Bootstrap with "
+			"scripts/provision_organization.py and ensure this user is a member, then re-run."
 		)
+	org = me["organization"]
 	print(f"Authenticated as {me.get('email')} in org {org.get('name')} ({org.get('slug')})")
 
 
@@ -97,28 +98,14 @@ def _create_org_structure(
 				"/api/offices",
 				json={
 					"name": office.name,
-					"code": office.code,
 					"jurisdiction": office.jurisdiction,
 				},
 			),
-			context=f"create office {office.code}",
+			context=f"create office {office.name}",
 		)
 		assert isinstance(body, dict)
 		office_ids[office.fixture_id] = UUID(body["id"])
-		print(f"  office {office.code}")
-
-	unit = _require(
-		client.post(
-			"/api/payroll-units",
-			json={
-				"name": fixture.organization.pay_unit_name,
-				"code": fixture.organization.pay_unit_code,
-			},
-		),
-		context="create payroll unit",
-	)
-	assert isinstance(unit, dict)
-	print(f"  payroll unit {fixture.organization.pay_unit_code}")
+		print(f"  office {office.name}")
 
 	post = _require(
 		client.post(
@@ -129,7 +116,7 @@ def _create_org_structure(
 	)
 	assert isinstance(post, dict)
 	print("  post Synthetic Clerk")
-	return office_ids, UUID(unit["id"]), UUID(post["id"])
+	return office_ids, UUID(post["id"])
 
 
 def _create_components(client: httpx.Client, fixture: JuneFixture) -> dict[str, UUID]:
@@ -203,7 +190,6 @@ def _create_employee(
 	employee: EmployeeSeed,
 	*,
 	office_ids: dict[str, UUID],
-	unit_id: UUID,
 	post_id: UUID,
 ) -> UUID:
 	basic = line_amount(employee, BASIC_CODE)
@@ -218,7 +204,6 @@ def _create_employee(
 				"profile": _profile_payload(employee),
 				"posting": {
 					"office_id": str(office_ids[employee.office_id]),
-					"payroll_unit_id": str(unit_id),
 					"post_id": str(post_id),
 				},
 				"pay": {"pay_matrix_level": "L10", "basic_pay": money_str(basic)},
@@ -322,7 +307,7 @@ def seed(base_url: str) -> None:
 		_assert_empty(client)
 
 		print("Org structure…")
-		office_ids, unit_id, post_id = _create_org_structure(client, fixture)
+		office_ids, post_id = _create_org_structure(client, fixture)
 
 		print("Pay components…")
 		component_ids = _create_components(client, fixture)
@@ -333,7 +318,6 @@ def seed(base_url: str) -> None:
 				client,
 				employee,
 				office_ids=office_ids,
-				unit_id=unit_id,
 				post_id=post_id,
 			)
 			_seed_employee_amounts(

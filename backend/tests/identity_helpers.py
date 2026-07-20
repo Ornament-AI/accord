@@ -47,7 +47,6 @@ _settings = settings
 def patch_get_settings(monkeypatch, value: Settings) -> None:
     """Patch get_settings at every import site used by identity routes/deps."""
     monkeypatch.setattr("app.api.routes.auth.get_settings", lambda: value)
-    monkeypatch.setattr("app.api.routes.organizations.get_settings", lambda: value)
     monkeypatch.setattr("app.api.deps.get_settings", lambda: value)
     monkeypatch.setattr("app.config.get_settings", lambda: value)
 

@@ -30,7 +30,6 @@ import {
 	useUpdateOffice,
 } from "@/lib/api/org-structure";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
-import { ApiError } from "@/lib/errors";
 
 import { CatalogTab } from "./CatalogTab";
 
@@ -43,7 +42,6 @@ const JURISDICTIONS: { value: OfficeJurisdiction; label: string }[] = [
 
 const columns: ColumnDef<OfficeResponse>[] = [
 	{ accessorKey: "name", header: "Name" },
-	{ accessorKey: "code", header: "Code" },
 	{
 		accessorKey: "jurisdiction",
 		header: "Jurisdiction",
@@ -55,13 +53,11 @@ const columns: ColumnDef<OfficeResponse>[] = [
 ];
 
 type OfficeFormState = {
-	code: string;
 	name: string;
 	jurisdiction: OfficeJurisdiction;
 };
 
 const emptyForm = (): OfficeFormState => ({
-	code: "",
 	name: "",
 	jurisdiction: "mumbai",
 });
@@ -124,19 +120,16 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 	const createOffice = useCreateOffice();
 	const updateOffice = useUpdateOffice();
 	const [form, setForm] = useState<OfficeFormState>(emptyForm);
-	const [codeError, setCodeError] = useState<string | null>(null);
 	const [formError, setFormError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!open) {
 			setForm(emptyForm());
-			setCodeError(null);
 			setFormError(null);
 			return;
 		}
 		if (mode === "edit" && office) {
 			setForm({
-				code: office.code,
 				name: office.name,
 				jurisdiction: (JURISDICTIONS.find((item) => item.value === office.jurisdiction)?.value ??
 					"other") as OfficeJurisdiction,
@@ -144,22 +137,15 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 		} else {
 			setForm(emptyForm());
 		}
-		setCodeError(null);
 		setFormError(null);
 	}, [open, mode, office]);
 
 	const isSubmitting = createOffice.isPending || updateOffice.isPending;
-	const naturalKeyReadonly = mode === "edit";
 
 	const handleSubmit = async (event: FormEvent) => {
 		event.preventDefault();
-		setCodeError(null);
 		setFormError(null);
 
-		if (mode === "create" && !form.code.trim()) {
-			setCodeError("Code is required");
-			return;
-		}
 		if (!form.name.trim()) {
 			setFormError("Name is required.");
 			return;
@@ -168,7 +154,6 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 		try {
 			if (mode === "create") {
 				const body: OfficeCreate = {
-					code: form.code.trim(),
 					name: form.name.trim(),
 					jurisdiction: form.jurisdiction,
 				};
@@ -184,10 +169,6 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 			}
 			onOpenChange(false);
 		} catch (error) {
-			if (error instanceof ApiError && error.status === 409) {
-				setCodeError("This code is already in use");
-				return;
-			}
 			setFormError(error instanceof Error ? error.message : "Unable to save office.");
 		}
 	};
@@ -200,7 +181,7 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 					<DialogDescription>
 						{mode === "create"
 							? "Create an office for this organization."
-							: "Update office details. The code cannot be changed."}
+							: "Update office details."}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -209,22 +190,6 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 					className="flex min-h-0 flex-1 flex-col"
 				>
 					<DialogBody className="grid gap-4 pb-8">
-						<div className="grid gap-2">
-							<Label htmlFor="office-code">Code</Label>
-							<Input
-								id="office-code"
-								value={form.code}
-								onChange={(event) => {
-									setForm((prev) => ({ ...prev, code: event.target.value }));
-									setCodeError(null);
-								}}
-								disabled={isSubmitting || naturalKeyReadonly}
-								readOnly={naturalKeyReadonly}
-								aria-invalid={codeError ? true : undefined}
-							/>
-							{codeError ? <p className="text-sm text-destructive">{codeError}</p> : null}
-						</div>
-
 						<div className="grid gap-2">
 							<Label htmlFor="office-name">Name</Label>
 							<Input
@@ -278,7 +243,7 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : mode === "create" ? "Create office" : "Save changes"}
+							{isSubmitting ? "Saving…" : mode === "create" ? "Create Office" : "Save Changes"}
 						</Button>
 					</DialogFooter>
 				</form>

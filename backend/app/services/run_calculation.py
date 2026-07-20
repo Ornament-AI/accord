@@ -31,8 +31,8 @@ Resolution scope (as-of the run period's calendar month-end date)
   accommodation source (e.g. statutory percentage tables applied en masse).
 - Posting / workflow transitions beyond ``draft|calculated`` → ``calculating``
   → ``calculated``.
-- Proration, regime exclusivity enforcement, and supplemental/reversal
-  semantics beyond feeding the typed engine inputs above.
+- Regime exclusivity enforcement and reversal semantics beyond
+  feeding the typed engine inputs above.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ from app.domain.payroll.inputs import ComponentInput, EmployeeCalcInput, RunCalc
 from app.domain.payroll.money import Money
 from app.domain.payroll.rates import Rate
 from app.domain.payroll.results import CalculationTrace, RunResult
-from app.domain.payroll.rounding import ROUND_NONE
+from app.domain.payroll.rounding import ROUND_HALF_UP_PAISE, ROUND_NONE, apply as apply_rounding
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
@@ -67,6 +67,7 @@ from app.models.pay_components import PayComponent, component_rate_versions
 from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
+    PayrollRunEmployee,
     PayrollRunInput,
     payroll_employee_results,
     payroll_result_lines,
@@ -263,6 +264,8 @@ async def _resolve_employee_components(
     profile: Any,
     on_date: date,
     catalog: dict[str, PayComponent],
+    roster_row: PayrollRunEmployee | None,
+    period_days: int,
     run_inputs: list[PayrollRunInput],
 ) -> EmployeeCalcInput:
     by_code: dict[str, ComponentInput] = {}
@@ -281,13 +284,19 @@ async def _resolve_employee_components(
             if basic_comp is not None
             else "earning"
         )
+        basic_amount = Decimal(pay["basic_pay"])
+        if roster_row is not None:
+            basic_amount = apply_rounding(
+                ROUND_HALF_UP_PAISE,
+                basic_amount * roster_row.payable_days / Decimal(period_days),
+            )
         _put_component(
             by_code,
             ComponentInput(
                 component_code=_BASIC_CODE,
                 classification=classification,
                 calc_kind="fixed_recurring_amount",
-                amount=Money.from_decimal(Decimal(pay["basic_pay"])),
+                amount=Money.from_decimal(basic_amount),
                 rounding_rule=ROUND_NONE,
                 source_version_ids=(str(pay["id"]),),
             ),
@@ -435,6 +444,89 @@ async def _resolve_employee_components(
                 ),
             )
 
+    if roster_row is not None:
+        roster_source = (str(roster_row.id),)
+
+        def apply_percent(code: str, percent: Decimal | None) -> None:
+            if percent is None:
+                return
+            existing = by_code.get(code)
+            catalog_row = catalog.get(code)
+            _put_component(
+                by_code,
+                ComponentInput(
+                    component_code=code,
+                    classification=(
+                        existing.classification
+                        if existing is not None
+                        else _to_domain_classification(catalog_row.classification)
+                        if catalog_row is not None
+                        else "earning"
+                    ),
+                    calc_kind="percentage_of_component_bases",
+                    rate=Rate.from_percent(format(percent, "f")),
+                    basis=("BASIC",),
+                    rounding_rule=ROUND_HALF_UP_PAISE,
+                    source_version_ids=tuple(
+                        dict.fromkeys(
+                            [*(existing.source_version_ids if existing else ()), *roster_source]
+                        )
+                    ),
+                    reason="Payroll run grid override",
+                ),
+                replace=existing is not None,
+            )
+
+        apply_percent("DA", roster_row.da_percent)
+        apply_percent("HRA", roster_row.hra_percent)
+
+        if roster_row.da_difference is not None:
+            code = "DA_DIFFERENCE"
+            catalog_row = catalog.get(code)
+            _put_component(
+                by_code,
+                ComponentInput(
+                    component_code=code,
+                    classification=(
+                        _to_domain_classification(catalog_row.classification)
+                        if catalog_row is not None
+                        else "gross_adjustment"
+                    ),
+                    calc_kind="one_time_adjustment",
+                    amount=Money.from_decimal(roster_row.da_difference),
+                    source_version_ids=roster_source,
+                    reason="DA difference entered in payroll run grid",
+                ),
+                replace=code in by_code,
+            )
+
+        if roster_row.transport_amount is not None:
+            code = "TRANSPORT"
+            existing = by_code.get(code)
+            catalog_row = catalog.get(code)
+            _put_component(
+                by_code,
+                ComponentInput(
+                    component_code=code,
+                    classification=(
+                        existing.classification
+                        if existing is not None
+                        else _to_domain_classification(catalog_row.classification)
+                        if catalog_row is not None
+                        else "earning"
+                    ),
+                    calc_kind="direct_monthly_amount",
+                    amount=Money.from_decimal(roster_row.transport_amount),
+                    source_version_ids=tuple(
+                        dict.fromkeys(
+                            [*(existing.source_version_ids if existing else ()), *roster_source]
+                        )
+                    ),
+                    reason="Transport amount entered in payroll run grid",
+                ),
+                replace=existing is not None,
+            )
+
     for row in sorted(run_inputs, key=lambda r: (r.component_code, r.input_kind, str(r.id))):
         catalog_row = catalog.get(row.component_code)
         classification = (
@@ -579,9 +671,28 @@ async def _resolve_run_calc_input(
     for row in all_inputs:
         inputs_by_employee.setdefault(row.employee_id, []).append(row)
 
+    roster_rows = list(
+        (
+            await db.execute(
+                sa.select(PayrollRunEmployee)
+                .join(PayrollRun, PayrollRun.id == PayrollRunEmployee.run_id)
+                .where(PayrollRunEmployee.organization_id == organization_id)
+                .where(PayrollRunEmployee.run_id == run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    roster_by_employee = {row.employee_id: row for row in roster_rows}
+    run = await db.get(PayrollRun, run_id)
+    roster_initialized = bool(run and run.roster_initialized)
+
     employees: list[EmployeeCalcInput] = []
     employee_by_ref: dict[str, Employee] = {}
     for employee in org_employees:
+        roster_row = roster_by_employee.get(employee.id)
+        if roster_initialized and roster_row is None:
+            continue
         profile = await versioning.get_active_version(
             db,
             employee_profile_versions,
@@ -598,6 +709,8 @@ async def _resolve_run_calc_input(
             profile=profile,
             on_date=on_date,
             catalog=catalog,
+            roster_row=roster_row,
+            period_days=calendar.monthrange(period.period_year, period.period_month)[1],
             run_inputs=inputs_by_employee.get(employee.id, []),
         )
         employees.append(emp_input)
@@ -633,6 +746,11 @@ async def calculate_run_command(
             f"Payroll run cannot be calculated from status {run.status!r}; "
             "allowed statuses are draft and calculated."
         )
+    # Draft runs require an explicit saved roster. Legacy non-draft runs may still
+    # recalculate with roster_initialized=false (pre-roster migration), which
+    # falls back to all organization employees in _resolve_run_calc_input.
+    if run.status == "draft" and not run.roster_initialized:
+        raise ConflictError("Payroll run roster must be saved before calculation.")
 
     period = await db.get(PayrollPeriod, run.period_id)
     if period is None or period.organization_id != organization_id:

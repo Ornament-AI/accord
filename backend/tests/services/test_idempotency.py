@@ -256,41 +256,6 @@ async def test_expired_row_reexecutes(session):
 
 
 @pytest.mark.asyncio
-async def test_same_key_different_organizations_do_not_collide(session):
-    org_a = await seed_organization(session, slug="idem-org-a")
-    org_b = await seed_organization(session, slug="idem-org-b")
-    await session.commit()
-
-    calls: list[str] = []
-
-    async def exec_a():
-        calls.append("a")
-        return {"org": "a"}
-
-    async def exec_b():
-        calls.append("b")
-        return {"org": "b"}
-
-    out_a = await idempotent_command(
-        session,
-        organization_id=org_a.id,
-        key="shared-key",
-        request_payload={"x": 1},
-        executor=exec_a,
-    )
-    out_b = await idempotent_command(
-        session,
-        organization_id=org_b.id,
-        key="shared-key",
-        request_payload={"x": 1},
-        executor=exec_b,
-    )
-    assert out_a == {"org": "a"}
-    assert out_b == {"org": "b"}
-    assert calls == ["a", "b"]
-
-
-@pytest.mark.asyncio
 async def test_executor_raise_persists_failed_and_propagates(session):
     org = await seed_organization(session, slug="idem-raise")
     await session.commit()

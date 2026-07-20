@@ -7,9 +7,7 @@ import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 
-import { EmployeeGroupsTab } from "./EmployeeGroupsTab";
 import { OfficesTab } from "./OfficesTab";
-import { PayrollUnitsTab } from "./PayrollUnitsTab";
 import { PostsTab } from "./PostsTab";
 
 /** Redirect `/organization` → `/organization/offices`. */
@@ -69,22 +67,6 @@ export function OfficesPage() {
 	);
 }
 
-export function PayrollUnitsPage() {
-	const { hasCapability } = useAuth();
-	const canManage = hasCapability("manage_master_data");
-	return (
-		<OrgCatalogPage title="Payroll Units" testId="payroll-units-page" canManage={canManage}>
-			{({ createOpen, setCreateOpen }) => (
-				<PayrollUnitsTab
-					canManage={canManage}
-					createOpen={createOpen}
-					onCreateOpenChange={setCreateOpen}
-				/>
-			)}
-		</OrgCatalogPage>
-	);
-}
-
 export function PostsPage() {
 	const { hasCapability } = useAuth();
 	const canManage = hasCapability("manage_master_data");
@@ -92,22 +74,6 @@ export function PostsPage() {
 		<OrgCatalogPage title="Posts" testId="posts-page" canManage={canManage}>
 			{({ createOpen, setCreateOpen }) => (
 				<PostsTab
-					canManage={canManage}
-					createOpen={createOpen}
-					onCreateOpenChange={setCreateOpen}
-				/>
-			)}
-		</OrgCatalogPage>
-	);
-}
-
-export function EmployeeGroupsPage() {
-	const { hasCapability } = useAuth();
-	const canManage = hasCapability("manage_master_data");
-	return (
-		<OrgCatalogPage title="Employee Groups" testId="employee-groups-page" canManage={canManage}>
-			{({ createOpen, setCreateOpen }) => (
-				<EmployeeGroupsTab
 					canManage={canManage}
 					createOpen={createOpen}
 					onCreateOpenChange={setCreateOpen}

@@ -1,11 +1,10 @@
-import type { AuthMeResponse, Capability, Role } from "@/types/auth";
+import type { AccessState, AuthMeResponse, Capability, Role } from "@/types/auth";
 
 /** Test-only role → capability matrix (backend mapping is not in the frozen contract). */
 // Mirrors the backend-authoritative matrix in backend/app/auth/capabilities.py.
 export const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
 	organization_administrator: [
 		"manage_organization",
-		"manage_members",
 		"manage_master_data",
 		"view_master_data",
 		"reveal_sensitive_fields",
@@ -34,69 +33,67 @@ export const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
 export function buildAuthMe(overrides: Partial<AuthMeResponse> = {}): AuthMeResponse {
 	const orgId = "org-acme";
 	const role: Role = "organization_administrator";
+	const organization = {
+		id: orgId,
+		name: "Acme Payroll",
+		slug: "acme-payroll",
+	};
+	const membership = {
+		role,
+		capabilities: ROLE_CAPABILITIES[role],
+	};
 	const base: AuthMeResponse = {
 		id: "user-1",
 		email: "ada@example.com",
 		name: "Ada Lovelace",
 		is_platform_admin: false,
-		active_organization: {
-			id: orgId,
-			name: "Acme Payroll",
-			slug: "acme-payroll",
-			role,
-			capabilities: ROLE_CAPABILITIES[role],
-		},
-		organizations: [
-			{
-				id: orgId,
-				name: "Acme Payroll",
-				slug: "acme-payroll",
-				role,
-			},
-			{
-				id: "org-beta",
-				name: "Beta Co",
-				slug: "beta-co",
-				role: "auditor",
-			},
-		],
+		access_state: "active",
+		organization,
+		membership,
 	};
 
-	return {
+	const merged: AuthMeResponse = {
 		...base,
 		...overrides,
-		active_organization:
-			overrides.active_organization === undefined
-				? base.active_organization
-				: overrides.active_organization,
-		organizations: overrides.organizations ?? base.organizations,
+		organization:
+			overrides.organization === undefined ? base.organization : overrides.organization,
+		membership: overrides.membership === undefined ? base.membership : overrides.membership,
+		access_state:
+			overrides.access_state === undefined ? base.access_state : overrides.access_state,
 	};
+	return merged;
 }
 
 export function buildNoOrgAuthMe(overrides: Partial<AuthMeResponse> = {}): AuthMeResponse {
 	return buildAuthMe({
-		active_organization: null,
-		organizations: [],
+		access_state: "unbootstrapped",
+		organization: null,
+		membership: null,
+		...overrides,
+	});
+}
+
+export function buildUnprovisionedAuthMe(overrides: Partial<AuthMeResponse> = {}): AuthMeResponse {
+	return buildAuthMe({
+		access_state: "unprovisioned",
+		membership: null,
 		...overrides,
 	});
 }
 
 export function buildRoleAuthMe(role: Role, organizationId = "org-acme"): AuthMeResponse {
 	return buildAuthMe({
-		active_organization: {
+		access_state: "active",
+		organization: {
 			id: organizationId,
 			name: "Acme Payroll",
 			slug: "acme-payroll",
+		},
+		membership: {
 			role,
 			capabilities: ROLE_CAPABILITIES[role],
 		},
-		organizations: [
-			{
-				id: organizationId,
-				name: "Acme Payroll",
-				slug: "acme-payroll",
-				role,
-			},
-		],
 	});
 }
+
+export type { AccessState };

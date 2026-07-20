@@ -10,7 +10,6 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 }) => {
 	const ctx = readRunContext();
 	const suffix = ctx.orgSlug.slice(-8);
-	const officeCode = `OFF-${suffix}`.slice(0, 32);
 	const officeName = `Office ${suffix}`;
 	const componentCode = `OT-${suffix}`
 		.replace(/[^A-Z0-9_-]/gi, "")
@@ -30,12 +29,10 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 
 	const officeDialog = page.getByRole("dialog");
 	await expect(officeDialog.getByRole("heading", { name: "Add Office" })).toBeVisible();
-	await officeDialog.getByLabel("Code").fill(officeCode);
 	await officeDialog.getByLabel("Name").fill(officeName);
 	await selectWithin(officeDialog, "Jurisdiction", "Mumbai");
 	await officeDialog.getByRole("button", { name: "Create office" }).click();
 	await expect(officeDialog).toBeHidden({ timeout: 30_000 });
-	await expect(page.getByTestId("offices-tab")).toContainText(officeCode);
 	await expect(page.getByTestId("offices-tab")).toContainText(officeName);
 
 	// --- Pay component ---

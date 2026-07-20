@@ -77,7 +77,7 @@ export default function LoginPage() {
 					) : null}
 
 					<Button type="button" className="w-full" onClick={handleSignIn}>
-						Sign in
+						Sign In
 					</Button>
 				</div>
 			</div>

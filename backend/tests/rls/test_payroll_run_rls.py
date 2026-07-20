@@ -1,4 +1,8 @@
-"""Behavioral RLS tests for Phase 4 payroll run persistence tables."""
+"""Behavioral RLS tests for Phase 4 payroll run persistence tables (ADR 0011).
+
+Isolation proofs use a single organization row: empty/wrong GUC ⇒ 0 rows;
+correct GUC ⇒ rows; second organization INSERT fails the singleton unique index.
+"""
 
 from __future__ import annotations
 
@@ -26,20 +30,13 @@ RLS_SPOT_CHECK_TABLES = (
 
 @dataclass(frozen=True)
 class SeededPayrollRunData:
-    org_a_id: uuid.UUID
-    org_b_id: uuid.UUID
-    employee_a_id: uuid.UUID
-    employee_b_id: uuid.UUID
-    period_a_id: uuid.UUID
-    period_b_id: uuid.UUID
-    run_a_id: uuid.UUID
-    run_b_id: uuid.UUID
-    version_a_id: uuid.UUID
-    version_b_id: uuid.UUID
-    result_a_id: uuid.UUID
-    result_b_id: uuid.UUID
-    line_a_id: uuid.UUID
-    line_b_id: uuid.UUID
+    org_id: uuid.UUID
+    employee_id: uuid.UUID
+    period_id: uuid.UUID
+    run_id: uuid.UUID
+    version_id: uuid.UUID
+    result_id: uuid.UUID
+    line_id: uuid.UUID
     calculated_by: uuid.UUID
 
 
@@ -52,20 +49,13 @@ def _grant_table_dml(database_url: str) -> None:
 
 
 def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
-    org_a_id = uuid.uuid4()
-    org_b_id = uuid.uuid4()
-    employee_a_id = uuid.uuid4()
-    employee_b_id = uuid.uuid4()
-    period_a_id = uuid.uuid4()
-    period_b_id = uuid.uuid4()
-    run_a_id = uuid.uuid4()
-    run_b_id = uuid.uuid4()
-    version_a_id = uuid.uuid4()
-    version_b_id = uuid.uuid4()
-    result_a_id = uuid.uuid4()
-    result_b_id = uuid.uuid4()
-    line_a_id = uuid.uuid4()
-    line_b_id = uuid.uuid4()
+    org_id = uuid.uuid4()
+    employee_id = uuid.uuid4()
+    period_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    result_id = uuid.uuid4()
+    line_id = uuid.uuid4()
     calculated_by = uuid.uuid4()
     calculated_at = datetime.now(timezone.utc)
 
@@ -79,78 +69,38 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute(
-            "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s), (%s, %s, %s)",
-            (org_a_id, "Org A", "org-a", org_b_id, "Org B", "org-b"),
+            "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
+            (org_id, "Org A", "org-a"),
         )
         conn.execute(
             "INSERT INTO employees (id, organization_id, employee_number) VALUES "
-            "(%s, %s, %s), (%s, %s, %s)",
-            (
-                employee_a_id,
-                org_a_id,
-                "E-001",
-                employee_b_id,
-                org_b_id,
-                "E-001",
-            ),
+            "(%s, %s, %s)",
+            (employee_id, org_id, "E-001"),
         )
         conn.execute(
             "INSERT INTO payroll_periods "
             "(id, organization_id, period_year, period_month, status) VALUES "
-            "(%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s)",
-            (
-                period_a_id,
-                org_a_id,
-                2026,
-                7,
-                "open",
-                period_b_id,
-                org_b_id,
-                2026,
-                7,
-                "open",
-            ),
+            "(%s, %s, %s, %s, %s)",
+            (period_id, org_id, 2026, 7, "open"),
         )
         conn.execute(
             "INSERT INTO payroll_runs "
-            "(id, organization_id, period_id, run_type, status) VALUES "
-            "(%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s)",
-            (
-                run_a_id,
-                org_a_id,
-                period_a_id,
-                "regular",
-                "draft",
-                run_b_id,
-                org_b_id,
-                period_b_id,
-                "regular",
-                "draft",
-            ),
+            "(id, organization_id, period_id, status) VALUES "
+            "(%s, %s, %s, %s)",
+            (run_id, org_id, period_id, "draft"),
         )
         conn.execute(
             "INSERT INTO payroll_run_versions "
             "(id, organization_id, run_id, version_number, engine_version, "
             "content_hash, calculated_at, calculated_by, inputs_snapshot, totals) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s), "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
-                version_a_id,
-                org_a_id,
-                run_a_id,
+                version_id,
+                org_id,
+                run_id,
                 1,
                 "engine-1.0",
                 "hash-a",
-                calculated_at,
-                calculated_by,
-                Json(inputs_snapshot),
-                Json(totals),
-                version_b_id,
-                org_b_id,
-                run_b_id,
-                1,
-                "engine-1.0",
-                "hash-b",
                 calculated_at,
                 calculated_by,
                 Json(inputs_snapshot),
@@ -163,13 +113,12 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
             "earnings_total, employer_contribution_total, gross_total, "
             "deductions_total, net_payable, offbill_employer_remittance, "
             "disbursement) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s), "
             "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
-                result_a_id,
-                org_a_id,
-                version_a_id,
-                employee_a_id,
+                result_id,
+                org_id,
+                version_id,
+                employee_id,
                 "E-001",
                 "1000.00",
                 "200.00",
@@ -178,43 +127,21 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
                 "900.00",
                 "0.00",
                 "900.00",
-                result_b_id,
-                org_b_id,
-                version_b_id,
-                employee_b_id,
-                "E-001",
-                "2000.00",
-                "400.00",
-                "2400.00",
-                "200.00",
-                "1800.00",
-                "0.00",
-                "1800.00",
             ),
         )
         conn.execute(
             "INSERT INTO payroll_result_lines "
             "(id, organization_id, employee_result_id, component_code, "
             "classification, calc_kind, amount, sequence, trace) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s), "
             "(%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
-                line_a_id,
-                org_a_id,
-                result_a_id,
+                line_id,
+                org_id,
+                result_id,
                 "BASIC",
                 "earning",
                 "fixed_recurring_amount",
                 "1000.00",
-                1,
-                Json(trace),
-                line_b_id,
-                org_b_id,
-                result_b_id,
-                "BASIC",
-                "earning",
-                "fixed_recurring_amount",
-                "2000.00",
                 1,
                 Json(trace),
             ),
@@ -222,20 +149,13 @@ def _seed_payroll_run_data(database_url: str) -> SeededPayrollRunData:
         conn.commit()
 
     return SeededPayrollRunData(
-        org_a_id=org_a_id,
-        org_b_id=org_b_id,
-        employee_a_id=employee_a_id,
-        employee_b_id=employee_b_id,
-        period_a_id=period_a_id,
-        period_b_id=period_b_id,
-        run_a_id=run_a_id,
-        run_b_id=run_b_id,
-        version_a_id=version_a_id,
-        version_b_id=version_b_id,
-        result_a_id=result_a_id,
-        result_b_id=result_b_id,
-        line_a_id=line_a_id,
-        line_b_id=line_b_id,
+        org_id=org_id,
+        employee_id=employee_id,
+        period_id=period_id,
+        run_id=run_id,
+        version_id=version_id,
+        result_id=result_id,
+        line_id=line_id,
         calculated_by=calculated_by,
     )
 
@@ -262,38 +182,56 @@ def test_payroll_run_select_scoped_to_organization_guc(
         conn.execute(f"SET ROLE {role}")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(seed.org_id),),
         )
         runs = conn.execute("SELECT organization_id FROM payroll_runs").fetchall()
         lines = conn.execute("SELECT organization_id FROM payroll_result_lines").fetchall()
 
-    assert {row[0] for row in runs} == {seed.org_a_id}
-    assert {row[0] for row in lines} == {seed.org_a_id}
+    assert {row[0] for row in runs} == {seed.org_id}
+    assert {row[0] for row in lines} == {seed.org_id}
 
 
-def test_payroll_run_insert_wrong_organization_blocked(
+def test_payroll_run_select_fail_closed_with_wrong_organization_guc(
     seeded_payroll_run_db: tuple[str, SeededPayrollRunData],
 ) -> None:
-    database_url, seed = seeded_payroll_run_db
+    database_url, _seed = seeded_payroll_run_db
+    wrong_org_id = uuid.uuid4()
 
     with psycopg.connect(as_psycopg_url(database_url)) as conn:
         conn.execute("SET ROLE accord_app")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(wrong_org_id),),
+        )
+        for table in RLS_SPOT_CHECK_TABLES:
+            count = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            assert count == 0, f"{table}: expected zero rows under wrong GUC"
+
+
+def test_payroll_run_insert_blocked_while_bound_to_wrong_organization_guc(
+    seeded_payroll_run_db: tuple[str, SeededPayrollRunData],
+) -> None:
+    database_url, seed = seeded_payroll_run_db
+    wrong_org_id = uuid.uuid4()
+
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        conn.execute("SET ROLE accord_app")
+        conn.execute(
+            "SELECT set_config('app.organization_id', %s, false)",
+            (str(wrong_org_id),),
         )
         with pytest.raises(psycopg.Error, match="(?i)row-level security"):
             conn.execute(
                 "INSERT INTO payroll_runs "
-                "(organization_id, period_id, run_type, status) "
+                "(organization_id, period_id, original_run_id, status) "
                 "VALUES (%s, %s, %s, %s)",
-                (seed.org_b_id, seed.period_b_id, "regular", "draft"),
+                (seed.org_id, seed.period_id, seed.run_id, "draft"),
             )
         conn.rollback()
         conn.execute("SET ROLE accord_app")
         conn.execute(
             "SELECT set_config('app.organization_id', %s, false)",
-            (str(seed.org_a_id),),
+            (str(wrong_org_id),),
         )
 
         with pytest.raises(psycopg.Error, match="(?i)row-level security"):
@@ -303,8 +241,8 @@ def test_payroll_run_insert_wrong_organization_blocked(
                 "classification, calc_kind, amount, sequence, trace) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
-                    seed.org_b_id,
-                    seed.result_b_id,
+                    seed.org_id,
+                    seed.result_id,
                     "HRA",
                     "earning",
                     "fixed_recurring_amount",
@@ -329,6 +267,19 @@ def test_payroll_run_select_fail_closed_without_organization_guc(
             assert count == 0, f"{table}: expected fail-closed empty result"
 
 
+def test_second_organization_insert_fails_singleton_index(
+    seeded_payroll_run_db: tuple[str, SeededPayrollRunData],
+) -> None:
+    database_url, _seed = seeded_payroll_run_db
+
+    with psycopg.connect(as_psycopg_url(database_url)) as conn:
+        with pytest.raises(UniqueViolation, match="(?i)uq_organizations_singleton"):
+            conn.execute(
+                "INSERT INTO organizations (id, name, slug) VALUES (%s, %s, %s)",
+                (uuid.uuid4(), "Org B", "org-b"),
+            )
+
+
 def test_payroll_run_immutability_triggers(
     seeded_payroll_run_db: tuple[str, SeededPayrollRunData],
 ) -> None:
@@ -338,21 +289,21 @@ def test_payroll_run_immutability_triggers(
         with pytest.raises(psycopg.Error, match="(?i)accord: UPDATE/DELETE forbidden"):
             conn.execute(
                 "UPDATE payroll_run_versions SET engine_version = %s WHERE id = %s",
-                ("engine-x", seed.version_a_id),
+                ("engine-x", seed.version_id),
             )
         conn.rollback()
 
         with pytest.raises(psycopg.Error, match="(?i)accord: UPDATE/DELETE forbidden"):
             conn.execute(
                 "DELETE FROM payroll_run_versions WHERE id = %s",
-                (seed.version_a_id,),
+                (seed.version_id,),
             )
         conn.rollback()
 
         with pytest.raises(psycopg.Error, match="(?i)accord: UPDATE/DELETE forbidden"):
             conn.execute(
                 "UPDATE payroll_result_lines SET amount = %s WHERE id = %s",
-                ("999.99", seed.line_a_id),
+                ("999.99", seed.line_id),
             )
         conn.rollback()
 
@@ -360,7 +311,7 @@ def test_payroll_run_immutability_triggers(
         conn.execute("SET LOCAL accord.allow_immutable_ddl = 'on'")
         conn.execute(
             "UPDATE payroll_run_versions SET engine_version = %s WHERE id = %s",
-            ("engine-updated", seed.version_a_id),
+            ("engine-updated", seed.version_id),
         )
         conn.commit()
 
@@ -368,12 +319,12 @@ def test_payroll_run_immutability_triggers(
         conn.execute("SET LOCAL accord.allow_immutable_ddl = 'on'")
         conn.execute(
             "DELETE FROM payroll_result_lines WHERE id = %s",
-            (seed.line_a_id,),
+            (seed.line_id,),
         )
         conn.commit()
 
 
-def test_payroll_runs_partial_unique_regular_index(
+def test_payroll_runs_partial_unique_primary_index(
     seeded_payroll_run_db: tuple[str, SeededPayrollRunData],
 ) -> None:
     database_url, seed = seeded_payroll_run_db
@@ -382,16 +333,16 @@ def test_payroll_runs_partial_unique_regular_index(
         with pytest.raises(UniqueViolation):
             conn.execute(
                 "INSERT INTO payroll_runs "
-                "(organization_id, period_id, run_type, status) "
-                "VALUES (%s, %s, %s, %s)",
-                (seed.org_a_id, seed.period_a_id, "regular", "draft"),
+                "(organization_id, period_id, status) "
+                "VALUES (%s, %s, %s)",
+                (seed.org_id, seed.period_id, "draft"),
             )
         conn.rollback()
 
         conn.execute(
             "INSERT INTO payroll_runs "
-            "(organization_id, period_id, run_type, status) "
+            "(organization_id, period_id, original_run_id, status) "
             "VALUES (%s, %s, %s, %s)",
-            (seed.org_a_id, seed.period_a_id, "supplemental", "draft"),
+            (seed.org_id, seed.period_id, seed.run_id, "draft"),
         )
         conn.commit()

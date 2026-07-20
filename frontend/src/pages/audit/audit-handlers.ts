@@ -48,7 +48,7 @@ export function buildAuditEvent(
 		event_kind: overrides.event_kind ?? "mutation",
 		entity_type: overrides.entity_type ?? "payroll_run",
 		entity_id: overrides.entity_id ?? "11111111-1111-1111-1111-111111111111",
-		entity_label: overrides.entity_label ?? "2026-07 Regular run",
+		entity_label: overrides.entity_label ?? "2026-07 payroll run",
 		actor:
 			overrides.actor === undefined
 				? {
@@ -58,7 +58,6 @@ export function buildAuditEvent(
 					}
 				: overrides.actor,
 		changed_count: overrides.changed_count ?? 1,
-		has_structured_detail: overrides.has_structured_detail ?? true,
 		request_id: overrides.request_id ?? "req-001",
 		before_state: beforeState,
 		after_state: afterState,
@@ -88,7 +87,7 @@ function defaultEvents(count: number): AuditEventDetail[] {
 			event_kind: isAccess ? "access" : "mutation",
 			entity_type: isAccess ? "export_artifact" : "payroll_run",
 			entity_id: `22222222-2222-2222-2222-${String(n).padStart(12, "0")}`,
-			entity_label: isAccess ? `Payroll Register ${n}` : `2026-07 Regular run ${n}`,
+			entity_label: isAccess ? `Payroll Register ${n}` : `2026-07 payroll run ${n}`,
 			before_state: isAccess ? null : { status: "approved" },
 			after_state: isAccess ? null : { status: "posted" },
 			resource_state: isAccess ? { report_type: "payroll_register", size_bytes: 2048 } : null,
