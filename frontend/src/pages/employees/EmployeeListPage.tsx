@@ -184,7 +184,9 @@ export default function EmployeeListPage() {
 									icon={Users}
 									title="No Employees Found"
 									description={
-										search.trim() ? "Try a different search term or as-of date." : undefined
+										search.trim()
+											? "Try a different search term or as-of date."
+											: "Create an employee to get started."
 									}
 								/>
 							) : (

@@ -92,14 +92,17 @@ export default function ReportsLayout() {
 		) {
 			downloadedArtifactRef.current = artifactId;
 			void queryClient.invalidateQueries({ queryKey: reportQueryKeys.artifacts() });
-			void downloadMutation
-				.mutateAsync({
+			downloadMutation.mutate(
+				{
 					artifactId,
 					preferFilename: exportJobQuery.data.result?.filename,
-				})
-				.finally(() => {
-					setExportJobId(undefined);
-				});
+				},
+				{
+					onSettled: () => {
+						setExportJobId(undefined);
+					},
+				},
+			);
 		}
 	}, [exportJobQuery.data, downloadMutation, queryClient]);
 
@@ -137,11 +140,17 @@ export default function ReportsLayout() {
 		setSearchParams(next, { replace: true });
 	}
 
-	async function handleExport() {
+	function handleExport() {
 		if (!selectedRunId) return;
 		downloadedArtifactRef.current = null;
-		const result = await exportMutation.mutateAsync({ posted_run_id: selectedRunId });
-		setExportJobId(result.job_id);
+		exportMutation.mutate(
+			{ posted_run_id: selectedRunId },
+			{
+				onSuccess: (result) => {
+					setExportJobId(result.job_id);
+				},
+			},
+		);
 	}
 
 	const outletContext: ReportsOutletContext = {
