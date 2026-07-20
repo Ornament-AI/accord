@@ -78,6 +78,13 @@ def test_deploy_bundle_never_uploads_the_host_env() -> None:
     assert "ACCORD_EXPECTED_SHA" in deploy
 
 
+def test_provisioning_scripts_can_import_the_container_app() -> None:
+    provision = (ROOT / "deploy/provision.sh").read_text()
+
+    assert provision.count("-e PYTHONPATH=/app") == 2
+    assert provision.count('-v "$ROOT/scripts:/provision/scripts:ro"') == 2
+
+
 def test_setup_reports_missing_public_url_before_docker_mutation(tmp_path: Path) -> None:
     deploy_dir = tmp_path / "deploy"
     fake_bin = tmp_path / "bin"
