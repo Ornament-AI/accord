@@ -162,7 +162,15 @@ async def login_with_password(
 ) -> Response:
     """Authenticate in Accord's UI while keeping WorkOS credentials server-side."""
     settings = get_settings()
-    adapter = get_auth_adapter(settings)
+    try:
+        adapter = get_auth_adapter(settings)
+    except AuthMisconfiguredError as exc:
+        return _problem(
+            request,
+            status_code=exc.status_code,
+            detail=exc.detail,
+            error=exc.error,
+        )
     identity = await adapter.authenticate_with_password(
         email=body.email,
         password=body.password.get_secret_value(),
@@ -179,7 +187,16 @@ async def request_magic_code(
     body: MagicCodeRequest,
 ) -> Response:
     """Send an email sign-in code without revealing whether an account exists."""
-    adapter = get_auth_adapter(get_settings())
+    settings = get_settings()
+    try:
+        adapter = get_auth_adapter(settings)
+    except AuthMisconfiguredError as exc:
+        return _problem(
+            request,
+            status_code=exc.status_code,
+            detail=exc.detail,
+            error=exc.error,
+        )
     await adapter.send_magic_code(
         email=body.email,
         ip_address=get_auth_client_ip(request),
@@ -196,7 +213,16 @@ async def login_with_magic_code(
     db: Session,
 ) -> Response:
     """Authenticate an emailed one-time code in Accord's own login screen."""
-    adapter = get_auth_adapter(get_settings())
+    settings = get_settings()
+    try:
+        adapter = get_auth_adapter(settings)
+    except AuthMisconfiguredError as exc:
+        return _problem(
+            request,
+            status_code=exc.status_code,
+            detail=exc.detail,
+            error=exc.error,
+        )
     identity = await adapter.authenticate_with_magic_code(
         email=body.email,
         code=body.code,
