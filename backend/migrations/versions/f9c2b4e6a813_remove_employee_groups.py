@@ -7,6 +7,7 @@ Create Date: 2026-07-19
 
 from __future__ import annotations
 
+import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -33,7 +34,43 @@ def _apply_forced_rls(table_name: str) -> None:
                 op.execute(statement)
 
 
+LEGACY_DROP_ENV = "ACCORD_ALLOW_LEGACY_DROP"
+
+
+def _preflight_legacy_guard() -> None:
+    """Refuse to discard real employee-group data unless explicitly overridden.
+
+    Set ``ACCORD_ALLOW_LEGACY_DROP=1`` to proceed after taking a verified
+    backup (see docs/operations.md, "Destructive migrations").
+    """
+    conn = op.get_bind()
+    groups = int(conn.execute(sa.text("SELECT COUNT(*) FROM employee_groups")).scalar() or 0)
+    refs = int(
+        conn.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM employee_posting_versions WHERE employee_group_id IS NOT NULL"
+            )
+        ).scalar()
+        or 0
+    )
+    if groups == 0 and refs == 0:
+        return
+    if os.environ.get(LEGACY_DROP_ENV) == "1":
+        print(
+            f"[f9c2b4e6a813] {LEGACY_DROP_ENV}=1 set: irreversibly discarding "
+            f"{groups} employee_groups row(s) and {refs} posting reference(s)."
+        )
+        return
+    raise RuntimeError(
+        f"Refusing to drop employee_groups: {groups} row(s) and {refs} posting "
+        "reference(s) exist and would be irreversibly discarded. Take a verified "
+        "backup (see docs/operations.md), then re-run with "
+        f"{LEGACY_DROP_ENV}=1 to proceed."
+    )
+
+
 def upgrade() -> None:
+    _preflight_legacy_guard()
     op.drop_constraint(
         "employee_posting_versions_employee_group_id_fkey",
         "employee_posting_versions",
