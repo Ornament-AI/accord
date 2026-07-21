@@ -84,12 +84,15 @@ Before you can use the app, the deployment needs its one organization. This
 is a CLI step by design ([ADR 0011](docs/adr/0011-single-organization.md)):
 
 ```bash
-backend/.venv/bin/python scripts/provision_organization.py \
+PGPORT="$(tr -d '[:space:]' < .accord-dev/pg.port)"
+DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:${PGPORT}/accord" \
+  backend/.venv/bin/python scripts/provision_organization.py \
   --name "My Org" --slug my-org --admin-email dev@accord.local
 ```
 
-Now open `http://127.0.0.1:5173`, sign in, and you land in the app as an
-organization administrator.
+Run `./scripts/status.sh`, open the Frontend URL it prints, and sign in. You
+land in the app as an organization administrator even when the default port
+was busy.
 
 ### Optional: seed a full demo dataset
 
@@ -97,7 +100,9 @@ To explore with realistic data, load the synthetic June 2026 fixture
 (32 employees, offices, pay components, recurring items):
 
 ```bash
-backend/.venv/bin/python scripts/seed_june_fixture.py
+BACKEND_PORT="$(tr -d '[:space:]' < .accord-dev/backend.port)"
+backend/.venv/bin/python scripts/seed_june_fixture.py \
+  --base-url "http://127.0.0.1:${BACKEND_PORT}"
 ```
 
 Then create a payroll period and run in the UI, save the roster, and

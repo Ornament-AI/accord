@@ -560,7 +560,7 @@ def _resolve_employee_components(
         else:
             raise ValidationError(f"Unsupported run input_kind {row.input_kind!r}.")
 
-    by_code = _stamp_employer_transfer_metadata(by_code, catalog)
+    by_code = stamp_employer_transfer_metadata(by_code, catalog)
 
     # Stable audit order: BASIC first, then remaining codes sorted.
     ordered_codes = []
@@ -576,7 +576,7 @@ def _resolve_employee_components(
     )
 
 
-def _stamp_employer_transfer_metadata(
+def stamp_employer_transfer_metadata(
     by_code: dict[str, ComponentInput],
     catalog: Mapping[str, Any],
 ) -> dict[str, ComponentInput]:

@@ -45,9 +45,16 @@ pnpm --filter frontend e2e
 ```
 
 Backend tests need a real PostgreSQL database. `backend/tests/conftest.py`
-reads `TEST_DATABASE_URL` (default: a local `accord_test` database) and
-refuses any database whose name does not contain `test`. `scripts/dev-setup.sh`
-creates the databases and the ADR-0001 roles for you.
+reads `TEST_DATABASE_URL` (default: the `accord` dev role on a local
+`accord_test` database at port 5432) and refuses any database whose name does
+not contain `test`. `scripts/dev-setup.sh` creates the databases and ADR-0001
+roles. If setup selected another PostgreSQL port, run the backend command as:
+
+```bash
+PGPORT="$(tr -d '[:space:]' < .accord-dev/pg.port)"
+TEST_DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:${PGPORT}/accord_test" \
+  backend/.venv/bin/python -m pytest backend/tests -q
+```
 
 CI (`.github/workflows/ci.yml`) runs the same checks in jobs. The `backend`
 job runs ruff and pytest against a Postgres 18 service container. The

@@ -151,7 +151,7 @@ from app.domain.payroll.engine import calculate_run
 from app.domain.payroll.inputs import RunCalcInput, EmployeeCalcInput, ComponentInput
 from app.domain.payroll.money import Money
 from app.domain.payroll.rounding import ROUND_NONE
-from app.services.run_calculation.resolution import _stamp_employer_transfer_metadata
+from app.services.run_calculation import stamp_employer_transfer_metadata
 
 FIX = "fixtures/sanitized/june-2026/"
 pay = json.load(open(FIX + "pay.json"))
@@ -178,7 +178,7 @@ for e in pay["employees"]:
             informational=l.get("informational", False),
             excluded_from_totals=l.get("excluded_from_totals", False),
         )
-    by_code = _stamp_employer_transfer_metadata(by_code, catalog)
+    by_code = stamp_employer_transfer_metadata(by_code, catalog)
     emps.append(EmployeeCalcInput(employee_ref=e["employee_id"], components=tuple(by_code.values())))
 
 rr = calculate_run(RunCalcInput(period="2026-06", org_ref="ORG", employees=tuple(emps)))

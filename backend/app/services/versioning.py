@@ -44,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, ValidationError
 from app.models.effective import effective_on, select_active_version
-from app.services.db_errors import raise_integrity_error
+from app.services.db_errors import integrity_is, raise_integrity_error
 
 __all__ = [
     "get_active_version",
@@ -176,15 +176,10 @@ async def insert_version(
         return row
     except IntegrityError as exc:
         await session.rollback()
-        current: BaseException | None = exc
-        seen: set[int] = set()
-        while current is not None and id(current) not in seen:
-            seen.add(id(current))
-            if isinstance(current, ExclusionViolationError):
-                raise ConflictError(
-                    "the requested effective_from overlaps an existing historical version"
-                ) from exc
-            current = current.__cause__ or getattr(current, "orig", None)
+        if integrity_is(exc, ExclusionViolationError):
+            raise ConflictError(
+                "the requested effective_from overlaps an existing historical version"
+            ) from exc
         # Non-exclusion integrity failures (FK, check, etc.) propagate unchanged.
         raise
 

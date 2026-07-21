@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # Override env before any app imports — use TEST_DATABASE_URL or default to accord_test
 _test_db_url = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://darshan@127.0.0.1:5432/accord_test",
+    "postgresql+asyncpg://accord:accord@127.0.0.1:5432/accord_test",
 )
 
 # Safety guard: refuse to run against a database that doesn't look like a test DB
