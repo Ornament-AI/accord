@@ -305,7 +305,7 @@ def _seed_employee_amounts(
 def seed(base_url: str) -> None:
 	fixture = load_june_fixture()
 	print(f"Loaded fixture: {len(fixture.employees)} employees, period {fixture.organization.period}")
-	print(f"Provenance: fixtures/sanitized/june-2026 (from June 2026 pay-bill structure)")
+	print("Provenance: fixtures/sanitized/june-2026 (from June 2026 pay-bill structure)")
 
 	with httpx.Client(base_url=base_url.rstrip("/"), timeout=60.0) as client:
 		_login(client)

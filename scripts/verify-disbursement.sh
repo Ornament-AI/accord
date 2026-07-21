@@ -151,7 +151,7 @@ from app.domain.payroll.engine import calculate_run
 from app.domain.payroll.inputs import RunCalcInput, EmployeeCalcInput, ComponentInput
 from app.domain.payroll.money import Money
 from app.domain.payroll.rounding import ROUND_NONE
-from app.services.run_calculation import _stamp_employer_transfer_metadata
+from app.services.run_calculation.resolution import _stamp_employer_transfer_metadata
 
 FIX = "fixtures/sanitized/june-2026/"
 pay = json.load(open(FIX + "pay.json"))

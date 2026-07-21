@@ -345,7 +345,7 @@ query live advisory databases.
 ### 1. Session fixation / hijack — Partial
 
 In place: opaque DB sessions, HttpOnly + SameSite=Lax, rotation at privilege
-boundaries, revocation, idle/absolute TTL, and production secret checks.  
+boundaries, revocation, idle/absolute TTL, and production secret checks.
 Gaps: the Secure cookie flag is tied only to `is_production`
 (`session.py:83`); there is no synchronizer CSRF token, which makes session
 abuse worse (see #2); the named security suite from the threat model is

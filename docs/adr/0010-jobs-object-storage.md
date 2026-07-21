@@ -43,7 +43,7 @@ Background work is rows in `jobs`. Workers claim with `SELECT … FOR UPDATE SKI
 | Column | Type | Purpose |
 | --- | --- | --- |
 | `id` | `uuid` PK | Stable job id; referenced by `export_artifacts.job_id` and audit metadata. |
-| `organization_id` | `uuid` NOT NULL | Tenant scope; RLS via `app.current_org_id`. |
+| `organization_id` | `uuid` NOT NULL | Tenant scope; RLS via `app.organization_id`. |
 | `job_type` | `text` NOT NULL | Handler key, e.g. `export.generate`, `storage.reconcile_orphans`, `storage.purge_expired`, `jobs.reap_leases`. |
 | `status` | `text` NOT NULL | `queued` \| `running` \| `succeeded` \| `failed` \| `dead_letter` \| `cancelled`. |
 | `payload` | `jsonb` NOT NULL DEFAULT `'{}'` | Input args (ids, report_type, template_version). No secrets. |
@@ -62,7 +62,7 @@ Background work is rows in `jobs`. Workers claim with `SELECT … FOR UPDATE SKI
 | `last_error` | `text` NULL | Truncated error from latest failure. |
 | `created_by` | `uuid` NULL | Acting user when enqueued interactively; NULL for system. |
 
-**RLS:** `organization_id = current_setting('app.current_org_id')::uuid`, fail closed when unset ([ADR 0001](0001-tenancy-rls-database-roles.md)). Cross-org maintenance jobs use a privileged role, not the normal app role.
+**RLS:** `organization_id = current_setting('app.organization_id')::uuid`, fail closed when unset ([ADR 0001](0001-tenancy-rls-database-roles.md)). Cross-org maintenance jobs use a privileged role, not the normal app role.
 
 **Org-scoped dedupe unique partial index** (at most one in-flight job per key when present):
 
@@ -83,7 +83,7 @@ Prefer to insert the job in the **same transaction** as the commanding mutation 
 
 ```sql
 BEGIN;
-SET LOCAL app.current_org_id = '<org uuid>';  -- or privileged cross-org claim, then set per job
+SET LOCAL app.organization_id = '<org uuid>';  -- or privileged cross-org claim, then set per job
 
 WITH candidate AS (
   SELECT id
@@ -110,7 +110,7 @@ RETURNING j.*;
 COMMIT;
 ```
 
-After any cross-org claim, the worker **must** `SET LOCAL app.current_org_id` to the claimed row’s `organization_id`. That applies to every later job transaction: the handler, artifact writes, and audit.
+After any cross-org claim, the worker **must** `SET LOCAL app.organization_id` to the claimed row’s `organization_id`. That applies to every later job transaction: the handler, artifact writes, and audit.
 
 #### Lease and heartbeat
 
@@ -130,8 +130,8 @@ A zero-row heartbeat means the cancel flag flipped. The worker stops at a safe p
 
 #### Exponential backoff then `dead_letter`
 
-On a retryable failure: record `last_error`. If `attempt_count < max_attempts`, set `status = queued`, clear the lease fields, and set  
-`available_at = now() + (interval '1 second' * (2 ^ least(attempt_count, 8)))`  
+On a retryable failure: record `last_error`. If `attempt_count < max_attempts`, set `status = queued`, clear the lease fields, and set
+`available_at = now() + (interval '1 second' * (2 ^ least(attempt_count, 8)))`
 (exponential backoff with a cap, optional jitter). If attempts are exhausted, set `status = dead_letter` and `finished_at = now()`. Non-retryable errors (invalid payload, missing posted run, unknown `report_type`) go straight to `dead_letter`.
 
 #### Cooperative cancel
@@ -148,7 +148,7 @@ On a retryable failure: record `last_error`. If `attempt_count < max_attempts`, 
 | --- | --- |
 | Image | **Same backend Docker image** as the API. |
 | Entrypoint | Different entrypoint/command: the API runs `uvicorn app.main:app`; the worker runs `python worker.py` (`backend/worker.py`). |
-| Org GUC | Every job txn: `SET LOCAL app.current_org_id` to the claimed org before tenant writes. |
+| Org GUC | Every job txn: `SET LOCAL app.organization_id` to the claimed org before tenant writes. |
 | Shutdown | On `SIGTERM`: stop claiming; drain in-flight up to grace; exit (leases expire → reaper). |
 | Lease reaper | `running` with `lease_expires_at < now()` → requeue (`queued`, clear lease) or `dead_letter` if attempts exhausted. |
 

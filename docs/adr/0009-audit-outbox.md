@@ -57,13 +57,13 @@ Every successful business mutation that changes tenant-owned state writes one or
 - `(organization_id, request_id)` where `request_id IS NOT NULL` — request correlation.
 - Optional unique partial index on `(organization_id, idempotency_key, command)`, only if product rules demand a hard uniqueness guarantee beyond ADR 0008’s idempotency store. The default is to rely on command idempotency, not audit uniqueness.
 
-**RLS:** `organization_id = current_setting('app.current_org_id')::uuid` (or the project’s established org GUC name), fail closed when unset.
+**RLS:** `organization_id = current_setting('app.organization_id')::uuid`, fail closed when unset.
 
 #### Unit of work / transactional write pattern
 
 ```text
 BEGIN;
-  SET LOCAL app.current_org_id = '<org uuid>';
+  SET LOCAL app.organization_id = '<org uuid>';
   -- business mutation (e.g. payroll_runs status → posted; pin run version)
   INSERT INTO audit_events (...);
   INSERT INTO outbox_events (...);  -- when an integration event is required

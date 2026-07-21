@@ -98,6 +98,12 @@ stateDiagram-v2
 - The ADR allows `withdraw` from `approved`; the code allows only `submitted`.
 - The code adds a transient `calculating` status during calculate. That
   status is not in the ADR's closed set.
+- Submission bindings and maker/checker actions are stored as append-only
+  `PayrollApproval` rows. The target ADR instead describes binding and actor
+  columns directly on `payroll_runs`.
+- Status changes are currently guarded by command schemas, services, and row
+  locks. The target database trigger and `app.allow_workflow_transition` GUC
+  described by the ADR are not implemented.
 
 ---
 
