@@ -640,7 +640,7 @@ async def resolve_run_calc_input(
     selected = [
         employee
         for employee in org_employees
-        if not (roster_initialized and employee.id not in roster_by_employee)
+        if not roster_initialized or employee.id in roster_by_employee
     ]
     profiles = await versioning.get_active_versions_map(
         db,

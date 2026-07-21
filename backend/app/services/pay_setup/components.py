@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -202,7 +202,7 @@ async def update_pay_component(
     )
     component.employer_transfer = employer_transfer
     component.transfer_of = transfer_of
-    component.updated_at = datetime.now(tz=component.updated_at.tzinfo)
+    component.updated_at = datetime.now(timezone.utc)
     try:
         await db.flush()
         await db.commit()
