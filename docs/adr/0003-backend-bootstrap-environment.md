@@ -4,15 +4,15 @@
 
 ## Context
 
-Accord’s backend is FastAPI/Python with PostgreSQL, mirroring Atlas operational conventions where they remain valid under multi-tenancy and WorkOS: pydantic-settings fail-fast config, structlog JSON logging with request IDs, Problem Detail error envelopes, security headers, health/readiness probes, and async SQLAlchemy lifecycle.
+Accord’s backend is FastAPI/Python with PostgreSQL. It keeps the Atlas habits that still hold under multi-tenancy and WorkOS: fail-fast config via `pydantic-settings`, JSON logs via `structlog` with request IDs, Problem Detail error bodies, security headers, health and readiness probes, and an async `SQLAlchemy` lifecycle.
 
-Atlas constructs a module-level `app`. Accord should keep Atlas’s safety conventions but improve testability. Auth moves from Firebase to WorkOS ([0002-workos-authentication-sessions.md](0002-workos-authentication-sessions.md)); tenancy requires separate migrator vs runtime DSNs ([0001-tenancy-rls-database-roles.md](0001-tenancy-rls-database-roles.md)).
+Atlas builds a module-level `app`. Accord should keep Atlas’s safety habits but make testing easier. Auth moves from Firebase to WorkOS ([0002-workos-authentication-sessions.md](0002-workos-authentication-sessions.md)). Tenancy needs separate migrator and runtime DSNs ([0001-tenancy-rls-database-roles.md](0001-tenancy-rls-database-roles.md)).
 
 ## Decision
 
 ### 1. App factory (`create_app()`)
 
-Use an explicit application factory:
+Use an explicit app factory:
 
 ```python
 def create_app() -> FastAPI:
@@ -33,7 +33,7 @@ def create_app() -> FastAPI:
 app = create_app()  # ASGI entrypoint may still expose module-level app
 ```
 
-**Deviation from Atlas:** Atlas uses a module-level app built at import time. Accord uses `create_app()` so tests can construct an app with overridden settings/dependencies without re-importing a singleton. Other conventions (settings, logging, Problem Detail, security headers, health, lifespan dispose) stay aligned with Atlas.
+**Deviation from Atlas:** Atlas builds a module-level app at import time. Accord uses `create_app()` instead. Tests can then build an app with their own settings or dependencies, without re-importing a singleton. The other pieces (settings, logging, Problem Detail, security headers, health, lifespan dispose) stay aligned with Atlas.
 
 ### 2. pydantic-settings with fail-fast validation
 
@@ -91,7 +91,7 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-Fail-fast at first `get_settings()` call — the process must not start “with auth disabled” in production.
+Fail fast at the first `get_settings()` call. The process must not start “with auth disabled” in production.
 
 ### 3. structlog JSON logging and request context
 
@@ -148,11 +148,11 @@ async def request_context_middleware(request: Request, call_next):
         structlog.contextvars.clear_contextvars()
 ```
 
-Also stamp `X-Organization-Id` on organization-scoped responses once auth context is known (see ADR 0004).
+Also stamp `X-Organization-Id` on org-scoped responses once the auth context is known (see ADR 0004).
 
 ### 4. RFC 9457 Problem Detail error envelope
 
-RFC 9457 (2023) succeeds RFC 7807 with the same JSON shape. Accord uses RFC 9457 naming in docs/code comments; wire format matches Atlas’s `problem_content` / `problem_response`:
+RFC 9457 (2023) replaces RFC 7807 and keeps the same JSON shape. Accord uses RFC 9457 naming in docs and code comments. The wire format matches Atlas’s `problem_content` / `problem_response`:
 
 ```python
 def problem_content(
@@ -242,7 +242,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 ```
 
-Catch-all **must not** leak stack traces or internal exception messages to clients.
+The catch-all handler **must not** leak stack traces or internal error text to clients.
 
 ### 5. Security headers middleware
 
@@ -269,7 +269,7 @@ _SECURITY_HEADERS = {
 | `GET /api/healthz` | Liveness | None — returns `{"status": "ok"}` if the process is up |
 | `GET /api/readyz` | Readiness | DB `SELECT 1` now; auth subsystem ready (WorkOS config loaded / provider initialized); **designed to extend** later with queue (Celery/Arq if adopted) and object storage checks |
 
-On any failed readiness dependency, return **503** with a Problem Detail body (not a bare string). Example success body:
+If any readiness check fails, return **503** with a Problem Detail body (not a bare string). Example success body:
 
 ```json
 {
@@ -279,7 +279,7 @@ On any failed readiness dependency, return **503** with a Problem Detail body (n
 }
 ```
 
-Future keys (not required until those subsystems exist): `"queue": "ok"`, `"object_storage": "ok"`.
+Future keys (not needed until those systems exist): `"queue": "ok"`, `"object_storage": "ok"`.
 
 ### 7. Graceful shutdown / lifespan
 
@@ -302,10 +302,10 @@ async def lifespan(app: FastAPI):
         logger.info("shutdown_complete")
 ```
 
-- Startup: fail loudly if DB unreachable (do not serve traffic).
-- Shutdown: `dispose_engine()` disposes the async engine after in-flight requests drain (uvicorn/gunicorn graceful timeout still applies at the process manager layer).
+- Startup: fail loudly if the DB cannot be reached. Do not serve traffic.
+- Shutdown: `dispose_engine()` disposes the async engine after in-flight requests drain. The uvicorn/gunicorn graceful timeout still applies at the process manager layer.
 
-Pool tuning (aligned with Atlas defaults unless overridden): `pool_size`, `max_overflow`, `pool_timeout`, `pool_recycle`, `pool_pre_ping=True`, `pool_use_lifo=True`, `statement_timeout` via asyncpg `server_settings`, `application_name=accord-api`.
+Pool tuning (Atlas defaults unless overridden): `pool_size`, `max_overflow`, `pool_timeout`, `pool_recycle`, `pool_pre_ping=True`, `pool_use_lifo=True`, `statement_timeout` via asyncpg `server_settings`, `application_name=accord-api`.
 
 ### 8. Environment variable matrix
 
@@ -331,20 +331,20 @@ Pool tuning (aligned with Atlas defaults unless overridden): `pool_size`, `max_o
 | `DB_POOL_SIZE` | no | `5` | no | Async SQLAlchemy pool size |
 | `DB_STATEMENT_TIMEOUT_MS` | no | `60000` | no | Postgres `statement_timeout` for API connections |
 
-**Why migration DSN ≠ runtime DSN:** Alembic must run as `accord_migrator` (owns tables, may `BYPASSRLS` for DDL/data migrations). The API must run as `accord_app` (`NOBYPASSRLS`) so RLS is always enforced. Using one credential for both either weakens RLS in production or blocks migrations. See ADR 0001.
+**Why migration DSN ≠ runtime DSN:** Alembic must run as `accord_migrator`. That role owns tables and may `BYPASSRLS` for DDL and data migrations. The API must run as `accord_app` (`NOBYPASSRLS`) so RLS always applies. One shared credential either weakens RLS in production or blocks migrations. See ADR 0001.
 
 ## Consequences
 
 - Tests can build isolated apps via `create_app()` without fighting import-time singletons.
-- Production misconfig (missing WorkOS/session secrets, dev bypass) fails at boot.
-- Observability matches Atlas: JSON logs, request ids, Problem Detail errors.
-- Readiness is extensible for queue/storage without changing liveness semantics.
-- Dual DSNs are an operational requirement from day one.
+- A bad production config (missing WorkOS or session secrets, dev bypass on) fails at boot.
+- Logs and errors match Atlas: JSON logs, request ids, Problem Detail bodies.
+- Readiness can grow to cover queue and storage without changing what liveness means.
+- Ops must manage two DSNs from day one.
 
 ## Alternatives Considered
 
-1. **Module-level app only (Atlas exact)** — Rejected as the sole pattern; factory is a small deviation for testability while preserving Atlas’s safety stack.
-2. **RFC 7807 naming in code** — Rejected for new Accord code comments/docs; use RFC 9457. Wire JSON shape remains compatible.
-3. **Single `DATABASE_URL` for migrations and runtime** — Rejected; conflicts with mandatory RLS role separation (ADR 0001).
-4. **Combine liveness and readiness** — Rejected; orchestrators need a dependency-free liveness probe.
-5. **Pretty/console logging in production** — Rejected; JSON structlog only for production aggregation (dev may later add a console renderer behind `ENVIRONMENT`, optional).
+1. **Module-level app only (Atlas exact)** — Rejected as the sole pattern. The factory is a small deviation that helps testing while keeping Atlas’s safety stack.
+2. **RFC 7807 naming in code** — Rejected for new Accord code comments and docs; use RFC 9457. The wire JSON shape stays compatible.
+3. **Single `DATABASE_URL` for migrations and runtime** — Rejected. It conflicts with mandatory RLS role separation (ADR 0001).
+4. **Combine liveness and readiness** — Rejected. Orchestrators need a liveness probe that depends on nothing.
+5. **Pretty/console logging in production** — Rejected. Production uses JSON `structlog` only, so logs can be aggregated. Dev may later add a console renderer behind `ENVIRONMENT`, as an option.

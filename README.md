@@ -1,84 +1,116 @@
 # Accord
 
-Accord is an open-source payroll system of record for local governments and public
-works departments. Organizations maintain employee and payroll facts once, record
-only effective-dated changes and monthly exceptions, calculate and approve payroll
-through a maker/checker workflow, and generate export-ready Excel/PDF reports from
-immutable posted payroll data.
+Accord is an open-source payroll system of record. It is built for local
+governments and public works teams. Teams keep employee and payroll facts in
+one place. They record only dated changes and monthly exceptions. They
+calculate and approve payroll with a maker/checker flow. They then create
+export-ready Excel and PDF reports from posted, frozen data.
 
 ## Principles
 
-- **System of record** — no spreadsheet import path or workbook operating mode.
-- **Exact money** — PostgreSQL `NUMERIC` + Python `Decimal`; money over the API is
-  a canonical string; `float` is banned from payroll domain code.
-- **Temporal truth** — effective-dated master versions; posted payroll retains the
-  exact source version IDs and snapshots it was computed from.
-- **Immutable posting** — posted results are never edited or deleted; corrections
-  use withdrawal before posting or a formal reversal after posting.
-- **Single-organization product** — one organization per deployment
-  ([ADR 0011](docs/adr/0011-single-organization.md)); forced PostgreSQL
-  row-level security remains as fail-closed kernel debt until Phase 2 removal.
-- **Transactional evidence** — every business mutation commits atomically with an
+- **System of record** — there is no spreadsheet import path. Accord holds
+  the facts itself.
+- **Exact money** — money uses PostgreSQL `NUMERIC` and Python `Decimal`.
+  The API moves money as a plain decimal string. `float` is banned from
+  payroll domain code.
+- **Temporal truth** — master data changes are dated versions. A posted
+  payroll keeps the exact version ids and snapshots it was built from.
+- **Immutable posting** — posted results are never edited or deleted. To fix
+  a mistake, withdraw before posting, or reverse after posting.
+- **Single organization** — each deployment serves one organization
+  ([ADR 0011](docs/adr/0011-single-organization.md)). Forced PostgreSQL
+  row-level security stays in place as fail-closed kernel debt until Phase 2
+  removes it.
+- **Transactional evidence** — every business change commits together with an
   append-only audit event and an outbox event.
 
 ## Stack
 
-FastAPI / Python / PostgreSQL backend, React / TypeScript frontend, WorkOS
-authentication, S3-compatible object storage, Docker-based deployment (self-hosted
-Compose or managed PostgreSQL + object storage).
+The backend is FastAPI on Python with PostgreSQL. The frontend is React with
+TypeScript. Sign-in uses WorkOS. Report files land in S3-compatible object
+storage. Deployment is Docker Compose (self-hosted) or managed PostgreSQL
+plus object storage.
 
 ## Repository layout
 
-- `backend/` — FastAPI application, domain engine, migrations, tests
-- `frontend/` — React application (Atlas-derived design system)
+- `backend/` — FastAPI app, payroll engine, migrations, worker, tests
+- `frontend/` — React app (design system carried over from Atlas)
 - `deploy/` — Docker Compose, images, nginx, local MinIO profile
 - `docs/` — architecture, ADRs, domain reference, report specs, security
-- `fixtures/sanitized/` — synthetic test fixtures only; real PII is never committed
+- `fixtures/sanitized/` — synthetic test data only; real PII is never committed
 
-## Provenance
+## Quick start (local development)
 
-Accord transplants the design system and infrastructure conventions of the Atlas
-application from a pinned upstream release tag. See
-`docs/atlas-upstream-manifest.md` for exact provenance, exclusions, and licenses.
+You need four things installed first:
 
-## License
+1. **pnpm 10.x** — see `packageManager` in the root `package.json`.
+2. **Python 3.14** — the version CI uses.
+3. **PostgreSQL 18** — running locally. (Or skip local setup and use Docker
+   Compose; see the next section.)
+4. **Node.js 22.22 or newer** — for the frontend.
 
-Apache-2.0 — see [LICENSE](LICENSE).
-
-## Quick start
-
-**Prerequisites:** Docker (for Compose), [pnpm](https://pnpm.io/) 10.x (see
-root `package.json` `packageManager`), Python 3.14 (CI `PYTHON_VERSION`), and a
-local PostgreSQL 18 (or use Compose, which includes Postgres).
-
-### Local (scripts)
+Then run these three commands from the repository root:
 
 ```bash
-# Frontend workspace deps (repo root)
+# 1. Install frontend workspace dependencies.
 pnpm install
 
-# One-time: Postgres role/DBs (accord + accord_test), ADR roles, backend venv
+# 2. One-time database and virtualenv setup. Creates the `accord` and
+#    `accord_test` databases, the ADR-0001 roles, and backend/.venv.
 ./scripts/dev-setup.sh
-# If Postgres is not running yet (Homebrew):
+# If Postgres is not running yet (macOS Homebrew):
 # ./scripts/dev-setup.sh --start
 
-# Start API + Vite (runs alembic upgrade head when migrations exist)
+# 3. Start the API and the Vite dev server. This also runs
+#    `alembic upgrade head` for you.
 ./scripts/start.sh
 ```
 
-Local scripts auto-detect free listen ports and cache them under `.accord-dev/`:
-- Postgres: `5432`, Homebrew `postgresql.conf`, then `5433` (`pg.port`)
-- Frontend: `5173`, then `5174`… (`frontend.port`) — skips ports already taken (e.g. Atlas)
-- Backend: `8000`, then `8002`… (`backend.port`)
+The scripts pick free ports and remember them under `.accord-dev/`:
 
-Set `PGPORT`, `FRONTEND_PORT`, or `BACKEND_PORT` to force a specific port.
+- Postgres: `5432`, then Homebrew's configured port, then `5433`
+- Frontend: `5173`, then `5174`, and so on
+- Backend: `8000`, then `8002`, and so on
 
-`./scripts/dev-setup.sh` creates the simple `ACCORD_DB_USER` / `ACCORD_DB_NAME`
-role and databases that `start.sh` expects, and also applies
-`backend/scripts/create_roles.sql` so ADR DSNs in `backend/.env.example`
-(`accord_app` / `accord_migrator`) work against the same app database.
+Set `PGPORT`, `FRONTEND_PORT`, or `BACKEND_PORT` to force a port.
 
-### Docker Compose
+### First sign-in
+
+Local dev runs with `DEV_AUTH_BYPASS=true`. Any email and password work on
+the login form. The session identity comes from `DEV_AUTH_EMAIL` (default
+`dev@accord.local`).
+
+Before you can use the app, the deployment needs its one organization. This
+is a CLI step by design ([ADR 0011](docs/adr/0011-single-organization.md)):
+
+```bash
+PGPORT="$(tr -d '[:space:]' < .accord-dev/pg.port)"
+DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:${PGPORT}/accord" \
+  backend/.venv/bin/python scripts/provision_organization.py \
+  --name "My Org" --slug my-org --admin-email dev@accord.local
+```
+
+Run `./scripts/status.sh`, open the Frontend URL it prints, and sign in. You
+land in the app as an organization administrator even when the default port
+was busy.
+
+### Optional: seed a full demo dataset
+
+To explore with realistic data, load the synthetic June 2026 fixture
+(32 employees, offices, pay components, recurring items):
+
+```bash
+BACKEND_PORT="$(tr -d '[:space:]' < .accord-dev/backend.port)"
+backend/.venv/bin/python scripts/seed_june_fixture.py \
+  --base-url "http://127.0.0.1:${BACKEND_PORT}"
+```
+
+Then create a payroll period and run in the UI, save the roster, and
+calculate. The totals match the golden test fixture.
+
+## Quick start (Docker Compose)
+
+Compose brings its own PostgreSQL and MinIO, so nothing else is required:
 
 ```bash
 cp deploy/.env.example deploy/.env   # fill required secrets (WorkOS, SESSION_SECRET_KEY, …)
@@ -86,10 +118,10 @@ docker compose -f deploy/docker-compose.yml up --build
 ```
 
 Images: `ghcr.io/ornament-ai/accord/backend` and
-`ghcr.io/ornament-ai/accord/web`. Local default web port is `8085`
-(see Compose `web` service / `scripts/smoke-test.sh`).
+`ghcr.io/ornament-ai/accord/web`. The local web port is `8085` (see the
+Compose `web` service and `scripts/smoke-test.sh`).
 
-## Verification
+## Verify your setup
 
 ```bash
 ./scripts/verify.sh          # lint, typecheck, unit tests (skips missing lanes)
@@ -98,9 +130,10 @@ Images: `ghcr.io/ornament-ai/accord/backend` and
 
 ## Current status
 
-Gates are defined in [`docs/release-acceptance.md`](docs/release-acceptance.md)
-(letters A–F, H–K; **there is no gate G**). Status below reflects Phase 0 / product
-lanes landed in-tree; Gate K (deploy/restore/E2E) is the active release gate.
+Release gates are defined in
+[`docs/release-acceptance.md`](docs/release-acceptance.md) (letters A–F and
+H–K; **there is no gate G**). Gate K (deploy/restore/E2E) is the active
+release gate.
 
 | Gate | Status | One-line description |
 | --- | --- | --- |
@@ -121,19 +154,22 @@ lanes landed in-tree; Gate K (deploy/restore/E2E) is the active release gate.
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Runtime components, workflow state machine, tenancy, report pipeline |
 | [docs/payroll-domain.md](docs/payroll-domain.md) | Payroll domain glossary and gross-to-net model |
+| [docs/operations.md](docs/operations.md) | Deploy, backup/restore, and day-two operations |
 | [docs/release-acceptance.md](docs/release-acceptance.md) | Release gate matrix (A–K) and evidence requirements |
 | [docs/security.md](docs/security.md) | Security controls, roles, and operational expectations |
 | [docs/testing.md](docs/testing.md) | Test strategy and gate → suite mapping |
 | [docs/threat-model.md](docs/threat-model.md) | Threat model for tenancy, workflow, and exports |
 | [docs/atlas-upstream-manifest.md](docs/atlas-upstream-manifest.md) | Atlas upstream pin, inclusions, and exclusions |
 | [docs/report-specs/report-catalog.md](docs/report-specs/report-catalog.md) | First-release report catalog and reconciliation rules |
-| [docs/adr/0001-tenancy-rls-database-roles.md](docs/adr/0001-tenancy-rls-database-roles.md) | Tenancy, RLS, database roles |
-| [docs/adr/0002-workos-authentication-sessions.md](docs/adr/0002-workos-authentication-sessions.md) | WorkOS authentication and sessions |
-| [docs/adr/0003-backend-bootstrap-environment.md](docs/adr/0003-backend-bootstrap-environment.md) | Backend bootstrap and environment |
-| [docs/adr/0004-organization-url-session-context.md](docs/adr/0004-organization-url-session-context.md) | Organization URL and session context |
-| [docs/adr/0005-effective-dated-master-data.md](docs/adr/0005-effective-dated-master-data.md) | Effective-dated master data |
-| [docs/adr/0006-money-decimal-rounding.md](docs/adr/0006-money-decimal-rounding.md) | Money, decimal, and rounding policy |
-| [docs/adr/0007-payroll-run-calculation-model.md](docs/adr/0007-payroll-run-calculation-model.md) | Payroll run calculation model |
-| [docs/adr/0008-command-workflow-idempotency.md](docs/adr/0008-command-workflow-idempotency.md) | Command workflow and idempotency |
-| [docs/adr/0009-audit-outbox.md](docs/adr/0009-audit-outbox.md) | Append-only audit log and transactional outbox |
-| [docs/adr/0010-jobs-object-storage.md](docs/adr/0010-jobs-object-storage.md) | Durable jobs queue and object storage |
+| [docs/adr/](docs/adr/) | Architecture decision records 0001–0011 |
+
+## Provenance
+
+Accord transplants the design system and infrastructure conventions of the
+Atlas application from a pinned upstream release tag. See
+[`docs/atlas-upstream-manifest.md`](docs/atlas-upstream-manifest.md) for exact
+provenance, exclusions, and licenses.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).

@@ -31,7 +31,6 @@ import { MonthPicker } from "@/components/ui/month-picker";
 import { useAuth } from "@/contexts/AuthContext";
 import {
 	type PayrollRunListItem,
-	periodLabel,
 	useCreatePayrollPeriod,
 	useCreatePayrollRun,
 	usePayrollPeriods,
@@ -39,6 +38,7 @@ import {
 } from "@/lib/api/payroll-runs";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { getErrorMessage } from "@/lib/errors";
+import { periodLabel } from "@/lib/payroll-display";
 
 import { RunStatusBadge } from "./run-status-badge";
 

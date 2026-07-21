@@ -10,7 +10,7 @@ from fastapi import APIRouter, Body, Depends, Query, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError as PydanticValidationError
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.auth.principal import AuthPrincipal
 from app.exceptions import ConflictError
 from app.timezone import current_ist_date
@@ -42,14 +42,6 @@ from app.services import pay_setup as pay_setup_service
 router = APIRouter(tags=["pay-setup"])
 
 
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
-
-
-def _user_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.user_id)
-
-
 @router.post(
     "/pay-components",
     response_model=PayComponentResponse,
@@ -63,7 +55,7 @@ async def create_pay_component(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_pay_component(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         body=body,
     )
 
@@ -76,7 +68,7 @@ async def list_pay_components(
 ) -> list[dict[str, Any]]:
     return await pay_setup_service.list_pay_components(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
     )
 
 
@@ -96,7 +88,7 @@ async def update_pay_component(
         raise RequestValidationError(exc.errors()) from exc
     return await pay_setup_service.update_pay_component(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         component_id=component_id,
         body=update,
     )
@@ -116,9 +108,9 @@ async def create_component_rate_version(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_component_rate_version(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         component_id=component_id,
-        created_by=_user_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -135,7 +127,7 @@ async def list_component_rate_versions(
 ) -> list[dict[str, Any]]:
     return await pay_setup_service.list_component_rate_versions(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         component_id=component_id,
     )
 
@@ -154,9 +146,9 @@ async def create_recurring_instruction(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_recurring_instruction(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
-        created_by=_user_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -174,7 +166,7 @@ async def list_recurring_instructions(
 ) -> list[dict[str, Any]]:
     return await pay_setup_service.list_recurring_instructions(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
         as_of=as_of or current_ist_date(),
     )
@@ -194,9 +186,9 @@ async def create_recurring_instruction_version(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_recurring_instruction_version(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         instruction_id=instruction_id,
-        created_by=_user_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -213,7 +205,7 @@ async def list_recurring_instruction_versions(
 ) -> list[dict[str, Any]]:
     return await pay_setup_service.list_recurring_instruction_versions(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         instruction_id=instruction_id,
     )
 
@@ -232,9 +224,9 @@ async def create_advance(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_advance(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
-        created_by=_user_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -252,7 +244,7 @@ async def list_advances(
 ) -> list[dict[str, Any]]:
     return await pay_setup_service.list_advances(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
         as_of=as_of or current_ist_date(),
     )
@@ -272,9 +264,9 @@ async def create_advance_installment_version(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_advance_installment_version(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         advance_id=advance_id,
-        created_by=_user_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -293,9 +285,9 @@ async def create_accommodation(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_accommodation(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
-        created_by=_user_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -313,7 +305,7 @@ async def list_accommodation(
 ) -> list[dict[str, Any]]:
     return await pay_setup_service.list_accommodation(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
         as_of=as_of or current_ist_date(),
     )
@@ -333,9 +325,9 @@ async def create_accommodation_charge_version(
 ) -> dict[str, Any]:
     return await pay_setup_service.create_accommodation_charge_version(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         assignment_id=assignment_id,
-        created_by=_user_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -351,7 +343,7 @@ async def list_report_configurations(
 ) -> list[dict[str, Any]]:
     return await pay_setup_service.list_report_configurations(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
     )
 
 
@@ -368,7 +360,7 @@ async def upsert_report_configuration(
 ) -> dict[str, Any]:
     return await pay_setup_service.upsert_report_configuration(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         key=key,
         value=body.value,
     )
@@ -382,7 +374,7 @@ async def get_payroll_export_profile(
 ) -> dict[str, Any]:
     return await pay_setup_service.get_payroll_export_profile(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
     )
 
 
@@ -395,6 +387,6 @@ async def upsert_payroll_export_profile(
 ) -> dict[str, Any]:
     return await pay_setup_service.upsert_payroll_export_profile(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         profile=body,
     )

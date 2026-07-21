@@ -68,6 +68,8 @@ print_pidfile_status backend
 print_pidfile_status frontend
 print_port_status backend "$BACKEND_PORT"
 print_port_status frontend "$FRONTEND_PORT"
+ui_kv "Backend URL" "http://127.0.0.1:$BACKEND_PORT"
+ui_kv "Frontend URL" "http://127.0.0.1:$FRONTEND_PORT"
 print_port_status postgres "$PGPORT"
 if pg_is_ready_on "$PGPORT"; then
 	ui_kv "postgres" "ready at $PGHOST:$PGPORT"

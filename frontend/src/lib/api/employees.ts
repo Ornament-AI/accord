@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchJson } from "@/lib/api/http";
+import { fetchJson, jsonRequest } from "@/lib/api/http";
+import { buildQueryString } from "@/lib/api/query-utils";
 import type { components } from "@/types/api.generated";
 
 export type EmployeeSummary = components["schemas"]["EmployeeSummary"];
@@ -44,18 +45,6 @@ export const employeeQueryKeys = {
 		["employees", "versions", employeeId, kind, { reveal }] as const,
 };
 
-function buildQueryString(
-	params: Record<string, string | number | boolean | null | undefined>,
-): string {
-	const search = new URLSearchParams();
-	for (const [key, value] of Object.entries(params)) {
-		if (value === undefined || value === null || value === "" || value === false) continue;
-		search.set(key, String(value));
-	}
-	const qs = search.toString();
-	return qs ? `?${qs}` : "";
-}
-
 export function listEmployees(params: ListEmployeesParams = {}) {
 	const qs = buildQueryString({
 		as_of: params.as_of,
@@ -76,11 +65,7 @@ export function getEmployee(employeeId: string, params: GetEmployeeParams = {}) 
 }
 
 export function createEmployee(body: CreateEmployeeRequest) {
-	return fetchJson<EmployeeDetail>("/api/employees", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<EmployeeDetail>("/api/employees", jsonRequest("POST", body));
 }
 
 export function listEmployeeVersions(
@@ -99,11 +84,10 @@ export function createEmployeeVersion(
 	kind: EmployeeVersionKind,
 	body: CreateEmployeeVersionBody,
 ) {
-	return fetchJson<unknown>(`/api/employees/${employeeId}/versions/${kind}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<unknown>(
+		`/api/employees/${employeeId}/versions/${kind}`,
+		jsonRequest("POST", body),
+	);
 }
 
 export function useEmployeesList(params: ListEmployeesParams) {
@@ -156,4 +140,3 @@ export function useCreateEmployeeVersion(employeeId: string) {
 }
 
 /** Compatibility exports for existing employee screens. */
-export { parseApiDate, toApiDate, todayApiDate } from "@/lib/calendar-date";

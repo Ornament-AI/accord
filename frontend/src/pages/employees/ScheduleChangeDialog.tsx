@@ -28,13 +28,11 @@ import {
 	type PayVersionResponse,
 	type PostingVersionResponse,
 	type ProfileVersionResponse,
-	parseApiDate,
 	type RetirementRegime,
-	toApiDate,
-	todayApiDate,
 	useCreateEmployeeVersion,
 } from "@/lib/api/employees";
 import { useOfficesList, usePostsList } from "@/lib/api/org-structure";
+import { parseApiDate, toApiDate, todayApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";

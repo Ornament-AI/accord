@@ -10,17 +10,16 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Any, Literal, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     ConfigDict,
     Field,
-    PlainSerializer,
     model_validator,
 )
+from app.schemas.money import LenientMoneyAmount as MoneyAmount
 
 from app.schemas.pagination import PaginatedResponse
 
@@ -43,30 +42,6 @@ def mask_value(value: str | None) -> str | None:
     if len(value) >= 1:
         return "••••"
     return "••••"
-
-
-def _require_decimal_string(value: Any) -> Decimal:
-    """Accept JSON decimal strings and in-process ``Decimal``; reject int/float."""
-    if isinstance(value, Decimal):
-        return value
-    if isinstance(value, bool) or isinstance(value, (int, float)) or not isinstance(value, str):
-        raise ValueError("Must be a decimal string")
-    try:
-        parsed = Decimal(value)
-    except Exception as exc:
-        raise ValueError("Invalid decimal string") from exc
-    return parsed
-
-
-def _serialize_money(value: Decimal) -> str:
-    return f"{value.quantize(Decimal('0.01'))}"
-
-
-MoneyAmount = Annotated[
-    Decimal,
-    BeforeValidator(_require_decimal_string),
-    PlainSerializer(_serialize_money, return_type=str),
-]
 
 
 class RetirementRegime(StrEnum):

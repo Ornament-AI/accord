@@ -11,20 +11,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, Field, field_validator
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.auth.principal import AuthPrincipal
 from app.services import run_posting as run_posting_service
 from app.services.idempotency import idempotent_command
 
 router = APIRouter(tags=["payroll-run-posting"])
-
-
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
-
-
-def _user_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.user_id)
 
 
 class ReverseRunRequest(BaseModel):
@@ -46,8 +38,8 @@ async def post_payroll_run(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
     _: AuthPrincipal = Depends(require_capability("post_run")),
 ) -> dict[str, Any]:
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
 
     async def _execute() -> dict[str, Any]:
         return await run_posting_service.post_run(
@@ -76,8 +68,8 @@ async def reverse_payroll_run(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
     _: AuthPrincipal = Depends(require_capability("post_run")),
 ) -> dict[str, Any]:
-    org_id = _org_id(tenant)
-    user_id = _user_id(tenant)
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
 
     async def _execute() -> dict[str, Any]:
         return await run_posting_service.reverse_run(

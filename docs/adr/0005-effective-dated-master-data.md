@@ -6,42 +6,42 @@
 
 ## Context
 
-Local-government payroll master data changes over time: post and pay placement, bank accounts, recurring deduction/contribution instructions, accommodation assignments, and statutory rates. Payroll runs must be reproducible years later: a posted June 2026 run must still show exactly which bank account version, pay placement, and rate rows it used.
+Local-government payroll master data changes over time. Examples: post and pay placement, bank accounts, and recurring deduction and contribution instructions. So do accommodation assignments and statutory rates. Payroll runs must be reproducible years later. A posted June 2026 run must still show exactly which bank account version, pay placement, and rate rows it used.
 
-Mutating a single “current” row in place destroys history and makes posted runs non-auditable. Overlapping “current” rows for the same business key create ambiguous as-of resolution.
+Editing a single “current” row in place destroys history. Posted runs then cannot be audited. “Current” rows that overlap for the same business key make as-of lookups unclear.
 
 We need:
 
 1. Stable identity for the business entity.
-2. Immutable, effective-dated versions for time-varying attributes.
-3. Database-enforced non-overlapping active periods.
-4. A single canonical “effective on date D” query used everywhere.
+2. Immutable, effective-dated versions for values that change over time.
+3. Active periods that do not overlap, enforced by the database.
+4. One canonical “effective on date D” query, used everywhere.
 5. Posted payroll run versions that pin exact source version ids (see ADR 0007).
 
 ## Decision
 
 ### Pattern: header + immutable versions
 
-- **Header / identity table:** stable surrogate `id`, organization scope, immutable business keys (e.g., Sevarth ID on employee). Headers are not used to store time-varying pay attributes.
-- **Version table:** append-only rows for attributes that change. Each row has:
+- **Header / identity table:** stable surrogate `id`, org scope, and immutable business keys (e.g., the Sevarth ID on an employee). Headers do not store pay values that change over time.
+- **Version table:** append-only rows for values that change. Each row has:
   - `id` (version id, UUID or bigint)
   - FK to header
   - `organization_id`
   - business key columns as needed for exclusion
-  - `effective_period` as PostgreSQL `daterange` (convention: `[effective_from, effective_to)` — inclusive start, exclusive end; open upper bound for “until further notice”)
+  - `effective_period` as PostgreSQL `daterange` (convention: `[effective_from, effective_to)` — the start is included, the end is not; an open upper bound means “until further notice”)
   - payload columns (pay scale, bank account numbers, instruction amounts, etc.)
   - audit columns (`created_at`, `created_by`, reason/change note)
 
 **Rules:**
 
-1. Changes **always** insert a new version row. History rows are **never** updated or deleted (append-only / immutable). Corrections that fix a mistaken future version still append a superseding version (or a controlled admin correction process that inserts compensating versions)—they do not overwrite posted-referenced rows.
+1. Changes **always** insert a new version row. History rows are **never** updated or deleted (append-only, immutable). A fix for a wrong future version still appends a new version that supersedes it (or it goes through a controlled admin process that adds compensating versions). A fix never overwrites a row that a posted run points to.
 2. **Future-dated** changes are allowed (`lower(effective_period)` in the future).
-3. PostgreSQL **GiST `EXCLUDE`** constraints prevent overlapping **active** version periods per `(organization_id, business_key)` (and header id where the business key is the header).
-4. Posted payroll run versions store the **exact source version id(s)** they read. Those version rows remain immutable forever once created; posting does not change this—it only adds references. Even unreferenced versions are not rewritten; posting strengthens the retention requirement for referenced ids.
+3. PostgreSQL **GiST `EXCLUDE`** constraints stop **active** version periods from overlapping per `(organization_id, business_key)` (and per header id where the business key is the header).
+4. Posted payroll run versions store the **exact source version id(s)** they read. Once created, those version rows never change. Posting does not change this — it only adds references. Even versions that no run points to are never rewritten. Posting only strengthens the retention rule for referenced ids.
 
 ### Canonical “effective on date D” primitive
 
-Define **once** (SQL function and/or view) and reuse from all application queries and calculators:
+Define this **once** (as a SQL function and/or view) and reuse it from all app queries and calculators:
 
 ```sql
 -- Canonical primitive: version active on date D
@@ -57,11 +57,11 @@ AS $$
 $$;
 ```
 
-Application queries for a concrete version table always filter with the same predicate, e.g. `effective_period @> :on_date` (or `version_effective_on(effective_period, :on_date)`), plus organization and business-key predicates. Calculators in ADR 0007 must resolve master data only through this primitive (or repositories that wrap it), never ad-hoc date logic.
+App queries on a concrete version table always filter with the same predicate, e.g. `effective_period @> :on_date` (or `version_effective_on(effective_period, :on_date)`), plus org and business-key filters. Calculators in ADR 0007 must read master data only through this primitive, or through repositories that wrap it. They must never use ad-hoc date logic.
 
 ### Representative DDL
 
-Example: employee bank account — header employee already exists; bank account versions are effective-dated.
+Example: employee bank account. The header employee already exists; bank account versions are effective-dated.
 
 ```sql
 -- Identity/header (attributes that are not time-sliced live here)
@@ -131,27 +131,27 @@ CREATE TABLE employee_pay_placement_version (
 );
 ```
 
-Statutory rates, recurring instructions, and accommodation assignments use the same header/version + `daterange` + GiST exclusion pattern.
+Statutory rates, recurring instructions, and accommodation assignments use the same pattern: header/version, plus `daterange`, plus GiST exclusion.
 
 ### Interaction with posted runs
 
-`payroll_run_versions` (ADR 0007) persist references such as `employee_pay_placement_version_id`, `employee_bank_account_version_id`, rate version ids, and instruction version ids on each line’s calculation trace. Those FKs point at immutable version rows. Correcting master data after posting means inserting a **new** version with a new period—not editing the row a posted run already referenced.
+`payroll_run_versions` (ADR 0007) store references such as `employee_pay_placement_version_id`, `employee_bank_account_version_id`, rate version ids, and instruction version ids on each line’s calculation trace. Those FKs point at immutable version rows. To fix master data after posting, insert a **new** version with a new period. Never edit the row a posted run already points to.
 
 ## Consequences
 
 **Positive:**
 
-- As-of payroll and historical audit are well-defined.
-- Database enforces non-overlapping versions.
-- Posted runs remain reproducible when combined with engine version + decimal policy (ADR 0006, ADR 0007).
+- As-of payroll and audits of past data are well defined.
+- The database enforces that versions do not overlap.
+- Posted runs stay reproducible, when combined with the engine version and decimal policy (ADR 0006, ADR 0007).
 
 **Negative / costs:**
 
-- All master-data APIs must be version-aware (no silent in-place edit of payload).
-- Application must close/clip prior open-ended ranges when inserting a superseding version (transactionally) so GiST exclusion remains satisfiable.
-- Storage grows with every change (accepted for payroll auditability).
+- All master-data APIs must be version-aware. There is no silent in-place edit of a payload.
+- When the app inserts a superseding version, it must close or clip the prior open-ended range in the same transaction. Otherwise the GiST exclusion cannot be met.
+- Storage grows with every change (we accept this; payroll must stay fit for audit).
 
 **Open questions:**
 
-- Exact timezone / calendar convention for period boundaries across state holidays (document when pay calendar is specified).
-- Whether non-primary bank accounts need a separate exclusion key (purpose code) — decide when multi-account payments are in scope.
+- The exact timezone and calendar rules for period bounds across state holidays (write these down when the pay calendar is defined).
+- Whether non-primary bank accounts need a separate exclusion key (purpose code). Decide when multi-account payments are in scope.

@@ -25,13 +25,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	type CreateEmployeeRequest,
 	type GpfJurisdiction,
-	parseApiDate,
 	type RetirementRegime,
-	toApiDate,
-	todayApiDate,
 	useCreateEmployee,
 } from "@/lib/api/employees";
 import { useOfficesList, usePostsList } from "@/lib/api/org-structure";
+import { parseApiDate, toApiDate, todayApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";

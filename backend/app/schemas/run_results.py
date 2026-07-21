@@ -3,34 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer
-
-
-def _require_decimal_string(value: Any) -> Decimal:
-    if isinstance(value, bool) or not isinstance(value, str):
-        raise ValueError("Must be a decimal string")
-    try:
-        parsed = Decimal(value)
-    except Exception as exc:
-        raise ValueError("Invalid decimal string") from exc
-    if not parsed.is_finite():
-        raise ValueError("Decimal must be finite")
-    return parsed
-
-
-def _serialize_money(value: Decimal) -> str:
-    return f"{value.quantize(Decimal('0.01'))}"
-
-
-MoneyAmount = Annotated[
-    Decimal,
-    BeforeValidator(_require_decimal_string),
-    PlainSerializer(_serialize_money, return_type=str),
-]
+from pydantic import BaseModel, ConfigDict
+from app.schemas.money import MoneyAmount
 
 
 class CurrentVersion(BaseModel):

@@ -6,11 +6,11 @@
 
 ## Context
 
-Payroll for a period is not a single mutable spreadsheet. Draft inputs change (monthly exceptions); calculated outputs must be immutable snapshots for maker/checker review, posting, and later audit. Each employee line must explain **how** it was computed: which effective-dated master versions (ADR 0005), which rate, which rounding rule (ADR 0006), and which calculator kind.
+Payroll for a period is not one mutable spreadsheet. Draft inputs change during the month (monthly exceptions). But once a run is calculated, its output must be a frozen snapshot. Maker/checker review, posting, and later audits all rest on that. Each employee line must show **how** it was computed: which master versions as of which dates (ADR 0005), which rate, which rounding rule (ADR 0006), and which calculator kind.
 
-User-authored formula DSLs are rejected: they are hard to audit, easy to cycle, and unstable for statutory payroll. Instead we use a **typed calculator registry** with explicit dependency ordering.
+We reject user-authored formula DSLs. They are hard to audit, easy to cycle, and not stable for statutory payroll. Instead, pay rules live in code as a **typed calculator registry**, and each kind states what it depends on.
 
-Domain aggregates and classifications are defined in [payroll-domain.md](../payroll-domain.md) (gross-to-net identity, component classifications: `earning`, `employer_contribution`, `AG_deduction`, `treasury_deduction`, `gross_adjustment`, `external_recovery`).
+The domain doc, [payroll-domain.md](../payroll-domain.md), defines the aggregates, the gross-to-net identity, and the six component classes: `earning`, `employer_contribution`, `AG_deduction`, `treasury_deduction`, `gross_adjustment`, `external_recovery`.
 
 ## Decision
 
@@ -24,13 +24,13 @@ Domain aggregates and classifications are defined in [payroll-domain.md](../payr
 
 ### Mutable draft inputs
 
-Monthly exceptions / overrides live on the run (or period+run scope) as **mutable DRAFT** inputs until a calculation consumes them into a run version:
+Monthly exceptions and overrides live on the run (or period+run scope). They stay **mutable DRAFT** inputs until a calculation consumes them into a run version. Each one carries:
 
-- **reason** (mandatory text / code)
-- **service period** (which dates within the payroll period the exception applies to)
-- **optimistic-concurrency version number** (integer; update must supply expected version to prevent lost updates)
+- a **reason** (required text or code)
+- a **service period**: the dates within the payroll period that the exception covers
+- a **version number for optimistic concurrency**: an integer; each update must send the version it expects, so no update is lost
 
-Recurring instructions and statutory rates are **not** draft run inputs; they are effective-dated master data (ADR 0005), resolved as-of the run’s service date(s).
+Recurring instructions and statutory rates are **not** draft run inputs. They are effective-dated master data (ADR 0005), read as of the run’s service date(s).
 
 ### Immutable run versions and line items
 
@@ -38,8 +38,8 @@ Each `payroll_run_version` contains:
 
 - run + period identifiers
 - `engine_version` and `content_hash` (ADR 0006)
-- per-employee results (gross, deductions, net, employer share contributions, etc.)
-- per-employee **line items**
+- results per employee (gross, deductions, net, employer share, etc.)
+- **line items** per employee
 
 Each line item carries a full **calculation trace**:
 
@@ -58,7 +58,7 @@ Each line item carries a full **calculation trace**:
 
 ### Typed calculator registry (no user-authored DSL)
 
-There is **no** end-user formula language, spreadsheet expression engine, or arbitrary scripting for pay rules. New behaviors are added as reviewed, versioned calculator kinds in code.
+There is **no** end-user formula language for pay rules. No spreadsheet expression engine. No arbitrary scripting. New behaviors ship in code, as calculator kinds that are reviewed and versioned.
 
 Initial calculator kinds:
 
@@ -72,23 +72,23 @@ Initial calculator kinds:
 | `accommodation_charge` | Actual license-fee recovery from effective-dated accommodation assignment; informational/foregone HRA is separate and non-payable. |
 | `one_time_adjustment` | Explicit approved one-time line for deferred/unproven behaviors (arrears, complex proration, etc.—see payroll-domain.md Unproven behaviors). |
 
-Component classifications from the domain glossary attach to components/lines; calculators produce amounts that must be consistent with those classifications (e.g., `employer_employee_contribution` produces `employer_contribution` + employee deduction classifications and matching transfer-out lines).
+The six classes from the domain glossary attach to components and lines. What a calculator emits must match those classes. For example, `employer_employee_contribution` emits an `employer_contribution` leg, an employee deduction leg, and matching transfer-out lines.
 
 ### Effective-dated rates and config
 
-Rates and calculator config tables are themselves effective-dated using the ADR 0005 pattern (`daterange` + GiST exclusion + effective-on-date primitive). Calculators resolve config only through that primitive and record the version ids on the trace.
+Rate tables and calculator config tables carry effective dates too. They use the ADR 0005 pattern: `daterange` + GiST exclusion + the effective-on-date primitive. Config is read only through that primitive, and the version ids land on the trace.
 
 ### Dependency ordering and cycle rejection
 
-Calculators declare dependencies on component codes / calculator outputs (e.g., `percentage_of_component_bases` depends on basis components completing first). The engine:
+Each calculator kind lists what it needs first: component codes and the outputs of other kinds. For example, `percentage_of_component_bases` needs its basis components to finish first. The engine:
 
 1. Builds a directed dependency graph for the run’s component set.
-2. Topologically orders calculation.
-3. **Rejects cycles loudly** — if a cycle is detected, calculation **fails** with an explicit error identifying the cycle; it must not loop, truncate arbitrarily, or produce partial wrong nets.
+2. Sorts the graph in topological order, so every line runs after the lines it needs.
+3. **Rejects cycles loudly.** If it finds a cycle, the run **fails** with an explicit error that names the cycle. It must not loop, cut off at some point, or emit partial wrong nets.
 
 ### Workflow statuses (enumeration only)
 
-A full workflow contract is a **separate future document**. For Phase 0, only enumerate:
+A full workflow contract will come in a **separate future document**. For Phase 0, we only list the states:
 
 | Status / action | One-line description |
 | --- | --- |
@@ -101,21 +101,21 @@ A full workflow contract is a **separate future document**. For Phase 0, only en
 | `reject` | Checker rejects a submission; returns to an editable pre-submit state per future workflow doc. |
 | `reverse` | Formal reversal of a posted run without mutating the original posted version. |
 
-Allowed transitions and authorization matrices are **out of scope** here.
+Allowed transitions and who may do what are **out of scope** here.
 
 ## Consequences
 
 **Positive:**
 
-- Auditable, deterministic runs aligned with ADR 0005/0006 and payroll-domain gross-to-net contracts.
-- Typed calculators keep statutory logic reviewable in code review.
-- Cycle rejection prevents silent wrong pays.
+- Runs can be audited and replayed. They line up with ADR 0005/0006 and the gross-to-net contracts in the domain doc.
+- Statutory logic goes through code review, since it lives in typed calculators.
+- Cycle rejection blocks silent wrong pays.
 
 **Negative / costs:**
 
-- New pay behaviors require engineering changes (calculator kinds), not config-only DSL—accepted for control.
-- Storage of full traces increases volume (accepted).
+- New pay behaviors need code changes (new calculator kinds), not config-only DSL edits. We accept this for control.
+- Full traces take more storage. Accepted.
 
 **Open questions:**
 
-- Resolution of NPS employer vs narrow employer share in gross bill (see Proven June 2026 invariants open question in payroll-domain.md)—calculator `employer_employee_contribution` must not assume an answer until finance signs off.
+- NPS employer share vs the narrow employer share in the gross bill (see the Proven June 2026 open question in payroll-domain.md). The `employer_employee_contribution` calculator must not assume an answer until finance signs off.

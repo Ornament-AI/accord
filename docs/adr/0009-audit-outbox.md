@@ -9,16 +9,16 @@
 
 ## Context
 
-Accord is a multi-tenant payroll system of record for Indian local-government / public-works salaried staff ([payroll-domain.md](../payroll-domain.md)). Every business mutation that changes tenant-owned state must leave an immutable evidence trail — who acted, what command ran, which entity changed, and complete before/after entity snapshots — and must be able to notify downstream integrations without dual-write races.
+Accord is a multi-tenant payroll system of record for Indian local-government / public-works salaried staff ([payroll-domain.md](../payroll-domain.md)). Every business change to tenant-owned state must leave proof that cannot be edited: who acted, what command ran, which entity changed, and full before/after snapshots. The system must also tell downstream systems what happened, with no dual-write race.
 
 Two failure modes drive this ADR:
 
-1. **Missing or editable audit.** If audit is written only in application logs, or if the runtime DB role can `UPDATE`/`DELETE` history, the trail is not trustworthy for maker/checker review, posting, reversal, or compliance review of artifact downloads.
-2. **Dual-write between DB and messaging.** If the API commits a payroll `post` and then separately publishes to a queue or webhook, a crash between those steps loses the event (or, with naive retries, duplicates inconsistently relative to committed state).
+1. **Missing or editable audit.** Audit that lives only in application logs cannot be trusted. Nor can audit history that the runtime DB role can `UPDATE` or `DELETE`. Maker/checker review, posting, reversal, and compliance review of artifact downloads all need a trail that cannot be rewritten.
+2. **Dual-write between DB and messaging.** Suppose the API commits a payroll `post` and then publishes to a queue or webhook as a second step. A crash between those steps loses the event. Naive retries instead create duplicates that do not match committed state.
 
-The transactional outbox pattern inserts the integration event into PostgreSQL in the **same transaction** as the business mutation; a separate dispatcher delivers later. Audit rows are written in that same unit of work and must not be editable by the application at runtime — enforcement at the database privilege layer, not only in ORM conventions.
+The transactional outbox pattern fixes the second problem. We insert the event into PostgreSQL in the **same transaction** as the change itself. A separate process, the dispatcher, sends it out later. Audit rows are written in that same unit of work. The app must not be able to edit them at runtime — enforced at the database privilege layer, not only in ORM conventions.
 
-Command handlers and idempotency are defined in [ADR 0008](0008-command-workflow-idempotency.md). Sensitive download auditing for export artifacts is required by [ADR 0010](0010-jobs-object-storage.md).
+Command handlers and idempotency are defined in [ADR 0008](0008-command-workflow-idempotency.md). [ADR 0010](0010-jobs-object-storage.md) requires audit rows for sensitive artifact downloads.
 
 ---
 
@@ -26,7 +26,7 @@ Command handlers and idempotency are defined in [ADR 0008](0008-command-workflow
 
 ### 1. Append-only `audit_events`
 
-Every successful business mutation that changes tenant-owned state writes one or more `audit_events` rows in the **same database transaction** as the mutation (unit of work). Sensitive read paths that are compliance-relevant — notably `artifact.download` — also insert audit rows even though they do not mutate business aggregates ([ADR 0010](0010-jobs-object-storage.md)).
+Every successful business mutation that changes tenant-owned state writes one or more `audit_events` rows. The write happens in the **same database transaction** as the mutation (unit of work). Some sensitive read paths matter for compliance too — notably `artifact.download`. Those also insert audit rows, even though they do not mutate business aggregates ([ADR 0010](0010-jobs-object-storage.md)).
 
 #### Table: `audit_events`
 
@@ -55,15 +55,15 @@ Every successful business mutation that changes tenant-owned state writes one or
 - `(organization_id, created_at DESC)` — tenant timelines.
 - `(organization_id, entity_type, entity_id, created_at DESC)` — entity history.
 - `(organization_id, request_id)` where `request_id IS NOT NULL` — request correlation.
-- Optional unique partial index on `(organization_id, idempotency_key, command)` only if product rules require a hard uniqueness guarantee beyond ADR 0008’s idempotency store; default is to rely on command idempotency, not audit uniqueness.
+- Optional unique partial index on `(organization_id, idempotency_key, command)`, only if product rules demand a hard uniqueness guarantee beyond ADR 0008’s idempotency store. The default is to rely on command idempotency, not audit uniqueness.
 
-**RLS:** `organization_id = current_setting('app.current_org_id')::uuid` (or the project’s established org GUC name), fail closed when unset.
+**RLS:** `organization_id = current_setting('app.organization_id')::uuid`, fail closed when unset.
 
 #### Unit of work / transactional write pattern
 
 ```text
 BEGIN;
-  SET LOCAL app.current_org_id = '<org uuid>';
+  SET LOCAL app.organization_id = '<org uuid>';
   -- business mutation (e.g. payroll_runs status → posted; pin run version)
   INSERT INTO audit_events (...);
   INSERT INTO outbox_events (...);  -- when an integration event is required
@@ -72,17 +72,17 @@ COMMIT;
 
 Rules:
 
-1. Application services use a single unit-of-work / DB session per request or command. The audit insert is invoked by the same service method that performs the mutation — not by an async listener after commit.
-2. If the mutation rolls back, the audit row rolls back with it. There is **no** “audit of failed commits” in this table; failed attempts may be logged to application logs/metrics instead.
-3. Idempotent command **replays** ([ADR 0008](0008-command-workflow-idempotency.md)) must **not** insert a second audit row; they return the stored response without re-entering the mutation path.
-4. Ordinary read-only operations do not audit. **Exception:** `artifact.download` **does** insert an audit row ([ADR 0010](0010-jobs-object-storage.md)).
-5. New mutation events store complete persisted scalar/JSON fields belonging to the audited entity in `before_state` and `after_state`. Related-table expansion and binary contents are excluded. The history UI computes a changed-field diff and suppresses tenant ids, timestamps, and lock/version bookkeeping.
-6. Access events use `event_kind = 'access'`, leave Before/After NULL, and store a complete JSON-safe resource snapshot plus request context in `metadata`; they never manufacture a mutation.
-7. Existing rows remain byte-for-byte immutable. NULL `event_kind` marks them as legacy, and read clients show a minimal unavailable-detail message rather than exposing raw `summary` JSON.
+1. Application services use a single unit-of-work / DB session per request or command. The same service method that performs the mutation also inserts the audit row — never an async listener after commit.
+2. If the mutation rolls back, the audit row rolls back with it. This table holds **no** “audit of failed commits”. Failed attempts may go to application logs and metrics instead.
+3. Idempotent command **replays** ([ADR 0008](0008-command-workflow-idempotency.md)) must **not** insert a second audit row. They return the stored response without re-entering the mutation path.
+4. Plain reads do not write audit rows. **Exception:** `artifact.download` **does** insert an audit row ([ADR 0010](0010-jobs-object-storage.md)).
+5. New mutation events store the complete persisted scalar/JSON fields of the audited entity in `before_state` and `after_state`. They do not expand related tables and do not include binary content. The history UI computes the changed-field diff. It hides tenant ids, timestamps, and lock/version bookkeeping.
+6. Access events use `event_kind = 'access'`. They leave Before/After NULL, and store a complete JSON-safe resource snapshot plus request context in `metadata`. They never invent a mutation.
+7. Existing rows stay byte-for-byte immutable. NULL `event_kind` marks them as legacy. Read clients show a minimal unavailable-detail message for them, rather than raw `summary` JSON.
 
 ### 2. No UPDATE or DELETE on `audit_events` for the runtime app role
 
-Runtime application roles **must not** be able to modify or remove audit history. Soft-delete of audit rows is **forbidden**. Corrections are new compensating audit events (and, where applicable, domain reversals), not edits to prior rows.
+Runtime application roles **must not** be able to modify or remove audit history. Soft-delete of audit rows is **forbidden**. To correct a record, write a new compensating audit event (and, where it applies, a domain reversal). Never edit prior rows.
 
 #### Role separation
 
@@ -114,14 +114,14 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE audit_events FROM accord_readon
 Additionally:
 
 1. No group role grants `UPDATE`/`DELETE`/`TRUNCATE` on `audit_events` to `accord_app`.
-2. Optional hardening: a trigger or `CREATE RULE` that raises on `UPDATE`/`DELETE` for non-migrator sessions — belt and suspenders; **privileges are the primary control**.
-3. Partitioning, archival, or cold-storage moves run only as `accord_migrator` (or a dedicated admin procedure), never via the application role, and are change-controlled.
+2. Optional hardening: a trigger or `CREATE RULE` that raises on `UPDATE`/`DELETE` for non-migrator sessions. That is belt and suspenders; **privileges are the primary control**.
+3. Partitioning, archival, and cold-storage moves run only as `accord_migrator` (or a dedicated admin procedure), never via the application role. They are change-controlled.
 
 Schema migrations that rewrite audit storage run as `accord_migrator` in maintenance windows.
 
 ### 3. Transactional outbox: `outbox_events`
 
-For integrations (notifications, external sync, webhooks — sinks may be phased in later), every integration-worthy business mutation inserts an outbox row in the **same transaction** as the mutation and its audit event. This eliminates dual-write inconsistency between committed DB state and “message sent.”
+Integrations include notifications, external sync, and webhooks. Sinks may be phased in later. Every integration-worthy business mutation inserts an outbox row in the **same transaction** as the mutation and its audit event. This removes the dual-write gap between committed DB state and “message sent”.
 
 #### Table: `outbox_events`
 
@@ -149,9 +149,9 @@ For integrations (notifications, external sync, webhooks — sinks may be phased
 - `(organization_id, event_type, created_at DESC)` for tenant/event browsing.
 - Index or FK on `audit_event_id` when the FK is enforced.
 
-**RLS:** same org GUC pattern as other tenant tables. The dispatcher sets org context per claimed row, or uses a security-definer claim function and then sets the tenant GUC before tenant-scoped side effects ([ADR 0010](0010-jobs-object-storage.md)).
+**RLS:** same org GUC pattern as other tenant tables. The dispatcher sets org context per claimed row. Or it uses a security-definer claim function, and then sets the tenant GUC before any tenant-scoped side effects ([ADR 0010](0010-jobs-object-storage.md)).
 
-**Privileges for outbox (runtime):** `accord_app` needs `SELECT`, `INSERT`, and `UPDATE` on `outbox_events` (status/lock/attempt fields only via application code). `DELETE`/`TRUNCATE` remain revoked for `accord_app`. `accord_readonly` gets `SELECT` only. Ownership stays with `accord_migrator`.
+**Privileges for outbox (runtime):** `accord_app` needs `SELECT`, `INSERT`, and `UPDATE` on `outbox_events` (status/lock/attempt fields only, via application code). `DELETE`/`TRUNCATE` remain revoked for `accord_app`. `accord_readonly` gets `SELECT` only. Ownership stays with `accord_migrator`.
 
 ```sql
 REVOKE ALL ON TABLE outbox_events FROM PUBLIC;
@@ -163,9 +163,9 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE outbox_events FROM accord_reado
 
 ### 4. Outbox dispatcher
 
-**Decision:** A **separate dispatcher process** — same backend Docker image, different entrypoint/command — polls and claims unprocessed outbox rows. This matches the deployment pattern for background workers described in [ADR 0010](0010-jobs-object-storage.md): one image, multiple process roles.
+**Decision:** A **separate dispatcher process** polls and claims unprocessed outbox rows. It uses the same backend Docker image with a different entrypoint/command. This matches the pattern for background workers in [ADR 0010](0010-jobs-object-storage.md): one image, multiple process roles.
 
-The dispatcher is not in-process inside the API request path. API handlers only insert `pending` rows; delivery is asynchronous.
+The dispatcher does not run inside the API request path. API handlers only insert `pending` rows. Delivery happens later, in the background.
 
 #### Claim pattern (`FOR UPDATE SKIP LOCKED`)
 
@@ -187,20 +187,20 @@ WHERE id IN (
 RETURNING *;
 ```
 
-After successful delivery to the downstream sink (or a no-op sink in early phases): set `status = 'processed'`, `processed_at = now()`, clear lock fields. On failure: set `status = 'failed'`, `available_at = now() + exponential_backoff`, store `last_error`. After a configured max attempts (e.g. 20), set `status = 'dead_letter'` for operator intervention.
+After a successful delivery to the downstream sink (or a no-op sink in early phases): set `status = 'processed'`, `processed_at = now()`, and clear the lock fields. On failure: set `status = 'failed'`, set `available_at = now() + exponential_backoff`, and store `last_error`. After a configured max attempts (e.g. 20), set `status = 'dead_letter'` for operator intervention.
 
-Multiple dispatcher replicas are safe because `SKIP LOCKED` prevents two workers from claiming the same row concurrently; expired leases allow reclaim after a crash.
+It is safe to run more than one dispatcher. `SKIP LOCKED` stops two workers from claiming the same row at once, and expired leases allow reclaim after a crash.
 
 ### 5. Delivery semantics: at-least-once
 
 Outbox delivery is **at-least-once**:
 
-- The dispatcher may crash after successful delivery but before marking `processed`.
-- Retry will redeliver the same `outbox_events.id` and payload.
+- The dispatcher may crash after a successful delivery but before it marks the row `processed`.
+- The retry will redeliver the same `outbox_events.id` and payload.
 
-**Therefore:** every consumer of outbox events **MUST be idempotent** and **MUST dedupe by `outbox_events.id`** (or a deterministic derived idempotency key that includes that id). Exactly-once delivery is not promised at the transport layer.
+**Therefore:** every consumer of outbox events **MUST be idempotent** and **MUST dedupe by `outbox_events.id`** (or by a deterministic derived idempotency key that includes that id). The transport layer does not promise exactly-once delivery.
 
-Early phases may run a dispatcher that only logs and marks processed (no external sink). The insert-in-same-transaction contract still holds so later sinks can be enabled without rewriting command services ([ADR 0008](0008-command-workflow-idempotency.md)).
+Early phases may run a dispatcher that only logs and marks rows processed, with no external sink. The insert-in-same-transaction contract still holds. Later sinks can then be enabled without rewriting command services ([ADR 0008](0008-command-workflow-idempotency.md)).
 
 ### 6. What gets audit vs outbox
 
@@ -221,7 +221,7 @@ Early phases may run a dispatcher that only logs and marks processed (no externa
 | Artifact download | Always (`command = artifact.download`) | No (unless a compliance sink is added later) |
 | Pure UI preference / non-tenant settings | No | No |
 
-Payroll lifecycle terms (`submit`, `approve`, `post`, `reverse`, maker/checker) follow [payroll-domain.md](../payroll-domain.md) and the workflow enumeration in ADR 0007 / command surface in ADR 0008.
+Payroll lifecycle terms (`submit`, `approve`, `post`, `reverse`, maker/checker) follow [payroll-domain.md](../payroll-domain.md), the workflow list in ADR 0007, and the command surface in ADR 0008.
 
 ---
 
@@ -229,21 +229,21 @@ Payroll lifecycle terms (`submit`, `approve`, `post`, `reverse`, maker/checker) 
 
 **Positive:**
 
-- Command services ([ADR 0008](0008-command-workflow-idempotency.md)) and artifact flows ([ADR 0010](0010-jobs-object-storage.md)) share one transactional evidence pattern: mutation + audit (+ optional outbox) commit together or not at all.
-- Database privileges make audit tampering by a compromised or buggy app role much harder than ORM-only conventions.
-- At-least-once outbox with consumer dedupe is operationally simple and avoids distributed transactions.
-- Early no-op dispatcher still records the contract; sinks can be added without rewriting handlers.
+- Command services ([ADR 0008](0008-command-workflow-idempotency.md)) and artifact flows ([ADR 0010](0010-jobs-object-storage.md)) share one evidence pattern. The change, its audit row, and any outbox row commit together or not at all.
+- Database privileges make it much harder to tamper with audit than ORM-only rules do, even for a compromised or buggy app role.
+- At-least-once delivery with consumer dedupe is simple to run. It avoids distributed transactions.
+- An early no-op dispatcher still records the contract. Sinks can be added later without rewriting handlers.
 
 **Negative / costs:**
 
-- Operators must provision `accord_migrator` vs `accord_app` (and optional `accord_readonly`) in every environment (Compose and cloud); a single superuser DSN for the API is non-compliant with this ADR.
-- Complete snapshots increase audit storage and personal-data retention. Growth requires a later retention/archival policy (migrator-only); the application never deletes audit rows.
-- Every outbox consumer must implement idempotent handlers keyed by outbox id; accidental non-idempotent sinks will double-apply on retry.
-- Dispatcher is another process to monitor (lag, dead letters, lock expiry).
+- Operators must set up `accord_migrator` vs `accord_app` (and optional `accord_readonly`) in every environment, both Compose and cloud. A single superuser DSN for the API does not comply with this ADR.
+- Full snapshots make the audit table grow, and they hold personal data longer. A later policy must cover retention and archive (run as migrator only). The app never deletes audit rows.
+- Each outbox consumer must build idempotent handlers keyed by the outbox id. A sink that is not idempotent will double-apply on retry.
+- The dispatcher is one more process to watch (lag, dead letters, lock expiry).
 
 **Operational expectations:**
 
-- Metrics: outbox age of oldest `pending`/`failed`, dead-letter count, claim latency, audit insert failures (should be zero if unit of work is correct).
+- Metrics: age of the oldest `pending`/`failed` outbox row, dead-letter count, claim latency, and audit insert failures (which should be zero when the unit of work is correct).
 - Alerts on dead-letter growth and dispatcher heartbeat loss.
 
 ---

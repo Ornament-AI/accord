@@ -20,9 +20,10 @@ import { PageSkeleton } from "@/components/page-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
-import { type PayrollRunListItem, periodLabel } from "@/lib/api/payroll-runs";
+import type { PayrollRunListItem } from "@/lib/api/payroll-runs";
 import { type ArtifactResponse, useDownloadArtifact } from "@/lib/api/reports";
 import { getErrorMessage } from "@/lib/errors";
+import { periodLabel } from "@/lib/payroll-display";
 import { formatDateTime, formatFileSize } from "@/lib/utils";
 
 declare module "@tanstack/react-table" {

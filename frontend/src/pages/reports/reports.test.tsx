@@ -8,15 +8,19 @@ import { NAV_REGISTRY } from "@/lib/nav-registry";
 import { queryClient } from "@/lib/query-client";
 import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
-import { buildPeriod, buildRun, createPayRunHandlers } from "@/pages/pay-runs/pay-run-handlers";
 import { buildAuthMe, buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
+import { buildPeriod, buildRun, createPayRunHandlers } from "@/test/msw/pay-run-handlers";
+import {
+	buildArtifact,
+	createReportHandlers,
+	defaultReportCatalog,
+} from "@/test/msw/report-handlers";
 import { server } from "@/test/msw-server";
 import ReportSheetPage from "./ReportSheetPage";
 import ReportsIndexRedirect from "./ReportsIndexRedirect";
 import ReportsLayout from "./ReportsLayout";
-import { buildArtifact, createReportHandlers, defaultReportCatalog } from "./report-handlers";
 
 vi.mock("@/lib/download", () => ({
 	downloadBlob: vi.fn(),

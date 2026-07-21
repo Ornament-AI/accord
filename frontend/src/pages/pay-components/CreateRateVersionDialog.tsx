@@ -22,7 +22,6 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	CALC_KINDS,
 	type CalcKind,
@@ -37,6 +36,7 @@ import {
 	roundingRuleLabel,
 	useCreateComponentRateVersion,
 } from "@/lib/api/pay-setup";
+import { parseApiDate, toApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { payComponentEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";

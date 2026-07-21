@@ -6,7 +6,6 @@ values. Formatters are thin wrappers over the generic JSON / Excel / PDF writers
 
 from __future__ import annotations
 
-import calendar
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -15,17 +14,13 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import ConflictError
 from app.models.effective import select_active_version
 from app.models.employees import employee_posting_versions, employee_profile_versions
 from app.models.identity import Organization
 from app.models.org_structure import Post
 from app.models.payroll_runs import (
     PayrollPeriod,
-    PayrollRun,
-    payroll_employee_results,
-    payroll_result_lines,
-    payroll_run_versions,
 )
 from app.models.reports import ReportConfiguration
 from app.reports.amount_in_words import amount_in_words
@@ -42,6 +37,15 @@ from app.reports.base import (
 from app.reports.excel import to_excel as base_to_excel
 from app.reports.pdf import to_pdf as base_to_pdf
 from app.reports.snapshots import load_report_snapshot
+from app.reports.posted_run import (
+    DEFAULT_FILENAME_PATTERN,
+    ZERO,
+    load_result_rows,
+    money,
+    month_end,
+    period_label,
+    require_posted_run,
+)
 
 # Report type strings for orchestrator registration.
 REPORT_TYPE_PAY_BILL = "pay_bill"
@@ -50,8 +54,6 @@ REPORT_TYPE_TREASURY_FACE = "treasury_face"
 PayBillDTO = ReportDTO
 TreasuryFaceDTO = ReportDTO
 
-_TWO_PLACES = Decimal("0.01")
-_ZERO = Decimal("0.00")
 
 _EARNING_CODES = (
     "BASIC",
@@ -74,119 +76,8 @@ _DEDUCTION_COLUMN_CODES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("transfers", ("NPS_EMPLOYER_TRANSFER", "EPF_EMPLOYER_TRANSFER")),
 )
 
-DEFAULT_CONTENT_TYPES: dict[str, str] = {
-    "json": "application/json",
-    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "pdf": "application/pdf",
-}
-PAY_BILL_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
-TREASURY_FACE_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
-
-
-def _money(value: Any) -> Decimal:
-    return Decimal(str(value)).quantize(_TWO_PLACES)
-
-
-def _month_end(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
-
-
-def _period_label(year: int, month: int) -> str:
-    return date(year, month, 1).strftime("%B %Y")
-
-
-async def _require_posted_run(
-    session: AsyncSession,
-    ctx: ReportContext,
-) -> tuple[PayrollRun, Any, PayrollPeriod, Organization]:
-    run = await session.get(PayrollRun, ctx.posted_run_id)
-    if run is None or run.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll run not found.")
-    if run.status != "posted":
-        raise ConflictError(
-            f"Payroll run must be posted to generate reports; found {run.status!r}.",
-            details={"run_id": str(run.id), "status": run.status},
-        )
-    if run.current_version_id is None:
-        raise ConflictError("Posted payroll run has no current_version_id.")
-
-    version = (
-        (
-            await session.execute(
-                sa.select(payroll_run_versions).where(
-                    payroll_run_versions.c.id == run.current_version_id,
-                    payroll_run_versions.c.organization_id == ctx.organization_id,
-                )
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if version is None:
-        raise ConflictError("Posted payroll run version not found.")
-
-    period = await session.get(PayrollPeriod, run.period_id)
-    if period is None or period.organization_id != ctx.organization_id:
-        raise NotFoundError("Payroll period not found.")
-
-    org = await session.get(Organization, ctx.organization_id)
-    if org is None:
-        raise NotFoundError("Organization not found.")
-
-    return run, version, period, org
-
-
-async def _load_result_rows(
-    session: AsyncSession,
-    *,
-    organization_id: UUID,
-    run_version_id: UUID,
-) -> list[dict[str, Any]]:
-    results = (
-        (
-            await session.execute(
-                sa.select(payroll_employee_results)
-                .where(
-                    payroll_employee_results.c.organization_id == organization_id,
-                    payroll_employee_results.c.run_version_id == run_version_id,
-                )
-                .order_by(payroll_employee_results.c.employee_number)
-            )
-        )
-        .mappings()
-        .all()
-    )
-
-    if not results:
-        return []
-
-    result_ids = [row["id"] for row in results]
-    lines = (
-        (
-            await session.execute(
-                sa.select(payroll_result_lines)
-                .where(
-                    payroll_result_lines.c.organization_id == organization_id,
-                    payroll_result_lines.c.employee_result_id.in_(result_ids),
-                )
-                .order_by(
-                    payroll_result_lines.c.employee_result_id,
-                    payroll_result_lines.c.sequence,
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
-
-    lines_by_result: dict[UUID, list[Any]] = {rid: [] for rid in result_ids}
-    for line in lines:
-        lines_by_result[line["employee_result_id"]].append(line)
-
-    out: list[dict[str, Any]] = []
-    for row in results:
-        out.append({"result": row, "lines": lines_by_result.get(row["id"], [])})
-    return out
+PAY_BILL_FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
+TREASURY_FACE_FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 
 
 async def _resolve_name_and_designation(
@@ -246,14 +137,14 @@ def _line_amount_by_code(lines: list[Any]) -> dict[str, Decimal]:
         trace = line["trace"] or {}
         if trace.get("classification") == "informational" or code == "FOREGONE_HRA":
             continue
-        amounts[code] = amounts.get(code, _ZERO) + _money(line["amount"])
+        amounts[code] = amounts.get(code, ZERO) + money(line["amount"])
     return amounts
 
 
 def _sum_codes(amounts: dict[str, Decimal], codes: tuple[str, ...]) -> Decimal:
-    total = _ZERO
+    total = ZERO
     for code in codes:
-        total += amounts.get(code, _ZERO)
+        total += amounts.get(code, ZERO)
     return total
 
 
@@ -452,8 +343,8 @@ class PayBillBuilder:
     """Build the Pay Bill register DTO from a posted run snapshot."""
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> PayBillDTO:
-        _run, version, period, org = await _require_posted_run(session, ctx)
-        packed = await _load_result_rows(
+        _run, version, period, org = await require_posted_run(session, ctx)
+        packed = await load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
@@ -473,14 +364,14 @@ class PayBillBuilder:
                 snapshot=snapshot,
             )
 
-        as_of = _month_end(period.period_year, period.period_month)
+        as_of = month_end(period.period_year, period.period_month)
         columns = _pay_bill_columns()
         rows: list[tuple[Any, ...]] = []
-        footer_earnings = [_ZERO] * len(_EARNING_CODES)
-        footer_earnings_total = _ZERO
-        footer_deductions = [_ZERO] * len(_DEDUCTION_COLUMN_CODES)
-        footer_deductions_total = _ZERO
-        footer_net = _ZERO
+        footer_earnings = [ZERO] * len(_EARNING_CODES)
+        footer_earnings_total = ZERO
+        footer_deductions = [ZERO] * len(_DEDUCTION_COLUMN_CODES)
+        footer_deductions_total = ZERO
+        footer_net = ZERO
 
         for item in packed:
             result = item["result"]
@@ -491,11 +382,11 @@ class PayBillBuilder:
                 employee_id=result["employee_id"],
                 as_of=as_of,
             )
-            earning_vals = [_money(amounts.get(code, _ZERO)) for code in _EARNING_CODES]
-            earnings_total = _money(result["earnings_total"])
+            earning_vals = [money(amounts.get(code, ZERO)) for code in _EARNING_CODES]
+            earnings_total = money(result["earnings_total"])
             deduction_vals = [_sum_codes(amounts, codes) for _key, codes in _DEDUCTION_COLUMN_CODES]
-            deductions_total = _money(result["deductions_total"])
-            net_payable = _money(result["net_payable"])
+            deductions_total = money(result["deductions_total"])
+            net_payable = money(result["net_payable"])
 
             rows.append(
                 (
@@ -522,14 +413,14 @@ class PayBillBuilder:
             "TOTAL",
             None,
             None,
-            *(_money(v) for v in footer_earnings),
-            _money(footer_earnings_total),
-            *(_money(v) for v in footer_deductions),
-            _money(footer_deductions_total),
-            _money(footer_net),
+            *(money(v) for v in footer_earnings),
+            money(footer_earnings_total),
+            *(money(v) for v in footer_deductions),
+            money(footer_deductions_total),
+            money(footer_net),
         )
 
-        net_words = amount_in_words(_money(footer_net))
+        net_words = amount_in_words(money(footer_net))
         snapshot_note = (
             f"engine_version={version['engine_version']}; template_version={ctx.template_version}"
         )
@@ -539,7 +430,7 @@ class PayBillBuilder:
             template_version=ctx.template_version,
             title="Payroll Register — Pay Bill",
             organization_name=org.name,
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=(
                 TableSection(
                     title="Register",
@@ -582,7 +473,7 @@ class PayBillBuilder:
         component_codes = {item["code"] for group in groups.values() for item in group}
         rows: list[tuple[Any, ...]] = []
         footer: dict[str, Decimal] = {
-            column.key: _ZERO for column in columns if column.kind is ColumnKind.MONEY
+            column.key: ZERO for column in columns if column.kind is ColumnKind.MONEY
         }
 
         for item in packed:
@@ -602,13 +493,13 @@ class PayBillBuilder:
                 "gpf_account_number": str(identity.get("gpf_account_number") or ""),
             }
             for code in component_codes:
-                values[_component_key(code)] = _money(amounts.get(code, _ZERO))
+                values[_component_key(code)] = money(amounts.get(code, ZERO))
 
             group_totals = {
-                classification: _money(
+                classification: money(
                     sum(
-                        (amounts.get(component["code"], _ZERO) for component in components),
-                        _ZERO,
+                        (amounts.get(component["code"], ZERO) for component in components),
+                        ZERO,
                     )
                 )
                 for classification, components in groups.items()
@@ -618,7 +509,7 @@ class PayBillBuilder:
                     "earnings_total": group_totals["earning"],
                     "employer_share_total": group_totals["employer_contribution"],
                     "gross_adjustment_total": group_totals["gross_adjustment"],
-                    "gross_bill": _money(
+                    "gross_bill": money(
                         group_totals["earning"]
                         + group_totals["employer_contribution"]
                         + group_totals["gross_adjustment"]
@@ -628,17 +519,17 @@ class PayBillBuilder:
                     "external_recovery_total": group_totals["external_recovery"],
                 }
             )
-            values["deductions_total"] = _money(
+            values["deductions_total"] = money(
                 values["ag_total"] + values["treasury_total"] + values["external_recovery_total"]
             )
-            values["net_payable"] = _money(values["gross_bill"] - values["deductions_total"])
+            values["net_payable"] = money(values["gross_bill"] - values["deductions_total"])
 
             expected = {
-                "earnings_total": _money(result["earnings_total"]),
-                "employer_share_total": _money(result["employer_contribution_total"]),
-                "gross_bill": _money(result["gross_total"]),
-                "deductions_total": _money(result["deductions_total"]),
-                "net_payable": _money(result["net_payable"]),
+                "earnings_total": money(result["earnings_total"]),
+                "employer_share_total": money(result["employer_contribution_total"]),
+                "gross_bill": money(result["gross_total"]),
+                "deductions_total": money(result["deductions_total"]),
+                "net_payable": money(result["net_payable"]),
             }
             mismatches = {
                 key: {"visible": str(values[key]), "posted": str(posted)}
@@ -684,7 +575,7 @@ class PayBillBuilder:
             template_version=ctx.template_version,
             title="Payroll Register — Pay Bill",
             organization_name=organization_name,
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=(
                 TableSection(
                     title="Register",
@@ -714,7 +605,7 @@ class TreasuryFaceBuilder:
     """Build the Treasury Face summary DTO from a posted run snapshot."""
 
     async def build(self, session: AsyncSession, ctx: ReportContext) -> TreasuryFaceDTO:
-        _run, version, period, org = await _require_posted_run(session, ctx)
+        _run, version, period, org = await require_posted_run(session, ctx)
         snapshot = None
         if ctx.template_version == "v2":
             snapshot = await load_report_snapshot(
@@ -722,25 +613,25 @@ class TreasuryFaceBuilder:
                 organization_id=ctx.organization_id,
                 run_version_id=version["id"],
             )
-        packed = await _load_result_rows(
+        packed = await load_result_rows(
             session,
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
         )
 
-        earnings_total = _ZERO
-        employer_share = _ZERO
-        gross_adjustments = _ZERO
-        ag_deductions = _ZERO
-        treasury_deductions = _ZERO
-        external_recoveries = _ZERO
-        net_payable = _ZERO
+        earnings_total = ZERO
+        employer_share = ZERO
+        gross_adjustments = ZERO
+        ag_deductions = ZERO
+        treasury_deductions = ZERO
+        external_recoveries = ZERO
+        net_payable = ZERO
 
         for item in packed:
             result = item["result"]
-            earnings_total += _money(result["earnings_total"])
-            employer_share += _money(result["employer_contribution_total"])
-            net_payable += _money(result["net_payable"])
+            earnings_total += money(result["earnings_total"])
+            employer_share += money(result["employer_contribution_total"])
+            net_payable += money(result["net_payable"])
             for line in item["lines"]:
                 code = str(line["component_code"])
                 trace = line["trace"] or {}
@@ -749,7 +640,7 @@ class TreasuryFaceBuilder:
                 # Trace-aware normalization ("AG_deduction" → "ag_deduction"),
                 # identical to the Pay Bill grouping path.
                 classification = _line_classification(line)
-                amount = _money(line["amount"])
+                amount = money(line["amount"])
                 if classification == "gross_adjustment":
                     gross_adjustments += amount
                 elif classification == "ag_deduction":
@@ -763,18 +654,18 @@ class TreasuryFaceBuilder:
         # + gross adjustments. Omitting gross adjustments here would silently
         # break "gross − deductions = net" as soon as a gross_adjustment
         # component (e.g. DA_DIFFERENCE) posts.
-        gross_bill = _money(earnings_total + employer_share + gross_adjustments)
-        total_deductions = _money(ag_deductions + treasury_deductions + external_recoveries)
-        employer_share = _money(employer_share)
-        gross_adjustments = _money(gross_adjustments)
-        net_payable = _money(net_payable)
-        ag_deductions = _money(ag_deductions)
-        treasury_deductions = _money(treasury_deductions)
-        external_recoveries = _money(external_recoveries)
+        gross_bill = money(earnings_total + employer_share + gross_adjustments)
+        total_deductions = money(ag_deductions + treasury_deductions + external_recoveries)
+        employer_share = money(employer_share)
+        gross_adjustments = money(gross_adjustments)
+        net_payable = money(net_payable)
+        ag_deductions = money(ag_deductions)
+        treasury_deductions = money(treasury_deductions)
+        external_recoveries = money(external_recoveries)
 
         # Defense in depth: the face must reconcile to the posted per-employee
         # nets. Raise (not assert) so the invariant holds under `python -O`.
-        if _money(gross_bill - total_deductions) != net_payable:
+        if money(gross_bill - total_deductions) != net_payable:
             raise ConflictError(
                 "Treasury Face does not reconcile: "
                 f"gross {gross_bill} − deductions {total_deductions} "
@@ -836,7 +727,7 @@ class TreasuryFaceBuilder:
             template_version=ctx.template_version,
             title="Payroll Register — Treasury Face",
             organization_name=organization_name,
-            subtitle=_period_label(period.period_year, period.period_month),
+            subtitle=period_label(period.period_year, period.period_month),
             sections=header_section
             + (
                 TableSection(

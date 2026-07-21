@@ -13,16 +13,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id
 from app.auth.principal import AuthPrincipal
 from app.schemas.run_results import EmployeeResultDetail, RunResultsResponse
 from app.services import run_results as run_results_service
 
 router = APIRouter(tags=["payroll-run-results"])
-
-
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
 
 
 @router.get(
@@ -38,7 +34,7 @@ async def get_payroll_run_results(
 ) -> dict[str, Any]:
     return await run_results_service.get_run_results(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
         version_number=version_number,
     )
@@ -58,7 +54,7 @@ async def get_payroll_run_employee_result(
 ) -> dict[str, Any]:
     return await run_results_service.get_employee_result(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
         employee_id=employee_id,
         version_number=version_number,

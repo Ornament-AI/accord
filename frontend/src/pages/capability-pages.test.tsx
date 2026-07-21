@@ -2,9 +2,9 @@ import { screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { queryClient } from "@/lib/query-client";
-import { createOrgSetupHandlers } from "@/pages/org-setup/org-setup-handlers";
 import { buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
+import { createOrgSetupHandlers } from "@/test/msw/org-setup-handlers";
 import { server } from "@/test/msw-server";
 import { renderApp } from "@/test/render-app";
 

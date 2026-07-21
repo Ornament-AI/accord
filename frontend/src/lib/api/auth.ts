@@ -1,4 +1,4 @@
-import { fetchPublicVoid } from "@/lib/api/http";
+import { fetchPublicVoid, jsonRequest } from "@/lib/api/http";
 import type { components } from "@/types/api.generated";
 
 type PasswordLoginRequest = components["schemas"]["PasswordLoginRequest"];
@@ -6,11 +6,7 @@ type MagicCodeRequest = components["schemas"]["MagicCodeRequest"];
 type MagicCodeLoginRequest = components["schemas"]["MagicCodeLoginRequest"];
 
 function postAuth(path: string, body: object): Promise<void> {
-	return fetchPublicVoid(path, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchPublicVoid(path, jsonRequest("POST", body));
 }
 
 export function loginWithPassword(body: PasswordLoginRequest): Promise<void> {

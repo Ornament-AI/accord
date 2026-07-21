@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchJson } from "@/lib/api/http";
+import { fetchJson, jsonRequest } from "@/lib/api/http";
 import type { components } from "@/types/api.generated";
 
 export type OfficeResponse = components["schemas"]["OfficeResponse"];
@@ -24,19 +24,11 @@ export function listOffices() {
 }
 
 export function createOffice(body: OfficeCreate) {
-	return fetchJson<OfficeResponse>("/api/offices", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<OfficeResponse>("/api/offices", jsonRequest("POST", body));
 }
 
 export function updateOffice(officeId: string, body: OfficeUpdate) {
-	return fetchJson<OfficeResponse>(`/api/offices/${officeId}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<OfficeResponse>(`/api/offices/${officeId}`, jsonRequest("PATCH", body));
 }
 
 export function listPosts() {
@@ -44,19 +36,11 @@ export function listPosts() {
 }
 
 export function createPost(body: PostCreate) {
-	return fetchJson<PostResponse>("/api/posts", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<PostResponse>("/api/posts", jsonRequest("POST", body));
 }
 
 export function updatePost(postId: string, body: PostUpdate) {
-	return fetchJson<PostResponse>(`/api/posts/${postId}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<PostResponse>(`/api/posts/${postId}`, jsonRequest("PATCH", body));
 }
 
 export function useOfficesList() {

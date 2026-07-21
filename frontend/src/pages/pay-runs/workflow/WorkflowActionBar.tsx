@@ -5,8 +5,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-	type PayrollRunCalculateResult,
-	type PayrollRunDetail,
 	type PayrollRunValidateResult,
 	useApprovePayrollRun,
 	usePostPayrollRun,
@@ -15,7 +13,8 @@ import {
 	useSubmitPayrollRun,
 	useValidatePayrollRun,
 	useWithdrawPayrollRun,
-} from "@/lib/api/payroll-runs";
+} from "@/lib/api/payroll-run-workflow";
+import type { PayrollRunCalculateResult, PayrollRunDetail } from "@/lib/api/payroll-runs";
 import { ApiError, getErrorMessage } from "@/lib/errors";
 
 import {

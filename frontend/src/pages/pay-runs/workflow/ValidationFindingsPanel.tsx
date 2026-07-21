@@ -4,7 +4,7 @@ import type {
 	PayrollRunValidateResult,
 	ValidationFinding,
 	ValidationFindingSeverity,
-} from "@/lib/api/payroll-runs";
+} from "@/lib/api/payroll-run-workflow";
 
 const SEVERITY_ORDER: ValidationFindingSeverity[] = ["error", "warning", "info"];
 

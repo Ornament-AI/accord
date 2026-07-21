@@ -23,12 +23,12 @@ import { useEmployeesList } from "@/lib/api/employees";
 import {
 	INPUT_KINDS,
 	type InputKind,
-	inputKindLabel,
 	type PayrollRunInputResponse,
 	useUpsertPayrollRunInput,
 } from "@/lib/api/payroll-runs";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { employeeEntityLabel } from "@/lib/entity-labels";
+import { inputKindLabel } from "@/lib/payroll-display";
 
 type UpsertInputDialogProps = {
 	open: boolean;

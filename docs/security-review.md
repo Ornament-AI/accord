@@ -5,9 +5,17 @@
 **Method:** Read-only code and migration review with file:line evidence. No code was changed.  
 **Reviewer lane:** SECURITY REVIEW (Cursor agent)
 
-This review maps each threat-model item and the nine mandated scope areas to
-**Implemented / Partial / Gap**, cites concrete evidence, and lists prioritized
-findings for a future remediation lane.
+This is a point-in-time review record. It describes the code as it stood on
+the review date. Each threat-model item and each of the nine mandated scope
+areas gets a verdict: **Implemented / Partial / Gap**. Each verdict cites
+code evidence. Findings for a future remediation lane are ranked at the end.
+File and line references are as of the review date. They may have moved
+since.
+
+Three terms show up a lot. RLS is row-level security: Postgres itself
+filters rows by tenant. A GUC is a Postgres setting; Accord binds tenant
+context in transaction-local GUCs such as `app.organization_id`. A DSN is a
+database connection string.
 
 ---
 
@@ -59,7 +67,7 @@ def rls_policy_sql(
         f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY;\n"
 ```
 
-**Intentionally non-tenant / no RLS:** `users`, `organizations`, `sessions`
+**Non-tenant by design (no RLS):** `users`, `organizations`, `sessions`
 (phase 2 creates `sessions` without `_apply_forced_rls` — see
 `c8d4e2f1a9b7…py:281–316`), and `webhook_events` (phase 5 docstring:
 “global with no RLS”).
@@ -81,26 +89,26 @@ def rls_policy_sql(
 ```
 
 **Org context from session, not request body — Implemented for ordinary
-resources.** `require_tenant_context` binds GUCs from
-`principal.organization_id` (session-derived), not from path/body
-(`backend/app/api/deps.py:101–141`). `bind_tenant_context` uses
-transaction-local `set_config(..., true)` (`backend/app/tenancy.py:47–62`).
-Org switch intentionally accepts `organization_id` in the body but
-re-validates membership before rotating
-(`backend/app/api/routes/auth.py:256–278`).
+resources.** `require_tenant_context` binds the GUCs from
+`principal.organization_id`. That value comes from the session, never from
+the path or body (`backend/app/api/deps.py:101–141`). `bind_tenant_context`
+uses transaction-local `set_config(..., true)`
+(`backend/app/tenancy.py:47–62`). The org-switch route accepts
+`organization_id` in the body by design, but it re-checks membership before
+rotating (`backend/app/api/routes/auth.py:256–278`).
 
 **Gate D cross-tenant SQL — Partial.**  
 `backend/tests/gate_d/test_sql_isolation.py` proves UPDATE/DELETE/INSERT/JOIN/
 COUNT/fail-closed/worker parity for **identity** tenant tables only
 (`organization_memberships`, `organization_settings`, `idempotency_keys` —
-lines 26–30, 138–362). It does **not** SQL-adversarially cover master-data or
-payroll tables. Broader coverage exists outside Gate D in
+lines 26–30, 138–362). It does **not** run hostile SQL against master-data or
+payroll tables. Wider coverage sits outside Gate D in
 `backend/tests/rls/test_master_data_rls.py`,
-`backend/tests/rls/test_payroll_run_rls.py`,
+`backend/tests/rls/test_payroll_run_rls.py`, and
 `backend/tests/rls/test_platform_rls.py`.  
-Threat-model suite `backend/tests/rls/test_forced_rls_coverage.py` is
-**missing**. HTTP Gate D covers switch-org isolation and documents an org-create
-finding (`backend/tests/gate_d/test_http_isolation.py:1–17`).
+The threat-model suite `backend/tests/rls/test_forced_rls_coverage.py` is
+**missing**. HTTP Gate D covers switch-org isolation. It also records an
+org-create finding (`backend/tests/gate_d/test_http_isolation.py:1–17`).
 
 ---
 
@@ -119,8 +127,8 @@ finding (`backend/tests/gate_d/test_http_isolation.py:1–17`).
 | Webhook signature + durable dedup | `verify_workos_webhook` (`webhooks.py:36–57`); INSERT claim + ON CONFLICT (`webhooks.py:86–106`); route `auth.py:305–328` | Implemented |
 
 **Gap vs threat-model proven-by:** `backend/tests/security/test_session_hardening.py`
-and `backend/tests/security/test_workos_webhooks.py` do not exist (no
-`backend/tests/security/` tree). Coverage is elsewhere
+and `backend/tests/security/test_workos_webhooks.py` do not exist (there is no
+`backend/tests/security/` tree). Coverage lives elsewhere
 (`backend/tests/auth/`, `backend/tests/gate_d/test_session_adversarial.py`).
 
 ---
@@ -145,16 +153,21 @@ Source of truth: `backend/app/auth/capabilities.py:26–83`.
 
 Audit of `@router.post|put|patch|delete` under `backend/app/api/routes/`:
 
-- **Gated:** employees, org_structure, pay_setup, payroll_runs, run_*, reports generate — all use `require_capability(...)`.
-- **Auth-only (no capability):** none for org create — `POST /api/organizations` removed (ADR 0011); bootstrap is CLI-only via `scripts/provision_organization.py`.
+- **Gated:** employees, org_structure, pay_setup, payroll_runs, run_*, and
+  reports generate — all use `require_capability(...)`.
+- **Auth-only (no capability):** none for org create — `POST /api/organizations`
+  removed (ADR 0011); bootstrap is CLI-only via
+  `scripts/provision_organization.py`.
 - **Expected exceptions:** auth logout / WorkOS webhook.
 
 ### Maker/checker (approver ≠ submitter) — Partial
 
+Maker/checker means the person who submits a run cannot approve it.
+
 - **Service:** enforced on approve and reject
   (`run_workflow.py:649–653`, `731–735`) with URN
   `urn:accord:workflow:maker_checker`.
-- **DB:** **not** enforced. Model states explicitly:
+- **DB:** **not** enforced. The model states this explicitly:
 
 ```140:145:backend/app/models/platform.py
 class PayrollApproval(...):
@@ -164,8 +177,9 @@ class PayrollApproval(...):
     """
 ```
 
-Scope asked for service **and** DB — DB side is a Gap relative to that bar
-(cross-row constraint would need a trigger/function, not a simple CHECK).
+The review scope asked for the rule in the service **and** the database. The
+DB side is a Gap against that bar. A cross-row rule would need a trigger or
+function, not a simple CHECK.
 
 ---
 
@@ -173,26 +187,27 @@ Scope asked for service **and** DB — DB side is a Gap relative to that bar
 
 ### Verdict: Partial
 
-**Triggers — Implemented.** Phase 4 creates `accord_forbid_update_delete` with
-escape hatch GUC `accord.allow_immutable_ddl`, attached to
-`payroll_run_versions`, `payroll_employee_results`, `payroll_result_lines`
+**Triggers — Implemented.** Phase 4 creates `accord_forbid_update_delete`
+with the escape-hatch GUC `accord.allow_immutable_ddl`, attached to
+`payroll_run_versions`, `payroll_employee_results`, and `payroll_result_lines`
 (`021faa7dd776…py:55–94`, `417`). Phase 5 reuses the same function for
 append-only `audit_events` / `payroll_approvals` (`a9f3c2e81b04…py:67–77`).
 
 **Runtime-role grants — Partial.**  
 `REVOKE UPDATE, DELETE` is applied for `audit_events` (and DELETE for
-`outbox_events`) in `a9f3c2e81b04…py:54–64`. **No** corresponding
-`REVOKE UPDATE/DELETE` on the three payroll snapshot tables — they rely on
-triggers only while default privileges still grant DML to `accord_app` /
+`outbox_events`) in `a9f3c2e81b04…py:54–64`. There is **no** matching
+`REVOKE UPDATE/DELETE` on the three payroll snapshot tables. They rely on
+triggers alone, while default grants still give DML to `accord_app` /
 `accord_worker` (`create_roles.sql:76–77`).
 
 **Escape-hatch scoping — Partial / weak.**  
-Any session that can `SET LOCAL accord.allow_immutable_ddl = 'on'` bypasses the
-trigger (`021faa7dd776…py:72–76`; proven in
-`test_payroll_run_rls.py:354–368`). Combined with retained UPDATE privileges on
-snapshot tables, a compromised API SQL path could mutate posted rows. Correct
-defense-in-depth is REVOKE UPDATE/DELETE on those tables from runtime roles
-(escape hatch usable only by migrator / SECURITY DEFINER).
+Any session that can run `SET LOCAL accord.allow_immutable_ddl = 'on'` gets
+past the trigger (`021faa7dd776…py:72–76`; proven in
+`test_payroll_run_rls.py:354–368`). Snapshot tables also keep their UPDATE
+grants. So a compromised API SQL path could change posted rows. The right
+defense in depth is to REVOKE UPDATE/DELETE on those tables from the runtime
+roles. Then only the migrator or a SECURITY DEFINER path could use the escape
+hatch.
 
 ---
 
@@ -200,9 +215,13 @@ defense-in-depth is REVOKE UPDATE/DELETE on those tables from runtime roles
 
 ### Verdict: Partial
 
+Background: `SET LOCAL` GUCs die when a transaction ends. A command that
+commits mid-flight must bind the tenant context again. If it does not, every
+later tenant-scoped statement runs blind under forced RLS.
+
 **Claim-path rebind — Implemented (no pre-executor window).**  
-Before the mid-command commit that publishes the `in_progress` lease, GUCs are
-snapshotted and rebound immediately after commit:
+The mid-command commit publishes the `in_progress` lease. The GUCs are saved
+before that commit and rebound right after it:
 
 ```124:128:backend/app/services/idempotency.py
     if claimed_id is not None:
@@ -216,7 +235,7 @@ snapshotted and rebound immediately after commit:
 
 **Post-executor / failure path — Gap (High).**  
 `_execute_claimed` rolls back or relies on executor-internal commits, then
-reads/updates `idempotency_keys` **without** rebinding tenant GUCs:
+reads and updates `idempotency_keys` **without** rebinding the tenant GUCs:
 
 ```255:277:backend/app/services/idempotency.py
 async def _execute_claimed(...):
@@ -231,14 +250,14 @@ async def _execute_claimed(...):
 
 Workflow/posting executors call `await db.commit()` (e.g.
 `run_workflow.py:689`), which clears `SET LOCAL`. Under production
-`accord_app` + forced RLS, the follow-up `get` can see **zero rows**, leaving
-the key stuck `in_progress` and surfacing
-`ConflictError("Idempotency key disappeared...")` after a successful command.
+`accord_app` + forced RLS, the follow-up `get` can see **zero rows**. The key
+then sticks in `in_progress`. A command that in fact succeeded then surfaces
+`ConflictError("Idempotency key disappeared...")`.
 
-Unit/API tests typically connect as a superuser/table-owner DSN
-(`backend/tests/conftest.py:15–16`, CI `postgres:postgres` in
-`.github/workflows/ci.yml:86–88`) and therefore **bypass RLS**, masking this
-bug.
+Unit/API tests usually connect with a superuser/table-owner DSN
+(`backend/tests/conftest.py:15–16`; CI uses `postgres:postgres` in
+`.github/workflows/ci.yml:86–88`). Those connections **bypass RLS**. That
+masks this bug.
 
 ---
 
@@ -263,25 +282,26 @@ bug.
 **Fixtures — Implemented (synthetic).**  
 `fixtures/sanitized/june-2026/` uses documented fake namespaces
 (`README.md:32–44`: `ZZZPZ####Z` PAN, `9000…` PRAN, `SYNTH` sevarth, etc.).
-No evidence of real workbook PII in `fixtures/`. Full git-history forensic
-scan for leaked real PAN/account corpora was **not** run in this lane
-(unverified beyond current tree + naming conventions).
+No sign of real workbook PII in `fixtures/`. A full scan of git history for
+leaked real PAN/account data was **not** run in this lane. That part stays
+unverified beyond the current tree and its naming rules.
 
 **API masking + capability-gated reveal — Partial.**  
 `mask_value` / `profile_from_row(..., reveal=)` /
 `bank_from_row(..., reveal=)` in `schemas/employees.py:37–45`, `259–283`,
 `319–323`. Routes gate `reveal=true` on `reveal_sensitive_fields`
-(`employees.py:43–49`, `78–126`). Create/detail default `reveal=False`
+(`employees.py:43–49`, `78–126`). Create/detail default to `reveal=False`
 (`services/employees.py:240`, `463–468`).
 
 **Audited reveal — Gap.**  
-Threat model / security.md require a separate audited reveal action. No
-`AuditEvent` (or equivalent) is written when `reveal=true` is used — grep of
-`backend/app` shows capability check only, no reveal audit event.
+The threat model and security.md require a separate audited reveal action.
+No `AuditEvent` (or equivalent) is written when `reveal=true` is used. A grep
+of `backend/app` shows a capability check only, and no reveal audit event.
 
-**Reports intentionally unmasked for statutory/payment** — documented in
-`reports/families/statutory.py` and `payments.py` (full PAN / account for
-authority/payment files). Access is via artifact download controls (see §8).
+**Reports are unmasked for statutory/payment output, by design.** This is
+noted in `reports/families/statutory.py` and `payments.py` (full PAN /
+account for authority/payment files). Access goes through the artifact
+download controls (see §8).
 
 ---
 
@@ -292,10 +312,10 @@ authority/payment files). Access is via artifact download controls (see §8).
 - Opaque keys `{organization_id}/{object_uuid}`:
   `storage/protocol.py:53–105`, `build_object_key` at 99–105;
   used in `artifacts.py:116`.
-- Download authorized per-request with tenant context + `generate_reports`
-  capability: `artifacts.py` routes `97–114`; service
+- Downloads are authorized per request with tenant context plus the
+  `generate_reports` capability: `artifacts.py` routes `97–114`; service
   `stream_download` `243–285`.
-- Download audited as `artifact.download` before streaming
+- Each download is audited as `artifact.download` before streaming
   (`artifacts.py:264–280`).
 - Enumeration resistance: UUID object segment; metadata under forced RLS
   (`export_artifacts` RLS at phase 5:359).
@@ -314,9 +334,9 @@ authority/payment files). Access is via artifact download controls (see §8).
 | CI has **no** `pip-audit` / `npm audit` / image scan / SBOM steps | `.github/workflows/ci.yml` (full file) | Medium vs security.md §Dependency scanning |
 | Threat-model proven-by suites for supply chain are CI artifacts only | Not present in workflow | Partial |
 
-No obviously ancient abandoned pins stood out in a static read of current
-version numbers (FastAPI 0.139, React 19.2, Vite 8.1, etc.). This lane did
-**not** run live advisory databases.
+No clearly stale or dead pins stood out in a static read of current version
+numbers (FastAPI 0.139, React 19.2, Vite 8.1, etc.). This lane did **not**
+query live advisory databases.
 
 ---
 
@@ -324,51 +344,55 @@ version numbers (FastAPI 0.139, React 19.2, Vite 8.1, etc.). This lane did
 
 ### 1. Session fixation / hijack — Partial
 
-Implemented: opaque DB sessions, HttpOnly + SameSite=Lax, rotation on privilege
-boundaries, revocation, idle/absolute TTL, production secret checks.  
-Gaps: Secure cookie tied only to `is_production` (`session.py:83`); no
-synchronizer CSRF (amplifies session abuse — see #2); missing named security
-suite from threat model.
+In place: opaque DB sessions, HttpOnly + SameSite=Lax, rotation at privilege
+boundaries, revocation, idle/absolute TTL, and production secret checks.
+Gaps: the Secure cookie flag is tied only to `is_production`
+(`session.py:83`); there is no synchronizer CSRF token, which makes session
+abuse worse (see #2); the named security suite from the threat model is
+missing.
 
 ### 2. CSRF — Gap
 
-Threat model mandates SameSite=Lax **plus** synchronizer CSRF token on
+The threat model mandates SameSite=Lax **plus** a synchronizer CSRF token on
 state-changing routes (`threat-model.md:37–42`, `57–64`).  
-Codebase has OAuth `state` signing only (`session.py:267–285`). No CSRF
-middleware, no CSRF header check, no `backend/tests/security/test_csrf.py`.
-CORS allows credentials (`main.py:297–303`) without a CSRF token header.
+The code has OAuth `state` signing only (`session.py:267–285`). There is no
+CSRF middleware, no CSRF header check, and no
+`backend/tests/security/test_csrf.py`. CORS allows credentials
+(`main.py:297–303`) without a CSRF token header.
 
 ### 3. WorkOS webhooks — Implemented
 
-Signature verification + timestamp tolerance + durable `webhook_events` dedup
-with rollback-safe claims (`webhooks.py`, `auth.py:305+`).
+The signature check, timestamp skew check, and durable `webhook_events`
+dedup are all in place, with rollback-safe claims (`webhooks.py`,
+`auth.py:305+`).
 
 ### 4. Cross-tenant IDOR — Partial
 
-Strong forced RLS + SET LOCAL + Gate D SQL/HTTP for identity tables and org
-switch. Gaps: Gate D SQL not extended to all tenant tables; unlimited org
+Strong forced RLS + `SET LOCAL` + Gate D SQL/HTTP for identity tables and
+org switch. Gaps: Gate D SQL does not reach all tenant tables; unlimited org
 create; missing `test_forced_rls_coverage.py`.
 
 ### 5. Privilege escalation — Partial
 
-Capability matrix mostly matches ADR; mutating payroll/master routes gated.
-Gaps: unauthenticated-capability org create; platform support display-only with
-no break-glass; reverse folded into `post_run`.
+The capability matrix mostly matches the ADR. Mutating payroll/master routes
+are gated. Gaps: org create with no capability check; platform support is
+display-only with no break-glass; reverse is folded into `post_run`.
 
 ### 6. Maker/checker — Partial
 
-Service + tests enforce submitter ≠ approver/rejector. No DB-level enforcement.
-Poster≠submitter intentionally not required (`run_posting.py:31–33`).
+Service + tests enforce submitter ≠ approver/rejector. The database does not
+enforce it. Poster ≠ submitter is not required, by design
+(`run_posting.py:31–33`).
 
 ### 7. Posted-data tampering — Partial
 
-Triggers + API reverse-new-version path. Missing runtime REVOKE on snapshot
-tables; escape hatch usable whenever `SET LOCAL` is possible.
+Triggers and the API reverse-new-version path exist. Missing: runtime REVOKE
+on snapshot tables. The escape hatch works wherever `SET LOCAL` is possible.
 
 ### 8. Sensitive-PII — Partial
 
-Masking + capability reveal + synthetic fixtures. Missing reveal audit and
-named `test_pii_masking.py` / `pii_fixture_guard.sh`.
+Masking + capability reveal + synthetic fixtures exist. Missing: a reveal
+audit event and the named `test_pii_masking.py` / `pii_fixture_guard.sh`.
 
 ### 9. Object storage — Implemented
 
@@ -379,21 +403,21 @@ See §8 above.
 `is_platform_admin` / `platform_support_administrator` are display-only with
 **no** capability bypass and **no** break-glass session/TTL/audit path
 (`capabilities.py:17–18`, `principal.py:70–74`).  
-`backend/tests/security/test_support_break_glass.py` missing. Relative to
-threat model / security.md support policy, this is unimplemented (fail-closed
-for support access is safer than silent bypass, but the mandated controlled
-break-glass control is absent).
+`backend/tests/security/test_support_break_glass.py` is missing. Against the
+threat model and the security.md support policy, this control is not built.
+Failing closed is safer than a silent bypass. Still, the mandated controlled
+break-glass path is absent.
 
 ### 11. Supply chain — Partial
 
-Pins present; CI scanning/SBOM required by security.md not wired in
-`.github/workflows/ci.yml`.
+Pins are present. The CI scan/SBOM steps that security.md requires are not
+wired in `.github/workflows/ci.yml`.
 
 ### 12. Backup / restore — Gap
 
-Operational expectations exist in security.md; no
-`backend/tests/security/test_backup_restore_rls.py` and no in-repo restore
-rehearsal evidence reviewed in this lane.
+The ops expectations exist in security.md. There is no
+`backend/tests/security/test_backup_restore_rls.py`. No in-repo restore
+rehearsal evidence was reviewed in this lane.
 
 ---
 
@@ -416,11 +440,13 @@ rehearsal evidence reviewed in this lane.
 | **Info** | `frontend/package.json:53,57` | `msw` caret; TypeScript 7 RC | Pin msw; track RC → stable |
 | **Info** | CI/API tests use BYPASSRLS-capable DB users | Masks RLS regressions (incl. idempotency bug) | Run a job with `DATABASE_URL` as `accord_app` |
 
+(SoD = segregation of duties.)
+
 ---
 
 ## Verified controls (summary)
 
-The following controls were confirmed present in code/migrations with file:line
+These controls were confirmed in code and migrations, with file:line
 evidence:
 
 1. **Forced RLS** ENABLE+FORCE via `rls_policy_sql` on all tenant-owned tables
@@ -429,20 +455,21 @@ evidence:
    in `create_roles.sql`.
 3. **Tenant GUC binding** uses transaction-local `set_config(..., true)` from
    session `active_organization_id`, not from ordinary resource bodies.
-4. **WorkOS AuthKit path** with opaque HttpOnly Lax session cookies, DB session
-   store, rotation, revocation, idle/absolute expiry, production fail-closed
-   settings validator.
+4. **WorkOS AuthKit path** with opaque HttpOnly Lax session cookies, a DB
+   session store, rotation, revocation, idle/absolute expiry, and fail-closed
+   production settings checks.
 5. **Webhook** signature verification + durable event-id dedup.
 6. **Capability matrix** largely aligned with ADR 0002; payroll/master mutating
    routes use `require_capability`.
-7. **Maker/checker** submitter≠approver/rejector in workflow service.
+7. **Maker/checker** submitter ≠ approver/rejector in the workflow service.
 8. **Immutability triggers** on posted snapshot tables + append-only audit
-   tables; audit table DML revoked appropriately.
-9. **Idempotency claim path** snapshots/rebinds GUCs across the mid-command
-   commit **before** executor (post-executor gap called out above).
+   tables; audit table DML is revoked.
+9. **Idempotency claim path** saves and rebinds GUCs across the mid-command
+   commit, **before** the executor runs. The post-executor gap is called out
+   above.
 10. **Structured log redaction** for pan/pran/account_number/token/secret/cookie
     (and related keys).
-11. **Employee PII masking** by default with capability-gated reveal flag.
+11. **Employee PII masking** by default with a capability-gated reveal flag.
 12. **Synthetic sanitized fixtures**; gitignore blocks `.env` and real workbooks.
 13. **Object storage** opaque tenant-prefixed keys; authorized, audited downloads.
 
@@ -466,12 +493,13 @@ evidence:
 
 ## Unverified in this lane
 
-- Full `git log -p` / secret-scanning of entire history for real PAN/account
-  leakage (current tree fixtures look synthetic).
-- Live `pip-audit` / `npm audit` vulnerability results.
-- Production deploy TLS/HSTS/backup encryption (ops controls outside app code).
-- Runtime confirmation of the idempotency RLS bug against a true `accord_app`
-  DSN (static analysis + test DSN evidence only).
+- Full `git log -p` / secret-scanning of the whole history for real
+  PAN/account leaks (current tree fixtures look synthetic).
+- Live `pip-audit` / `npm audit` results.
+- Production deploy TLS/HSTS/backup encryption. These are ops controls
+  outside the app code.
+- Runtime proof of the idempotency RLS bug against a true `accord_app` DSN.
+  This lane has static analysis and test DSN evidence only.
 
 ---
 

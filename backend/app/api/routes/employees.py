@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError as PydanticValidationError
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.auth.errors import CapabilityDeniedError
 from app.auth.principal import AuthPrincipal
 from app.exceptions import ValidationError
@@ -30,14 +30,6 @@ from app.services import employees as employees_service
 from app.timezone import current_ist_date
 
 router = APIRouter(prefix="/employees", tags=["employees"])
-
-
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
-
-
-def _user_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.user_id)
 
 
 def _require_reveal(
@@ -59,8 +51,8 @@ async def create_employee(
 ) -> EmployeeDetail:
     return await employees_service.create_employee(
         db,
-        organization_id=_org_id(tenant),
-        created_by=_user_id(tenant),
+        organization_id=tenant_org_id(tenant),
+        created_by=tenant_user_id(tenant),
         body=body,
     )
 
@@ -80,7 +72,7 @@ async def list_employees(
     _require_reveal(principal, reveal=reveal)
     return await employees_service.list_employees(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         as_of=as_of or current_ist_date(),
         search=search,
         page=page,
@@ -101,7 +93,7 @@ async def get_employee(
     _require_reveal(principal, reveal=reveal)
     return await employees_service.get_employee_detail(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
         as_of=as_of or current_ist_date(),
         reveal=reveal,
@@ -120,7 +112,7 @@ async def list_employee_versions(
     _require_reveal(principal, reveal=reveal)
     return await employees_service.get_employee_versions(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
         kind=kind,
         reveal=reveal,
@@ -140,8 +132,8 @@ async def create_employee_version(
     body: dict[str, Any],
 ) -> Any:
     """Append a new version for ``kind`` ∈ profile|posting|pay|bank."""
-    organization_id = _org_id(tenant)
-    created_by = _user_id(tenant)
+    organization_id = tenant_org_id(tenant)
+    created_by = tenant_user_id(tenant)
 
     def _validate(model_cls: type[Any], payload: dict[str, Any]) -> Any:
         try:

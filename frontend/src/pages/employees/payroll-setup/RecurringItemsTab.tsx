@@ -31,14 +31,14 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { parseApiDate, toApiDate } from "@/lib/api/employees";
 import {
 	type RecurringInstructionResponse,
 	useCreateRecurringInstruction,
 	useCreateRecurringInstructionVersion,
-	usePayComponentsList,
 	useRecurringInstructions,
-} from "@/lib/api/pay-setup";
+} from "@/lib/api/employee-payroll-setup";
+import { usePayComponentsList } from "@/lib/api/pay-setup";
+import { parseApiDate, toApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { payComponentEntityLabel } from "@/lib/entity-labels";
 import { ApiError, getErrorMessage } from "@/lib/errors";

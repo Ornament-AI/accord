@@ -12,7 +12,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.deps import Session, TenantCtx, require_any_capability, require_capability
+from app.api.deps import (
+    Session,
+    TenantCtx,
+    require_any_capability,
+    require_capability,
+    tenant_org_id,
+    tenant_user_id,
+)
 from app.auth.principal import AuthPrincipal
 from app.schemas.payroll_runs import (
     PayrollPeriodCreate,
@@ -33,14 +40,6 @@ from app.services import payroll_runs as payroll_runs_service
 router = APIRouter(tags=["payroll-runs"])
 
 
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
-
-
-def _user_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.user_id)
-
-
 @router.post(
     "/payroll-periods",
     response_model=PayrollPeriodResponse,
@@ -54,7 +53,7 @@ async def create_payroll_period(
 ) -> dict[str, Any]:
     return await payroll_runs_service.create_period(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         body=body,
     )
 
@@ -67,7 +66,7 @@ async def list_payroll_periods(
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.list_periods(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
     )
 
 
@@ -84,7 +83,7 @@ async def create_payroll_run(
 ) -> dict[str, Any]:
     return await payroll_runs_service.create_run(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         body=body,
     )
 
@@ -109,7 +108,7 @@ async def list_payroll_runs(
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.list_runs(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         period_id=period_id,
         status=status_filter,
     )
@@ -134,7 +133,7 @@ async def get_payroll_run(
 ) -> dict[str, Any]:
     return await payroll_runs_service.get_run(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
     )
 
@@ -151,7 +150,7 @@ async def get_payroll_run_report_metadata(
 ) -> dict[str, Any]:
     return await payroll_runs_service.get_run_report_metadata(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
     )
 
@@ -169,7 +168,7 @@ async def update_payroll_run_report_metadata(
 ) -> dict[str, Any]:
     return await payroll_runs_service.update_run_report_metadata(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
         body=body,
     )
@@ -187,7 +186,7 @@ async def get_payroll_run_report_readiness(
 ) -> dict[str, Any]:
     return await payroll_runs_service.get_report_readiness(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
     )
 
@@ -213,7 +212,7 @@ async def list_payroll_run_roster(
     ),
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.list_run_roster(
-        db, organization_id=_org_id(tenant), run_id=run_id
+        db, organization_id=tenant_org_id(tenant), run_id=run_id
     )
 
 
@@ -230,9 +229,9 @@ async def replace_payroll_run_roster(
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.replace_run_roster(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
-        actor_user_id=_user_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
         body=body,
     )
 
@@ -257,7 +256,7 @@ async def list_payroll_run_roster_history(
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.list_run_roster_history(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
     )
 
@@ -278,11 +277,11 @@ async def upsert_payroll_run_input(
     # 200 for both create and update (upsert semantics).
     return await payroll_runs_service.upsert_run_input(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
         employee_id=employee_id,
         component_code=component_code,
-        actor_user_id=_user_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
         body=body,
     )
 
@@ -299,7 +298,7 @@ async def list_payroll_run_inputs(
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.list_run_inputs(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
     )
 
@@ -318,7 +317,7 @@ async def delete_payroll_run_input(
 ) -> Response:
     await payroll_runs_service.delete_run_input(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         run_id=run_id,
         input_id=input_id,
     )

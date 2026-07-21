@@ -11,18 +11,17 @@ import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
 import { openBaseUiSelect, pickBaseUiOption, pickDateByLabel } from "@/test/helpers";
+import {
+	buildPayComponent,
+	buildRateVersion,
+	createPayComponentHandlers,
+} from "@/test/msw/pay-component-handlers";
 import { server } from "@/test/msw-server";
-
 import { CreatePayComponentDialog } from "./CreatePayComponentDialog";
 import { CreateRateVersionDialog } from "./CreateRateVersionDialog";
 import { EditPayComponentDialog } from "./EditPayComponentDialog";
 import PayComponentDetailPage from "./PayComponentDetailPage";
 import PayComponentsPage from "./PayComponentsPage";
-import {
-	buildPayComponent,
-	buildRateVersion,
-	createPayComponentHandlers,
-} from "./pay-component-handlers";
 
 const PAGE_TIMEOUT = 15_000;
 

@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id
 from app.auth.principal import AuthPrincipal
 from app.schemas.audit import (
     COMMAND_NAME_PATTERN,
@@ -21,10 +21,6 @@ from app.schemas.audit import (
 from app.services import audit_read as audit_read_service
 
 router = APIRouter(tags=["audit"])
-
-
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
 
 
 def _to_utc_naive(value: datetime) -> datetime:
@@ -67,7 +63,7 @@ async def list_audit_events(
     _validate_time_bounds(from_time, to_time)
     return await audit_read_service.list_audit_events(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         entity_type=entity_type,
         entity_id=entity_id,
         command=command,
@@ -85,7 +81,7 @@ async def get_audit_filter_options(
     db: Session,
     _: AuthPrincipal = Depends(require_capability("view_audit")),
 ) -> AuditFilterOptionsResponse:
-    return await audit_read_service.get_filter_options(db, organization_id=_org_id(tenant))
+    return await audit_read_service.get_filter_options(db, organization_id=tenant_org_id(tenant))
 
 
 @router.get("/audit-events/{event_id}", response_model=AuditEventDetailResponse)
@@ -97,6 +93,6 @@ async def get_audit_event(
 ) -> AuditEventDetailResponse:
     return await audit_read_service.get_audit_event(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         event_id=event_id,
     )

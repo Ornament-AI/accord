@@ -27,6 +27,7 @@ rows processed so the dispatcher does not stall.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import contextlib
 import os
 import socket
@@ -45,6 +46,7 @@ from app.jobs.protocol import (
     JobCancelled,
     JobHandler,
     JobHandlerRegistry,
+    JobQueue,
     LeaseLost,
     UnknownJobType,
 )
@@ -99,6 +101,7 @@ class WorkerLoop:
         idle_backoff_min: float = _DEFAULT_IDLE_BACKOFF_MIN,
         idle_backoff_max: float = _DEFAULT_IDLE_BACKOFF_MAX,
         outbox_batch_size: int = _DEFAULT_OUTBOX_BATCH_SIZE,
+        queue_factory: Callable[[UUID], JobQueue] | None = None,
     ) -> None:
         if lease_seconds < 1:
             raise ValueError("lease_seconds must be >= 1")
@@ -118,7 +121,11 @@ class WorkerLoop:
         self._idle_backoff_max = idle_backoff_max
         self._outbox_batch_size = outbox_batch_size
         self._shutdown = asyncio.Event()
-        self._base_queue = PostgresJobQueue(session_factory)
+        # Job-queue interactions go through the JobQueue protocol; the default
+        # factory yields org-scoped Postgres queues (RLS-bound, ADR 0010).
+        if queue_factory is None:
+            queue_factory = PostgresJobQueue(session_factory).for_organization
+        self._queue_factory = queue_factory
 
     def request_shutdown(self) -> None:
         """Stop claiming after the in-flight job finishes; wake idle waits."""
@@ -164,7 +171,7 @@ class WorkerLoop:
             outbox_processed += outbox_counts.get("processed", 0)
             outbox_failed += outbox_counts.get("failed", 0)
 
-            queue = self._base_queue.for_organization(org_id)
+            queue = self._queue_factory(org_id)
             try:
                 job = await queue.claim(
                     self.worker_id,
@@ -237,7 +244,7 @@ class WorkerLoop:
 
     async def _execute_claimed_job(
         self,
-        queue: PostgresJobQueue,
+        queue: JobQueue,
         job: Job,
     ) -> None:
         """Execute one claimed job; never raises into the outer loop."""
@@ -253,7 +260,7 @@ class WorkerLoop:
 
     async def _execute_claimed_job_inner(
         self,
-        queue: PostgresJobQueue,
+        queue: JobQueue,
         job: Job,
     ) -> None:
         try:
@@ -332,7 +339,7 @@ class WorkerLoop:
 
     async def _heartbeat_loop(
         self,
-        queue: PostgresJobQueue,
+        queue: JobQueue,
         job: Job,
         handler_task: asyncio.Task[dict | None],
     ) -> None:
@@ -361,7 +368,7 @@ class WorkerLoop:
 
     async def _safe_complete(
         self,
-        queue: PostgresJobQueue,
+        queue: JobQueue,
         job: Job,
         result: dict | None,
     ) -> None:
@@ -378,7 +385,7 @@ class WorkerLoop:
 
     async def _safe_fail(
         self,
-        queue: PostgresJobQueue,
+        queue: JobQueue,
         job: Job,
         *,
         error: str,
@@ -402,7 +409,7 @@ class WorkerLoop:
 
     async def _safe_acknowledge_cancel(
         self,
-        queue: PostgresJobQueue,
+        queue: JobQueue,
         job: Job,
     ) -> None:
         try:

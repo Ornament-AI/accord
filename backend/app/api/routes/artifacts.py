@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.api.responses import export_content_disposition
 from app.auth.principal import AuthPrincipal
 from app.models.platform import ExportArtifact
@@ -43,14 +43,6 @@ def get_object_storage(request: Request) -> ObjectStorage:
 ObjectStorageDep = Annotated[ObjectStorage, Depends(get_object_storage)]
 
 
-def _org_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.organization_id)
-
-
-def _user_id(tenant: TenantCtx) -> UUID:
-    return UUID(tenant.user_id)
-
-
 def _download_content_disposition(artifact: ExportArtifact) -> str:
     """Build Content-Disposition from report_type / template_version."""
     slug = f"{artifact.report_type}-{artifact.template_version}".replace("/", "-")
@@ -71,7 +63,7 @@ async def list_artifacts(
 ) -> ArtifactListPage:
     return await artifacts_service.list_artifacts(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         report_type=report_type,
         posted_run_id=posted_run_id,
         status=status,
@@ -89,7 +81,7 @@ async def get_artifact(
 ) -> ArtifactResponse:
     row = await artifacts_service.get_artifact(
         db,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         artifact_id=artifact_id,
     )
     return ArtifactResponse.model_validate(row)
@@ -110,9 +102,9 @@ async def download_artifact(
     download = await artifacts_service.stream_download(
         db,
         storage,
-        organization_id=_org_id(tenant),
+        organization_id=tenant_org_id(tenant),
         artifact_id=artifact_id,
-        actor_user_id=_user_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
     )
     artifact = download.artifact
     return StreamingResponse(

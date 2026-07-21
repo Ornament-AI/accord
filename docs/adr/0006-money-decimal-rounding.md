@@ -6,11 +6,11 @@
 
 ## Context
 
-Accord is a payroll system for Indian local-government / public-works salaried staff. Money must be exact and auditable. Binary floating point (`float` / IEEE-754) introduces representation error unacceptable for statutory deductions, GPF/NPS/EPF, and treasury remittances.
+Accord runs payroll for salaried staff in Indian local government and public works. Money must be exact and easy to audit. Binary floating point (`float` / IEEE-754) cannot store most decimal values exactly. That error is not acceptable for statutory deductions, GPF/NPS/EPF, or treasury remittances.
 
-Government payroll often rounds many components to the **nearest whole rupee**, but not every component follows the same rule. Rounding must be named, configurable per component, and recorded on every calculation trace line (ADR 0007).
+Government payroll often rounds components to the nearest **whole rupee**. But not every component follows the same rule. So each rounding rule must have a name, and each component must be able to pick its own rule in config. Every calculation trace line records the rule it used (ADR 0007).
 
-Fixture aggregates such as the Proven June 2026 invariants in [payroll-domain.md](../payroll-domain.md) must be reproducible byte-identically.
+Fixture totals must be reproducible byte for byte. One example is the Proven June 2026 invariants in [payroll-domain.md](../payroll-domain.md).
 
 ## Decision
 
@@ -22,37 +22,39 @@ Fixture aggregates such as the Proven June 2026 invariants in [payroll-domain.md
 | Python payroll domain | `decimal.Decimal` **only**. |
 | Python payroll domain | `float` is **banned** (literals, `float()` casts, and arithmetic that promotes to float). |
 
-### Automated float guard (to implement in CI)
+### Automated float guard (CI)
 
-Concrete guard (Phase 0 specifies; implementation later):
+The guard works like this:
 
-1. Maintain a path allowlist for payroll domain packages, e.g. `accord/payroll/**`, `accord/domain/payroll/**` (final package layout TBD).
-2. CI job runs an AST scan (e.g., a small `tools/check_no_float_in_payroll.py` or a Ruff/custom lint plugin) that fails if within those modules it finds:
+1. Keep a path allowlist for the payroll domain package. That package now lives at `backend/app/domain/payroll/`.
+2. A CI job runs an AST scan over those modules. The scan fails when it finds:
    - `ast.Constant` / `ast.Num` with `isinstance(value, float)`
    - calls to `float(...)`
-   - `ast.BinOp` results are not typed at AST level—so also forbid importing / using `math` functions that return float on money paths where practical; primary enforcement is no float literals and no `float()` calls
-3. Optionally forbid `from __future__ import annotations` only—no; keep focus on float.
-4. Unit test in CI: given a temporary fixture file containing `x = 1.5` or `float("1.5")` under the payroll path, the guard must exit non-zero; a clean tree exits zero.
+   - `ast.BinOp` results are not typed at the AST level. So, where practical, also forbid `math` functions that return float on money paths. The primary rule stays simple: no float literals and no `float()` calls.
+3. We considered also forbidding `from __future__ import annotations`. We do not; the guard stays focused on float.
+4. A unit test in CI proves the guard works. Given a fixture file with `x = 1.5` or `float("1.5")` under the payroll path, the guard must exit non-zero. A clean tree exits zero.
 
-This guard is mandatory before payroll calculation code merges.
+The scan is implemented as `backend/tests/domain/test_no_float_guard.py`, with the scanner in `backend/tests/domain/_float_guard.py`. (The original sketch named a `tools/check_no_float_in_payroll.py` script; the test module is the real home.)
+
+Payroll calculation code must not merge without this guard.
 
 ### API serialization
 
 - Money values in JSON are **canonical decimal strings**, never JSON numbers. Example: `"5073200.00"`.
-- Format: base-10 string with explicit scale for money (2 decimal places for final INR amounts unless a field is documented otherwise).
-- Rates are also decimal strings with a **documented scale** (recommend **4–6** decimal digits for percentage rates, e.g. `"0.1200"` for 12% stored as a fraction, or `"12.0000"` if the field is defined as percent—**field docs must state which**).
-- Parsing on input: reject JSON numbers for money/rate fields; accept only strings that parse cleanly to `Decimal`.
+- Format: a base-10 string with an explicit scale for money. Final INR amounts use 2 decimal places unless a field’s docs say otherwise.
+- Rates are also decimal strings with a **documented scale**. We recommend **4–6** decimal digits for percentage rates. A rate stored as a fraction looks like `"0.1200"` for 12%. A rate defined as a percent looks like `"12.0000"`. **The field docs must state which form applies.**
+- On input, reject JSON numbers for money and rate fields. Accept only strings that parse cleanly to `Decimal`.
 
 ### Currency and precision
 
 - **Currency:** INR.
-- **Final stored / displayed monetary amounts:** 2 decimal places (paise), unless a component’s rounding policy rounds to whole rupees (still store as `NUMERIC` with scale 2, e.g. `100.00`).
-- **Intermediate calculation context:** Python `decimal.Context(prec=28, rounding=...)` (or equivalent explicit context) during multi-step calculations **before** applying the component’s final named rounding rule.
-- Do not accumulate in float at any stage.
+- **Final stored / displayed monetary amounts:** 2 decimal places (paise). A component’s rounding policy may round to whole rupees. Even then, store the value as `NUMERIC` with scale 2, e.g. `100.00`.
+- **Intermediate calculation context:** use Python `decimal.Context(prec=28, rounding=...)` (or an equivalent explicit context) during multi-step math, **before** applying the component’s final named rounding rule.
+- Never accumulate in float at any stage.
 
 ### Named rounding modes / rules
 
-Define a registry of **named** rounding rules. Examples (names are normative for traces):
+Define a registry of **named** rounding rules. Examples follow; the names are normative for traces.
 
 | Rule name | Meaning |
 | --- | --- |
@@ -61,7 +63,7 @@ Define a registry of **named** rounding rules. Examples (names are normative for
 | `ROUND_DOWN_RUPEE` | Truncate toward zero / floor toward 0 rupees as defined when implemented—must be specified before use. |
 | `ROUND_NONE` | Intermediate-only; not allowed as final statutory output without an explicit product exception. |
 
-**Government payroll convention:** many/most salary components round to the nearest **whole rupee**, not paise. This is **not** a global hardcode. Each pay component’s effective-dated config (ADR 0005) selects which **named** rounding rule applies.
+**Government payroll convention:** many or most salary components round to the nearest **whole rupee**, not paise. This is **not** a global hardcode. Each pay component’s effective-dated config (ADR 0005) selects which **named** rounding rule applies.
 
 **Audit requirement:** every calculation trace line (ADR 0007) records:
 
@@ -71,30 +73,30 @@ Define a registry of **named** rounding rules. Examples (names are normative for
 
 ### Determinism and content hashing
 
-- Same inputs + same engine version + same component config versions ⇒ **byte-identical** canonical serialized run output and **identical content hashes**.
-- Canonical serialization for hashing: stable key ordering, decimal strings with fixed scale, UTF-8, no insignificant whitespace variance (define a canonical JSON or CBOR snapshot format when implementing).
+- Same inputs, same engine version, and same component config versions must yield **byte-identical** canonical run output and **identical content hashes**.
+- Canonical serialization for hashing means: stable key order, decimal strings with fixed scale, UTF-8, and no stray whitespace. Define a canonical JSON or CBOR snapshot format at implementation time.
 - Hash algorithm: **SHA-256** over the canonical snapshot bytes.
 - Every `payroll_run_version` records:
-  - `engine_version` (string, semver or commit-stamped engine id)
+  - `engine_version` (string; semver or a commit-stamped engine id)
   - `content_hash` (SHA-256 hex)
-  - references to source master version ids (ADR 0005)
+  - references to the source master version ids (ADR 0005)
 
-Re-running calculation on the same draft inputs must either produce the same hash or create a new run version only when inputs/config/engine differ—never silently drift.
+Re-running a calculation on the same draft inputs must give the same hash. A new run version may appear only when inputs, config, or engine differ. Output must never drift silently.
 
 ## Consequences
 
 **Positive:**
 
-- Statutory and treasury amounts remain exact and explainable.
-- Per-component rounding matches government practice without baking one rule into the engine core.
-- Float ban is enforceable in CI.
+- Statutory and treasury amounts stay exact and easy to explain.
+- Per-component rounding matches government practice. No single rule is baked into the engine core.
+- CI can enforce the float ban.
 
 **Negative / costs:**
 
-- API clients must handle decimal strings (not native JSON numbers).
-- Developers must use `Decimal` discipline; float guard may need occasional allowlist exceptions for non-money math (should be rare and outside payroll domain paths).
+- API clients must handle decimal strings, not native JSON numbers.
+- Developers must keep `Decimal` discipline. The float guard may need rare allowlist exceptions for non-money math outside payroll domain paths.
 
 **Open questions:**
 
-- Exact `decimal.Rounding` constant for each named rule when edge cases (negative recoveries) appear in workbooks.
-- Whether remittance files require whole-rupee enforcement even when internal display shows paise—confirm per treasury/AG specification.
+- The exact `decimal` rounding constant for each named rule, once edge cases (negative recoveries) appear in workbooks.
+- Whether remittance files must enforce whole rupees even when internal display shows paise. Confirm per treasury/AG specification.

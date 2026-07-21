@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchJson, fetchVoid } from "@/lib/api/http";
+import { fetchJson, fetchVoid, jsonRequest } from "@/lib/api/http";
+import { buildQueryString } from "@/lib/api/query-utils";
 import type { components } from "@/types/api.generated";
 
 export type PayrollPeriodCreate = components["schemas"]["PayrollPeriodCreate"];
@@ -81,57 +82,6 @@ export const payrollRunQueryKeys = {
 	reportReadiness: (runId: string) => ["payroll-run-report-readiness", runId] as const,
 };
 
-export function periodLabel(year: number, month: number): string {
-	return new Date(year, month - 1).toLocaleDateString("en-US", {
-		month: "long",
-		year: "numeric",
-	});
-}
-
-export function inputKindLabel(value: string): string {
-	return value
-		.split("_")
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join(" ");
-}
-
-export function statusLabel(value: string): string {
-	return value
-		.split("_")
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-		.join(" ");
-}
-
-/**
- * Format a canonical money string for display without parseFloat.
- * Accepts optional leading sign and up to 2 decimal places.
- */
-export function formatCanonicalMoney(value: string | null | undefined): string {
-	if (value == null || value === "") return "—";
-	const trimmed = value.trim();
-	const match = trimmed.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
-	if (!match) return trimmed;
-
-	const sign = match[1];
-	const intPart = match[2];
-	const frac = (match[3] ?? "00").padEnd(2, "0");
-
-	let grouped = intPart;
-	if (intPart.length > 3) {
-		const last3 = intPart.slice(-3);
-		let rest = intPart.slice(0, -3);
-		const parts: string[] = [];
-		while (rest.length > 2) {
-			parts.unshift(rest.slice(-2));
-			rest = rest.slice(0, -2);
-		}
-		if (rest) parts.unshift(rest);
-		grouped = `${parts.join(",")},${last3}`;
-	}
-
-	return `\u20B9${sign}${grouped}.${frac}`;
-}
-
 export function isCalculateAllowedStatus(status: string): boolean {
 	return status === "draft" || status === "calculated" || status === "rejected";
 }
@@ -190,28 +140,12 @@ export function parsePayrollRunVersion(value: unknown): PayrollRunCalculateResul
 	};
 }
 
-function buildQueryString(
-	params: Record<string, string | number | boolean | null | undefined>,
-): string {
-	const search = new URLSearchParams();
-	for (const [key, value] of Object.entries(params)) {
-		if (value === undefined || value === null || value === "" || value === false) continue;
-		search.set(key, String(value));
-	}
-	const qs = search.toString();
-	return qs ? `?${qs}` : "";
-}
-
 export function listPayrollPeriods() {
 	return fetchJson<PayrollPeriodResponse[]>("/api/payroll-periods");
 }
 
 export function createPayrollPeriod(body: PayrollPeriodCreate) {
-	return fetchJson<PayrollPeriodResponse>("/api/payroll-periods", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<PayrollPeriodResponse>("/api/payroll-periods", jsonRequest("POST", body));
 }
 
 export function listPayrollRuns(filters: PayrollRunFilters = {}) {
@@ -223,11 +157,7 @@ export function listPayrollRuns(filters: PayrollRunFilters = {}) {
 }
 
 export function createPayrollRun(body: PayrollRunCreate) {
-	return fetchJson<PayrollRunListItem>("/api/payroll-runs", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<PayrollRunListItem>("/api/payroll-runs", jsonRequest("POST", body));
 }
 
 export function getPayrollRun(runId: string) {
@@ -235,11 +165,10 @@ export function getPayrollRun(runId: string) {
 }
 
 export function updatePayrollRunReportMetadata(runId: string, body: PayrollRunReportMetadata) {
-	return fetchJson<PayrollRunReportMetadata>(`/api/payroll-runs/${runId}/report-metadata`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<PayrollRunReportMetadata>(
+		`/api/payroll-runs/${runId}/report-metadata`,
+		jsonRequest("PUT", body),
+	);
 }
 
 export function getPayrollRunReportReadiness(runId: string) {
@@ -259,11 +188,10 @@ export function listPayrollRunRosterHistory(runId: string) {
 }
 
 export function replacePayrollRunRoster(runId: string, body: PayrollRunRosterUpdate) {
-	return fetchJson<PayrollRunEmployeeResponse[]>(`/api/payroll-runs/${runId}/roster`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
-	});
+	return fetchJson<PayrollRunEmployeeResponse[]>(
+		`/api/payroll-runs/${runId}/roster`,
+		jsonRequest("PUT", body),
+	);
 }
 
 export function getPayrollRunResults(runId: string) {
@@ -279,11 +207,7 @@ export function upsertPayrollRunInput(
 	const encodedCode = encodeURIComponent(componentCode);
 	return fetchJson<PayrollRunInputResponse>(
 		`/api/payroll-runs/${runId}/inputs/${employeeId}/${encodedCode}`,
-		{
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(body),
-		},
+		jsonRequest("PUT", body),
 	);
 }
 
@@ -444,173 +368,5 @@ export function useCalculatePayrollRun(runId: string) {
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
 		},
-	});
-}
-
-/** Validation finding from POST /validate (OpenAPI returns untyped dict). */
-export type ValidationFindingSeverity = "error" | "warning" | "info";
-
-export type ValidationFinding = {
-	code: string;
-	severity: ValidationFindingSeverity;
-	employee_ref: string | null;
-	component_code: string | null;
-	message: string;
-	context?: Record<string, string>;
-};
-
-/** Shared summary shape returned by workflow/posting commands. */
-export type PayrollRunWorkflowSummary = {
-	id: string;
-	status: string;
-	current_version_number: number | null;
-	content_hash: string | null;
-};
-
-export type PayrollRunValidateResult = PayrollRunWorkflowSummary & {
-	findings: ValidationFinding[];
-	blocking: boolean;
-};
-
-export type PayrollRunReverseResult = PayrollRunWorkflowSummary & {
-	reversal_run_id: string;
-};
-
-export type WorkflowReasonBody = {
-	reason?: string | null;
-};
-
-export type WorkflowCommandOptions = {
-	idempotencyKey: string;
-	reason?: string | null;
-};
-
-function workflowHeaders(idempotencyKey: string, withJson = true): Record<string, string> {
-	const headers: Record<string, string> = {
-		"Idempotency-Key": idempotencyKey,
-	};
-	if (withJson) {
-		headers["Content-Type"] = "application/json";
-	}
-	return headers;
-}
-
-function invalidateRunQueries(queryClient: ReturnType<typeof useQueryClient>, runId: string): void {
-	void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.run(runId) });
-	void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
-}
-
-export function validatePayrollRun(runId: string) {
-	return fetchJson<PayrollRunValidateResult>(`/api/payroll-runs/${runId}/validate`, {
-		method: "POST",
-	});
-}
-
-export function submitPayrollRun(runId: string, options: WorkflowCommandOptions) {
-	const body: WorkflowReasonBody = { reason: options.reason ?? null };
-	return fetchJson<PayrollRunWorkflowSummary>(`/api/payroll-runs/${runId}/submit`, {
-		method: "POST",
-		headers: workflowHeaders(options.idempotencyKey),
-		body: JSON.stringify(body),
-	});
-}
-
-export function withdrawPayrollRun(runId: string, options: WorkflowCommandOptions) {
-	const body: WorkflowReasonBody = { reason: options.reason ?? null };
-	return fetchJson<PayrollRunWorkflowSummary>(`/api/payroll-runs/${runId}/withdraw`, {
-		method: "POST",
-		headers: workflowHeaders(options.idempotencyKey),
-		body: JSON.stringify(body),
-	});
-}
-
-export function approvePayrollRun(runId: string, options: WorkflowCommandOptions) {
-	const body: WorkflowReasonBody = { reason: options.reason ?? null };
-	return fetchJson<PayrollRunWorkflowSummary>(`/api/payroll-runs/${runId}/approve`, {
-		method: "POST",
-		headers: workflowHeaders(options.idempotencyKey),
-		body: JSON.stringify(body),
-	});
-}
-
-export function rejectPayrollRun(runId: string, options: WorkflowCommandOptions) {
-	const body: WorkflowReasonBody = { reason: options.reason ?? null };
-	return fetchJson<PayrollRunWorkflowSummary>(`/api/payroll-runs/${runId}/reject`, {
-		method: "POST",
-		headers: workflowHeaders(options.idempotencyKey),
-		body: JSON.stringify(body),
-	});
-}
-
-export function postPayrollRun(runId: string, idempotencyKey: string) {
-	return fetchJson<PayrollRunWorkflowSummary>(`/api/payroll-runs/${runId}/post`, {
-		method: "POST",
-		headers: workflowHeaders(idempotencyKey, false),
-	});
-}
-
-export function reversePayrollRun(
-	runId: string,
-	options: { idempotencyKey: string; reason: string },
-) {
-	return fetchJson<PayrollRunReverseResult>(`/api/payroll-runs/${runId}/reverse`, {
-		method: "POST",
-		headers: workflowHeaders(options.idempotencyKey),
-		body: JSON.stringify({ reason: options.reason }),
-	});
-}
-
-export function useValidatePayrollRun(runId: string) {
-	return useMutation({
-		mutationFn: () => validatePayrollRun(runId),
-	});
-}
-
-export function useSubmitPayrollRun(runId: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (options: WorkflowCommandOptions) => submitPayrollRun(runId, options),
-		onSuccess: () => invalidateRunQueries(queryClient, runId),
-	});
-}
-
-export function useWithdrawPayrollRun(runId: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (options: WorkflowCommandOptions) => withdrawPayrollRun(runId, options),
-		onSuccess: () => invalidateRunQueries(queryClient, runId),
-	});
-}
-
-export function useApprovePayrollRun(runId: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (options: WorkflowCommandOptions) => approvePayrollRun(runId, options),
-		onSuccess: () => invalidateRunQueries(queryClient, runId),
-	});
-}
-
-export function useRejectPayrollRun(runId: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (options: WorkflowCommandOptions) => rejectPayrollRun(runId, options),
-		onSuccess: () => invalidateRunQueries(queryClient, runId),
-	});
-}
-
-export function usePostPayrollRun(runId: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (idempotencyKey: string) => postPayrollRun(runId, idempotencyKey),
-		onSuccess: () => invalidateRunQueries(queryClient, runId),
-	});
-}
-
-export function useReversePayrollRun(runId: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (options: { idempotencyKey: string; reason: string }) =>
-			reversePayrollRun(runId, options),
-		onSuccess: () => invalidateRunQueries(queryClient, runId),
 	});
 }
