@@ -37,6 +37,8 @@ import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
 
+const SAME_AS_DESIGNATION_POST = "__same_as_designation_post__";
+
 function labelForId(
 	id: string | null | undefined,
 	labels: Record<string, string>,
@@ -89,6 +91,11 @@ export function ScheduleChangeDialog({
 		() => Object.fromEntries(posts.map((item) => [item.id, postEntityLabel(item)])),
 		[posts],
 	);
+	const payBillPostLabels = useMemo(
+		() =>
+			Object.fromEntries(posts.map((item) => [item.id, item.pay_bill_heading ?? item.designation])),
+		[posts],
+	);
 
 	const [effectiveFrom, setEffectiveFrom] = useState(todayApiDate());
 	const [changeReason, setChangeReason] = useState("");
@@ -102,15 +109,18 @@ export function ScheduleChangeDialog({
 	const [gpfJurisdiction, setGpfJurisdiction] = useState<GpfJurisdiction | "">("");
 	const [pan, setPan] = useState("");
 	const [pran, setPran] = useState("");
+	const [pensionAccount, setPensionAccount] = useState("");
 	const [gpfAccountNumber, setGpfAccountNumber] = useState("");
 	const [epfNumber, setEpfNumber] = useState("");
 	const [dateOfBirth, setDateOfBirth] = useState("");
 	const [dateOfJoining, setDateOfJoining] = useState("");
+	const [payrollExportRemark, setPayrollExportRemark] = useState("");
 	const [gpfJurisdictionError, setGpfJurisdictionError] = useState<string | null>(null);
 
 	// Posting fields
 	const [officeId, setOfficeId] = useState("");
 	const [postId, setPostId] = useState("");
+	const [payBillPostId, setPayBillPostId] = useState("");
 
 	// Pay fields
 	const [payMatrixLevel, setPayMatrixLevel] = useState("");
@@ -137,14 +147,17 @@ export function ScheduleChangeDialog({
 			setGpfJurisdiction((activeProfile.gpf_jurisdiction as GpfJurisdiction) || "");
 			setPan(activeProfile.pan ?? "");
 			setPran(activeProfile.pran ?? "");
+			setPensionAccount(activeProfile.pension_account ?? "");
 			setGpfAccountNumber(activeProfile.gpf_account_number ?? "");
 			setEpfNumber(activeProfile.epf_number ?? "");
 			setDateOfBirth(activeProfile.date_of_birth ?? "");
 			setDateOfJoining(activeProfile.date_of_joining ?? "");
+			setPayrollExportRemark(activeProfile.payroll_export_remark ?? "");
 		}
-		if (kind === "posting" && activePosting) {
-			setOfficeId(activePosting.office_id);
-			setPostId(activePosting.post_id);
+		if (kind === "posting") {
+			setOfficeId(activePosting?.office_id ?? "");
+			setPostId(activePosting?.post_id ?? "");
+			setPayBillPostId(activePosting?.pay_bill_post_id ?? "");
 		}
 		if (kind === "pay" && activePay) {
 			setPayMatrixLevel(activePay.pay_matrix_level ?? "");
@@ -168,22 +181,20 @@ export function ScheduleChangeDialog({
 		};
 
 		if (kind === "profile") {
-			if (retirementRegime === "gpf" && !gpfJurisdiction) {
-				setGpfJurisdictionError("GPF jurisdiction is required when regime is GPF");
-				return null;
-			}
 			return {
 				...base,
 				name: name.trim(),
-				sevarth_id: sevarthId.trim(),
+				sevarth_id: sevarthId.trim() || null,
 				retirement_regime: retirementRegime,
 				gpf_jurisdiction: retirementRegime === "gpf" ? gpfJurisdiction : null,
 				pan: pan.trim() || null,
 				pran: pran.trim() || null,
+				pension_account: pensionAccount.trim() || null,
 				gpf_account_number: gpfAccountNumber.trim() || null,
 				epf_number: epfNumber.trim() || null,
 				date_of_birth: dateOfBirth.trim() || null,
 				date_of_joining: dateOfJoining.trim() || null,
+				payroll_export_remark: payrollExportRemark.trim() || null,
 			};
 		}
 		if (kind === "posting") {
@@ -191,12 +202,13 @@ export function ScheduleChangeDialog({
 				...base,
 				office_id: officeId.trim(),
 				post_id: postId.trim(),
+				pay_bill_post_id: payBillPostId.trim() || null,
 			};
 		}
 		if (kind === "pay") {
 			return {
 				...base,
-				pay_matrix_level: payMatrixLevel.trim(),
+				pay_matrix_level: payMatrixLevel.trim() || null,
 				basic_pay: basicPay.trim(),
 			};
 		}
@@ -205,7 +217,7 @@ export function ScheduleChangeDialog({
 			account_number: accountNumber.trim(),
 			ifsc: ifsc.trim(),
 			bank_name: bankName.trim(),
-			branch: branch.trim(),
+			branch: branch.trim() || null,
 			is_primary_salary: true,
 		};
 	};
@@ -283,7 +295,15 @@ export function ScheduleChangeDialog({
 										onValueChange={(value) => {
 											setRetirementRegime(value as RetirementRegime);
 											setGpfJurisdictionError(null);
-											if (value !== "gpf") setGpfJurisdiction("");
+											if (value !== "gpf") {
+												setGpfJurisdiction("");
+												setGpfAccountNumber("");
+											}
+											if (value !== "nps") {
+												setPran("");
+												setPensionAccount("");
+											}
+											if (value !== "epf") setEpfNumber("");
 										}}
 										disabled={isSubmitting}
 									>
@@ -335,6 +355,50 @@ export function ScheduleChangeDialog({
 										) : null}
 									</div>
 								) : null}
+								{retirementRegime === "nps" ? (
+									<>
+										<div className="grid gap-2">
+											<Label htmlFor="schedule-pran">PRAN</Label>
+											<Input
+												id="schedule-pran"
+												value={pran}
+												onChange={(event) => setPran(event.target.value)}
+												disabled={isSubmitting}
+											/>
+										</div>
+										<div className="grid gap-2">
+											<Label htmlFor="schedule-pension-account">Pension Account</Label>
+											<Input
+												id="schedule-pension-account"
+												value={pensionAccount}
+												onChange={(event) => setPensionAccount(event.target.value)}
+												disabled={isSubmitting}
+											/>
+										</div>
+									</>
+								) : null}
+								{retirementRegime === "gpf" ? (
+									<div className="grid gap-2">
+										<Label htmlFor="schedule-gpf-account">GPF Account Number</Label>
+										<Input
+											id="schedule-gpf-account"
+											value={gpfAccountNumber}
+											onChange={(event) => setGpfAccountNumber(event.target.value)}
+											disabled={isSubmitting}
+										/>
+									</div>
+								) : null}
+								{retirementRegime === "epf" ? (
+									<div className="grid gap-2">
+										<Label htmlFor="schedule-epf-account">EPF Number</Label>
+										<Input
+											id="schedule-epf-account"
+											value={epfNumber}
+											onChange={(event) => setEpfNumber(event.target.value)}
+											disabled={isSubmitting}
+										/>
+									</div>
+								) : null}
 								<div className="grid grid-cols-2 gap-3">
 									<div className="grid gap-2">
 										<Label htmlFor="schedule-dob">Date of Birth</Label>
@@ -368,6 +432,16 @@ export function ScheduleChangeDialog({
 										value={pan}
 										onChange={(event) => setPan(event.target.value)}
 										disabled={isSubmitting}
+									/>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="schedule-payroll-export-remark">Payroll Export Remark</Label>
+									<Textarea
+										id="schedule-payroll-export-remark"
+										value={payrollExportRemark}
+										onChange={(event) => setPayrollExportRemark(event.target.value)}
+										disabled={isSubmitting}
+										rows={2}
 									/>
 								</div>
 							</>
@@ -412,6 +486,36 @@ export function ScheduleChangeDialog({
 											{posts.map((post) => (
 												<SelectItem key={post.id} value={post.id}>
 													{postEntityLabel(post)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="schedule-pay-bill-post">Pay Bill Group</Label>
+									<Select
+										value={payBillPostId || SAME_AS_DESIGNATION_POST}
+										onValueChange={(value) =>
+											setPayBillPostId(value === SAME_AS_DESIGNATION_POST ? "" : (value ?? ""))
+										}
+										disabled={isSubmitting || postingCatalogLoading}
+									>
+										<SelectTrigger id="schedule-pay-bill-post" className="w-full">
+											<SelectValue>
+												{(value: string | null) =>
+													value === SAME_AS_DESIGNATION_POST
+														? "Same as designation post"
+														: labelForId(value, payBillPostLabels, "Same as designation post")
+												}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value={SAME_AS_DESIGNATION_POST}>
+												Same as designation post
+											</SelectItem>
+											{posts.map((post) => (
+												<SelectItem key={post.id} value={post.id}>
+													{post.pay_bill_heading ?? post.designation}
 												</SelectItem>
 											))}
 										</SelectContent>

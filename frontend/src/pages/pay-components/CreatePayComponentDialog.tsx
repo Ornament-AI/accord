@@ -24,6 +24,9 @@ import {
 	CLASSIFICATIONS,
 	type Classification,
 	classificationLabel,
+	REGISTER_COLUMNS_BY_CLASSIFICATION,
+	type RegisterColumn,
+	registerColumnLabel,
 	type ScheduleKind,
 	useCreatePayComponent,
 	usePayComponentsList,
@@ -40,6 +43,7 @@ type FormState = {
 	code: string;
 	name: string;
 	classification: Classification;
+	register_column: RegisterColumn | "";
 	display_order: string;
 	employer_transfer: boolean;
 	transfer_of: string;
@@ -52,6 +56,7 @@ const emptyForm = (): FormState => ({
 	code: "",
 	name: "",
 	classification: "earning",
+	register_column: "",
 	display_order: "0",
 	employer_transfer: false,
 	transfer_of: "",
@@ -106,6 +111,7 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 				code: form.code.trim(),
 				name: form.name.trim(),
 				classification: form.classification,
+				register_column: form.register_column || null,
 				display_order: displayOrder,
 				employer_transfer: form.employer_transfer,
 				transfer_of: form.employer_transfer ? form.transfer_of || null : null,
@@ -129,6 +135,9 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 	const employerContributions = (componentsQuery.data ?? []).filter(
 		(component) => component.classification === "employer_contribution" && component.is_active,
 	);
+	const registerColumns = REGISTER_COLUMNS_BY_CLASSIFICATION[
+		form.classification
+	] as readonly RegisterColumn[];
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,6 +207,11 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 										].includes(classification)
 											? prev.transfer_of
 											: "",
+										register_column: REGISTER_COLUMNS_BY_CLASSIFICATION[classification].includes(
+											prev.register_column as never,
+										)
+											? prev.register_column
+											: "",
 									}));
 								}}
 								disabled={isSubmitting}
@@ -217,6 +231,32 @@ export function CreatePayComponentDialog({ open, onOpenChange }: CreatePayCompon
 									))}
 								</SelectContent>
 							</Select>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="create-pc-register-column">Pay Bill Column</Label>
+							<Select
+								value={form.register_column || "none"}
+								onValueChange={(value) =>
+									setField("register_column", value === "none" ? "" : (value as RegisterColumn))
+								}
+								disabled={isSubmitting || registerColumns.length === 0}
+							>
+								<SelectTrigger id="create-pc-register-column" className="w-full">
+									<SelectValue placeholder="Not shown in Pay Bill" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="none">Not shown in Pay Bill</SelectItem>
+									{registerColumns.map((column) => (
+										<SelectItem key={column} value={column}>
+											{registerColumnLabel(column)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<p className="text-xs text-muted-foreground">
+								Maps this component to its canonical Pay Bill column.
+							</p>
 						</div>
 
 						<div className="grid gap-2">

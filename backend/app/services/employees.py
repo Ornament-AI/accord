@@ -62,6 +62,7 @@ def _profile_values(profile: ProfileInput) -> dict[str, Any]:
         "gpf_account_number": profile.gpf_account_number,
         "epf_number": profile.epf_number,
         "pension_account": profile.pension_account,
+        "payroll_export_remark": profile.payroll_export_remark,
     }
 
 
@@ -69,6 +70,7 @@ def _posting_values(posting: PostingInput) -> dict[str, Any]:
     return {
         "office_id": posting.office_id,
         "post_id": posting.post_id,
+        "pay_bill_post_id": posting.pay_bill_post_id or posting.post_id,
     }
 
 
@@ -127,6 +129,13 @@ async def _validate_posting_fks(
     )
     await _require_org_entity(
         db, Post, organization_id=organization_id, entity_id=posting.post_id, label="Post"
+    )
+    await _require_org_entity(
+        db,
+        Post,
+        organization_id=organization_id,
+        entity_id=posting.pay_bill_post_id or posting.post_id,
+        label="Pay Bill post",
     )
 
 

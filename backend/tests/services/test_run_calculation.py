@@ -12,15 +12,17 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import Range
 
-from app.exceptions import ConflictError
+from app.exceptions import ConflictError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
 from app.models.employees import (
     Employee,
     employee_bank_account_versions,
     employee_pay_versions,
+    employee_posting_versions,
     employee_profile_versions,
 )
+from app.models.org_structure import Office, Post
 from app.models.pay_components import PayComponent, component_rate_versions
 from app.models.payroll_runs import (
     PayrollPeriod,
@@ -36,6 +38,7 @@ from app.models.recurring_instructions import (
     recurring_instruction_versions,
 )
 from app.services import versioning
+from app.services.report_readiness import v3_report_readiness_issues
 from app.services.run_calculation import calculate_run_command
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_organization, seed_user
@@ -61,8 +64,36 @@ async def _seed_world(session: AsyncSession) -> dict:
     await _bind(session, org.id, user.id)
 
     employee = Employee(organization_id=org.id, employee_number="E-CALC-1")
-    session.add(employee)
+    office = Office(organization_id=org.id, name="Payroll Office", jurisdiction="mumbai")
+    post = Post(
+        organization_id=org.id,
+        designation="Accounts Officer",
+        class_="Class II",
+    )
+    pay_bill_post = Post(
+        organization_id=org.id,
+        designation="Combined Accounts Establishment",
+        pay_bill_heading="Accounts and Audit Establishment",
+        class_="Class II",
+        display_order=10,
+    )
+    session.add_all([employee, office, post, pay_bill_post])
     await session.flush()
+
+    await versioning.insert_version(
+        session,
+        employee_posting_versions,
+        organization_id=org.id,
+        header_id=employee.id,
+        effective_from=date(2026, 1, 1),
+        values={
+            "office_id": office.id,
+            "post_id": post.id,
+            "pay_bill_post_id": pay_bill_post.id,
+        },
+        change_reason=None,
+        created_by=user.id,
+    )
 
     await versioning.insert_version(
         session,
@@ -82,6 +113,7 @@ async def _seed_world(session: AsyncSession) -> dict:
             "gpf_account_number": "GPF123",
             "epf_number": None,
             "pension_account": None,
+            "payroll_export_remark": "Recovery adjusted manually",
         },
         change_reason=None,
         created_by=user.id,
@@ -102,6 +134,7 @@ async def _seed_world(session: AsyncSession) -> dict:
         code="BASIC",
         name="Basic Pay",
         classification="earning",
+        register_column="basic_pay",
     )
     allowance = PayComponent(
         organization_id=org.id,
@@ -193,6 +226,7 @@ async def _seed_world(session: AsyncSession) -> dict:
         employee_id=employee.id,
         quarters_location="mumbai",
         quarters_identifier="A-1",
+        quarters_address="1 Government Colony, Mumbai",
     )
     session.add(assignment)
     await session.flush()
@@ -204,6 +238,10 @@ async def _seed_world(session: AsyncSession) -> dict:
         effective_from=date(2026, 1, 1),
         values={
             "license_fee": Decimal("500.00"),
+            "house_rent": Decimal("300.00"),
+            "service_charge": Decimal("100.00"),
+            "parking_charge": Decimal("75.00"),
+            "additional_parking_charge": Decimal("25.00"),
             "informational_hra_foregone": Decimal("2500.00"),
         },
         change_reason=None,
@@ -243,6 +281,8 @@ async def _seed_world(session: AsyncSession) -> dict:
         input_kind="override",
         amount=Decimal("2500.00"),
         reason="June override",
+        service_period_start=date(2026, 1, 1),
+        service_period_end=date(2026, 6, 30),
         created_by=user.id,
         updated_by=user.id,
     )
@@ -253,6 +293,8 @@ async def _seed_world(session: AsyncSession) -> dict:
         "org_id": org.id,
         "user_id": user.id,
         "employee_id": employee.id,
+        "post_id": post.id,
+        "pay_bill_post_id": pay_bill_post.id,
         "run_id": run.id,
         "period_id": period.id,
         "override_id": override.id,
@@ -298,6 +340,44 @@ async def test_calculate_persists_version_results_and_totals(session):
     assert version["version_number"] == 1
     assert version["content_hash"] == result["content_hash"]
     assert version["inputs_snapshot"]["period"] == "2026-06"
+    basic_catalog = next(
+        row for row in version["inputs_snapshot"]["component_catalog"] if row["code"] == "BASIC"
+    )
+    assert basic_catalog["register_column"] == "basic_pay"
+    employee_input = version["inputs_snapshot"]["employees"][0]
+    allowance_input = next(
+        item for item in employee_input["components"] if item["component_code"] == "FIXED_ALLOWANCE"
+    )
+    assert allowance_input["service_period"] == "2026-01-01/2026-06-30"
+    identity = version["inputs_snapshot"]["employee_identity"][str(world["employee_id"])]
+    assert identity["post"] == {
+        "id": str(world["post_id"]),
+        "designation": "Accounts Officer",
+        "class_name": "Class II",
+        "sanctioned_strength": None,
+        "vacant_count": None,
+        "pay_scale": None,
+        "display_order": None,
+    }
+    assert identity["pay_bill_post"] == {
+        "id": str(world["pay_bill_post_id"]),
+        "heading": "Accounts and Audit Establishment",
+        "designation": "Combined Accounts Establishment",
+        "sanctioned_strength": None,
+        "vacant_count": None,
+        "pay_scale": None,
+        "display_order": 10,
+    }
+    assert "epf_number" in identity
+    assert identity["payroll_export_remark"] == "Recovery adjusted manually"
+    recovery_sources = version["inputs_snapshot"]["recovery_sources"]
+    advance_source = next(iter(recovery_sources["advance_installments"].values()))
+    assert advance_source["sanctioned_on"] == "2026-01-01"
+    assert advance_source["installment_amount"] == "1000.00"
+    accommodation_source = next(iter(recovery_sources["accommodation_charges"].values()))
+    assert accommodation_source["quarters_address"] == "1 Government Colony, Mumbai"
+    assert accommodation_source["house_rent"] == "300.00"
+    assert accommodation_source["additional_parking_charge"] == "25.00"
 
     emp_results = (
         (
@@ -340,6 +420,8 @@ async def test_calculate_persists_version_results_and_totals(session):
 
     allowance_line = next(r for r in lines if r["component_code"] == "FIXED_ALLOWANCE")
     assert allowance_line["amount"] == Decimal("2500.00")
+    assert allowance_line["trace"]["service_period"] == "2026-01-01/2026-06-30"
+    assert allowance_line["trace"]["reason"] == "June override"
 
     foregone = next(r for r in lines if r["component_code"] == "FOREGONE_HRA")
     assert foregone["trace"]["classification"] == "informational"
@@ -350,6 +432,27 @@ async def test_calculate_persists_version_results_and_totals(session):
     assert run.status == "calculated"
     assert run.current_version_id == result["version_id"]
     assert run.lock_version == 1
+
+
+@pytest.mark.asyncio
+async def test_calculated_readiness_uses_selected_pay_bill_group(session):
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+
+    issues = await v3_report_readiness_issues(
+        session,
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+    )
+
+    assert not any(issue["code"].startswith("post_") for issue in issues)
 
 
 @pytest.mark.asyncio
@@ -492,6 +595,109 @@ async def test_override_changes_line_amount(session):
     assert overridden["totals"]["earnings_total"] == "53000.00"
     assert overridden["totals"]["net_payable"] == "51500.00"
     assert overridden["content_hash"] != baseline["content_hash"]
+
+
+@pytest.mark.asyncio
+async def test_amount_override_replaces_rate_based_calculation_with_direct_amount(session):
+    world = await _seed_world(session)
+
+    await _bind(session, world["org_id"], world["user_id"])
+    roster_row = (
+        await session.execute(
+            sa.select(PayrollRunEmployee)
+            .where(PayrollRunEmployee.run_id == world["run_id"])
+            .where(PayrollRunEmployee.employee_id == world["employee_id"])
+        )
+    ).scalar_one()
+    roster_row.da_percent = Decimal("10.00")
+    session.add(
+        PayrollRunInput(
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            employee_id=world["employee_id"],
+            component_code="DA",
+            input_kind="override",
+            amount=Decimal("6000.00"),
+            reason="Use the sanctioned fixed amount",
+            created_by=world["user_id"],
+            updated_by=world["user_id"],
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    # BASIC 50000 + allowance override 2500 + direct DA override 6000.
+    assert result["totals"]["earnings_total"] == "58500.00"
+    assert result["totals"]["net_payable"] == "57000.00"
+
+
+@pytest.mark.asyncio
+async def test_rate_override_rejects_amount_based_component(session):
+    world = await _seed_world(session)
+
+    await _bind(session, world["org_id"], world["user_id"])
+    override = await session.get(PayrollRunInput, world["override_id"])
+    assert override is not None
+    override.amount = None
+    override.rate = Decimal("0.05")
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ValidationError, match="requires an existing rate-based component"):
+        await calculate_run_command(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_rate_override_updates_existing_rate_based_component(session):
+    world = await _seed_world(session)
+
+    await _bind(session, world["org_id"], world["user_id"])
+    roster_row = (
+        await session.execute(
+            sa.select(PayrollRunEmployee)
+            .where(PayrollRunEmployee.run_id == world["run_id"])
+            .where(PayrollRunEmployee.employee_id == world["employee_id"])
+        )
+    ).scalar_one()
+    roster_row.da_percent = Decimal("10.00")
+    session.add(
+        PayrollRunInput(
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            employee_id=world["employee_id"],
+            component_code="DA",
+            input_kind="override",
+            rate=Decimal("0.20"),
+            reason="Use the approved DA rate",
+            created_by=world["user_id"],
+            updated_by=world["user_id"],
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    # DA remains percentage-based: 20% of BASIC 50000 = 10000.
+    assert result["totals"]["earnings_total"] == "62500.00"
+    assert result["totals"]["net_payable"] == "61000.00"
 
 
 @pytest.mark.asyncio

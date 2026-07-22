@@ -26,28 +26,95 @@ class StandardComponent:
     transfer_of: str | None = None
     schedule_kind: str | None = None
     schedule_title: str | None = None
+    register_column: str | None = None
 
 
 STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
-    StandardComponent("BASIC", "Basic Pay", "earning", 10),
-    StandardComponent("DA", "Dearness Allowance", "earning", 20),
-    StandardComponent("CLA", "City Compensatory Allowance", "earning", 30),
-    StandardComponent("HRA", "House Rent Allowance", "earning", 40),
-    StandardComponent("WASH_ALLOWANCE", "Wash Allowance", "earning", 50),
-    StandardComponent("OTHER_ALLOWANCE", "Other Allowance", "earning", 60),
-    StandardComponent("TRANSPORT", "Transport Allowance", "earning", 70),
-    StandardComponent("EPF_EMPLOYER", "EPF Employer Contribution", "employer_contribution", 80),
-    StandardComponent("DA_DIFFERENCE", "DA Difference", "gross_adjustment", 90),
-    StandardComponent("GPF_SUBSCRIPTION", "GPF Subscription", "ag_deduction", 100),
-    StandardComponent("NPS_EMPLOYEE", "NPS Employee Contribution", "ag_deduction", 110),
+    StandardComponent("BASIC", "Basic Pay", "earning", 10, register_column="basic_pay"),
+    StandardComponent(
+        "DA", "Dearness Allowance", "earning", 20, register_column="dearness_allowance"
+    ),
+    StandardComponent(
+        "CLA",
+        "City Compensatory Allowance",
+        "earning",
+        30,
+        register_column="city_compensatory_allowance",
+    ),
+    StandardComponent(
+        "HRA", "House Rent Allowance", "earning", 40, register_column="house_rent_allowance"
+    ),
+    StandardComponent(
+        "WASH_ALLOWANCE",
+        "Wash Allowance",
+        "earning",
+        50,
+        register_column="wash_child_other_charges",
+    ),
+    StandardComponent(
+        "OTHER_ALLOWANCE",
+        "Other Allowance",
+        "earning",
+        60,
+        register_column="other_reimbursement_salary_increment_difference",
+    ),
+    StandardComponent(
+        "ADDITIONAL_ALLOWANCE",
+        "Additional Conveyance / Allowance",
+        "earning",
+        65,
+        register_column="additional_conveyance_transport_allowance",
+    ),
+    StandardComponent(
+        "TRANSPORT",
+        "Transport Allowance",
+        "earning",
+        70,
+        register_column="transport_pta_honorarium",
+    ),
+    StandardComponent(
+        "EPF_EMPLOYER",
+        "EPF Employer Contribution",
+        "employer_contribution",
+        80,
+        register_column="employer_share",
+    ),
+    StandardComponent(
+        "DA_DIFFERENCE",
+        "DA Difference",
+        "gross_adjustment",
+        90,
+        register_column="dearness_allowance",
+    ),
+    StandardComponent(
+        "GPF_SUBSCRIPTION",
+        "GPF Subscription",
+        "ag_deduction",
+        100,
+        register_column="gpf_subscription_refund_arrears",
+    ),
+    StandardComponent(
+        "NPS_EMPLOYEE",
+        "NPS Employee Contribution",
+        "ag_deduction",
+        110,
+        register_column="pension_employee_share",
+    ),
     StandardComponent(
         "NPS_EMPLOYER_TRANSFER",
         "NPS Employer Transfer",
         "ag_deduction",
         120,
         employer_transfer=True,
+        register_column="pension_employer_share",
     ),
-    StandardComponent("EPF_EMPLOYEE", "EPF Employee Contribution", "ag_deduction", 130),
+    StandardComponent(
+        "EPF_EMPLOYEE",
+        "EPF Employee Contribution",
+        "ag_deduction",
+        130,
+        register_column="pension_employee_share",
+    ),
     StandardComponent(
         "EPF_EMPLOYER_TRANSFER",
         "EPF Employer Transfer",
@@ -55,10 +122,21 @@ STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
         140,
         employer_transfer=True,
         transfer_of="EPF_EMPLOYER",
+        register_column="pension_employer_share",
     ),
-    StandardComponent("INCOME_TAX", "Income Tax", "treasury_deduction", 150),
-    StandardComponent("PROFESSIONAL_TAX", "Professional Tax", "treasury_deduction", 160),
-    StandardComponent("GIS", "Group Insurance Scheme", "treasury_deduction", 170),
+    StandardComponent(
+        "INCOME_TAX", "Income Tax", "treasury_deduction", 150, register_column="income_tax"
+    ),
+    StandardComponent(
+        "PROFESSIONAL_TAX",
+        "Professional Tax",
+        "treasury_deduction",
+        160,
+        register_column="professional_tax",
+    ),
+    StandardComponent(
+        "GIS", "Group Insurance Scheme", "treasury_deduction", 170, register_column="insurance"
+    ),
     StandardComponent(
         "HBA_INSTALLMENT",
         "House Building Advance",
@@ -66,6 +144,7 @@ STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
         180,
         schedule_kind="loan_installment",
         schedule_title="House Building Advance Recovery",
+        register_column="advances",
     ),
     StandardComponent(
         "GPF_ADVANCE_INSTALLMENT",
@@ -74,6 +153,7 @@ STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
         190,
         schedule_kind="loan_installment",
         schedule_title="GPF Advance Recovery",
+        register_column="advances",
     ),
     StandardComponent(
         "FESTIVAL_ADVANCE_INSTALLMENT",
@@ -82,6 +162,7 @@ STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
         200,
         schedule_kind="loan_installment",
         schedule_title="Festival Advance Recovery",
+        register_column="festival_advance_other_recovery",
     ),
     StandardComponent(
         "MOTOR_CAR_ADVANCE_INSTALLMENT",
@@ -90,6 +171,7 @@ STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
         210,
         schedule_kind="loan_installment",
         schedule_title="Motor Car Advance Recovery",
+        register_column="advances",
     ),
     StandardComponent(
         "MOTORCYCLE_ADVANCE_INSTALLMENT",
@@ -98,6 +180,7 @@ STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
         220,
         schedule_kind="loan_installment",
         schedule_title="Motorcycle Advance Recovery",
+        register_column="advances",
     ),
     StandardComponent(
         "OTHER_ADVANCE_INSTALLMENT",
@@ -106,12 +189,14 @@ STANDARD_COMPONENTS: tuple[StandardComponent, ...] = (
         230,
         schedule_kind="loan_installment",
         schedule_title="Other Advance Recovery",
+        register_column="advances",
     ),
     StandardComponent(
         "ACCOMMODATION_LICENSE_FEE",
         "Accommodation License Fee",
         "external_recovery",
         240,
+        register_column="house_rent_service_charge_arrears",
     ),
     StandardComponent("FOREGONE_HRA", "Foregone HRA", "informational", 250),
 )
@@ -146,6 +231,8 @@ async def ensure_standard_components(
                 row.schedule_kind = spec.schedule_kind
             if row.schedule_title is None:
                 row.schedule_title = spec.schedule_title
+            if row.register_column is None:
+                row.register_column = spec.register_column
             continue
         db.add(
             PayComponent(
@@ -160,5 +247,6 @@ async def ensure_standard_components(
                 is_standard=True,
                 schedule_kind=spec.schedule_kind,
                 schedule_title=spec.schedule_title,
+                register_column=spec.register_column,
             )
         )

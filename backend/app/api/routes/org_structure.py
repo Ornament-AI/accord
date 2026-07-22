@@ -83,6 +83,11 @@ async def create_post_route(
         UUID(ctx.organization_id),
         designation=body.designation,
         class_name=body.class_name,
+        pay_bill_heading=body.pay_bill_heading,
+        sanctioned_strength=body.sanctioned_strength,
+        vacant_count=body.vacant_count,
+        pay_scale=body.pay_scale,
+        display_order=body.display_order,
     )
     return post_to_response(post)
 
@@ -109,7 +114,6 @@ async def update_post_route(
         db,
         UUID(ctx.organization_id),
         post_id,
-        designation=body.designation,
-        class_name=body.class_name,
+        body=body,
     )
     return post_to_response(post)

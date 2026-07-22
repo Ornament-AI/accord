@@ -22,6 +22,7 @@ This directory is a **fully synthetic**, structure-preserving golden payroll fix
 | `employees.json` | Synthetic identity, regime, retirement accounts, bank, PT liability, accommodation |
 | `pay.json` | Per-employee component lines for period `2026-06` with per-employee totals |
 | `expected_totals.json` | Fixture-wide aggregates + `report_reconciliation` targets |
+| `canonical_export_contract.json` | PII-free workbook topology, Pay Bill field contract, and normalized real-workbook acceptance totals |
 | `validate.py` | Standalone stdlib Decimal validator (no third-party deps) |
 | `README.md` | This document |
 
@@ -145,3 +146,22 @@ python3 fixtures/sanitized/june-2026/validate.py
 ```
 
 Must exit 0 and print a PASS summary. The script recomputes every aggregate from `pay.json` / `employees.json` using `decimal.Decimal`, compares against both hardcoded ground truth and `expected_totals.json`, checks per-employee nets, regime exclusivity, EPF pairing, NPS asymmetry, professional-tax liability, and synthetic identity patterns.
+
+## Canonical export contract
+
+The synthetic payroll fixture proves calculation and reconciliation. It does not
+claim to reproduce the real 28-person workbook values. The separate
+`canonical_export_contract.json` proves workbook structure and records the
+Finance-approved normalized totals from that workbook without storing employee
+cell values.
+
+To refresh the structure after Finance accepts a new source workbook:
+
+```bash
+python3 scripts/extract_canonical_export_contract.py \
+  --xlsx "/path/to/canonical-pay-bill.xlsx" \
+  --output fixtures/sanitized/june-2026/canonical_export_contract.json
+```
+
+Review the diff. The extractor stops when the sheet order changes or a PII-like
+value enters the contract.

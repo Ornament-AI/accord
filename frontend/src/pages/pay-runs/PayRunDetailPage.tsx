@@ -36,15 +36,18 @@ import {
 	parsePayrollRunVersion,
 	useCalculatePayrollRun,
 	usePayrollRun,
+	usePayrollRunReportReadiness,
 	usePayrollRunRosterHistory,
 } from "@/lib/api/payroll-runs";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
+import { reportReadinessAction } from "@/lib/report-readiness";
 import { formatDateTime } from "@/lib/utils";
 
 import { PayrollRunRosterTable, type PayrollRunRosterTableHandle } from "./PayrollRunRosterTable";
 import { ReportMetadataSection } from "./ReportMetadataSection";
 import { RunStatusBadge } from "./run-status-badge";
+import { UpsertInputDialog } from "./UpsertInputDialog";
 import { ValidationFindingsPanel, WorkflowActionBar } from "./workflow";
 
 declare module "@tanstack/react-table" {
@@ -137,10 +140,12 @@ export default function PayRunDetailPage() {
 	const [rosterEditing, setRosterEditing] = useState(false);
 	const [rosterDirty, setRosterDirty] = useState(false);
 	const [rosterSaving, setRosterSaving] = useState(false);
+	const [inputOpen, setInputOpen] = useState(false);
 	const rosterTableRef = useRef<PayrollRunRosterTableHandle>(null);
 
 	const runQuery = usePayrollRun(runId);
 	const rosterHistoryQuery = usePayrollRunRosterHistory(runId);
+	const readinessQuery = usePayrollRunReportReadiness(runId);
 	const calculateMutation = useCalculatePayrollRun(runId ?? "");
 
 	const run = runQuery.data;
@@ -243,29 +248,34 @@ export default function PayRunDetailPage() {
 									</Button>
 								) : null}
 								{canEditInputs ? (
-									rosterEditing ? (
-										<>
-											<Button
-												size="xs"
-												variant="outline"
-												onClick={handleCancelRosterEdit}
-												disabled={rosterSaving}
-											>
-												Cancel
-											</Button>
-											<Button
-												size="xs"
-												onClick={() => void handleSaveRoster()}
-												disabled={!rosterDirty || rosterSaving}
-											>
-												{rosterSaving ? "Saving…" : "Save"}
-											</Button>
-										</>
-									) : (
-										<Button size="xs" variant="outline" onClick={() => setRosterEditing(true)}>
-											Edit
+									<>
+										<Button size="xs" variant="outline" onClick={() => setInputOpen(true)}>
+											Add Input
 										</Button>
-									)
+										{rosterEditing ? (
+											<>
+												<Button
+													size="xs"
+													variant="outline"
+													onClick={handleCancelRosterEdit}
+													disabled={rosterSaving}
+												>
+													Cancel
+												</Button>
+												<Button
+													size="xs"
+													onClick={() => void handleSaveRoster()}
+													disabled={!rosterDirty || rosterSaving}
+												>
+													{rosterSaving ? "Saving…" : "Save"}
+												</Button>
+											</>
+										) : (
+											<Button size="xs" variant="outline" onClick={() => setRosterEditing(true)}>
+												Edit
+											</Button>
+										)}
+									</>
 								) : null}
 							</div>
 						</WorkflowActionBar>
@@ -315,6 +325,26 @@ export default function PayRunDetailPage() {
 								editable={["draft", "calculated"].includes(run.status)}
 							/>
 
+							{readinessQuery.data && !readinessQuery.data.ready ? (
+								<PageSection className="grid gap-2 border-destructive/40 bg-destructive/5">
+									<h2 className="text-base font-semibold">Report export needs attention</h2>
+									<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+										{readinessQuery.data.issues.map((issue) => {
+											const action = reportReadinessAction(issue, run.id);
+											return (
+												<li key={`${issue.report_type}-${issue.code}`}>
+													{issue.message}{" "}
+													<Link className="underline underline-offset-4" to={action.to}>
+														{action.label}
+													</Link>
+												</li>
+											);
+										})}
+									</ul>
+									<p className="text-sm">Resolve each item, then recalculate the run.</p>
+								</PageSection>
+							) : null}
+
 							<PageSection className="gap-3">
 								<h2 className="text-base font-semibold">Change History</h2>
 
@@ -344,6 +374,7 @@ export default function PayRunDetailPage() {
 							</PageSection>
 						</>
 					) : null}
+					<UpsertInputDialog open={inputOpen} onOpenChange={setInputOpen} runId={runId} />
 				</PageShell>
 			</AppLayout>
 		</CapabilityGate>

@@ -339,6 +339,34 @@ def test_content_hash_binds_employer_transfer_metadata_and_disbursement() -> Non
     assert offbill.disbursement == Money.from_str("1000.00")
 
 
+def test_content_hash_binds_export_reason_and_service_period() -> None:
+    def run(*, reason: str, service_period: str) -> object:
+        employee = EmployeeCalcInput(
+            employee_ref="E001",
+            components=(
+                ComponentInput(
+                    component_code="ADJUSTMENT",
+                    classification="earning",
+                    calc_kind="one_time_adjustment",
+                    amount=Money.from_str("100.00"),
+                    reason=reason,
+                    service_period=service_period,
+                ),
+            ),
+        )
+        return calculate_run(RunCalcInput(period="2026-06", org_ref="ORG", employees=(employee,)))
+
+    baseline = run(reason="April arrears", service_period="2026-04-01/2026-04-30")
+    changed_reason = run(reason="May arrears", service_period="2026-04-01/2026-04-30")
+    changed_period = run(reason="April arrears", service_period="2026-05-01/2026-05-31")
+
+    assert baseline.content_hash != changed_reason.content_hash
+    assert baseline.content_hash != changed_period.content_hash
+    trace = baseline.employees[0].lines[0]
+    assert trace.reason == "April arrears"
+    assert trace.service_period == "2026-04-01/2026-04-30"
+
+
 def test_employer_transfer_requires_matching_contribution_amount() -> None:
     employee = EmployeeCalcInput(
         employee_ref="E001",

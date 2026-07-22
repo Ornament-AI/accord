@@ -218,7 +218,7 @@ export function createReportHandlers(options: ReportHandlersOptions = {}) {
 							posted_run_id: postedRunId,
 							content_type:
 								job.kind === "export"
-									? "application/zip"
+									? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 									: (job.request as GenerateReportRequest).format === "pdf"
 										? "application/pdf"
 										: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -276,7 +276,7 @@ export function createReportHandlers(options: ReportHandlersOptions = {}) {
 					);
 				}
 				const body = new Uint8Array([80, 75, 3, 4]); // ZIP/XLSX magic-ish
-				const ext = artifact.content_type === "application/zip" ? "zip" : "xlsx";
+				const ext = artifact.content_type === "application/pdf" ? "pdf" : "xlsx";
 				return new HttpResponse(body, {
 					status: 200,
 					headers: {

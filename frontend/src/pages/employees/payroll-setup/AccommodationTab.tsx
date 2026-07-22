@@ -41,16 +41,68 @@ import {
 	useAccommodation,
 	useCreateAccommodation,
 	useCreateAccommodationChargeVersion,
+	useUpdateAccommodation,
 } from "@/lib/api/employee-payroll-setup";
 import { parseApiDate, toApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { ApiError, getErrorMessage } from "@/lib/errors";
 
-import { validateNonNegativeMoney, validatePositiveMoney } from "./money";
+import { parseMoneyString, validateNonNegativeMoney, validatePositiveMoney } from "./money";
 
 const FOREGONE_HRA_INFO =
 	"Informational only — not a payroll charge. Shown for reference against the license fee.";
 const FOREGONE_HRA_FORM_INFO = "Informational only — not deducted as a charge.";
+
+type ChargeBreakdownForm = {
+	house_rent: string;
+	service_charge: string;
+	parking_charge: string;
+	additional_parking_charge: string;
+};
+
+const CHARGE_BREAKDOWN_FIELDS: ReadonlyArray<{
+	key: keyof ChargeBreakdownForm;
+	label: string;
+}> = [
+	{ key: "house_rent", label: "House Rent" },
+	{ key: "service_charge", label: "Service Charge" },
+	{ key: "parking_charge", label: "Parking Charge" },
+	{ key: "additional_parking_charge", label: "Additional Parking Charge" },
+];
+
+const emptyBreakdown = (): ChargeBreakdownForm => ({
+	house_rent: "",
+	service_charge: "",
+	parking_charge: "",
+	additional_parking_charge: "",
+});
+
+function validateBreakdown(form: ChargeBreakdownForm & { license_fee: string }): string | null {
+	for (const field of CHARGE_BREAKDOWN_FIELDS) {
+		const value = form[field.key].trim();
+		if (!value) continue;
+		const error = validateNonNegativeMoney(value, field.label);
+		if (error) return error;
+	}
+	const values = CHARGE_BREAKDOWN_FIELDS.map((field) => form[field.key].trim());
+	if (!values.some(Boolean)) return null;
+	const breakdownTotal = values.reduce((total, value) => {
+		const parsed = value ? parseMoneyString(value) : 0;
+		return total + Math.round((parsed ?? 0) * 100);
+	}, 0);
+	const licenseFee = parseMoneyString(form.license_fee);
+	return licenseFee !== null && breakdownTotal === Math.round(licenseFee * 100)
+		? null
+		: "House rent, service, parking, and additional parking charges must total the license fee.";
+}
+
+function chargeBreakdownLabel(row: AccommodationResponse): string | null {
+	const parts = CHARGE_BREAKDOWN_FIELDS.flatMap((field) => {
+		const value = row[field.key];
+		return value == null ? [] : [`${field.label}: ${value}`];
+	});
+	return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 type AccommodationTabProps = {
 	employeeId: string;
@@ -68,6 +120,7 @@ export function AccommodationTab({
 	onCreateOpenChange,
 }: AccommodationTabProps) {
 	const accommodationQuery = useAccommodation(employeeId, asOf);
+	const [assignmentTarget, setAssignmentTarget] = useState<AccommodationResponse | null>(null);
 	const [versionTarget, setVersionTarget] = useState<AccommodationResponse | null>(null);
 
 	const rows = accommodationQuery.data ?? [];
@@ -112,23 +165,45 @@ export function AccommodationTab({
 										if (!canManage || isInteractiveRowTarget(event.target, event.currentTarget)) {
 											return;
 										}
-										setVersionTarget(row);
+										setAssignmentTarget(row);
 									}}
 								>
 									<TableCell>
 										{canManage ? (
-											<button
-												type="button"
-												className="sr-only focus:not-sr-only focus:mb-1 focus:inline-flex focus:rounded-md focus:bg-background focus:px-2 focus:py-1 focus:ring-2 focus:ring-ring/35"
-												onClick={() => setVersionTarget(row)}
-											>
-												Update Fee
-											</button>
+											<>
+												<button
+													type="button"
+													className="sr-only focus:not-sr-only focus:mb-1 focus:inline-flex focus:rounded-md focus:bg-background focus:px-2 focus:py-1 focus:ring-2 focus:ring-ring/35"
+													onClick={() => setAssignmentTarget(row)}
+												>
+													Edit Assignment
+												</button>
+												<button
+													type="button"
+													className="ml-2 inline-flex rounded-md px-2 py-1 text-xs font-medium text-primary underline-offset-4 hover:underline focus:ring-2 focus:ring-ring/35"
+													onClick={() => setVersionTarget(row)}
+												>
+													Update Fee
+												</button>
+											</>
 										) : null}
 										{quartersLocationLabel(row.quarters_location)} — {row.quarters_identifier}
+										{row.quarters_address ? (
+											<span className="block text-xs text-muted-foreground">
+												{row.quarters_address}
+											</span>
+										) : null}
 									</TableCell>
 									<TableCell className="text-right" data-testid="accommodation-license-fee">
-										{row.license_fee ?? "—"}
+										<span>{row.license_fee ?? "—"}</span>
+										{chargeBreakdownLabel(row) ? (
+											<span
+												className="block text-xs text-muted-foreground"
+												data-testid="accommodation-charge-breakdown"
+											>
+												{chargeBreakdownLabel(row)}
+											</span>
+										) : null}
 									</TableCell>
 									<TableCell className="text-right" data-testid="accommodation-foregone-hra">
 										{row.informational_hra_foregone ?? "—"}
@@ -147,6 +222,14 @@ export function AccommodationTab({
 						onOpenChange={onCreateOpenChange}
 						employeeId={employeeId}
 					/>
+					<EditAssignmentDialog
+						open={Boolean(assignmentTarget)}
+						onOpenChange={(open) => {
+							if (!open) setAssignmentTarget(null);
+						}}
+						employeeId={employeeId}
+						assignment={assignmentTarget}
+					/>
 					<NewChargeVersionDialog
 						open={Boolean(versionTarget)}
 						onOpenChange={(open) => {
@@ -161,22 +244,154 @@ export function AccommodationTab({
 	);
 }
 
+type AssignmentForm = {
+	quarters_identifier: string;
+	quarters_address: string;
+};
+
+function EditAssignmentDialog({
+	open,
+	onOpenChange,
+	employeeId,
+	assignment,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	employeeId: string;
+	assignment: AccommodationResponse | null;
+}) {
+	const updateAssignment = useUpdateAccommodation(employeeId);
+	const [form, setForm] = useState<AssignmentForm>({
+		quarters_identifier: "",
+		quarters_address: "",
+	});
+	const [formError, setFormError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (open && assignment) {
+			setForm({
+				quarters_identifier: assignment.quarters_identifier,
+				quarters_address: assignment.quarters_address ?? "",
+			});
+			setFormError(null);
+		}
+	}, [assignment, open]);
+
+	const handleSubmit = async (event: FormEvent) => {
+		event.preventDefault();
+		if (!assignment) return;
+		const quartersIdentifier = form.quarters_identifier.trim();
+		if (!quartersIdentifier) {
+			setFormError("Quarters identifier is required.");
+			return;
+		}
+
+		setFormError(null);
+		try {
+			await updateAssignment.mutateAsync({
+				assignmentId: assignment.id,
+				body: {
+					quarters_identifier: quartersIdentifier,
+					quarters_address: form.quarters_address.trim() || null,
+				},
+			});
+			onOpenChange(false);
+		} catch (error) {
+			if (error instanceof ApiError && error.status === 422) {
+				setFormError(error.detail || "Validation failed.");
+				return;
+			}
+			setFormError(getErrorMessage(error, "Failed to update accommodation assignment."));
+		}
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.form}>
+				<DialogHeader className="px-6 pt-5 pb-3">
+					<DialogTitle>Edit Assignment</DialogTitle>
+					<DialogDescription>
+						Update the quarters details used in payroll exports.
+					</DialogDescription>
+				</DialogHeader>
+				<form
+					className="flex min-h-0 flex-1 flex-col"
+					onSubmit={(event) => void handleSubmit(event)}
+				>
+					<DialogBody className="grid gap-4 pb-8">
+						<div className="grid gap-2">
+							<Label htmlFor="edit-acc-identifier">Quarters Identifier</Label>
+							<Input
+								id="edit-acc-identifier"
+								value={form.quarters_identifier}
+								onChange={(event) =>
+									setForm((previous) => ({
+										...previous,
+										quarters_identifier: event.target.value,
+									}))
+								}
+								disabled={updateAssignment.isPending}
+							/>
+						</div>
+						<div className="grid gap-2">
+							<Label htmlFor="edit-acc-address">Quarters Address</Label>
+							<Textarea
+								id="edit-acc-address"
+								value={form.quarters_address}
+								onChange={(event) =>
+									setForm((previous) => ({
+										...previous,
+										quarters_address: event.target.value,
+									}))
+								}
+								disabled={updateAssignment.isPending}
+								rows={2}
+							/>
+						</div>
+						{formError ? (
+							<p className="text-sm text-destructive" role="alert">
+								{formError}
+							</p>
+						) : null}
+					</DialogBody>
+					<DialogFooter className="border-t px-6 py-4">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => onOpenChange(false)}
+							disabled={updateAssignment.isPending}
+						>
+							Cancel
+						</Button>
+						<Button type="submit" disabled={updateAssignment.isPending}>
+							{updateAssignment.isPending ? "Saving…" : "Save"}
+						</Button>
+					</DialogFooter>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 type AddAssignmentForm = {
 	quarters_location: QuartersLocation;
 	quarters_identifier: string;
+	quarters_address: string;
 	effective_from: string;
 	license_fee: string;
 	informational_hra_foregone: string;
 	change_reason: string;
-};
+} & ChargeBreakdownForm;
 
 const emptyAddForm = (): AddAssignmentForm => ({
 	quarters_location: "mumbai",
 	quarters_identifier: "",
+	quarters_address: "",
 	effective_from: "",
 	license_fee: "",
 	informational_hra_foregone: "",
 	change_reason: "",
+	...emptyBreakdown(),
 });
 
 function AddAssignmentDialog({
@@ -226,15 +441,25 @@ function AddAssignmentDialog({
 				return;
 			}
 		}
+		const breakdownError = validateBreakdown(form);
+		if (breakdownError) {
+			setFormError(breakdownError);
+			return;
+		}
 
 		try {
 			await createAssignment.mutateAsync({
 				quarters_location: form.quarters_location,
 				quarters_identifier: form.quarters_identifier.trim(),
+				quarters_address: form.quarters_address.trim() || null,
 				charge: {
 					effective_from: form.effective_from,
 					license_fee: form.license_fee.trim(),
 					informational_hra_foregone: foregone || null,
+					house_rent: form.house_rent.trim() || null,
+					service_charge: form.service_charge.trim() || null,
+					parking_charge: form.parking_charge.trim() || null,
+					additional_parking_charge: form.additional_parking_charge.trim() || null,
 				},
 			});
 			onOpenChange(false);
@@ -323,6 +548,19 @@ function AddAssignmentDialog({
 						</div>
 
 						<div className="grid gap-2">
+							<Label htmlFor="add-acc-address">Quarters Address</Label>
+							<Textarea
+								id="add-acc-address"
+								value={form.quarters_address}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, quarters_address: event.target.value }))
+								}
+								disabled={isSubmitting}
+								rows={2}
+							/>
+						</div>
+
+						<div className="grid gap-2">
 							<Label htmlFor="add-acc-license-fee">License Fee</Label>
 							<Input
 								id="add-acc-license-fee"
@@ -356,6 +594,24 @@ function AddAssignmentDialog({
 							/>
 						</div>
 
+						<div className="grid grid-cols-2 gap-4">
+							{CHARGE_BREAKDOWN_FIELDS.map((field) => (
+								<div className="grid gap-2" key={field.key}>
+									<Label htmlFor={`add-acc-${field.key}`}>{field.label}</Label>
+									<Input
+										id={`add-acc-${field.key}`}
+										inputMode="decimal"
+										value={form[field.key]}
+										onChange={(event) =>
+											setForm((prev) => ({ ...prev, [field.key]: event.target.value }))
+										}
+										disabled={isSubmitting}
+										placeholder="0.00"
+									/>
+								</div>
+							))}
+						</div>
+
 						{formError ? (
 							<p className="text-sm text-destructive" role="alert">
 								{formError}
@@ -387,13 +643,14 @@ type ChargeVersionForm = {
 	license_fee: string;
 	informational_hra_foregone: string;
 	change_reason: string;
-};
+} & ChargeBreakdownForm;
 
 const emptyChargeForm = (): ChargeVersionForm => ({
 	effective_from: "",
 	license_fee: "",
 	informational_hra_foregone: "",
 	change_reason: "",
+	...emptyBreakdown(),
 });
 
 function NewChargeVersionDialog({
@@ -442,6 +699,11 @@ function NewChargeVersionDialog({
 				return;
 			}
 		}
+		const breakdownError = validateBreakdown(form);
+		if (breakdownError) {
+			setFormError(breakdownError);
+			return;
+		}
 
 		try {
 			await createVersion.mutateAsync({
@@ -450,6 +712,10 @@ function NewChargeVersionDialog({
 					effective_from: form.effective_from,
 					license_fee: form.license_fee.trim(),
 					informational_hra_foregone: foregone || null,
+					house_rent: form.house_rent.trim() || null,
+					service_charge: form.service_charge.trim() || null,
+					parking_charge: form.parking_charge.trim() || null,
+					additional_parking_charge: form.additional_parking_charge.trim() || null,
 					change_reason: form.change_reason.trim() || null,
 				},
 			});
@@ -529,6 +795,24 @@ function NewChargeVersionDialog({
 								disabled={isSubmitting}
 								placeholder="0.00"
 							/>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							{CHARGE_BREAKDOWN_FIELDS.map((field) => (
+								<div className="grid gap-2" key={field.key}>
+									<Label htmlFor={`ncv-${field.key}`}>{field.label}</Label>
+									<Input
+										id={`ncv-${field.key}`}
+										inputMode="decimal"
+										value={form[field.key]}
+										onChange={(event) =>
+											setForm((prev) => ({ ...prev, [field.key]: event.target.value }))
+										}
+										disabled={isSubmitting}
+										placeholder="0.00"
+									/>
+								</div>
+							))}
 						</div>
 
 						<div className="grid gap-2">

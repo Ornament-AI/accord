@@ -11,6 +11,7 @@ from asyncpg.exceptions import CheckViolationError, UniqueViolationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.payroll.export_metadata import register_column_matches_classification
 from app.exceptions import ConflictError, ValidationError
 from app.models.pay_components import PayComponent, component_rate_versions
 from app.schemas.pay_setup import (
@@ -56,6 +57,7 @@ def _pay_component_response(component: PayComponent) -> dict[str, Any]:
         "schedule_kind": component.schedule_kind,
         "schedule_title": component.schedule_title,
         "schedule_account_head": component.schedule_account_head,
+        "register_column": component.register_column,
         "created_at": component.created_at,
         "updated_at": component.updated_at,
     }
@@ -121,6 +123,7 @@ async def create_pay_component(
         schedule_kind=None if body.schedule_kind is None else body.schedule_kind.value,
         schedule_title=body.schedule_title,
         schedule_account_head=body.schedule_account_head,
+        register_column=None if body.register_column is None else body.register_column.value,
         is_active=True,
     )
     db.add(component)
@@ -184,6 +187,14 @@ async def update_pay_component(
         component.schedule_title = body.schedule_title
     if "schedule_account_head" in body.model_fields_set:
         component.schedule_account_head = body.schedule_account_head
+    if "register_column" in body.model_fields_set:
+        if not register_column_matches_classification(
+            component.classification, body.register_column
+        ):
+            raise ValidationError("register_column is incompatible with classification")
+        component.register_column = (
+            None if body.register_column is None else body.register_column.value
+        )
     employer_transfer = (
         body.employer_transfer
         if "employer_transfer" in body.model_fields_set

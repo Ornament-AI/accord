@@ -26,6 +26,8 @@ export type EmployeeHandlersOptions = {
 	createError?: { status: number; body: Record<string, unknown> };
 	/** When set, POST .../versions/{kind} returns this status/body. */
 	versionError?: { status: number; body: Record<string, unknown> };
+	onCreate?: (body: CreateEmployeeRequest) => void;
+	onCreateVersion?: (employeeId: string, kind: string, body: Record<string, unknown>) => void;
 	pageSize?: number;
 };
 
@@ -86,6 +88,7 @@ export function buildEmployeeDetail(
 		created_by: "user-1",
 		change_reason: null,
 		...overrides.profile,
+		payroll_export_remark: overrides.profile?.payroll_export_remark ?? null,
 	};
 
 	return {
@@ -152,6 +155,7 @@ export function createEmployeeHandlers(options: EmployeeHandlersOptions = {}) {
 					gpf_account_number: null,
 					epf_number: null,
 					pension_account: null,
+					payroll_export_remark: null,
 					created_at: "2026-01-15T10:00:00Z",
 					created_by: "user-1",
 					change_reason: null,
@@ -227,6 +231,7 @@ export function createEmployeeHandlers(options: EmployeeHandlersOptions = {}) {
 				});
 			}
 			const body = (await request.json()) as CreateEmployeeRequest;
+			options.onCreate?.(body);
 			const exists = Array.from(store.values()).some(
 				(record) => record.detail.employee_number === body.employee_number,
 			);
@@ -255,6 +260,7 @@ export function createEmployeeHandlers(options: EmployeeHandlersOptions = {}) {
 					gpf_account_number: body.profile.gpf_account_number ?? null,
 					epf_number: body.profile.epf_number ?? null,
 					pension_account: body.profile.pension_account ?? null,
+					payroll_export_remark: body.profile.payroll_export_remark ?? null,
 					created_at: "2026-01-15T10:00:00Z",
 					created_by: "user-1",
 					change_reason: null,
@@ -312,13 +318,16 @@ export function createEmployeeHandlers(options: EmployeeHandlersOptions = {}) {
 			return HttpResponse.json(record.versions[kind] ?? []);
 		}),
 
-		http.post("/api/employees/:employeeId/versions/:kind", async ({ params }) => {
+		http.post("/api/employees/:employeeId/versions/:kind", async ({ params, request }) => {
 			if (options.versionError) {
 				return HttpResponse.json(options.versionError.body, {
 					status: options.versionError.status,
 				});
 			}
 			const employeeId = String(params.employeeId);
+			const kind = String(params.kind);
+			const body = (await request.json()) as Record<string, unknown>;
+			options.onCreateVersion?.(employeeId, kind, body);
 			const record = store.get(employeeId);
 			if (!record) {
 				return HttpResponse.json({ detail: "Not found" }, { status: 404 });

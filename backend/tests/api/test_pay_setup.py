@@ -7,10 +7,12 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.api.routes.pay_setup import router as pay_setup_router
 from app.main import create_app
 from app.models.employees import Employee
+from app.models.reports import ReportConfiguration
 from app.tenancy import bind_tenant_context
 from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
@@ -96,6 +98,7 @@ async def test_pay_component_crud_and_rate_versioning(client, session):
     component_id = created["id"]
     assert created["code"] == "CUSTOM_BASIC"
     assert created["classification"] == "earning"
+    assert created["register_column"] is None
 
     listed = (await client.get("/api/pay-components")).json()
     assert any(c["id"] == component_id for c in listed)
@@ -125,6 +128,40 @@ async def test_pay_component_crud_and_rate_versioning(client, session):
     rates = (await client.get(f"/api/pay-components/{component_id}/rate-versions")).json()
     assert len(rates) == 1
     assert rates[0]["id"] == rate_body["id"]
+
+
+@pytest.mark.asyncio
+async def test_pay_component_register_column_is_typed_and_classification_safe(client, session):
+    await _admin_context(client, session)
+    created = await client.post(
+        "/api/pay-components",
+        json={
+            "code": "CUSTOM_TRAVEL",
+            "name": "Travel Allowance",
+            "classification": "earning",
+            "register_column": "additional_conveyance_transport_allowance",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["register_column"] == "additional_conveyance_transport_allowance"
+
+    invalid_create = await client.post(
+        "/api/pay-components",
+        json={
+            "code": "BAD_COLUMN",
+            "name": "Bad Column",
+            "classification": "earning",
+            "register_column": "income_tax",
+        },
+    )
+    assert invalid_create.status_code == 422
+
+    invalid_update = await client.patch(
+        f"/api/pay-components/{created.json()['id']}",
+        json={"register_column": "income_tax"},
+    )
+    assert invalid_update.status_code == 400
+    assert invalid_update.json()["error"] == "ValidationError"
 
 
 @pytest.mark.asyncio
@@ -294,8 +331,13 @@ async def test_accommodation_crud_and_charge_versioning(client, session):
         json={
             "quarters_location": "mumbai",
             "quarters_identifier": "Block-A-12",
+            "quarters_address": "12 Example Road, Mumbai",
             "charge": {
                 "license_fee": "1000.00",
+                "house_rent": "700.00",
+                "service_charge": "200.00",
+                "parking_charge": "75.00",
+                "additional_parking_charge": "25.00",
                 "informational_hra_foregone": "2500.00",
                 "effective_from": "2026-01-01",
             },
@@ -305,23 +347,53 @@ async def test_accommodation_crud_and_charge_versioning(client, session):
     body = created.json()
     assignment_id = body["id"]
     assert body["license_fee"] == "1000.00"
+    assert body["quarters_address"] == "12 Example Road, Mumbai"
+    assert body["service_charge"] == "200.00"
     assert body["informational_hra_foregone"] == "2500.00"
 
     listed = (await client.get(f"/api/employees/{employee_id}/accommodation")).json()
     assert len(listed) == 1
     assert listed[0]["id"] == assignment_id
 
+    updated = await client.patch(
+        f"/api/accommodation/{assignment_id}",
+        json={
+            "quarters_identifier": "Block-A-14",
+            "quarters_address": "14 Example Road, Mumbai",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["quarters_identifier"] == "Block-A-14"
+    assert updated.json()["quarters_address"] == "14 Example Road, Mumbai"
+
+    listed = (await client.get(f"/api/employees/{employee_id}/accommodation")).json()
+    assert listed[0]["quarters_identifier"] == "Block-A-14"
+    assert listed[0]["quarters_address"] == "14 Example Road, Mumbai"
+
     version = await client.post(
         f"/api/accommodation/{assignment_id}/charge-versions",
         json={
             "effective_from": "2026-04-01",
             "license_fee": "1200.00",
+            "house_rent": "900.00",
+            "service_charge": "200.00",
+            "parking_charge": "100.00",
             "informational_hra_foregone": "2700.00",
         },
     )
     assert version.status_code == 201, version.text
     assert version.json()["license_fee"] == "1200.00"
     assert version.json()["informational_hra_foregone"] == "2700.00"
+
+    invalid_breakdown = await client.post(
+        f"/api/accommodation/{assignment_id}/charge-versions",
+        json={
+            "effective_from": "2026-07-01",
+            "license_fee": "1000.00",
+            "house_rent": "900.00",
+        },
+    )
+    assert invalid_breakdown.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -363,6 +435,11 @@ async def test_payroll_export_profile_round_trip(client, session):
             "office_name": "Payroll Office",
             "address_lines": ["Mumbai"],
             "ddo_code": "DDO-42",
+            "administrative_department": "Finance Department",
+            "fund_source": "Consolidated Fund",
+            "plan_status": "Non-Plan",
+            "nps_employee_account_head": "8342-00-117-01 Employee contribution",
+            "nps_employer_account_head": "2071-01-117-01 Employer contribution",
             "head_of_account": {
                 "demand_number": "17",
                 "major_head": "2052",
@@ -374,15 +451,130 @@ async def test_payroll_export_profile_round_trip(client, session):
                 "branch": "Fort",
                 "address_lines": ["Mumbai"],
             },
-            "signatories": [{"role": "maker", "name": "A. Maker", "designation": "Accountant"}],
+            "gpf_remittance_profiles": {
+                "mumbai": {
+                    "office_name": "Accountant General, Mumbai",
+                    "address_lines": ["Mumbai"],
+                    "account_code": "GPF-MUM",
+                    "authority_text": "Maharashtra Treasury Rule 478",
+                },
+                "nagpur": {
+                    "office_name": "Accountant General, Nagpur",
+                    "address_lines": ["Nagpur"],
+                    "account_code": "GPF-NGP",
+                    "authority_text": "Maharashtra Treasury Rule 478",
+                },
+            },
+            "signatories": [
+                {"role": "maker", "name": "A. Maker", "designation": "Accountant"},
+                {
+                    "role": "final_approver",
+                    "name": "F. Approver",
+                    "designation": "Managing Director",
+                },
+            ],
+            "pay_bill_footer_text": "Certified for treasury payment.",
         },
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["value"]["ddo_code"] == "DDO-42"
+    assert saved.json()["value"]["fund_source"] == "Consolidated Fund"
+    assert saved.json()["value"]["nps_employee_account_head"].startswith("8342")
+    assert saved.json()["value"]["signatories"][1]["role"] == "final_approver"
+    assert saved.json()["value"]["gpf_remittance_profiles"]["mumbai"]["account_code"] == "GPF-MUM"
 
     fetched = await client.get("/api/report-profile")
     assert fetched.status_code == 200, fetched.text
     assert fetched.json()["value"] == saved.json()["value"]
+
+
+@pytest.mark.asyncio
+async def test_payroll_export_profile_read_ignores_legacy_signatory_roles(client, session):
+    context = await _admin_context(client, session)
+    stored_value = {
+        "legal_name": "Acme Corporation",
+        "signatories": [
+            {
+                "role": "legacy_certifying_officer",
+                "name": "L. Officer",
+                "designation": "Legacy Officer",
+            },
+            {
+                "role": "maker",
+                "name": "A. Maker",
+                "designation": "Accountant",
+            },
+        ],
+    }
+    async with session.begin():
+        await bind_tenant_context(
+            session,
+            organization_id=context["org_id"],
+            user_id=context["user_id"],
+        )
+        configuration = ReportConfiguration(
+            organization_id=context["org_id"],
+            key="payroll_export_profile",
+            value=stored_value,
+        )
+        session.add(configuration)
+
+    fetched = await client.get("/api/report-profile")
+
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["value"]["legal_name"] == "Acme Corporation"
+    assert fetched.json()["value"]["signatories"] == [
+        {
+            "role": "maker",
+            "name": "A. Maker",
+            "designation": "Accountant",
+        }
+    ]
+
+    async with session.begin():
+        await bind_tenant_context(
+            session,
+            organization_id=context["org_id"],
+            user_id=context["user_id"],
+        )
+        await session.refresh(configuration)
+        assert configuration.value == stored_value
+
+    updated = await client.put(
+        "/api/report-profile",
+        json={
+            **fetched.json()["value"],
+            "office_name": "Updated without erasing legacy signatories",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    stored = (
+        await session.execute(
+            select(ReportConfiguration).where(ReportConfiguration.key == "payroll_export_profile")
+        )
+    ).scalar_one()
+    assert stored.value["signatories"][0]["role"] == "legacy_certifying_officer"
+    assert updated.json()["value"]["signatories"] == fetched.json()["value"]["signatories"]
+
+
+@pytest.mark.asyncio
+async def test_payroll_export_profile_write_rejects_unknown_signatory_role(client, session):
+    await _admin_context(client, session)
+
+    response = await client.put(
+        "/api/report-profile",
+        json={
+            "signatories": [
+                {
+                    "role": "legacy_certifying_officer",
+                    "name": "L. Officer",
+                    "designation": "Legacy Officer",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

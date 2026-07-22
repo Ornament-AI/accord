@@ -13,7 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import NotFoundError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
-from app.schemas.pay_setup import AccommodationChargeVersionCreate, AccommodationCreate
+from app.models.base import utcnow
+from app.schemas.pay_setup import (
+    AccommodationChargeVersionCreate,
+    AccommodationCreate,
+    AccommodationUpdate,
+)
 from app.services import versioning
 from app.services.db_errors import raise_integrity_error
 from app.services.pay_setup._shared import get_employee, serialize_version_row
@@ -27,12 +32,17 @@ def _accommodation_response(
         "employee_id": header.employee_id,
         "quarters_location": header.quarters_location,
         "quarters_identifier": header.quarters_identifier,
+        "quarters_address": header.quarters_address,
         "created_at": header.created_at,
         "updated_at": header.updated_at,
         "version_id": version["id"],
         "effective_from": version["effective_from"],
         "effective_to": version["effective_to"],
         "license_fee": version.get("license_fee"),
+        "house_rent": version.get("house_rent"),
+        "service_charge": version.get("service_charge"),
+        "parking_charge": version.get("parking_charge"),
+        "additional_parking_charge": version.get("additional_parking_charge"),
         "informational_hra_foregone": version.get("informational_hra_foregone"),
     }
 
@@ -64,11 +74,18 @@ async def create_accommodation(
         employee_id=employee_id,
         quarters_location=body.quarters_location.value,
         quarters_identifier=body.quarters_identifier.strip(),
+        quarters_address=(
+            body.quarters_address.strip() if body.quarters_address is not None else None
+        ),
     )
     db.add(header)
     await db.flush()
     payload = {
         "license_fee": charge.license_fee,
+        "house_rent": charge.house_rent,
+        "service_charge": charge.service_charge,
+        "parking_charge": charge.parking_charge,
+        "additional_parking_charge": charge.additional_parking_charge,
         "informational_hra_foregone": charge.informational_hra_foregone,
     }
     version_row = await versioning.insert_version(
@@ -122,6 +139,43 @@ async def list_accommodation(
     return items
 
 
+async def update_accommodation(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    assignment_id: UUID,
+    body: AccommodationUpdate,
+) -> dict[str, Any]:
+    assignment = await _get_accommodation(
+        db,
+        organization_id=organization_id,
+        assignment_id=assignment_id,
+    )
+    if "quarters_identifier" in body.model_fields_set:
+        assert body.quarters_identifier is not None
+        assignment.quarters_identifier = body.quarters_identifier.strip()
+    if "quarters_address" in body.model_fields_set:
+        assignment.quarters_address = (
+            body.quarters_address.strip() if body.quarters_address is not None else None
+        )
+    assignment.updated_at = utcnow()
+    latest = (
+        (
+            await db.execute(
+                sa.select(accommodation_charge_versions)
+                .where(accommodation_charge_versions.c.organization_id == organization_id)
+                .where(accommodation_charge_versions.c.header_id == assignment_id)
+                .order_by(sa.func.lower(accommodation_charge_versions.c.validity).desc())
+                .limit(1)
+            )
+        )
+        .mappings()
+        .one()
+    )
+    await db.commit()
+    return _accommodation_response(assignment, serialize_version_row(latest))
+
+
 async def create_accommodation_charge_version(
     db: AsyncSession,
     *,
@@ -133,6 +187,10 @@ async def create_accommodation_charge_version(
     await _get_accommodation(db, organization_id=organization_id, assignment_id=assignment_id)
     payload = {
         "license_fee": body.license_fee,
+        "house_rent": body.house_rent,
+        "service_charge": body.service_charge,
+        "parking_charge": body.parking_charge,
+        "additional_parking_charge": body.additional_parking_charge,
         "informational_hra_foregone": body.informational_hra_foregone,
     }
     row = await versioning.insert_version(

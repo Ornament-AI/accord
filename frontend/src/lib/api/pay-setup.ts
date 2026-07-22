@@ -4,15 +4,72 @@ import { fetchJson, jsonRequest } from "@/lib/api/http";
 import { ApiError } from "@/lib/errors";
 import type { components } from "@/types/api.generated";
 
-export type PayComponentCreate = components["schemas"]["PayComponentCreate"];
-export type PayComponentResponse = components["schemas"]["PayComponentResponse"];
+export const REGISTER_COLUMNS_BY_CLASSIFICATION = {
+	earning: [
+		"basic_pay",
+		"dearness_allowance",
+		"city_compensatory_allowance",
+		"house_rent_allowance",
+		"wash_child_other_charges",
+		"other_reimbursement_salary_increment_difference",
+		"additional_conveyance_transport_allowance",
+		"transport_pta_honorarium",
+	],
+	employer_contribution: ["employer_share"],
+	gross_adjustment: ["dearness_allowance", "other_reimbursement_salary_increment_difference"],
+	ag_deduction: [
+		"gpf_subscription_refund_arrears",
+		"pension_employer_share",
+		"pension_employee_share",
+	],
+	treasury_deduction: [
+		"flood_affected",
+		"income_tax",
+		"insurance",
+		"house_rent_service_charge_arrears",
+		"professional_tax",
+		"cooperative_recovery",
+	],
+	external_recovery: [
+		"festival_advance_other_recovery",
+		"advances",
+		"house_rent_service_charge_arrears",
+		"cooperative_recovery",
+	],
+	informational: [],
+} as const satisfies Record<Classification, readonly string[]>;
+
+export type RegisterColumn = (typeof REGISTER_COLUMNS_BY_CLASSIFICATION)[Classification][number];
+
+type CanonicalPayComponentField = { register_column?: RegisterColumn | null };
+
+export type PayComponentCreate = components["schemas"]["PayComponentCreate"] &
+	CanonicalPayComponentField;
+export type PayComponentResponse = components["schemas"]["PayComponentResponse"] &
+	CanonicalPayComponentField;
 export type ComponentRateVersionCreate = components["schemas"]["ComponentRateVersionCreate"];
 export type ComponentRateVersionResponse = components["schemas"]["ComponentRateVersionResponse"];
 export type CalcKind = components["schemas"]["CalcKind"];
 export type Classification = components["schemas"]["Classification"];
 export type RoundingRule = components["schemas"]["RoundingRule"];
 export type ScheduleKind = components["schemas"]["ScheduleKind"];
-export type PayrollExportProfile = components["schemas"]["PayrollExportProfile"];
+export type PayrollExportProfile = components["schemas"]["PayrollExportProfile"] & {
+	administrative_department?: string | null;
+	fund_source?: string | null;
+	plan_status?: string | null;
+	pay_bill_footer_text?: string | null;
+	gpf_remittance_profiles?: Partial<
+		Record<
+			"mumbai" | "nagpur",
+			{
+				office_name?: string | null;
+				address_lines?: string[];
+				account_code?: string | null;
+				authority_text?: string | null;
+			}
+		>
+	>;
+};
 export type PayrollExportProfileResponse = components["schemas"]["PayrollExportProfileResponse"];
 
 export type PayComponentUpdate = {
@@ -24,6 +81,7 @@ export type PayComponentUpdate = {
 	schedule_kind?: ScheduleKind | null;
 	schedule_title?: string | null;
 	schedule_account_head?: string | null;
+	register_column?: RegisterColumn | null;
 };
 
 export const CLASSIFICATIONS: Classification[] = [
@@ -96,6 +154,13 @@ export function classificationLabel(value: string): string {
 	if (value in CLASSIFICATION_LABELS) {
 		return CLASSIFICATION_LABELS[value as Classification];
 	}
+	return value
+		.split("_")
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+		.join(" ");
+}
+
+export function registerColumnLabel(value: string): string {
 	return value
 		.split("_")
 		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))

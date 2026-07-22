@@ -61,6 +61,7 @@ def _profile_payload(regime: str) -> dict:
         "date_of_birth": "1990-01-15",
         "date_of_joining": "2015-06-01",
         "retirement_regime": regime,
+        "payroll_export_remark": "Recovery adjusted manually",
     }
     if regime == "gpf":
         base["gpf_jurisdiction"] = "mumbai"
@@ -142,9 +143,11 @@ async def test_create_employee_all_regimes_masks_sensitive_and_money_string(
         ),
     )
     assert body["profile"]["retirement_regime"] == regime
+    assert body["profile"]["payroll_export_remark"] == "Recovery adjusted manually"
     assert body["profile"]["pan"] == "••••234F"
     assert body["bank"]["account_number"] == "••••9012"
     assert body["pay"]["basic_pay"] == "50732.00"
+    assert body["posting"]["pay_bill_post_id"] == str(post.id)
     assert isinstance(body["pay"]["basic_pay"], str)
 
 
@@ -207,6 +210,49 @@ async def test_create_allows_unknown_legacy_profile_fields(client, session, dev_
     assert created["pay"]["pay_matrix_level"] is None
     assert created["pay"]["basic_pay"] == "50732.00"
     assert created["bank"]["branch"] is None
+
+
+@pytest.mark.asyncio
+async def test_posting_pay_bill_group_create_change_and_read(client, session, dev_settings):
+    org, _, office, post = await _admin_world(session, dev_settings, client)
+    pay_bill_post = Post(
+        organization_id=org.id,
+        designation=f"Combined Establishment-{uuid4().hex[:6]}",
+        pay_bill_heading="Accounts and Audit Establishment",
+        class_="Class II",
+        sanctioned_strength=10,
+        vacant_count=2,
+        pay_scale="S-18: 49100-155800",
+        display_order=5,
+    )
+    session.add(pay_bill_post)
+    await session.commit()
+
+    payload = _create_payload(office_id=office.id, post_id=post.id)
+    payload["posting"]["pay_bill_post_id"] = str(pay_bill_post.id)
+    created = await _create_employee(client, payload)
+    employee_id = created["id"]
+    assert created["posting"]["post_id"] == str(post.id)
+    assert created["posting"]["pay_bill_post_id"] == str(pay_bill_post.id)
+
+    changed = await client.post(
+        f"/api/employees/{employee_id}/versions/posting",
+        json={
+            "effective_from": "2026-07-01",
+            "office_id": str(office.id),
+            "post_id": str(post.id),
+            "change_reason": "Return to designation group",
+        },
+    )
+    assert changed.status_code == 201, changed.text
+    assert changed.json()["pay_bill_post_id"] == str(post.id)
+
+    june = await client.get(f"/api/employees/{employee_id}", params={"as_of": "2026-06-30"})
+    july = await client.get(f"/api/employees/{employee_id}", params={"as_of": "2026-07-01"})
+    assert june.status_code == 200, june.text
+    assert july.status_code == 200, july.text
+    assert june.json()["posting"]["pay_bill_post_id"] == str(pay_bill_post.id)
+    assert july.json()["posting"]["pay_bill_post_id"] == str(post.id)
 
 
 # --- Pay as_of boundary -----------------------------------------------------------

@@ -1,6 +1,10 @@
 # Implementation plan: catalog-driven report exports (rev 3)
 
-Status: **implemented in substance** — verified against the code on 20 Jul 2026. Phases A, C, and D landed close to plan. Phases B and E shipped in a simpler, superseding form. Phase F is partly done. Phase G is still open. Each phase below keeps the original plan text and adds a status note.
+Status: **superseded by the normalized v3 canonical export**. Phases A through
+F supplied the snapshot and generic v2 foundation. Phase G is now implemented
+as the v3 single-workbook pack. See
+[canonical-export-contract.md](canonical-export-contract.md) for the normative
+layout and required input ownership.
 
 Motivation: Pay Bill (and advance-schedule) columns were hardcoded module constants, while `pay_components` is a dynamic per-org catalog. Components outside `_EARNING_CODES` / `_DEDUCTION_COLUMN_CODES` were included in totals but got no column. Visible cells then stopped summing to printed totals. Reference: *Pay bill – June 2026 Regular Staff.xlsx*.
 
@@ -37,7 +41,13 @@ Plan: `app/services/report_generation.py` had one global `DEFAULT_TEMPLATE_VERSI
 
 Planned tests: requesting `v1` after `v2` ships reproduces the old fixed layout byte-for-byte; default resolution picks `v2` for Pay Bill only.
 
-**Status: superseded.** The shipped code takes a simpler path. There is still one global default, but it is now `DEFAULT_TEMPLATE_VERSION = "v2"`, and `SUPPORTED_TEMPLATE_VERSIONS` contains only `"v2"`. All product reports moved to `v2` together. `v1` can no longer be requested for new builds; requests outside the supported set are rejected, while finalized `v1` artifacts stay downloadable. Some builders keep a non-`v2` code branch, but the service cannot reach it. The planned per-report version map and the byte-for-byte `v1` test were dropped with it. The consolidated manifest hash (`{base_version}+{manifest_hash}`) exists as planned.
+**Status: superseded.** The shipped code takes a simpler path. There is still
+one global default, now `DEFAULT_TEMPLATE_VERSION = "v3"`.
+`SUPPORTED_TEMPLATE_VERSIONS` contains `"v2"` and `"v3"`: v3 is the normalized
+canonical workbook, while v2 remains an explicit legacy request. `v1` can no
+longer be requested for new builds; finalized v1 artifacts remain downloadable.
+The planned per-report version map and byte-for-byte v1 test were dropped. The
+consolidated manifest hash (`{base_version}+{manifest_hash}`) exists as planned.
 
 ## Phase C — Pay Bill register `v2`
 
@@ -95,17 +105,23 @@ Plan: three tiers, not org-wide `ReportConfiguration` (which is non-versioned an
 
 - **Organization defaults** (`ReportConfiguration`): DDO code, default head-of-account fields.
 - **Run snapshot**: Bill No., Demand No., resolved accounting heads — captured at or before posting.
-- **Treasury-submission record** (future): Token No., Voucher No., dates — assigned after submission.
+- **Treasury-submission record:** Token No., Voucher No., and their dates —
+  assigned after submission and stored on run report metadata.
 
 First release: the Face renders org defaults plus the run snapshot; Token/Voucher render blank. A short design note (where Bill No. lives on the run, who sets it) was to precede the build.
 
-**Status: partly done.** The first two tiers exist. `PayrollRun.report_metadata` (JSONB, validated by `PayrollRunReportMetadata`) holds run-level fields: bill number and date, payment date, demand number, major/sub/detailed heads, bank-advice number and date, and approval-note number and date. Org defaults (DDO code, treasury code, head-of-account) travel in the snapshot `report_profile`. The Treasury Face `v2` renders a bill header from both. The third tier — Token No. and Voucher No. after treasury submission — is still not modeled; those fields render blank.
+**Status: done and extended for v3.** `PayrollRun.report_metadata` (JSONB,
+validated by `PayrollRunReportMetadata`) holds run-level bill, payment,
+bank-advice, approval-note, token, and voucher number/date fields plus head
+overrides. Organization defaults travel in the snapshotted `report_profile`.
 
 ## Phase G — Single-workbook consolidated export (separate design review)
 
 Plan: `consolidated_xlsx` already existed as per-report workbooks zipped in `report_generation.py`. A single multi-sheet workbook would be an **alternate consolidated artifact format** on that path — not a registered report builder. The product allowlist and the reference workbook's sheet count differed at the time (13 vs 18, the extra sheets being legacy forms). Keep this as its own design decision; not in this change series.
 
-**Status: not implemented, by design.** The consolidated export is still a ZIP of per-report `.xlsx` files (`execute_consolidated_xlsx`). The sheet-count gap has since closed: the product allowlist now has 18 sheets, because the advance schedules joined the pack. A true single multi-sheet workbook remains an open design decision.
+**Status: implemented as v3.** `execute_consolidated_xlsx` keeps the v2 ZIP for
+old callers. A v3 request produces one `.xlsx` with the accepted 18 sheet
+names, order, hidden states, layouts, print settings, and normalized formulas.
 
 ---
 
@@ -117,13 +133,15 @@ Plan: `consolidated_xlsx` already existed as per-report workbooks zipped in `rep
 4. Phase D (fixture/seed corrections).
 5. Phase E (combined non-HBA schedule + replaced guard test).
 6. Phase F (run-level bill metadata design → build).
-7. Phase G (separate review).
+7. Phase G (completed by the v3 canonical export work).
 
-A+B+C was the core series; D and E could land on their own after A. In the shipped code, A, C, and D landed; B and E landed in changed form (global `v2` default; per-type schedules); F landed in part; G stayed open. Note one planned promise did not survive: `v1` behavior is no longer requestable for new builds (see Phase B).
+A+B+C was the core series; D and E could land on their own after A. In the
+shipped code, A, C, D, F, and G landed; B and E landed in changed form (global
+v3 default with explicit legacy v2; per-type schedules). One planned promise
+did not survive: v1 behavior is no longer requestable for new builds (see
+Phase B).
 
 ## Out of scope (unchanged)
 
-- Payslip layout changes (already line-driven).
-- Visual fidelity to the workbook (merged headers, Marathi headings) — a template-version concern.
+- Future template changes after the normalized v3 contract is accepted.
 - Default-component bootstrap feature.
-- Single-workbook consolidated export (Phase G placeholder only).

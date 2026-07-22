@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/accommodation/{assignment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Accommodation */
+        patch: operations["update_accommodation_api_accommodation__assignment_id__patch"];
+        trace?: never;
+    };
     "/api/accommodation/{assignment_id}/charge-versions": {
         parameters: {
             query?: never;
@@ -1093,18 +1110,28 @@ export interface components {
     schemas: {
         /** AccommodationChargeInput */
         AccommodationChargeInput: {
+            /** Additional Parking Charge */
+            additional_parking_charge?: number | string | null;
             /**
              * Effective From
              * Format: date
              */
             effective_from: string;
+            /** House Rent */
+            house_rent?: number | string | null;
             /** Informational Hra Foregone */
             informational_hra_foregone?: number | string | null;
             /** License Fee */
             license_fee: number | string;
+            /** Parking Charge */
+            parking_charge?: number | string | null;
+            /** Service Charge */
+            service_charge?: number | string | null;
         };
         /** AccommodationChargeVersionCreate */
         AccommodationChargeVersionCreate: {
+            /** Additional Parking Charge */
+            additional_parking_charge?: number | string | null;
             /** Change Reason */
             change_reason?: string | null;
             /**
@@ -1112,13 +1139,21 @@ export interface components {
              * Format: date
              */
             effective_from: string;
+            /** House Rent */
+            house_rent?: number | string | null;
             /** Informational Hra Foregone */
             informational_hra_foregone?: number | string | null;
             /** License Fee */
             license_fee: number | string;
+            /** Parking Charge */
+            parking_charge?: number | string | null;
+            /** Service Charge */
+            service_charge?: number | string | null;
         };
         /** AccommodationChargeVersionResponse */
         AccommodationChargeVersionResponse: {
+            /** Additional Parking Charge */
+            additional_parking_charge?: string | null;
             /** Change Reason */
             change_reason?: string | null;
             /**
@@ -1138,6 +1173,8 @@ export interface components {
             effective_from: string;
             /** Effective To */
             effective_to: string | null;
+            /** House Rent */
+            house_rent?: string | null;
             /**
              * Id
              * Format: uuid
@@ -1147,16 +1184,24 @@ export interface components {
             informational_hra_foregone?: string | null;
             /** License Fee */
             license_fee: string;
+            /** Parking Charge */
+            parking_charge?: string | null;
+            /** Service Charge */
+            service_charge?: string | null;
         };
         /** AccommodationCreate */
         AccommodationCreate: {
             charge: components["schemas"]["AccommodationChargeInput"];
+            /** Quarters Address */
+            quarters_address?: string | null;
             /** Quarters Identifier */
             quarters_identifier: string;
             quarters_location: components["schemas"]["QuartersLocation"];
         };
         /** AccommodationResponse */
         AccommodationResponse: {
+            /** Additional Parking Charge */
+            additional_parking_charge?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1171,6 +1216,8 @@ export interface components {
              * Format: uuid
              */
             employee_id: string;
+            /** House Rent */
+            house_rent?: string | null;
             /**
              * Id
              * Format: uuid
@@ -1180,10 +1227,16 @@ export interface components {
             informational_hra_foregone?: string | null;
             /** License Fee */
             license_fee?: string | null;
+            /** Parking Charge */
+            parking_charge?: string | null;
+            /** Quarters Address */
+            quarters_address?: string | null;
             /** Quarters Identifier */
             quarters_identifier: string;
             /** Quarters Location */
             quarters_location: string;
+            /** Service Charge */
+            service_charge?: string | null;
             /**
              * Updated At
              * Format: date-time
@@ -1191,6 +1244,13 @@ export interface components {
             updated_at: string;
             /** Version Id */
             version_id?: string | null;
+        };
+        /** AccommodationUpdate */
+        AccommodationUpdate: {
+            /** Quarters Address */
+            quarters_address?: string | null;
+            /** Quarters Identifier */
+            quarters_identifier?: string | null;
         };
         /** AdvanceCreate */
         AdvanceCreate: {
@@ -1778,6 +1838,8 @@ export interface components {
              * Format: uuid
              */
             posted_run_id: string;
+            /** Template Version */
+            template_version?: string | null;
         };
         /** ExportReportsResponse */
         ExportReportsResponse: {
@@ -1823,6 +1885,20 @@ export interface components {
          * @enum {string}
          */
         GpfJurisdiction: "mumbai" | "nagpur";
+        /**
+         * GpfRemittanceProfile
+         * @description Jurisdiction-specific destination copy for canonical GPF schedules.
+         */
+        GpfRemittanceProfile: {
+            /** Account Code */
+            account_code?: string | null;
+            /** Address Lines */
+            address_lines?: string[];
+            /** Authority Text */
+            authority_text?: string | null;
+            /** Office Name */
+            office_name?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1961,6 +2037,7 @@ export interface components {
             employer_transfer: boolean;
             /** Name */
             name: string;
+            register_column?: components["schemas"]["RegisterColumn"] | null;
             /** Schedule Account Head */
             schedule_account_head?: string | null;
             schedule_kind?: components["schemas"]["ScheduleKind"] | null;
@@ -1995,6 +2072,8 @@ export interface components {
             is_standard: boolean;
             /** Name */
             name: string;
+            /** Register Column */
+            register_column: string | null;
             /** Schedule Account Head */
             schedule_account_head: string | null;
             /** Schedule Kind */
@@ -2051,6 +2130,8 @@ export interface components {
         PayrollExportProfile: {
             /** Address Lines */
             address_lines?: string[];
+            /** Administrative Department */
+            administrative_department?: string | null;
             bank_advice_recipient?: components["schemas"]["BankAdviceRecipient"];
             /** Cin */
             cin?: string | null;
@@ -2060,13 +2141,27 @@ export interface components {
             ddo_name?: string | null;
             /** Department Code */
             department_code?: string | null;
+            /** Fund Source */
+            fund_source?: string | null;
+            /** Gpf Remittance Profiles */
+            gpf_remittance_profiles?: {
+                [key: string]: components["schemas"]["GpfRemittanceProfile"];
+            };
             head_of_account?: components["schemas"]["HeadOfAccount"];
             /** Legal Name */
             legal_name?: string | null;
+            /** Nps Employee Account Head */
+            nps_employee_account_head?: string | null;
+            /** Nps Employer Account Head */
+            nps_employer_account_head?: string | null;
             /** Office Name */
             office_name?: string | null;
+            /** Pay Bill Footer Text */
+            pay_bill_footer_text?: string | null;
             /** Phone */
             phone?: string | null;
+            /** Plan Status */
+            plan_status?: string | null;
             /** Salary Reference Prefix */
             salary_reference_prefix?: string | null;
             /** Signatories */
@@ -2338,6 +2433,14 @@ export interface components {
             payment_date?: string | null;
             /** Sub Head */
             sub_head?: string | null;
+            /** Token Date */
+            token_date?: string | null;
+            /** Token Number */
+            token_number?: string | null;
+            /** Voucher Date */
+            voucher_date?: string | null;
+            /** Voucher Number */
+            voucher_number?: string | null;
         };
         /** PayrollRunRosterHistoryResponse */
         PayrollRunRosterHistoryResponse: {
@@ -2373,6 +2476,16 @@ export interface components {
             class_name: string;
             /** Designation */
             designation: string;
+            /** Display Order */
+            display_order?: number | null;
+            /** Pay Bill Heading */
+            pay_bill_heading?: string | null;
+            /** Pay Scale */
+            pay_scale?: string | null;
+            /** Sanctioned Strength */
+            sanctioned_strength?: number | null;
+            /** Vacant Count */
+            vacant_count?: number | null;
         };
         /** PostResponse */
         PostResponse: {
@@ -2385,16 +2498,26 @@ export interface components {
             created_at: string;
             /** Designation */
             designation: string;
+            /** Display Order */
+            display_order: number | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Pay Bill Heading */
+            pay_bill_heading: string | null;
+            /** Pay Scale */
+            pay_scale: string | null;
+            /** Sanctioned Strength */
+            sanctioned_strength: number | null;
             /**
              * Updated At
              * Format: date-time
              */
             updated_at: string;
+            /** Vacant Count */
+            vacant_count: number | null;
         };
         /** PostUpdate */
         PostUpdate: {
@@ -2402,6 +2525,16 @@ export interface components {
             class_name?: string | null;
             /** Designation */
             designation?: string | null;
+            /** Display Order */
+            display_order?: number | null;
+            /** Pay Bill Heading */
+            pay_bill_heading?: string | null;
+            /** Pay Scale */
+            pay_scale?: string | null;
+            /** Sanctioned Strength */
+            sanctioned_strength?: number | null;
+            /** Vacant Count */
+            vacant_count?: number | null;
         };
         /** PostingInput */
         PostingInput: {
@@ -2410,6 +2543,8 @@ export interface components {
              * Format: uuid
              */
             office_id: string;
+            /** Pay Bill Post Id */
+            pay_bill_post_id?: string | null;
             /**
              * Post Id
              * Format: uuid
@@ -2447,6 +2582,8 @@ export interface components {
              * Format: uuid
              */
             office_id: string;
+            /** Pay Bill Post Id */
+            pay_bill_post_id: string | null;
             /**
              * Post Id
              * Format: uuid
@@ -2468,6 +2605,8 @@ export interface components {
             name: string;
             /** Pan */
             pan?: string | null;
+            /** Payroll Export Remark */
+            payroll_export_remark?: string | null;
             /** Pension Account */
             pension_account?: string | null;
             /** Pran */
@@ -2516,6 +2655,8 @@ export interface components {
             name: string;
             /** Pan */
             pan: string | null;
+            /** Payroll Export Remark */
+            payroll_export_remark: string | null;
             /** Pension Account */
             pension_account: string | null;
             /** Pran */
@@ -2642,6 +2783,12 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /**
+         * RegisterColumn
+         * @description Canonical Pay Bill column buckets available to pay components.
+         * @enum {string}
+         */
+        RegisterColumn: "basic_pay" | "dearness_allowance" | "city_compensatory_allowance" | "house_rent_allowance" | "wash_child_other_charges" | "other_reimbursement_salary_increment_difference" | "additional_conveyance_transport_allowance" | "transport_pta_honorarium" | "employer_share" | "festival_advance_other_recovery" | "gpf_subscription_refund_arrears" | "pension_employer_share" | "pension_employee_share" | "advances" | "flood_affected" | "income_tax" | "insurance" | "house_rent_service_charge_arrears" | "professional_tax" | "cooperative_recovery";
         /** ReportConfigurationResponse */
         ReportConfigurationResponse: {
             /** Key */
@@ -2699,8 +2846,14 @@ export interface components {
         ReportReadinessIssue: {
             /** Code */
             code: string;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Href */
+            href: string;
             /** Message */
             message: string;
+            /** Owner */
+            owner: string;
             /** Report Type */
             report_type: string;
         };
@@ -2717,8 +2870,11 @@ export interface components {
             designation: string;
             /** Name */
             name: string;
-            /** Role */
-            role: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "maker" | "checker" | "approving_officer" | "final_approver";
         };
         /**
          * ReportTypeItem
@@ -2811,6 +2967,41 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    update_accommodation_api_accommodation__assignment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccommodationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccommodationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_accommodation_charge_version_api_accommodation__assignment_id__charge_versions_post: {
         parameters: {
             query?: never;
@@ -5204,6 +5395,7 @@ export interface operations {
         parameters: {
             query: {
                 posted_run_id: string;
+                template_version?: string | null;
                 variant_key?: string | null;
             };
             header?: never;

@@ -56,6 +56,7 @@ class AccommodationAssignment(
     )
     quarters_location: str = Field(sa_column=Column(Text, nullable=False))
     quarters_identifier: str = Field(sa_column=Column(Text, nullable=False))
+    quarters_address: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
 
 
 accommodation_charge_versions = Table(
@@ -82,6 +83,10 @@ accommodation_charge_versions = Table(
     ),
     Column("validity", DATERANGE(), nullable=False),
     Column("license_fee", Numeric(12, 2), nullable=False),
+    Column("house_rent", Numeric(12, 2), nullable=True),
+    Column("service_charge", Numeric(12, 2), nullable=True),
+    Column("parking_charge", Numeric(12, 2), nullable=True),
+    Column("additional_parking_charge", Numeric(12, 2), nullable=True),
     Column("informational_hra_foregone", Numeric(12, 2), nullable=True),
     Column(
         "created_at",

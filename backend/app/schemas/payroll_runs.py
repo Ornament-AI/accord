@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    model_validator,
 )
 from app.schemas.money import MoneyAmount, RateValue
 
@@ -69,6 +70,10 @@ class PayrollRunReportMetadata(BaseModel):
     major_head: str | None = None
     sub_head: str | None = None
     detailed_head: str | None = None
+    token_number: str | None = None
+    token_date: date | None = None
+    voucher_number: str | None = None
+    voucher_date: date | None = None
     bank_advice_number: str | None = None
     bank_advice_date: date | None = None
     approval_note_number: str | None = None
@@ -96,6 +101,9 @@ class ReportReadinessIssue(BaseModel):
     report_type: str
     code: str
     message: str
+    owner: str
+    href: str
+    entity_id: str | None = None
 
 
 class ReportReadinessResponse(BaseModel):
@@ -169,6 +177,22 @@ class PayrollRunInputUpsert(BaseModel):
         if not stripped:
             raise ValueError("must not be empty or whitespace-only")
         return stripped
+
+    @model_validator(mode="after")
+    def _validate_value_and_service_period(self) -> "PayrollRunInputUpsert":
+        if (self.amount is None) == (self.rate is None):
+            raise ValueError("exactly one of amount or rate is required")
+        if self.rate is not None and self.input_kind != InputKind.OVERRIDE:
+            raise ValueError("rate is supported only for override inputs")
+        if (self.service_period_start is None) != (self.service_period_end is None):
+            raise ValueError("service_period_start and service_period_end are required together")
+        if (
+            self.service_period_start is not None
+            and self.service_period_end is not None
+            and self.service_period_start > self.service_period_end
+        ):
+            raise ValueError("service_period_start must not be after service_period_end")
+        return self
 
 
 class PayrollRunInputResponse(BaseModel):

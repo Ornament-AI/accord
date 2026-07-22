@@ -20,8 +20,9 @@ from app.reports.families.recovery import register_recovery_reports
 from app.reports.families.retirement import register_retirement_reports
 from app.reports.families.statutory import register as register_statutory
 
-# Canonical product-surface allowlist. Order is stable for ZIP entry order
-# and catalog presentation. Do not invent a second list on the frontend.
+# Product-surface allowlist. Order is stable for legacy ZIP entries and catalog
+# presentation; the v3 workbook's exact sheet order lives in canonical_excel.
+# Do not invent a second product allowlist on the frontend.
 PRODUCT_REPORT_SHEETS: tuple[str, ...] = (
     "pay_bill",
     "treasury_face",

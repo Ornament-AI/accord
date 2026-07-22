@@ -16,6 +16,25 @@ from app.schemas.pay_setup import REPORT_CONFIG_KEY_RE, PayrollExportProfile
 from app.services.db_errors import raise_integrity_error
 
 
+_CANONICAL_SIGNATORY_ROLES = frozenset({"maker", "checker", "approving_officer", "final_approver"})
+
+
+def _profile_for_typed_read(value: dict[str, Any]) -> dict[str, Any]:
+    """Return a validation-safe projection without rewriting legacy storage."""
+
+    signatories = value.get("signatories")
+    if not isinstance(signatories, list):
+        return value
+
+    projected = dict(value)
+    projected["signatories"] = [
+        signatory
+        for signatory in signatories
+        if isinstance(signatory, dict) and signatory.get("role") in _CANONICAL_SIGNATORY_ROLES
+    ]
+    return projected
+
+
 async def list_report_configurations(
     db: AsyncSession,
     *,
@@ -117,7 +136,7 @@ async def get_payroll_export_profile(
     ).scalar_one_or_none()
     if row is None:
         return {"value": PayrollExportProfile().model_dump(mode="json"), "updated_at": None}
-    value = PayrollExportProfile.model_validate(row.value)
+    value = PayrollExportProfile.model_validate(_profile_for_typed_read(row.value))
     return {"value": value.model_dump(mode="json"), "updated_at": row.updated_at}
 
 
@@ -127,10 +146,32 @@ async def upsert_payroll_export_profile(
     organization_id: UUID,
     profile: PayrollExportProfile,
 ) -> dict[str, Any]:
+    existing = (
+        await db.execute(
+            sa.select(ReportConfiguration).where(
+                ReportConfiguration.organization_id == organization_id,
+                ReportConfiguration.key == "payroll_export_profile",
+            )
+        )
+    ).scalar_one_or_none()
+    value = profile.model_dump(mode="json")
+    if existing is not None and isinstance(existing.value, dict):
+        existing_signatories = existing.value.get("signatories")
+        if isinstance(existing_signatories, list):
+            legacy_signatories = [
+                signatory
+                for signatory in existing_signatories
+                if not (
+                    isinstance(signatory, dict)
+                    and signatory.get("role") in _CANONICAL_SIGNATORY_ROLES
+                )
+            ]
+            value["signatories"] = [*legacy_signatories, *value["signatories"]]
     row = await _upsert_report_configuration(
         db,
         organization_id=organization_id,
         key="payroll_export_profile",
-        value=profile.model_dump(mode="json"),
+        value=value,
     )
-    return {"value": row["value"], "updated_at": row["updated_at"]}
+    typed = PayrollExportProfile.model_validate(_profile_for_typed_read(row["value"]))
+    return {"value": typed.model_dump(mode="json"), "updated_at": row["updated_at"]}

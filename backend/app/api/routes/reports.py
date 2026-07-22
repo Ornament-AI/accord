@@ -119,6 +119,7 @@ async def export_reports(
     request_payload = {
         "command": "export_reports",
         "posted_run_id": str(body.posted_run_id),
+        "template_version": body.template_version,
     }
 
     async def _execute() -> dict[str, Any]:
@@ -129,6 +130,7 @@ async def export_reports(
             posted_run_id=body.posted_run_id,
             requested_by=user_id,
             registry=registry,
+            template_version=body.template_version,
         )
         return {"job_id": str(job.id), "status": str(job.status)}
 
@@ -224,6 +226,7 @@ async def preview_report(
     db: Session,
     registry: ReportRegistryDep,
     posted_run_id: UUID = Query(...),
+    template_version: str | None = Query(default=None),
     variant_key: str | None = Query(default=None),
     _: AuthPrincipal = Depends(require_capability("generate_reports")),
 ) -> ReportPreviewResponse:
@@ -233,6 +236,7 @@ async def preview_report(
         organization_id=tenant_org_id(tenant),
         report_type=report_type,
         posted_run_id=posted_run_id,
+        template_version=template_version,
         variant_key=variant_key,
         registry=registry,
         actor_user_id=tenant_user_id(tenant),

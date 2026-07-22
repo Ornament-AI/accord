@@ -47,6 +47,7 @@ from app.reports.families.recovery import (
     register_recovery_reports,
 )
 from app.services import versioning
+from app.services.report_readiness import v3_report_readiness_issues
 from app.services.run_calculation import calculate_run_command
 from app.services.run_posting import post_run
 from app.tenancy import bind_tenant_context
@@ -101,7 +102,11 @@ def _needs_recovery(employee: EmployeeSeed) -> bool:
     return bool(codes & (ADVANCE_COMPONENT_CODES | {"ACCOMMODATION_LICENSE_FEE"}))
 
 
-async def _seed_posted_june_recovery_world(session: AsyncSession) -> dict:
+async def _seed_posted_june_recovery_world(
+    session: AsyncSession,
+    *,
+    accommodation_breakdown: str = "valid",
+) -> dict:
     """Seed the June recovery slice (7 employees), calculate, approve, and post."""
     fixture = load_june_fixture()
     employees = [e for e in fixture.employees if _needs_recovery(e)]
@@ -210,15 +215,33 @@ async def _seed_posted_june_recovery_world(session: AsyncSession) -> dict:
         if license_fee is not None:
             assert emp.accommodation is not None
             foregone = line_amount(emp, "FOREGONE_HRA")
+            quarters_location = map_quarters_location(emp.accommodation.location)
             assignment = AccommodationAssignment(
                 organization_id=org.id,
                 employee_id=header.id,
-                quarters_location=map_quarters_location(emp.accommodation.location),
+                quarters_location=quarters_location,
                 quarters_identifier=f"Q-{emp.fixture_id}",
+                quarters_address=f"Quarter Q-{emp.fixture_id}",
             )
             session.add(assignment)
             await session.flush()
-            charge_values: dict[str, object] = {"license_fee": _dec(license_fee)}
+            charge_values: dict[str, object] = {
+                "license_fee": _dec(license_fee),
+                "house_rent": _dec(license_fee),
+                "service_charge": Decimal("0.00"),
+                "parking_charge": Decimal("0.00"),
+                "additional_parking_charge": Decimal("0.00"),
+            }
+            if accommodation_breakdown == "missing":
+                charge_values["service_charge"] = None
+            elif accommodation_breakdown == "mismatch":
+                charge_values["house_rent"] = _dec(license_fee) + Decimal("1.00")
+            elif accommodation_breakdown == "worli_null_parking":
+                if quarters_location == "worli":
+                    charge_values["parking_charge"] = None
+                    charge_values["additional_parking_charge"] = None
+            elif accommodation_breakdown != "valid":
+                raise AssertionError(f"Unknown breakdown mode: {accommodation_breakdown}")
             if foregone is not None:
                 charge_values["informational_hra_foregone"] = _dec(foregone)
             await versioning.insert_version(
@@ -512,12 +535,15 @@ async def test_june_recovery_schedules_golden_and_formatters(session, posted_jun
 
 
 @pytest.mark.asyncio
-async def test_v2_recovery_reports_ignore_later_master_header_edits(session, posted_june_recovery):
+@pytest.mark.parametrize("template_version", ["v2", "v3"])
+async def test_snapshotted_recovery_reports_ignore_later_master_header_edits(
+    session, posted_june_recovery, template_version
+):
     world = posted_june_recovery
     ctx = ReportContext(
         organization_id=world["org_id"],
         posted_run_id=world["run_id"],
-        template_version="v2",
+        template_version=template_version,
         generated_at=datetime.now(timezone.utc),
         engine_version="test",
     )
@@ -552,6 +578,113 @@ async def test_v2_recovery_reports_ignore_later_master_header_edits(session, pos
     )
     assert hba_after.sections[0].rows == hba_before.sections[0].rows
     assert mumbai_after.sections[0].rows == mumbai_before.sections[0].rows
+    if template_version == "v3":
+        hba_keys = {column.key for column in hba_before.sections[0].columns}
+        assert {"designation", "sanctioned_on", "scheduled_installment_amount"} <= hba_keys
+        accommodation_keys = {column.key for column in mumbai_before.sections[0].columns}
+        assert {
+            "designation",
+            "quarters_address",
+            "house_rent",
+            "service_charge",
+            "parking_charge",
+            "additional_parking_charge",
+        } <= accommodation_keys
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("breakdown_mode", "expected_code"),
+    [
+        ("missing", "employee_accommodation_breakdown_incomplete"),
+        ("mismatch", "employee_accommodation_breakdown_mismatch"),
+    ],
+)
+async def test_v3_accommodation_breakdown_readiness_and_builder_fail_closed(
+    session,
+    breakdown_mode,
+    expected_code,
+):
+    await _truncate_identity_with_retry()
+    world = await _seed_posted_june_recovery_world(
+        session,
+        accommodation_breakdown=breakdown_mode,
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+    issues = await v3_report_readiness_issues(
+        session,
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+    )
+    matching = [issue for issue in issues if issue["code"] == expected_code]
+    assert matching
+    assert all(issue["owner"] == "employee" for issue in matching)
+    assert all(issue.get("entity_id") for issue in matching)
+
+    ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v3",
+        generated_at=datetime.now(timezone.utc),
+        engine_version="test",
+    )
+    with pytest.raises(ConflictError, match="Canonical accommodation"):
+        await build_accommodation_schedule(
+            session,
+            ctx,
+            location="mumbai",
+            report_type=REPORT_TYPE_ACCOMMODATION_MUMBAI,
+        )
+
+
+@pytest.mark.asyncio
+async def test_v3_worli_accepts_null_parking_buckets(session):
+    await _truncate_identity_with_retry()
+    world = await _seed_posted_june_recovery_world(
+        session,
+        accommodation_breakdown="worli_null_parking",
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+    issues = await v3_report_readiness_issues(
+        session,
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+    )
+    assert not any(
+        issue["report_type"] == REPORT_TYPE_ACCOMMODATION_WORLI
+        and issue["code"]
+        in {
+            "employee_accommodation_breakdown_incomplete",
+            "employee_accommodation_breakdown_mismatch",
+        }
+        for issue in issues
+    )
+
+    ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v3",
+        generated_at=datetime.now(timezone.utc),
+        engine_version="test",
+    )
+    dto = await build_accommodation_schedule(
+        session,
+        ctx,
+        location="worli",
+        report_type=REPORT_TYPE_ACCOMMODATION_WORLI,
+    )
+    section = dto.sections[0]
+    parking_index = next(
+        index for index, column in enumerate(section.columns) if column.key == "parking_charge"
+    )
+    additional_index = next(
+        index
+        for index, column in enumerate(section.columns)
+        if column.key == "additional_parking_charge"
+    )
+    assert section.rows
+    assert all(row[parking_index] is None for row in section.rows)
+    assert all(row[additional_index] is None for row in section.rows)
 
 
 @pytest.mark.asyncio

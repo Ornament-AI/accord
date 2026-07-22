@@ -163,23 +163,44 @@ class _PrimaryAccountLookupError(Exception):
         super().__init__("primary salary account cardinality error")
 
 
-def _bank_advice_columns() -> tuple[ReportColumn, ...]:
-    return (
+def _bank_advice_columns(*, canonical: bool = False) -> tuple[ReportColumn, ...]:
+    columns = [
         ReportColumn(key="employee_number", header="Employee No.", kind=ColumnKind.TEXT),
         ReportColumn(key="name", header="Name", kind=ColumnKind.TEXT),
-        ReportColumn(key="account_number", header="Account Number", kind=ColumnKind.TEXT),
-        ReportColumn(key="ifsc", header="IFSC", kind=ColumnKind.TEXT),
-        ReportColumn(key="disbursement", header="Amount Credited", kind=ColumnKind.MONEY),
+    ]
+    if canonical:
+        columns.extend(
+            (
+                ReportColumn(key="bank_name", header="Bank Name", kind=ColumnKind.TEXT),
+                ReportColumn(key="bank_branch", header="Branch", kind=ColumnKind.TEXT),
+            )
+        )
+    columns.extend(
+        (
+            ReportColumn(key="account_number", header="Account Number", kind=ColumnKind.TEXT),
+            ReportColumn(key="ifsc", header="IFSC", kind=ColumnKind.TEXT),
+            ReportColumn(key="disbursement", header="Amount Credited", kind=ColumnKind.MONEY),
+        )
     )
+    return tuple(columns)
 
 
-def _payslip_columns() -> tuple[ReportColumn, ...]:
-    return (
+def _payslip_columns(*, canonical: bool = False) -> tuple[ReportColumn, ...]:
+    columns = [
         ReportColumn(key="line_kind", header="Kind", kind=ColumnKind.TEXT),
         ReportColumn(key="code", header="Code / Field", kind=ColumnKind.TEXT),
         ReportColumn(key="detail", header="Detail", kind=ColumnKind.TEXT),
         ReportColumn(key="amount", header="Amount", kind=ColumnKind.MONEY),
-    )
+    ]
+    if canonical:
+        columns.append(
+            ReportColumn(
+                key="employer_transfer",
+                header="Employer Transfer",
+                kind=ColumnKind.TEXT,
+            )
+        )
+    return tuple(columns)
 
 
 def _posted_net_payable(version: Any) -> Decimal:
@@ -226,7 +247,7 @@ class BankAdviceBuilder:
 
         snapshot = None
         identities: dict[str, Any] = {}
-        if ctx.template_version == "v2":
+        if ctx.template_version in {"v2", "v3"}:
             snapshot = await load_report_snapshot(
                 session,
                 organization_id=ctx.organization_id,
@@ -263,7 +284,8 @@ class BankAdviceBuilder:
                     or [str(eid) for eid in exc.employee_ids]
                 ) from exc
 
-        columns = _bank_advice_columns()
+        canonical = ctx.template_version == "v3"
+        columns = _bank_advice_columns(canonical=canonical)
         rows: list[tuple[Any, ...]] = []
         advice_total = ZERO
 
@@ -275,6 +297,8 @@ class BankAdviceBuilder:
                 name = str(identity.get("name") or "")
                 account_number = str(identity["bank_account_number"])
                 ifsc = str(identity["bank_ifsc"])
+                bank_name = str(identity.get("bank_name") or "")
+                bank_branch = str(identity.get("bank_branch") or "")
             else:
                 profile = await resolve_profile_as_of(
                     session,
@@ -286,17 +310,14 @@ class BankAdviceBuilder:
                 account = accounts[employee_id]
                 account_number = str(account["account_number"])
                 ifsc = str(account["ifsc"])
+                bank_name = str(account["bank_name"] or "")
+                bank_branch = str(account["branch"] or "")
             credit = money(result["disbursement"])
             advice_total += credit
-            rows.append(
-                (
-                    str(result["employee_number"]),
-                    name,
-                    account_number,
-                    ifsc,
-                    credit,
-                )
-            )
+            row: tuple[Any, ...] = (str(result["employee_number"]), name)
+            if canonical:
+                row += (bank_name, bank_branch)
+            rows.append(row + (account_number, ifsc, credit))
 
         advice_total = money(advice_total)
         posted_disbursement = _posted_disbursement(version)
@@ -310,13 +331,7 @@ class BankAdviceBuilder:
                 f"bank advice total {advice_total} != posted disbursement {posted_disbursement}"
             )
 
-        totals: tuple[Any, ...] = (
-            "TOTAL",
-            None,
-            None,
-            None,
-            advice_total,
-        )
+        totals: tuple[Any, ...] = ("TOTAL",) + (None,) * (len(columns) - 2) + (advice_total,)
 
         sections: list[TableSection] = []
         if snapshot is not None:
@@ -351,6 +366,14 @@ class BankAdviceBuilder:
             ),
             subtitle=period_label(period.period_year, period.period_month),
             sections=tuple(sections),
+            metadata=(
+                {
+                    "report_profile": dict(snapshot.get("report_profile") or {}),
+                    "run_metadata": dict(snapshot.get("run_metadata") or {}),
+                }
+                if snapshot is not None and ctx.template_version == "v3"
+                else {}
+            ),
         )
 
 
@@ -397,11 +420,12 @@ class PayslipBundleBuilder:
             run_version_id=version["id"],
         )
 
-        columns = _payslip_columns()
+        canonical = ctx.template_version == "v3"
+        columns = _payslip_columns(canonical=canonical)
         sections: list[TableSection] = []
         snapshot = None
         identities: dict[str, Any] = {}
-        if ctx.template_version == "v2":
+        if ctx.template_version in {"v2", "v3"}:
             snapshot = await load_report_snapshot(
                 session,
                 organization_id=ctx.organization_id,
@@ -443,37 +467,50 @@ class PayslipBundleBuilder:
             disbursement = money(result["disbursement"])
             words = amount_in_words(disbursement)
 
+            def payslip_row(
+                kind: str,
+                code: str,
+                detail: Any,
+                amount: Any,
+                *,
+                employer_transfer: bool = False,
+            ) -> tuple[Any, ...]:
+                values = (kind, code, detail, amount)
+                return values + (employer_transfer,) if canonical else values
+
             rows: list[tuple[Any, ...]] = [
-                ("identity", "employee_number", employee_number, None),
-                ("identity", "name", name, None),
-                ("identity", "designation", designation, None),
-                ("identity", "tax_regime", tax_regime, None),
-                ("identity", "pan", pan_masked or "", None),
-                ("identity", "pran", pran_masked or "", None),
+                payslip_row("identity", "employee_number", employee_number, None),
+                payslip_row("identity", "name", name, None),
+                payslip_row("identity", "designation", designation, None),
+                payslip_row("identity", "tax_regime", tax_regime, None),
+                payslip_row("identity", "pan", pan_masked or "", None),
+                payslip_row("identity", "pran", pran_masked or "", None),
             ]
             for line in item["lines"]:
                 kind = _line_kind_for_payslip(line)
+                trace = line["trace"] or {}
                 rows.append(
-                    (
+                    payslip_row(
                         kind,
                         str(line["component_code"]),
                         _line_display_classification(line),
                         money(line["amount"]),
+                        employer_transfer=bool(trace.get("employer_transfer", False)),
                     )
                 )
             offbill = money(result["offbill_employer_remittance"])
-            rows.append(("net", "net_payable", "Net payable (treasury-face)", net))
+            rows.append(payslip_row("net", "net_payable", "Net payable (treasury-face)", net))
             if offbill > ZERO:
                 rows.append(
-                    (
+                    payslip_row(
                         "net",
                         "offbill_employer_remittance",
                         "Employer NPS share (off-bill; not withheld from pay)",
                         offbill,
                     )
                 )
-            rows.append(("net", "disbursement", "Amount credited", disbursement))
-            rows.append(("net", "amount_in_words", words, None))
+            rows.append(payslip_row("net", "disbursement", "Amount credited", disbursement))
+            rows.append(payslip_row("net", "amount_in_words", words, None))
 
             sections.append(
                 TableSection(
@@ -494,6 +531,14 @@ class PayslipBundleBuilder:
             ),
             subtitle=period_label(period.period_year, period.period_month),
             sections=tuple(sections),
+            metadata=(
+                {
+                    "report_profile": dict(snapshot.get("report_profile") or {}),
+                    "run_metadata": dict(snapshot.get("run_metadata") or {}),
+                }
+                if snapshot is not None and ctx.template_version == "v3"
+                else {}
+            ),
         )
 
 
@@ -507,6 +552,10 @@ def bank_advice_to_json(dto: ReportDTO) -> dict[str, Any]:
 
 
 def bank_advice_to_excel(dto: ReportDTO) -> bytes:
+    if dto.template_version == "v3":
+        from app.reports.canonical_front_sheets import bank_tip_to_excel
+
+        return bank_tip_to_excel(dto)
     return base_to_excel(dto)
 
 
@@ -521,6 +570,10 @@ def payslip_to_json(dto: ReportDTO) -> dict[str, Any]:
 
 def payslip_to_excel(dto: ReportDTO) -> bytes:
     """One worksheet per employee, matching the PDF bundle section boundary."""
+    if dto.template_version == "v3":
+        from app.reports.canonical_front_sheets import payslip_to_excel as canonical_payslip
+
+        return canonical_payslip(dto)
     return base_to_excel(dto)
 
 

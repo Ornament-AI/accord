@@ -52,6 +52,8 @@ class CalculationTrace:
     engine_version: str
     employer_transfer: bool = False
     transfer_of: str | None = None
+    service_period: str | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -23,8 +23,9 @@ from app.reports.base import (
     to_json,
 )
 from app.services.report_generation import (
+    CANONICAL_RENDERER_REVISION,
     DEFAULT_ENGINE_VERSION,
-    DEFAULT_TEMPLATE_VERSION,
+    GENERIC_DEFAULT_TEMPLATE_VERSION,
     PostedRunNotFoundError,
     ReportTypeNotFoundError,
     RunNotPostedError,
@@ -32,6 +33,7 @@ from app.services.report_generation import (
     execute_generate_report,
     request_report,
 )
+from app.services.artifacts import create_artifact
 from app.storage.memory import InMemoryObjectStorage
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_membership, seed_organization, seed_user
@@ -68,10 +70,10 @@ class _FakeBuilder:
         )
 
 
-def _fresh_registry() -> ReportRegistry:
+def _fresh_registry(report_type: str = FAKE_REPORT_TYPE) -> ReportRegistry:
     registry = ReportRegistry()
     registry.register(
-        FAKE_REPORT_TYPE,
+        report_type,
         builder=_FakeBuilder(),
         to_json=to_json,
         to_excel=lambda dto: EXCEL_BYTES,
@@ -142,12 +144,55 @@ async def test_request_report_enqueues_with_dedupe_key(session):
         registry=registry,
     )
 
-    expected = f"{FAKE_REPORT_TYPE}:{world['run_id']}:excel:{DEFAULT_TEMPLATE_VERSION}"
+    expected = f"{FAKE_REPORT_TYPE}:{world['run_id']}:excel:{GENERIC_DEFAULT_TEMPLATE_VERSION}"
     assert job.job_type == "generate_report"
     assert job.dedupe_key == expected
     assert job.payload["report_type"] == FAKE_REPORT_TYPE
     assert job.payload["format"] == "excel"
-    assert job.payload["template_version"] == DEFAULT_TEMPLATE_VERSION
+    assert job.payload["template_version"] == GENERIC_DEFAULT_TEMPLATE_VERSION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("report_type", ["component_schedule", "advance_schedule"])
+async def test_generic_parameterized_reports_default_to_v2(session, report_type):
+    world = await _seed_world(session)
+    job = await request_report(
+        session,
+        InMemoryJobQueue(),
+        organization_id=world["org_id"],
+        report_type=report_type,
+        posted_run_id=world["run_id"],
+        format="excel",
+        requested_by=world["user_id"],
+        registry=_fresh_registry(report_type),
+        variant_key="custom",
+    )
+
+    assert job.payload["template_version"] == "v2"
+    assert job.payload["renderer_revision"] is None
+
+
+@pytest.mark.asyncio
+async def test_product_report_defaults_to_revisioned_v3(session, monkeypatch):
+    async def ready(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("app.services.report_generation.require_v3_report_readiness", ready)
+    world = await _seed_world(session)
+    job = await request_report(
+        session,
+        InMemoryJobQueue(),
+        organization_id=world["org_id"],
+        report_type="pay_bill",
+        posted_run_id=world["run_id"],
+        format="excel",
+        requested_by=world["user_id"],
+        registry=_fresh_registry("pay_bill"),
+    )
+
+    assert job.payload["template_version"] == "v3"
+    assert job.payload["renderer_revision"] == CANONICAL_RENDERER_REVISION
+    assert job.dedupe_key.endswith(f":v3:{CANONICAL_RENDERER_REVISION}")
 
 
 @pytest.mark.asyncio
@@ -340,3 +385,52 @@ async def test_execute_generate_report_reuses_finalized_artifact(session):
         .all()
     )
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_revisioned_v3_does_not_reuse_pre_fix_artifact(session, monkeypatch):
+    async def ready(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("app.services.report_generation.require_v3_report_readiness", ready)
+    world = await _seed_world(session)
+    queue = InMemoryJobQueue()
+    registry = _fresh_registry("pay_bill")
+    storage = InMemoryObjectStorage()
+    legacy = await create_artifact(
+        session,
+        storage,
+        organization_id=world["org_id"],
+        report_type="pay_bill",
+        template_version="v3",
+        content=PDF_BYTES,
+        content_type=CONTENT_TYPES["pdf"],
+        requested_by=world["user_id"],
+        posted_run_id=world["run_id"],
+        engine_version=DEFAULT_ENGINE_VERSION,
+    )
+    legacy_id = legacy.id
+    await _bind(session, world["org_id"], world["user_id"])
+    job = await request_report(
+        session,
+        queue,
+        organization_id=world["org_id"],
+        report_type="pay_bill",
+        posted_run_id=world["run_id"],
+        format="pdf",
+        requested_by=world["user_id"],
+        registry=registry,
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    first = await execute_generate_report(session, storage, job, registry=registry)
+    assert first["artifact_id"] != str(legacy_id)
+
+    await _bind(session, world["org_id"], world["user_id"])
+    current = await session.get(ExportArtifact, UUID(first["artifact_id"]))
+    assert current is not None
+    assert current.template_version == f"v3+{CANONICAL_RENDERER_REVISION}"
+
+    await _bind(session, world["org_id"], world["user_id"])
+    second = await execute_generate_report(session, storage, job, registry=registry)
+    assert second == {"artifact_id": first["artifact_id"], "reused": True}

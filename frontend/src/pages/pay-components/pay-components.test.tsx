@@ -22,6 +22,7 @@ import { CreateRateVersionDialog } from "./CreateRateVersionDialog";
 import { EditPayComponentDialog } from "./EditPayComponentDialog";
 import PayComponentDetailPage from "./PayComponentDetailPage";
 import PayComponentsPage from "./PayComponentsPage";
+import { ReportProfileDialog } from "./ReportProfileDialog";
 
 const PAGE_TIMEOUT = 15_000;
 
@@ -87,12 +88,31 @@ describe("Pay Components list page", () => {
 	);
 
 	it(
-		"creates a pay component successfully",
+		"opens report defaults directly from an actionable readiness link",
 		async () => {
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
 			});
 			const { handlers: payHandlers } = createPayComponentHandlers();
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRoutes("/pay-components?reportDefaults=1");
+
+			expect(
+				await screen.findByRole("heading", { name: "Report Defaults" }, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"creates a pay component successfully",
+		async () => {
+			const onCreate = vi.fn();
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayComponentHandlers({ onCreate });
 			server.use(...authHandlers, ...payHandlers);
 
 			renderPayRoutes("/pay-components");
@@ -106,6 +126,8 @@ describe("Pay Components list page", () => {
 			fireEvent.change(screen.getByLabelText("Code"), { target: { value: "DA" } });
 			fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Dearness Allowance" } });
 			fireEvent.change(screen.getByLabelText("Display Order"), { target: { value: "3" } });
+			openBaseUiSelect(screen.getByLabelText("Pay Bill Column"));
+			pickBaseUiOption("Dearness Allowance");
 			fireEvent.click(screen.getByRole("button", { name: "Create Component" }));
 
 			await waitFor(() => {
@@ -114,6 +136,18 @@ describe("Pay Components list page", () => {
 				).not.toBeInTheDocument();
 			});
 			expect(await screen.findByText("Dearness Allowance")).toBeInTheDocument();
+			expect(onCreate).toHaveBeenCalledWith({
+				code: "DA",
+				name: "Dearness Allowance",
+				classification: "earning",
+				register_column: "dearness_allowance",
+				display_order: 3,
+				employer_transfer: false,
+				transfer_of: null,
+				schedule_kind: null,
+				schedule_title: null,
+				schedule_account_head: null,
+			});
 		},
 		PAGE_TIMEOUT,
 	);
@@ -201,6 +235,7 @@ describe("Edit Pay Component dialog", () => {
 			name: "Basic Pay",
 			classification: "earning",
 			display_order: 1,
+			register_column: "basic_pay",
 			is_active: true,
 			is_standard: true,
 		});
@@ -229,6 +264,8 @@ describe("Edit Pay Component dialog", () => {
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Basic Pay Revised" } });
 		fireEvent.change(screen.getByLabelText("Display Order"), { target: { value: "5" } });
+		openBaseUiSelect(screen.getByLabelText("Pay Bill Column"));
+		pickBaseUiOption("Dearness Allowance");
 		fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
 		await waitFor(() => {
@@ -239,6 +276,7 @@ describe("Edit Pay Component dialog", () => {
 			body: {
 				name: "Basic Pay Revised",
 				display_order: 5,
+				register_column: "dearness_allowance",
 				employer_transfer: false,
 				transfer_of: null,
 				schedule_kind: null,
@@ -249,6 +287,149 @@ describe("Edit Pay Component dialog", () => {
 		expect(patches[0].body).not.toHaveProperty("code");
 		expect(patches[0].body).not.toHaveProperty("classification");
 		expect(patches[0].body).not.toHaveProperty("is_active");
+	});
+});
+
+describe("Report Profile dialog", () => {
+	beforeEach(() => {
+		queryClient.clear();
+	});
+
+	it("round-trips canonical organization fields and validates signatory pairs", async () => {
+		const onUpdateReportProfile = vi.fn();
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: payHandlers } = createPayComponentHandlers({
+			reportProfile: {
+				legal_name: "MSIDC",
+				address_lines: ["Corporate Office, Mumbai", "Maharashtra 400020"],
+				cin: "U43900MH2023SGC412992",
+				phone: "022-20822686",
+				website: "www.msidc.org",
+				salary_reference_prefix: "MSIDC/Salary",
+				administrative_department: "Industries Department",
+				fund_source: "State Fund",
+				plan_status: "Non-Plan",
+				pay_bill_footer_text: "Certified that the bill is correct.",
+				nps_employee_account_head: "8342-00-117-01 Employee contribution",
+				nps_employer_account_head: "8342-00-117-02 Employer contribution",
+				signatories: [
+					{
+						role: "final_approver",
+						name: "Managing Director",
+						designation: "Managing Director",
+					},
+				],
+				gpf_remittance_profiles: {
+					mumbai: {
+						office_name: "Accountant General Mumbai",
+						address_lines: ["Mumbai 400020"],
+						account_code: "GPF-MUM",
+						authority_text: "Pay and Accounts Office",
+					},
+					nagpur: {
+						office_name: "Accountant General Nagpur",
+						address_lines: ["Nagpur 440001"],
+						account_code: "GPF-NAG",
+						authority_text: "Treasury Office",
+					},
+				},
+			},
+			onUpdateReportProfile,
+		});
+		server.use(...authHandlers, ...payHandlers);
+
+		renderDialog(<ReportProfileDialog open onOpenChange={vi.fn()} />);
+
+		expect(await screen.findByDisplayValue("U43900MH2023SGC412992")).toBeInTheDocument();
+		expect(screen.getByLabelText("Phone")).toHaveValue("022-20822686");
+		expect(screen.getByLabelText("Website")).toHaveValue("www.msidc.org");
+		expect(screen.getByLabelText("Salary reference prefix")).toHaveValue("MSIDC/Salary");
+		expect(screen.getByLabelText("Administrative department")).toHaveValue("Industries Department");
+		expect(screen.getByLabelText("Fund source")).toHaveValue("State Fund");
+		expect(screen.getByLabelText("Plan status")).toHaveValue("Non-Plan");
+		expect(screen.getByLabelText("Pay Bill footer text")).toHaveValue(
+			"Certified that the bill is correct.",
+		);
+		expect(screen.getByLabelText("Office address")).toHaveValue(
+			"Corporate Office, Mumbai\nMaharashtra 400020",
+		);
+		expect(screen.getByLabelText("Employee contribution account head")).toHaveValue(
+			"8342-00-117-01 Employee contribution",
+		);
+		expect(screen.getByLabelText("Employer contribution account head")).toHaveValue(
+			"8342-00-117-02 Employer contribution",
+		);
+		expect(screen.getByLabelText("Final approver name")).toHaveValue("Managing Director");
+		expect(screen.getByDisplayValue("GPF-MUM")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("GPF-NAG")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("Maker name"), { target: { value: "Maker One" } });
+		fireEvent.click(screen.getByRole("button", { name: "Save" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Maker name and designation must be entered together.",
+		);
+		expect(onUpdateReportProfile).not.toHaveBeenCalled();
+
+		fireEvent.change(screen.getByLabelText("Maker designation"), {
+			target: { value: "Accounts Officer" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+		await waitFor(() => expect(onUpdateReportProfile).toHaveBeenCalledOnce());
+		expect(onUpdateReportProfile).toHaveBeenCalledWith({
+			legal_name: "MSIDC",
+			office_name: null,
+			address_lines: ["Corporate Office, Mumbai", "Maharashtra 400020"],
+			cin: "U43900MH2023SGC412992",
+			phone: "022-20822686",
+			website: "www.msidc.org",
+			ddo_name: null,
+			ddo_code: null,
+			department_code: null,
+			administrative_department: "Industries Department",
+			treasury_code: null,
+			fund_source: "State Fund",
+			plan_status: "Non-Plan",
+			salary_reference_prefix: "MSIDC/Salary",
+			pay_bill_footer_text: "Certified that the bill is correct.",
+			nps_employee_account_head: "8342-00-117-01 Employee contribution",
+			nps_employer_account_head: "8342-00-117-02 Employer contribution",
+			gpf_remittance_profiles: {
+				mumbai: {
+					office_name: "Accountant General Mumbai",
+					address_lines: ["Mumbai 400020"],
+					account_code: "GPF-MUM",
+					authority_text: "Pay and Accounts Office",
+				},
+				nagpur: {
+					office_name: "Accountant General Nagpur",
+					address_lines: ["Nagpur 440001"],
+					account_code: "GPF-NAG",
+					authority_text: "Treasury Office",
+				},
+			},
+			head_of_account: {
+				demand_number: null,
+				major_head: null,
+				sub_head: null,
+				detailed_head: null,
+			},
+			bank_advice_recipient: {
+				bank_name: null,
+				branch: null,
+				address_lines: [],
+			},
+			signatories: [
+				{ role: "maker", name: "Maker One", designation: "Accounts Officer" },
+				{
+					role: "final_approver",
+					name: "Managing Director",
+					designation: "Managing Director",
+				},
+			],
+		});
 	});
 });
 

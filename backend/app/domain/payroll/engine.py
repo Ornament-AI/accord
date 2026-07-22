@@ -50,7 +50,7 @@ from app.domain.payroll.inputs import ComponentInput, EmployeeCalcInput, RunCalc
 from app.domain.payroll.money import Money
 from app.domain.payroll.results import CalculationTrace, EmployeeResult, RunResult
 
-ENGINE_VERSION: str = "accord-engine/1.1.0"
+ENGINE_VERSION: str = "accord-engine/1.2.0"
 
 
 class CalculationCycleError(ValueError):
@@ -252,6 +252,8 @@ def calculate_employee(input: EmployeeCalcInput) -> EmployeeResult:
             engine_version=ENGINE_VERSION,
             employer_transfer=comp.employer_transfer,
             transfer_of=comp.transfer_of,
+            service_period=comp.service_period,
+            reason=comp.reason,
         )
 
     # Emit lines in original input order (deterministic audit order).
@@ -328,9 +330,11 @@ def _canonical_run_payload(
                     "engine_version": line.engine_version,
                     "employer_transfer": line.employer_transfer,
                     "rate": None if line.rate is None else line.rate.to_canonical_str(),
+                    "reason": line.reason,
                     "rounded_value": line.rounded_value.to_canonical_str(),
                     "rounding_rule": line.rounding_rule,
                     "source_version_ids": list(line.source_version_ids),
+                    "service_period": line.service_period,
                     "transfer_of": line.transfer_of,
                     "unrounded_value": line.unrounded_value,
                 }
@@ -434,9 +438,10 @@ def calculate_run(input: RunCalcInput) -> RunResult:
     offbill_employer_remittance = _money_sum([e.offbill_employer_remittance for e in results])
     disbursement = _money_sum([e.disbursement for e in results])
 
-    # Payment-critical transfer metadata and resulting disbursement are part of
-    # the approval digest. Engine 1.1.0 intentionally changes the canonical hash
-    # shape; historical 1.0.0 digests remain stored and valid for old versions.
+    # Payment-critical transfer metadata, export narration, and resulting
+    # disbursement are part of the approval digest. Engine 1.2.0 intentionally
+    # changes the canonical hash shape; historical digests remain stored and
+    # valid for old versions.
     digest = content_hash_for(
         period=input.period,
         org_ref=input.org_ref,

@@ -28,11 +28,56 @@ import { CatalogTab } from "./CatalogTab";
 
 const columns: ColumnDef<PostResponse>[] = [
 	{ accessorKey: "designation", header: "Designation" },
+	{
+		accessorKey: "pay_bill_heading",
+		header: "Pay Bill Heading",
+		cell: ({ row }) => row.original.pay_bill_heading ?? "—",
+	},
 	{ accessorKey: "class_name", header: "Class" },
+	{
+		accessorKey: "pay_scale",
+		header: "Pay Scale",
+		cell: ({ row }) => row.original.pay_scale ?? "—",
+	},
+	{
+		accessorKey: "sanctioned_strength",
+		header: "Sanctioned",
+		cell: ({ row }) => row.original.sanctioned_strength ?? "—",
+	},
+	{
+		accessorKey: "vacant_count",
+		header: "Vacant",
+		cell: ({ row }) => row.original.vacant_count ?? "—",
+	},
 ];
 
-type FormState = { designation: string; class_name: string };
-const emptyForm = (): FormState => ({ designation: "", class_name: "" });
+type FormState = {
+	designation: string;
+	pay_bill_heading: string;
+	class_name: string;
+	sanctioned_strength: string;
+	vacant_count: string;
+	pay_scale: string;
+	display_order: string;
+};
+const emptyForm = (): FormState => ({
+	designation: "",
+	pay_bill_heading: "",
+	class_name: "",
+	sanctioned_strength: "",
+	vacant_count: "",
+	pay_scale: "",
+	display_order: "",
+});
+
+function optionalNonNegativeInteger(value: string, label: string): number | null {
+	if (!value.trim()) return null;
+	const parsed = Number(value);
+	if (!Number.isInteger(parsed) || parsed < 0) {
+		throw new Error(`${label} must be a whole number of zero or more.`);
+	}
+	return parsed;
+}
 
 type PostsTabProps = {
 	canManage: boolean;
@@ -103,7 +148,15 @@ function PostFormDialog({ mode, open, onOpenChange, item }: FormDialogProps) {
 			return;
 		}
 		if (mode === "edit" && item) {
-			setForm({ designation: item.designation, class_name: item.class_name });
+			setForm({
+				designation: item.designation,
+				pay_bill_heading: item.pay_bill_heading ?? "",
+				class_name: item.class_name,
+				sanctioned_strength: item.sanctioned_strength?.toString() ?? "",
+				vacant_count: item.vacant_count?.toString() ?? "",
+				pay_scale: item.pay_scale ?? "",
+				display_order: item.display_order?.toString() ?? "",
+			});
 		} else {
 			setForm(emptyForm());
 		}
@@ -129,16 +182,38 @@ function PostFormDialog({ mode, open, onOpenChange, item }: FormDialogProps) {
 		}
 
 		try {
+			const sanctionedStrength = optionalNonNegativeInteger(
+				form.sanctioned_strength,
+				"Sanctioned strength",
+			);
+			const vacantCount = optionalNonNegativeInteger(form.vacant_count, "Vacant count");
+			const displayOrder = optionalNonNegativeInteger(form.display_order, "Display order");
+			if (vacantCount !== null && sanctionedStrength === null) {
+				setFormError("Enter sanctioned strength when vacant count is provided.");
+				return;
+			}
+			if (vacantCount !== null && sanctionedStrength !== null && vacantCount > sanctionedStrength) {
+				setFormError("Vacant count cannot exceed sanctioned strength.");
+				return;
+			}
+			const canonicalFields = {
+				pay_bill_heading: form.pay_bill_heading.trim() || null,
+				sanctioned_strength: sanctionedStrength,
+				vacant_count: vacantCount,
+				pay_scale: form.pay_scale.trim() || null,
+				display_order: displayOrder,
+			};
 			if (mode === "create") {
 				const body: PostCreate = {
 					designation: form.designation.trim(),
 					class_name: form.class_name.trim(),
+					...canonicalFields,
 				};
 				await createMutation.mutateAsync(body);
 			} else if (item) {
 				await updateMutation.mutateAsync({
 					postId: item.id,
-					body: { class_name: form.class_name.trim() },
+					body: { class_name: form.class_name.trim(), ...canonicalFields },
 				});
 			}
 			onOpenChange(false);
@@ -184,6 +259,81 @@ function PostFormDialog({ mode, open, onOpenChange, item }: FormDialogProps) {
 							{designationError ? (
 								<p className="text-sm text-destructive">{designationError}</p>
 							) : null}
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="post-pay-bill-heading">Pay Bill Heading</Label>
+							<Input
+								id="post-pay-bill-heading"
+								value={form.pay_bill_heading}
+								onChange={(event) =>
+									setForm((previous) => ({
+										...previous,
+										pay_bill_heading: event.target.value,
+									}))
+								}
+								disabled={isSubmitting}
+								placeholder="Defaults to the designation"
+							/>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div className="grid gap-2">
+								<Label htmlFor="post-sanctioned-strength">Sanctioned Strength</Label>
+								<Input
+									id="post-sanctioned-strength"
+									type="number"
+									min="0"
+									step="1"
+									value={form.sanctioned_strength}
+									onChange={(event) =>
+										setForm((prev) => ({ ...prev, sanctioned_strength: event.target.value }))
+									}
+									disabled={isSubmitting}
+								/>
+							</div>
+							<div className="grid gap-2">
+								<Label htmlFor="post-vacant-count">Vacant Count</Label>
+								<Input
+									id="post-vacant-count"
+									type="number"
+									min="0"
+									step="1"
+									value={form.vacant_count}
+									onChange={(event) =>
+										setForm((prev) => ({ ...prev, vacant_count: event.target.value }))
+									}
+									disabled={isSubmitting}
+								/>
+							</div>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="post-pay-scale">Pay Scale</Label>
+							<Input
+								id="post-pay-scale"
+								value={form.pay_scale}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, pay_scale: event.target.value }))
+								}
+								disabled={isSubmitting}
+								placeholder="S-15: 41800–132300"
+							/>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="post-display-order">Display Order</Label>
+							<Input
+								id="post-display-order"
+								type="number"
+								min="0"
+								step="1"
+								value={form.display_order}
+								onChange={(event) =>
+									setForm((prev) => ({ ...prev, display_order: event.target.value }))
+								}
+								disabled={isSubmitting}
+							/>
 						</div>
 
 						<div className="grid gap-2">

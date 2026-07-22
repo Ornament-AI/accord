@@ -19,8 +19,8 @@ Resolution scope (as-of the run period's calendar month-end date)
   license-fee line plus an informational / excluded ``FOREGONE_HRA`` line
   when ``informational_hra_foregone`` is set.
 - Run draft inputs (``payroll_run_inputs``):
-  - ``override`` — replaces the amount on an already-resolved component
-    (or creates a ``direct_monthly_amount`` line if none exists).
+  - ``override`` — an amount becomes a ``direct_monthly_amount`` line; a rate
+    can only replace the rate on an already-resolved rate-based component.
   - ``exception`` — adds a ``direct_monthly_amount`` line.
   - ``one_time`` — adds a ``one_time_adjustment`` line.
 
@@ -84,6 +84,9 @@ from app.services.run_calculation._convert import (
 _BASIC_CODE = "BASIC"
 _ACCOMMODATION_LICENSE_FEE_CODE = "ACCOMMODATION_LICENSE_FEE"
 _FOREGONE_HRA_CODE = "FOREGONE_HRA"
+_RATE_BASED_CALC_KINDS = frozenset(
+    {"percentage_of_component_bases", "employer_employee_contribution"}
+)
 
 _ADVANCE_COMPONENT_CODES: dict[str, str] = {
     "hba": "HBA_INSTALLMENT",
@@ -485,24 +488,39 @@ def _resolve_employee_components(
             else "gross_adjustment"
         )
         source_ids_extra = (str(row.id),)
+        service_period = (
+            f"{row.service_period_start.isoformat()}/{row.service_period_end.isoformat()}"
+            if row.service_period_start is not None and row.service_period_end is not None
+            else None
+        )
+        if row.rate is not None and row.input_kind != "override":
+            raise ValidationError(
+                f"Rate input for component {row.component_code!r} must be an override."
+            )
         if row.input_kind == "override":
             existing = by_code.get(row.component_code)
             if existing is not None:
                 merged_sources = tuple(
                     dict.fromkeys([*existing.source_version_ids, *source_ids_extra])
                 )
+                if row.rate is not None and existing.calc_kind not in _RATE_BASED_CALC_KINDS:
+                    raise ValidationError(
+                        f"Rate override for component {row.component_code!r} requires an "
+                        "existing rate-based component."
+                    )
+                is_amount_override = row.amount is not None
                 _put_component(
                     by_code,
                     ComponentInput(
                         component_code=existing.component_code,
                         classification=existing.classification,
-                        calc_kind=existing.calc_kind,
-                        amount=money_or_none(row.amount)
-                        if row.amount is not None
-                        else existing.amount,
-                        rate=rate_or_none(row.rate) if row.rate is not None else existing.rate,
-                        basis=existing.basis,
-                        rounding_rule=existing.rounding_rule,
+                        calc_kind=(
+                            "direct_monthly_amount" if is_amount_override else existing.calc_kind
+                        ),
+                        amount=money_or_none(row.amount) if is_amount_override else None,
+                        rate=rate_or_none(row.rate) if row.rate is not None else None,
+                        basis=() if is_amount_override else existing.basis,
+                        rounding_rule=ROUND_NONE if is_amount_override else existing.rounding_rule,
                         source_version_ids=merged_sources,
                         informational=existing.informational,
                         excluded_from_totals=existing.excluded_from_totals,
@@ -510,12 +528,17 @@ def _resolve_employee_components(
                         accommodation_location=existing.accommodation_location,
                         employer_transfer=existing.employer_transfer,
                         transfer_of=existing.transfer_of,
-                        service_period=existing.service_period,
+                        service_period=service_period or existing.service_period,
                         reason=row.reason,
                     ),
                     replace=True,
                 )
             else:
+                if row.rate is not None:
+                    raise ValidationError(
+                        f"Rate override for component {row.component_code!r} requires an "
+                        "existing rate-based component."
+                    )
                 _put_component(
                     by_code,
                     ComponentInput(
@@ -523,9 +546,9 @@ def _resolve_employee_components(
                         classification=classification,
                         calc_kind="direct_monthly_amount",
                         amount=money_or_none(row.amount),
-                        rate=rate_or_none(row.rate),
                         rounding_rule=ROUND_NONE,
                         source_version_ids=source_ids_extra,
+                        service_period=service_period,
                         reason=row.reason,
                     ),
                 )
@@ -537,9 +560,9 @@ def _resolve_employee_components(
                     classification=classification,
                     calc_kind="direct_monthly_amount",
                     amount=money_or_none(row.amount),
-                    rate=rate_or_none(row.rate),
                     rounding_rule=ROUND_NONE,
                     source_version_ids=source_ids_extra,
+                    service_period=service_period,
                     reason=row.reason,
                 ),
             )
@@ -551,9 +574,9 @@ def _resolve_employee_components(
                     classification=classification,
                     calc_kind="one_time_adjustment",
                     amount=money_or_none(row.amount),
-                    rate=rate_or_none(row.rate),
                     rounding_rule=ROUND_NONE,
                     source_version_ids=source_ids_extra,
+                    service_period=service_period,
                     reason=row.reason,
                 ),
             )

@@ -108,6 +108,10 @@ def _trace_from_row(row: Any) -> CalculationTrace:
         engine_version=str(trace.get("engine_version") or ""),
         employer_transfer=bool(trace.get("employer_transfer", False)),
         transfer_of=(None if trace.get("transfer_of") is None else str(trace["transfer_of"])),
+        service_period=(
+            None if trace.get("service_period") is None else str(trace["service_period"])
+        ),
+        reason=(None if trace.get("reason") is None else str(trace["reason"])),
     )
 
 

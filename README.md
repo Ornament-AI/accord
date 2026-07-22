@@ -108,6 +108,33 @@ backend/.venv/bin/python scripts/seed_june_fixture.py \
 Then create a payroll period and run in the UI, save the roster, and
 calculate. The totals match the golden test fixture.
 
+### Prepare a canonical payroll export
+
+New report exports use the normalized v3 workbook contract. Before calculating
+the run, complete the fields shown by **Report readiness**:
+
+1. In **Pay Components → Report defaults**, enter the organization identity,
+   office address and contact details, DDO and treasury details, account heads,
+   bank-advice recipient, GPF remittance destinations, fund/plan labels, and
+   signatories.
+2. In **Organization → Posts**, enter sanctioned strength, vacancies, pay
+   scale, and export order for every post in the run.
+3. Map every amount-bearing pay component to its **Pay Bill column**.
+4. Complete each employee's applicable PAN, retirement account, salary-bank,
+   export remark, advance, and accommodation fields. Unknown optional identity
+   values stay blank; do not invent them.
+5. On the pay run, enter an amount for exceptions and one-time items. An
+   override of an existing rate-based component may instead enter a replacement
+   rate. Add its reason and service period when applicable, then complete bill,
+   advice, approval, token, and voucher metadata.
+
+Calculate again after changing any of these facts so the immutable snapshot
+contains them. Post the run, open **Reports**, resolve every readiness issue,
+then choose **Export**. The result is one 18-sheet `.xlsx` workbook. See the
+[canonical export contract](docs/report-specs/canonical-export-contract.md) for
+the exact sheet and formula rules. The v2 ZIP remains available only for legacy
+API clients that request `template_version=v2`.
+
 ## Quick start (Docker Compose)
 
 Compose brings its own PostgreSQL and MinIO, so nothing else is required:

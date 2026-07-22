@@ -14,6 +14,8 @@ export type OrgSetupHandlersOptions = {
 	posts?: PostResponse[];
 	/** When set, POST create endpoints return this status/body (e.g. 409). */
 	createError?: { status: number; body: Record<string, unknown> };
+	onCreatePost?: (body: PostCreate) => void;
+	onUpdatePost?: (postId: string, body: PostUpdate) => void;
 };
 
 const NOW = "2026-01-15T10:00:00Z";
@@ -36,7 +38,12 @@ export function buildPost(
 	return {
 		id: overrides.id,
 		designation: overrides.designation,
+		pay_bill_heading: overrides.pay_bill_heading ?? null,
 		class_name: overrides.class_name ?? "Class I",
+		sanctioned_strength: overrides.sanctioned_strength ?? null,
+		vacant_count: overrides.vacant_count ?? null,
+		pay_scale: overrides.pay_scale ?? null,
+		display_order: overrides.display_order ?? null,
 		created_at: overrides.created_at ?? NOW,
 		updated_at: overrides.updated_at ?? NOW,
 	};
@@ -100,6 +107,7 @@ export function createOrgSetupHandlers(options: OrgSetupHandlersOptions = {}) {
 				return HttpResponse.json(options.createError.body, { status: options.createError.status });
 			}
 			const body = (await request.json()) as PostCreate;
+			options.onCreatePost?.(body);
 			const exists = Array.from(posts.values()).some(
 				(item) => item.designation === body.designation,
 			);
@@ -112,7 +120,12 @@ export function createOrgSetupHandlers(options: OrgSetupHandlersOptions = {}) {
 			const created = buildPost({
 				id: `post-new-${posts.size + 1}`,
 				designation: body.designation,
+				pay_bill_heading: body.pay_bill_heading ?? null,
 				class_name: body.class_name,
+				sanctioned_strength: body.sanctioned_strength ?? null,
+				vacant_count: body.vacant_count ?? null,
+				pay_scale: body.pay_scale ?? null,
+				display_order: body.display_order ?? null,
 			});
 			posts.set(created.id, created);
 			return HttpResponse.json(created, { status: 201 });
@@ -124,9 +137,20 @@ export function createOrgSetupHandlers(options: OrgSetupHandlersOptions = {}) {
 				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
 			}
 			const body = (await request.json()) as PostUpdate;
+			options.onUpdatePost?.(postId, body);
 			const updated: PostResponse = {
 				...existing,
 				class_name: body.class_name ?? existing.class_name,
+				pay_bill_heading:
+					body.pay_bill_heading === undefined ? existing.pay_bill_heading : body.pay_bill_heading,
+				sanctioned_strength:
+					body.sanctioned_strength === undefined
+						? existing.sanctioned_strength
+						: body.sanctioned_strength,
+				vacant_count: body.vacant_count === undefined ? existing.vacant_count : body.vacant_count,
+				pay_scale: body.pay_scale === undefined ? existing.pay_scale : body.pay_scale,
+				display_order:
+					body.display_order === undefined ? existing.display_order : body.display_order,
 				updated_at: NOW,
 			};
 			posts.set(postId, updated);

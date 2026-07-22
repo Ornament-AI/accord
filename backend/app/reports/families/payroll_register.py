@@ -35,6 +35,13 @@ from app.reports.base import (
     to_json as base_to_json,
 )
 from app.reports.excel import to_excel as base_to_excel
+from app.reports.canonical_excel import pay_bill_v3_to_excel, pay_bill_v3_to_pdf
+from app.reports.canonical_pay_bill_allocation import (
+    V3_MONEY_KEYS,
+    line_classification,
+    normalize_register_column,
+)
+from app.reports.canonical_pay_bill_builder import build_v3_pay_bill_dto
 from app.reports.pdf import to_pdf as base_to_pdf
 from app.reports.snapshots import load_report_snapshot
 from app.reports.posted_run import (
@@ -187,12 +194,6 @@ _REGISTER_GROUPS = (
 )
 
 
-def _line_classification(line: Any) -> str:
-    trace = line["trace"] or {}
-    value = str(trace.get("classification") or line["classification"])
-    return "ag_deduction" if value == "AG_deduction" else value
-
-
 def _v2_component_groups(
     snapshot: dict[str, Any], packed: list[dict[str, Any]]
 ) -> dict[str, list[dict[str, Any]]]:
@@ -216,7 +217,7 @@ def _v2_component_groups(
     for packed_item in packed:
         for line in packed_item["lines"]:
             code = str(line["component_code"])
-            classification = _line_classification(line)
+            classification = line_classification(line)
             if classification == "informational" or code == "FOREGONE_HRA":
                 continue
             previous = line_classes.get(code)
@@ -363,6 +364,20 @@ class PayBillBuilder:
                 packed=packed,
                 snapshot=snapshot,
             )
+        if ctx.template_version == "v3":
+            snapshot = await load_report_snapshot(
+                session,
+                organization_id=ctx.organization_id,
+                run_version_id=version["id"],
+            )
+            return self._build_v3(
+                ctx=ctx,
+                version=version,
+                period=period,
+                org=org,
+                packed=packed,
+                snapshot=snapshot,
+            )
 
         as_of = month_end(period.period_year, period.period_month)
         columns = _pay_bill_columns()
@@ -452,6 +467,25 @@ class PayBillBuilder:
                     rows=((snapshot_note,),),
                 ),
             ),
+        )
+
+    def _build_v3(
+        self,
+        *,
+        ctx: ReportContext,
+        version: Any,
+        period: PayrollPeriod,
+        org: Organization,
+        packed: list[dict[str, Any]],
+        snapshot: dict[str, Any],
+    ) -> PayBillDTO:
+        return build_v3_pay_bill_dto(
+            ctx=ctx,
+            version=version,
+            period=period,
+            org=org,
+            packed=packed,
+            snapshot=snapshot,
         )
 
     def _build_v2(
@@ -607,7 +641,7 @@ class TreasuryFaceBuilder:
     async def build(self, session: AsyncSession, ctx: ReportContext) -> TreasuryFaceDTO:
         _run, version, period, org = await require_posted_run(session, ctx)
         snapshot = None
-        if ctx.template_version == "v2":
+        if ctx.template_version in {"v2", "v3"}:
             snapshot = await load_report_snapshot(
                 session,
                 organization_id=ctx.organization_id,
@@ -626,6 +660,12 @@ class TreasuryFaceBuilder:
         treasury_deductions = ZERO
         external_recoveries = ZERO
         net_payable = ZERO
+        allocations = {key: ZERO for key in V3_MONEY_KEYS}
+        catalog_by_code = {
+            str(item.get("code")): item
+            for item in ((snapshot or {}).get("component_catalog") or [])
+            if isinstance(item, dict)
+        }
 
         for item in packed:
             result = item["result"]
@@ -639,8 +679,20 @@ class TreasuryFaceBuilder:
                     continue
                 # Trace-aware normalization ("AG_deduction" → "ag_deduction"),
                 # identical to the Pay Bill grouping path.
-                classification = _line_classification(line)
+                classification = line_classification(line)
                 amount = money(line["amount"])
+                if ctx.template_version == "v3":
+                    target = normalize_register_column(
+                        (catalog_by_code.get(code) or {}).get("register_column")
+                    )
+                    if target is None and amount != ZERO:
+                        raise ConflictError(
+                            f"Component {code!r} is not mapped to a canonical Pay Bill column."
+                        )
+                    if target is not None:
+                        if target == "m_recovery" and amount < ZERO:
+                            amount = -amount
+                        allocations[target] = money(allocations[target] + amount)
                 if classification == "gross_adjustment":
                     gross_adjustments += amount
                 elif classification == "ag_deduction":
@@ -758,6 +810,20 @@ class TreasuryFaceBuilder:
                         ("Net payable", amount_in_words(net_payable)),
                     ),
                 ),
+                *(
+                    (
+                        TableSection(
+                            title="Canonical column allocations",
+                            columns=(
+                                ReportColumn("column", "Column"),
+                                ReportColumn("amount", "Amount", ColumnKind.MONEY),
+                            ),
+                            rows=tuple((key, value) for key, value in allocations.items()),
+                        ),
+                    )
+                    if ctx.template_version == "v3"
+                    else ()
+                ),
                 TableSection(
                     title="Signatories",
                     columns=(
@@ -766,6 +832,14 @@ class TreasuryFaceBuilder:
                     ),
                     rows=signatory_rows,
                 ),
+            ),
+            metadata=(
+                {
+                    "report_profile": dict(snapshot.get("report_profile") or {}),
+                    "run_metadata": dict(snapshot.get("run_metadata") or {}),
+                }
+                if snapshot is not None and ctx.template_version == "v3"
+                else {}
             ),
         )
 
@@ -806,10 +880,14 @@ def pay_bill_to_json(dto: ReportDTO) -> dict[str, Any]:
 
 
 def pay_bill_to_excel(dto: ReportDTO) -> bytes:
+    if dto.template_version == "v3":
+        return pay_bill_v3_to_excel(dto)
     return base_to_excel(dto)
 
 
 def pay_bill_to_pdf(dto: ReportDTO) -> bytes:
+    if dto.template_version == "v3":
+        return pay_bill_v3_to_pdf(dto)
     return base_to_pdf(dto)
 
 
@@ -818,6 +896,10 @@ def treasury_face_to_json(dto: ReportDTO) -> dict[str, Any]:
 
 
 def treasury_face_to_excel(dto: ReportDTO) -> bytes:
+    if dto.template_version == "v3":
+        from app.reports.canonical_front_sheets import treasury_face_to_excel as canonical_face
+
+        return canonical_face(dto)
     return base_to_excel(dto)
 
 

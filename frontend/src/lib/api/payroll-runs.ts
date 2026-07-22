@@ -18,7 +18,12 @@ export type PayrollRunRosterHistoryResponse =
 export type PayrollRunResults = components["schemas"]["RunResultsResponse"];
 export type PayrollEmployeeResult = components["schemas"]["EmployeeResultSummary"];
 export type InputKind = components["schemas"]["InputKind"];
-export type PayrollRunReportMetadata = components["schemas"]["PayrollRunReportMetadata"];
+export type PayrollRunReportMetadata = components["schemas"]["PayrollRunReportMetadata"] & {
+	token_number?: string | null;
+	token_date?: string | null;
+	voucher_number?: string | null;
+	voucher_date?: string | null;
+};
 export type ReportReadinessResponse = components["schemas"]["ReportReadinessResponse"];
 
 export const INPUT_KINDS: InputKind[] = ["exception", "override", "one_time"];
