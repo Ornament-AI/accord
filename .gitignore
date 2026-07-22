@@ -42,6 +42,7 @@ test-results/
 *.xlsm
 *.xls
 !fixtures/sanitized/**/*.xlsx
+!backend/app/reports/templates/canonical_schedule_structure.xlsx
 uploads/
 tmp/
 backups/

@@ -197,20 +197,28 @@ async def test_run_report_metadata_round_trip_and_readiness(client, session):
             "major_head": "2052",
             "sub_head": "090",
             "detailed_head": "01",
+            "token_number": "TN-42",
+            "token_date": "2026-07-01",
+            "voucher_number": "VN-42",
+            "voucher_date": "2026-07-02",
         },
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["bill_number"] == "PB-2026-06"
+    assert saved.json()["token_number"] == "TN-42"
+    assert saved.json()["voucher_date"] == "2026-07-02"
 
     readiness = await client.get(f"/api/payroll-runs/{run['id']}/report-readiness")
     assert readiness.status_code == 200, readiness.text
     assert readiness.json()["ready"] is False
     assert {issue["code"] for issue in readiness.json()["issues"]} == {
+        "payment_date_missing",
         "ddo_code_missing",
         "advice_bank_missing",
         "maker_signatory_missing",
         "checker_signatory_missing",
         "approving_officer_signatory_missing",
+        "final_approver_signatory_missing",
     }
 
 
@@ -370,6 +378,56 @@ async def test_input_upsert_list_delete_happy_path(client, session):
 
     listed_after = await client.get(f"/api/payroll-runs/{run['id']}/inputs")
     assert listed_after.json() == []
+
+
+@pytest.mark.asyncio
+async def test_input_rejects_ambiguous_value_and_incomplete_service_period(client, session):
+    ctx = await _admin_context(client, session)
+    period = await _create_period(client)
+    run = await _create_run(client, period_id=period["id"])
+    path = f"/api/payroll-runs/{run['id']}/inputs/{ctx['employee_id']}/BASIC"
+
+    for payload in (
+        {"input_kind": "override", "reason": "Missing value"},
+        {
+            "input_kind": "override",
+            "amount": "100.00",
+            "rate": "10.00",
+            "reason": "Two values",
+        },
+        {
+            "input_kind": "override",
+            "amount": "100.00",
+            "reason": "Half period",
+            "service_period_start": "2026-01-01",
+        },
+        {
+            "input_kind": "override",
+            "amount": "100.00",
+            "reason": "Backwards period",
+            "service_period_start": "2026-06-30",
+            "service_period_end": "2026-01-01",
+        },
+        {
+            "input_kind": "exception",
+            "rate": "0.10",
+            "reason": "Rate cannot define an exception",
+        },
+    ):
+        response = await client.put(path, json=payload)
+        assert response.status_code == 422, response.text
+
+    valid = await client.put(
+        path,
+        json={
+            "input_kind": "override",
+            "amount": "100.00",
+            "reason": "January through June arrears",
+            "service_period_start": "2026-01-01",
+            "service_period_end": "2026-06-30",
+        },
+    )
+    assert valid.status_code == 200, valid.text
 
 
 @pytest.mark.asyncio

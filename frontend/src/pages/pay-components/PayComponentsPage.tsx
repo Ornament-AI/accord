@@ -6,6 +6,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
@@ -58,6 +59,7 @@ const columns: ColumnDef<PayComponentResponse>[] = [
 ];
 
 export default function PayComponentsPage() {
+	const [searchParams] = useSearchParams();
 	const { hasCapability } = useAuth();
 	const canManage = hasCapability("manage_master_data");
 	const canManageOrganization = hasCapability("manage_organization");
@@ -65,7 +67,7 @@ export default function PayComponentsPage() {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
 	const [editing, setEditing] = useState<PayComponentResponse | null>(null);
-	const [profileOpen, setProfileOpen] = useState(false);
+	const [profileOpen, setProfileOpen] = useState(() => searchParams.get("reportDefaults") === "1");
 
 	const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
 		"accord:pay-components:columns",

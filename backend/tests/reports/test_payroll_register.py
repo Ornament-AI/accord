@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import importlib.util
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +34,7 @@ from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
     payroll_employee_results,
+    payroll_report_snapshots,
     payroll_result_lines,
     payroll_run_versions,
 )
@@ -39,7 +45,7 @@ from app.models.recurring_instructions import (
 )
 from app.models.reports import ReportConfiguration
 from app.reports.amount_in_words import amount_in_words
-from app.reports.base import ReportContext
+from app.reports.base import ReportContext, ReportDTO, TableSection
 from app.reports.excel import MONEY_FORMAT
 from app.reports.families.payroll_register import (
     REPORT_TYPE_PAY_BILL,
@@ -53,6 +59,8 @@ from app.reports.families.payroll_register import (
     treasury_face_to_json,
     treasury_face_to_pdf,
 )
+from app.reports.canonical_excel import _text_preserving_zero, pay_bill_v3_to_excel
+from app.reports.canonical_pay_bill_allocation import post_metadata
 from app.services import versioning
 from app.services.run_calculation import calculate_run_command
 from app.services.run_posting import post_run
@@ -85,6 +93,39 @@ _CLASSIFICATION_DB = {
     "gross_adjustment": "gross_adjustment",
     "external_recovery": "external_recovery",
 }
+
+
+def test_v3_post_metadata_preserves_zero_display_order() -> None:
+    metadata = post_metadata(
+        {
+            "pay_bill_post": {
+                "id": "first-group",
+                "heading": "First Group",
+                "display_order": 0,
+            }
+        }
+    )
+
+    assert metadata[5] == 0
+
+
+def test_v3_post_metadata_preserves_zero_strength_in_group_key() -> None:
+    metadata = post_metadata(
+        {
+            "pay_bill_post": {
+                "heading": "Zero Strength Group",
+                "sanctioned_posts": 0,
+                "vacant_posts": 0,
+            }
+        }
+    )
+
+    assert metadata[0] == "1000000|Zero Strength Group|0|0|"
+    assert metadata[2:4] == (0, 0)
+    assert _text_preserving_zero(metadata[2]) == "0"
+    assert _text_preserving_zero(metadata[3]) == "0"
+    assert _text_preserving_zero(None) == ""
+
 
 _TWO = Decimal("0.01")
 _ZERO = Decimal("0.00")
@@ -137,11 +178,35 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
         organization_id=org.id,
         designation="Synthetic Clerk",
         class_="III",
+        sanctioned_strength=40,
+        vacant_count=8,
+        pay_scale="S-10",
+        display_order=10,
     )
     session.add(post)
     await session.flush()
 
     component_ids: dict[str, UUID] = {}
+    register_columns = {
+        "BASIC": "basic_pay",
+        "DA": "dearness_allowance",
+        "CLA": "city_compensatory_allowance",
+        "HRA": "house_rent_allowance",
+        "TRANSPORT": "transport_pta_honorarium",
+        "WASH_ALLOWANCE": "wash_child_other_charges",
+        "OTHER_ALLOWANCE": "other_reimbursement_salary_increment_difference",
+        "GPF_SUBSCRIPTION": "gpf_subscription_refund_arrears",
+        "NPS_EMPLOYEE": "pension_employee_share",
+        "NPS_EMPLOYER_TRANSFER": "pension_employer_share",
+        "EPF_EMPLOYEE": "pension_employee_share",
+        "EPF_EMPLOYER": "employer_share",
+        "EPF_EMPLOYER_TRANSFER": "pension_employer_share",
+        "INCOME_TAX": "income_tax",
+        "PROFESSIONAL_TAX": "professional_tax",
+        "GIS": "insurance",
+        "HBA_INSTALLMENT": "advances",
+        "ACCOMMODATION_LICENSE_FEE": "house_rent_service_charge_arrears",
+    }
     display_order = 0
     for comp in fixture.components:
         display_order += 1
@@ -158,6 +223,7 @@ async def _seed_posted_june(session: AsyncSession) -> dict:
             display_order=display_order,
             employer_transfer=comp.employer_transfer,
             transfer_of=comp.transfer_of,
+            register_column=register_columns.get(comp.code),
         )
         session.add(component)
         await session.flush()
@@ -611,6 +677,247 @@ async def test_pay_bill_v2_dynamic_columns_reconcile_and_excel_uses_formulas(ses
 
 
 @pytest.mark.asyncio
+async def test_pay_bill_v3_matches_canonical_contract_and_pdf_layout(session):
+    contract_path = (
+        Path(__file__).resolve().parents[3]
+        / "fixtures/sanitized/june-2026/canonical_export_contract.json"
+    )
+    full_contract = json.loads(contract_path.read_text())
+    contract = full_contract["pay_bill"]
+    sheet_contract = next(item for item in full_contract["sheets"] if item["name"] == "Pay Bill")
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    dto = await pay_bill_builder.build(session, _ctx(world, template_version="v3"))
+    register = _section_by_title(dto, "Register")
+    assert len(register.rows) == 32
+
+    workbook = load_workbook(BytesIO(pay_bill_to_excel(dto)), data_only=False)
+    assert workbook.sheetnames == ["Pay Bill"]
+    sheet = workbook["Pay Bill"]
+    merged = {str(item) for item in sheet.merged_cells.ranges}
+    assert set(contract["header_groups"].values()) <= merged
+    assert sheet["A3"].value == "Sr. No."
+    assert sheet["B3"].value == "Employee Name"
+    assert sheet["M3"].value == "Festival Advance / Other Recovery"
+    assert "Adjuesable" not in " ".join(
+        str(sheet.cell(row=3, column=column).value or "") for column in range(1, 29)
+    )
+    assert [sheet.cell(8, column).value for column in range(1, 29)] == list(range(1, 29))
+    assert sheet["B9"].value == ("Post of Synthetic Clerk (Total Posts 40. Vacant 8) - Scale S-10")
+    assert sheet["K15"].value == "=SUM(C15:J15)"
+    assert sheet["N15"].value == "=K15+L15-M15"
+    assert sheet["Z15"].value == "=SUM(P15:Y15)"
+    assert sheet["AA15"].value == "=N15-Z15"
+    assert sheet.print_title_rows == "$2:$7"
+    assert sheet.page_setup.orientation == "landscape"
+    assert str(sheet.page_setup.paperSize) == sheet.PAPERSIZE_A4
+    assert sheet.page_setup.scale == 33
+    assert sheet.print_area.startswith("'Pay Bill'!$A$1:$AB$")
+    assert int(sheet.print_area.rsplit("$", 1)[-1]) >= 208
+    assert [item.id for item in sheet.row_breaks.brk] == sheet_contract["manual_row_breaks"]
+    assert [item.id for item in sheet.col_breaks.brk] == sheet_contract["manual_column_breaks"]
+    expected_widths = {
+        column: float(item["width"])
+        for item in sheet_contract["column_dimensions"]
+        if item["min"] <= 28 and "width" in item
+        for column in range(item["min"], min(item["max"], 28) + 1)
+    }
+    assert {
+        column: sheet.column_dimensions[get_column_letter(column)].width for column in range(1, 29)
+    } == expected_widths
+
+    post_index = _col_index(register, "post_title")
+    post_group_index = _col_index(register, "post_group_key")
+    designation_index = _col_index(register, "designation")
+    planned_rows = []
+    post_groups = ("Post 1", "Post 2", "Post 3", "Post 4", "Post 5", "Post 6")
+    for index, source_row in enumerate(register.rows[:28], start=1):
+        values = list(source_row)
+        group_index = (
+            0
+            if index == 1
+            else 1
+            if index == 2
+            else 2
+            if index < 16
+            else 3
+            if index < 25
+            else 4
+            if index == 25
+            else 5
+        )
+        values[post_index] = post_groups[group_index]
+        values[post_group_index] = f"group-{group_index}"
+        if index in {24, 25}:
+            values[designation_index] = "Accounts Officer"
+        if group_index == 5:
+            # Distinct group IDs can intentionally share a printed heading.
+            values[post_index] = "Post 5"
+        planned_rows.append(tuple(values))
+    employee_numbers = {str(row[_col_index(register, "employee_number")]) for row in planned_rows}
+    detail = _section_by_title(dto, "Component detail lines")
+    detail_employee_index = _col_index(detail, "employee_number")
+    detail_reason_index = _col_index(detail, "reason")
+    assert any(str(row[detail_reason_index]).startswith("June fixture ") for row in detail.rows)
+    employee_25_number = str(planned_rows[24][_col_index(register, "employee_number")])
+    planned_detail_rows = []
+    narration_added = False
+    for source_row in detail.rows:
+        if str(source_row[detail_employee_index]) not in employee_numbers:
+            continue
+        values = list(source_row)
+        if str(values[detail_employee_index]) == employee_25_number and not narration_added:
+            values[detail_reason_index] = "June fixture recovery"
+            narration_added = True
+        planned_detail_rows.append(tuple(values))
+    planned_dto = ReportDTO(
+        report_type=dto.report_type,
+        template_version=dto.template_version,
+        title=dto.title,
+        organization_name=dto.organization_name,
+        subtitle=dto.subtitle,
+        sections=(
+            TableSection(register.title, register.columns, tuple(planned_rows)),
+            TableSection(
+                detail.title,
+                detail.columns,
+                tuple(planned_detail_rows),
+            ),
+        ),
+        metadata={
+            "report_profile": {
+                "legal_name": "Canonical Legal Organization",
+                "office_name": "Canonical Payroll Office",
+            },
+            "run_metadata": {"payment_date": "2026-07-01"},
+        },
+    )
+    planned_sheet = load_workbook(BytesIO(pay_bill_v3_to_excel(planned_dto)), data_only=False)[
+        "Pay Bill"
+    ]
+    for serial, start, total in (
+        (1, 10, 15),
+        (8, 55, 60),
+        (9, 68, 73),
+        (16, 111, 116),
+        (18, 123, 128),
+        (19, 135, 140),
+        (24, 165, 170),
+        (26, 179, 184),
+        (28, 191, 196),
+    ):
+        assert planned_sheet.cell(start, 1).value == serial
+        assert planned_sheet.cell(total, 2).value == "Total Rs."
+    assert planned_sheet["A171"].value == 25
+    assert planned_sheet["A172"].value is None
+    assert "June fixture" in str(planned_sheet["B174"].value)
+    assert str(planned_sheet["B175"].value).startswith("Basic @ Rs.")
+    planned_merges = {str(item) for item in planned_sheet.merged_cells.ranges}
+    assert planned_merges == set(sheet_contract["merged_cells"])
+    assert {
+        "A25:A30",
+        "A31:A36",
+        "A37:A42",
+        "A111:A116",
+        "A165:A169",
+        "A171:A177",
+        "A179:A183",
+        "A62:A67",
+        "B62:B66",
+        "A129:A133",
+        "A197:A201",
+        "B197:B201",
+        "A203:A207",
+        "B203:B207",
+        "AB57:AB59",
+        "AB76:AB78",
+        "V211:Y211",
+    } <= planned_merges
+    assert {"B9:AB9", "B17:AB17", "B24:AB24"} <= planned_merges
+    assert {"B110:AA110", "B171:AA171", "B178:AA178"} <= planned_merges
+    assert str(planned_sheet["B171"].value).startswith("Post of Post 5")
+    assert str(planned_sheet["B178"].value).startswith("Post of Post 5")
+    assert planned_sheet["B197"].value == "Total of Page No. 3"
+    assert planned_sheet["B203"].value == "Total of All Pages"
+    assert planned_sheet["B208"].value == "Grand Total Rs."
+    assert planned_sheet["C177"].value == "=SUM(C171:C176)"
+    assert "C171" in planned_sheet["C197"].value
+    assert "C172" in planned_sheet["C198"].value
+    assert planned_sheet["O1"].value == datetime(2026, 6, 1)
+    assert planned_sheet["S1"].value == datetime(2026, 7, 1)
+    assert planned_sheet.page_margins.left == pytest.approx(0.07874015748031496)
+    assert planned_sheet.page_margins.right == pytest.approx(0.07874015748031496)
+    assert "Canonical Legal Organization" in planned_sheet.oddFooter.left.text
+    validator_path = Path(__file__).resolve().parents[3] / "scripts/validate_canonical_export.py"
+    validator_spec = importlib.util.spec_from_file_location("pay_bill_validator", validator_path)
+    assert validator_spec is not None and validator_spec.loader is not None
+    validator = importlib.util.module_from_spec(validator_spec)
+    validator_spec.loader.exec_module(validator)
+    semantic_issues = validator.validate_pay_bill_semantics(
+        planned_sheet,
+        full_contract,
+        require_june_totals=False,
+    )
+    assert semantic_issues == []
+
+    pdf = PdfReader(BytesIO(pay_bill_to_pdf(planned_dto)))
+    assert len(pdf.pages) > 1
+    for page in pdf.pages:
+        assert float(page.mediabox.width) > float(page.mediabox.height)
+        assert round(float(page.mediabox.width)) == 792
+        assert round(float(page.mediabox.height)) == 612
+        text = page.extract_text() or ""
+        assert "Adjustable by Accountant General" in text
+        assert "Adjustable by Treasury" in text
+        assert "Employee Name" in text
+        assert "Canonical Legal Organization" in text
+
+    unsafe_profile_dto = replace(
+        planned_dto,
+        metadata={
+            **planned_dto.metadata,
+            "report_profile": {"legal_name": "=1+1"},
+        },
+    )
+    unsafe_sheet = load_workbook(
+        BytesIO(pay_bill_v3_to_excel(unsafe_profile_dto)), data_only=False
+    )["Pay Bill"]
+    assert unsafe_sheet["V211"].value == "'=1+1"
+    assert unsafe_sheet["V211"].data_type != "f"
+
+
+@pytest.mark.asyncio
+async def test_pay_bill_v3_rejects_nonzero_component_without_explicit_column(session, monkeypatch):
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    snapshot_row = (
+        (
+            await session.execute(
+                sa.select(payroll_report_snapshots).where(
+                    payroll_report_snapshots.c.organization_id == world["org_id"],
+                    payroll_report_snapshots.c.run_version_id == world["version_id"],
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    changed = json.loads(json.dumps(snapshot_row["snapshot"]))
+    basic = next(item for item in changed["component_catalog"] if item["code"] == "BASIC")
+    basic["register_column"] = None
+
+    async def load_changed_snapshot(*_args, **_kwargs):
+        return changed
+
+    monkeypatch.setattr(
+        "app.reports.families.payroll_register.load_report_snapshot",
+        load_changed_snapshot,
+    )
+    with pytest.raises(ConflictError, match="not mapped to a canonical Pay Bill column"):
+        await pay_bill_builder.build(session, _ctx(world, template_version="v3"))
+
+
+@pytest.mark.asyncio
 async def test_pay_bill_amount_in_words_matches_numeric(session):
     world = await _june_world(session)
     await _bind(session, world["org_id"], world["user_id"])
@@ -692,10 +999,10 @@ async def _seed_minimal_posted_run_with_gross_adjustment(session: AsyncSession) 
                     "employer_contribution_total": "0.00",
                     "gross_adjustment_total": "50.00",
                     "gross_total": "1050.00",
-                    "deductions_total": "100.00",
-                    "net_payable": "950.00",
+                    "deductions_total": "125.00",
+                    "net_payable": "925.00",
                     "offbill_employer_remittance": "0.00",
-                    "disbursement": "950.00",
+                    "disbursement": "925.00",
                 },
             )
             .returning(payroll_run_versions.c.id)
@@ -714,10 +1021,10 @@ async def _seed_minimal_posted_run_with_gross_adjustment(session: AsyncSession) 
                 earnings_total=Decimal("1000.00"),
                 employer_contribution_total=Decimal("0.00"),
                 gross_total=Decimal("1050.00"),
-                deductions_total=Decimal("100.00"),
-                net_payable=Decimal("950.00"),
+                deductions_total=Decimal("125.00"),
+                net_payable=Decimal("925.00"),
                 offbill_employer_remittance=Decimal("0.00"),
-                disbursement=Decimal("950.00"),
+                disbursement=Decimal("925.00"),
             )
             .returning(payroll_employee_results.c.id)
         )
@@ -727,6 +1034,7 @@ async def _seed_minimal_posted_run_with_gross_adjustment(session: AsyncSession) 
         ("BASIC", "earning", "earning", Decimal("1000.00"), 1),
         ("DA_DIFFERENCE", "gross_adjustment", "gross_adjustment", Decimal("50.00"), 2),
         ("INCOME_TAX", "treasury_deduction", "treasury_deduction", Decimal("100.00"), 3),
+        ("RECOVERY", "external_recovery", "external_recovery", Decimal("25.00"), 4),
     )
     for code, db_class, trace_class, amount, sequence in lines:
         await session.execute(
@@ -757,9 +1065,162 @@ async def test_treasury_face_includes_gross_adjustment_in_gross_bill(session):
     by_label = {row[0]: _dec(row[1]) for row in summary.rows}
     assert by_label["Gross bill"] == _dec("1050.00")
     assert by_label["Gross adjustments (in gross bill)"] == _dec("50.00")
-    assert by_label["Total deductions"] == _dec("100.00")
-    assert by_label["Net payable"] == _dec("950.00")
+    assert by_label["Total deductions"] == _dec("125.00")
+    assert by_label["Net payable"] == _dec("925.00")
     assert by_label["Gross bill"] - by_label["Total deductions"] == by_label["Net payable"]
+
+
+@pytest.mark.asyncio
+async def test_pay_bill_v3_reconciles_gross_adjustment_and_recovery(session, monkeypatch):
+    world = await _seed_minimal_posted_run_with_gross_adjustment(session)
+    await _bind(session, world["org_id"], world["user_id"])
+
+    async def snapshot(*_args, **_kwargs):
+        return {
+            "organization": {"name": "Gross Adj Org"},
+            "report_profile": {},
+            "run_metadata": {},
+            "employee_identity": {
+                # The test seed has exactly one employee; obtain its UUID from result rows below.
+            },
+            "component_catalog": [
+                {"code": "BASIC", "name": "Basic", "register_column": "C", "display_order": 1},
+                {
+                    "code": "DA_DIFFERENCE",
+                    "name": "DA Difference",
+                    "register_column": "D",
+                    "display_order": 2,
+                },
+                {
+                    "code": "INCOME_TAX",
+                    "name": "Income Tax",
+                    "register_column": "U",
+                    "display_order": 3,
+                },
+                {
+                    "code": "RECOVERY",
+                    "name": "Recovery",
+                    "register_column": "M",
+                    "display_order": 4,
+                },
+            ],
+        }
+
+    result = (
+        (
+            await session.execute(
+                sa.select(payroll_employee_results).where(
+                    payroll_employee_results.c.organization_id == world["org_id"]
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    packed_snapshot = await snapshot()
+    packed_snapshot["employee_identity"][str(result["employee_id"])] = {
+        "name": "Gross Adjustment Employee",
+        "designation": "Officer",
+        "post": {"id": "officer-1", "title": "Officer", "display_order": 1},
+    }
+
+    async def load_snapshot(*_args, **_kwargs):
+        return packed_snapshot
+
+    monkeypatch.setattr("app.reports.families.payroll_register.load_report_snapshot", load_snapshot)
+    dto = await pay_bill_builder.build(session, _ctx(world, template_version="v3"))
+    register = _section_by_title(dto, "Register")
+    row = register.rows[0]
+    assert _dec(row[_col_index(register, "d_da")]) == _dec("50.00")
+    assert _dec(row[_col_index(register, "m_recovery")]) == _dec("25.00")
+    assert _dec(row[_col_index(register, "u_income_tax")]) == _dec("100.00")
+
+    face_dto = await treasury_face_builder.build(session, _ctx(world, template_version="v3"))
+    from app.reports.canonical_front_sheets import treasury_face_to_excel as render_face
+
+    standalone = load_workbook(BytesIO(render_face(face_dto)), data_only=False)[" Face "]
+    consolidated = load_workbook(BytesIO(render_face(face_dto, dto)), data_only=False)[" Face "]
+    for cell in (
+        "I18",
+        "I19",
+        "I20",
+        "I25",
+        "I31",
+        "I38",
+        "I41",
+        "I42",
+        "I44",
+        "I45",
+        "I46",
+        "I47",
+    ):
+        assert standalone[cell].value == consolidated[cell].value
+
+
+@pytest.mark.asyncio
+async def test_pay_bill_v3_detail_order_preserves_catalog_zero(session, monkeypatch):
+    world = await _seed_minimal_posted_run_with_gross_adjustment(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    result = (
+        (
+            await session.execute(
+                sa.select(payroll_employee_results).where(
+                    payroll_employee_results.c.organization_id == world["org_id"]
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    snapshot = {
+        "organization": {"name": "Detail Order Org"},
+        "report_profile": {},
+        "run_metadata": {},
+        "employee_identity": {
+            str(result["employee_id"]): {
+                "name": "Detail Order Employee",
+                "designation": "Officer",
+                "post": {"id": "officer-1", "title": "Officer", "display_order": 1},
+            }
+        },
+        "component_catalog": [
+            {"code": "BASIC", "name": "Basic", "register_column": "C", "display_order": 1},
+            {
+                "code": "DA_DIFFERENCE",
+                "name": "DA Difference",
+                "register_column": "D",
+                "display_order": 2,
+            },
+            {
+                "code": "INCOME_TAX",
+                "name": "Income Tax",
+                "register_column": "M",
+                "display_order": 0,
+            },
+            {
+                "code": "RECOVERY",
+                "name": "Recovery",
+                "register_column": "M",
+                "display_order": 10,
+            },
+        ],
+    }
+
+    async def load_snapshot(*_args, **_kwargs):
+        return snapshot
+
+    monkeypatch.setattr("app.reports.families.payroll_register.load_report_snapshot", load_snapshot)
+    dto = await pay_bill_builder.build(session, _ctx(world, template_version="v3"))
+    detail = _section_by_title(dto, "Component detail lines")
+    bucket_index = _col_index(detail, "register_column")
+    code_index = _col_index(detail, "component_code")
+    order_index = _col_index(detail, "display_order")
+    recovery_lines = [row for row in detail.rows if row[bucket_index] == "m_recovery"]
+
+    assert [(row[code_index], row[order_index]) for row in recovery_lines] == [
+        ("INCOME_TAX", 0),
+        ("RECOVERY", 10),
+    ]
 
 
 @pytest.mark.asyncio
@@ -767,7 +1228,6 @@ async def test_treasury_face_signatories_from_report_configurations(session):
     world = await _june_world(session)
     await _bind(session, world["org_id"], world["user_id"])
 
-    # Absent → empty section.
     dto_empty = await treasury_face_builder.build(session, _ctx(world))
     assert _section_by_title(dto_empty, "Signatories").rows == ()
 
@@ -786,7 +1246,6 @@ async def test_treasury_face_signatories_from_report_configurations(session):
     assert ("chair", "Director") in signatories.rows
     assert ("dda", "Deputy Director") in signatories.rows
 
-    # Clean up so later tests on the cached world see an empty section again.
     await session.execute(
         sa.delete(ReportConfiguration).where(
             ReportConfiguration.organization_id == world["org_id"],
@@ -810,10 +1269,8 @@ async def test_pay_bill_excel_and_pdf_formatters(session):
     wb = load_workbook(BytesIO(xlsx))
     ws = wb.active
     assert ws is not None
-    # Header row 5; first money column after employee_number/name/designation is BASIC (col 4).
     money_cell = ws.cell(row=6, column=4)
     assert money_cell.number_format == MONEY_FORMAT
-    # Footer net payable cell: find last data+totals row, last column.
     register = _section_by_title(dto, "Register")
     totals_excel_row = 6 + len(register.rows)
     net_col = len(register.columns)
@@ -841,7 +1298,6 @@ async def test_treasury_face_excel_and_pdf_formatters(session):
     wb = load_workbook(BytesIO(xlsx))
     ws = wb.active
     assert ws is not None
-    # First money cell in summary (Gross bill amount).
     money_cell = ws.cell(row=6, column=2)
     assert money_cell.number_format == MONEY_FORMAT
     assert _dec(money_cell.value) == _dec("5102985.00")

@@ -38,7 +38,14 @@ from app.models.recurring_instructions import (
     recurring_instruction_versions,
 )
 from app.reports.amount_in_words import amount_in_words
-from app.reports.base import ReportContext, ReportRegistry
+from app.reports.base import (
+    ColumnKind,
+    ReportColumn,
+    ReportContext,
+    ReportDTO,
+    ReportRegistry,
+    TableSection,
+)
 from app.reports.excel import MONEY_FORMAT
 from app.reports.formatting import format_inr
 from app.reports.families.payments import (
@@ -56,6 +63,15 @@ from app.reports.families.payments import (
 )
 from app.schemas.employees import mask_value
 from app.services import versioning
+from app.services.report_readiness import (
+    _epf_identifier_issues,
+    _gpf_readiness_report_types,
+    _issues_for_report,
+    _pay_bill_bucket_overflows,
+    _payslip_bucket_overflows,
+    require_v3_report_readiness,
+    v3_report_readiness_issues,
+)
 from app.services.run_calculation import calculate_run_command
 from app.services.run_posting import post_run
 from app.tenancy import bind_tenant_context
@@ -434,6 +450,7 @@ async def _seed_one_employee(
                 employee_id=header.id,
                 quarters_location=map_quarters_location(employee.accommodation.location),
                 quarters_identifier=f"Q-{employee.fixture_id}",
+                quarters_address=f"Quarter Q-{employee.fixture_id}",
             )
             session.add(assignment)
             await session.flush()
@@ -445,6 +462,10 @@ async def _seed_one_employee(
                 effective_from=EFFECTIVE_FROM,
                 values={
                     "license_fee": money(line.amount).quantize(_TWO),
+                    "house_rent": money(line.amount).quantize(_TWO),
+                    "service_charge": _ZERO,
+                    "parking_charge": _ZERO,
+                    "additional_parking_charge": _ZERO,
                     "informational_hra_foregone": (
                         money(foregone).quantize(_TWO) if foregone is not None else None
                     ),
@@ -473,11 +494,16 @@ async def _june_world(session: AsyncSession) -> dict:
     return _CACHED_WORLD
 
 
-def _ctx(world: dict, *, run_id: UUID | None = None) -> ReportContext:
+def _ctx(
+    world: dict,
+    *,
+    run_id: UUID | None = None,
+    template_version: str = TEMPLATE_VERSION,
+) -> ReportContext:
     return ReportContext(
         organization_id=world["org_id"],
         posted_run_id=run_id or world["run_id"],
-        template_version=TEMPLATE_VERSION,
+        template_version=template_version,
         generated_at=datetime.now(UTC),
         engine_version=str(world["engine_version"]),
     )
@@ -511,7 +537,6 @@ async def test_bank_advice_total_and_row_count(session):
     # The advice must NOT equal treasury-face net payable.
     assert _dec(credits.totals[credit_idx]) != EXPECTED_NET
     assert _dec(credits.totals[credit_idx]) - EXPECTED_NET == EXPECTED_OFFBILL
-
     db_rows = (
         (
             await session.execute(
@@ -527,6 +552,303 @@ async def test_bank_advice_total_and_row_count(session):
     paid_count = sum(1 for row in db_rows if _dec(row["disbursement"]) > _ZERO)
     assert len(credits.rows) == paid_count
     assert paid_count == 32
+
+
+@pytest.mark.asyncio
+async def test_v3_bank_advice_uses_snapshot_bank_name_and_branch(session, monkeypatch):
+    world = await _june_world(session)
+    ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v3",
+        generated_at=datetime.now(UTC),
+        engine_version=str(world["engine_version"]),
+    )
+
+    async def fail_live_lookup(*args, **kwargs):
+        raise AssertionError("v3 must not read live employee bank/profile versions")
+
+    monkeypatch.setattr(
+        "app.reports.families.payments._resolve_primary_salary_accounts", fail_live_lookup
+    )
+    monkeypatch.setattr("app.reports.families.payments.resolve_profile_as_of", fail_live_lookup)
+    await _bind(session, world["org_id"], world["user_id"])
+    dto = await bank_advice_builder.build(session, ctx)
+    credits = _section_by_title(dto, "Payment credits")
+    keys = [column.key for column in credits.columns]
+    assert "bank_name" in keys
+    assert "bank_branch" in keys
+    assert all(row[keys.index("bank_name")] == "Synthetic Bank" for row in credits.rows)
+    assert all(row[keys.index("bank_branch")] == "Synthetic Branch" for row in credits.rows)
+
+
+@pytest.mark.asyncio
+async def test_v3_readiness_is_actionable_and_uses_nonzero_posted_facts(session):
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    issues = await v3_report_readiness_issues(
+        session,
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+    )
+    codes = {issue["code"] for issue in issues}
+    assert "component_register_column_missing" in codes
+    assert "post_display_order_missing" in codes
+    assert "employee_nps_identifier_missing" in codes
+    assert "profile_nps_employee_account_head_missing" in codes
+    assert "profile_nps_employer_account_head_missing" in codes
+    assert "final_approver_signatory_missing" in codes
+    assert "gpf_mumbai_office_name_missing" in codes
+    assert "employee_bank_details_missing" not in codes
+    assert all(issue["owner"] and issue["href"].startswith("/") for issue in issues)
+    assert all(
+        issue.get("entity_id")
+        for issue in issues
+        if issue["owner"] in {"pay_component_catalog", "employee", "run_report_details"}
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        await require_v3_report_readiness(
+            session,
+            organization_id=world["org_id"],
+            posted_run_id=world["run_id"],
+            report_type=REPORT_TYPE_BANK_ADVICE,
+        )
+    assert exc_info.value.details["error_code"] == "v3_report_not_ready"
+
+
+def test_invalid_gpf_jurisdiction_blocks_both_individual_schedules():
+    assert _gpf_readiness_report_types("") == (
+        "gpf_mumbai_schedule",
+        "gpf_nagpur_schedule",
+    )
+    assert _gpf_readiness_report_types("invalid") == (
+        "gpf_mumbai_schedule",
+        "gpf_nagpur_schedule",
+    )
+    assert _gpf_readiness_report_types("mumbai") == ("gpf_mumbai_schedule",)
+
+
+def test_epf_activity_requires_one_snapshot_identifier_issue_per_employee():
+    employee_id = str(uuid4())
+    rows = [
+        {
+            "employee_id": employee_id,
+            "employee_number": "E-EPF",
+            "component_code": code,
+        }
+        for code in ("EPF_EMPLOYEE", "EPF_EMPLOYER", "EPF_EMPLOYER_TRANSFER")
+    ]
+
+    issues = _epf_identifier_issues(rows, {employee_id: {"epf_number": None}})
+    assert [issue["code"] for issue in issues] == ["employee_epf_identifier_missing"]
+    assert _epf_identifier_issues(rows, {employee_id: {"epf_number": "EPF-123"}}) == []
+
+
+def test_v3_readiness_keeps_shared_allocation_issues_for_dependent_reports():
+    issues = [
+        {"report_type": "canonical_export", "code": "common"},
+        {"report_type": "canonical_pay_bill_allocation", "code": "allocation"},
+        {"report_type": "pay_bill", "code": "pay_bill_only"},
+        {"report_type": "treasury_face", "code": "treasury_header"},
+        {"report_type": "bank_rtgs_advice", "code": "bank_only"},
+    ]
+
+    assert {issue["code"] for issue in _issues_for_report(issues, "treasury_face")} == {
+        "common",
+        "allocation",
+        "treasury_header",
+    }
+    assert {issue["code"] for issue in _issues_for_report(issues, "pay_bill")} == {
+        "common",
+        "allocation",
+        "pay_bill_only",
+        "treasury_header",
+    }
+    assert {issue["code"] for issue in _issues_for_report(issues, "bank_rtgs_advice")} == {
+        "common",
+        "bank_only",
+    }
+
+
+def test_payslip_readiness_detects_only_buckets_above_nine_visible_lines():
+    employee_id = uuid4()
+    rows = [
+        {
+            "employee_id": employee_id,
+            "employee_number": "E-OVERFLOW",
+            "component_code": f"EARNING_{index}",
+            "classification": "earning",
+            "trace": {},
+        }
+        for index in range(9)
+    ]
+    rows.append(
+        {
+            "employee_id": employee_id,
+            "employee_number": "E-OVERFLOW",
+            "component_code": "DA_DIFFERENCE",
+            "classification": "gross_adjustment",
+            "trace": {"classification": "gross_adjustment"},
+        }
+    )
+    rows.extend(
+        {
+            "employee_id": employee_id,
+            "employee_number": "E-OVERFLOW",
+            "component_code": f"DEDUCTION_{index}",
+            "classification": "treasury_deduction",
+            "trace": {},
+        }
+        for index in range(9)
+    )
+    rows.append(
+        {
+            "employee_id": employee_id,
+            "employee_number": "E-OVERFLOW",
+            "component_code": "NPS_EMPLOYER_TRANSFER",
+            "classification": "ag_deduction",
+            "trace": {"employer_transfer": True},
+        }
+    )
+    rows.append(
+        {
+            "employee_id": employee_id,
+            "employee_number": "E-OVERFLOW",
+            "component_code": "FOREGONE_HRA",
+            "classification": "earning",
+            "trace": {"classification": "informational"},
+        }
+    )
+
+    assert _payslip_bucket_overflows(rows) == [
+        {
+            "employee_id": str(employee_id),
+            "employee_number": "E-OVERFLOW",
+            "bucket": "earnings",
+            "count": 10,
+        }
+    ]
+
+
+def test_v3_payslip_renders_gross_adjustment_as_an_emolument():
+    columns = (
+        ReportColumn("line_kind", "Kind", ColumnKind.TEXT),
+        ReportColumn("code", "Code / Field", ColumnKind.TEXT),
+        ReportColumn("detail", "Detail", ColumnKind.TEXT),
+        ReportColumn("amount", "Amount", ColumnKind.MONEY),
+        ReportColumn("employer_transfer", "Employer Transfer", ColumnKind.TEXT),
+    )
+    dto = ReportDTO(
+        report_type=REPORT_TYPE_PAYSLIPS,
+        template_version="v3",
+        title="Payslips",
+        organization_name="Gross Adjustment Org",
+        subtitle="June 2026",
+        sections=(
+            TableSection(
+                title="Payslip — GA-01",
+                columns=columns,
+                rows=(
+                    ("identity", "employee_number", "GA-01", None, False),
+                    ("identity", "name", "Gross Adjustment Employee", None, False),
+                    (
+                        "gross_adjustment",
+                        "DA_DIFFERENCE",
+                        "gross_adjustment",
+                        Decimal("50.00"),
+                        False,
+                    ),
+                    ("net", "disbursement", "Amount credited", Decimal("50.00"), False),
+                ),
+            ),
+        ),
+    )
+
+    workbook = load_workbook(BytesIO(payslip_to_excel(dto)), data_only=False)
+    sheet = workbook["PaySlip"]
+
+    assert sheet["B6"].value == "Da Difference"
+    assert _dec(sheet["F6"].value) == Decimal("50.00")
+    assert sheet["F15"].value == "=SUM(F6:F14)"
+
+
+def test_pay_bill_readiness_detects_only_columns_above_five_nonzero_lines():
+    employee_id = uuid4()
+    rows = [
+        {
+            "employee_id": employee_id,
+            "employee_number": "E-OVERFLOW",
+            "component_code": f"ALLOWANCE_{index}",
+            "classification": "earning",
+            "amount": Decimal("1.00"),
+            "trace": {},
+        }
+        for index in range(6)
+    ]
+    rows.extend(
+        (
+            {
+                "employee_id": employee_id,
+                "employee_number": "E-OVERFLOW",
+                "component_code": "ZERO_ALLOWANCE",
+                "classification": "earning",
+                "amount": Decimal("0.00"),
+                "trace": {},
+            },
+            {
+                "employee_id": employee_id,
+                "employee_number": "E-OVERFLOW",
+                "component_code": "FOREGONE_HRA",
+                "classification": "earning",
+                "amount": Decimal("100.00"),
+                "trace": {"classification": "informational"},
+            },
+        )
+    )
+    catalog = {
+        str(row["component_code"]): {"register_column": "wash_child_other_charges"} for row in rows
+    }
+
+    assert _pay_bill_bucket_overflows(rows, catalog) == [
+        {
+            "employee_id": str(employee_id),
+            "employee_number": "E-OVERFLOW",
+            "register_column": "wash_child_other_charges",
+            "count": 6,
+        }
+    ]
+
+    assert _pay_bill_bucket_overflows(rows[:5], catalog) == []
+
+
+@pytest.mark.asyncio
+async def test_v3_readiness_uses_calculated_input_snapshot_before_posting(session):
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    run = await session.get(PayrollRun, world["run_id"])
+    assert run is not None
+    run.status = "calculated"
+    await session.commit()
+    await _bind(session, world["org_id"], world["user_id"])
+
+    issues = await v3_report_readiness_issues(
+        session,
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+    )
+
+    codes = {issue["code"] for issue in issues}
+    assert "component_register_column_missing" in codes
+    assert "post_display_order_missing" in codes
+    assert "employee_nps_identifier_missing" in codes
+    assert {issue["owner"] for issue in issues} <= {
+        "organization_export_settings",
+        "post_catalog",
+        "pay_component_catalog",
+        "employee",
+        "run_report_details",
+    }
 
 
 @pytest.mark.asyncio
@@ -701,6 +1023,32 @@ async def test_payslip_nets_sum_and_line_reconciliation(session):
     assert _dec(nets_sum) == EXPECTED_NET
     assert _dec(disbursements_sum) == EXPECTED_DISBURSEMENT
     assert _dec(disbursements_sum) - _dec(nets_sum) == EXPECTED_OFFBILL
+
+
+@pytest.mark.asyncio
+async def test_v3_payslip_keeps_employer_transfers_out_of_recovery_sections(session):
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    dto = await payslip_bundle_builder.build(session, _ctx(world, template_version="v3"))
+
+    transfer_codes = {
+        str(row[1])
+        for section in dto.sections
+        for row in section.rows
+        if len(row) == 5 and row[4] is True
+    }
+    assert transfer_codes
+
+    workbook = load_workbook(BytesIO(payslip_to_excel(dto)), data_only=False)
+    assert workbook.sheetnames == ["PaySlip"]
+    rendered_values = {
+        str(cell.value)
+        for row in workbook["PaySlip"].iter_rows()
+        for cell in row
+        if cell.value is not None
+    }
+    for code in transfer_codes:
+        assert code.replace("_", " ").title() not in rendered_values
 
 
 @pytest.mark.asyncio

@@ -693,6 +693,34 @@ async def test_statutory_excel_and_pdf_formatters(session):
 
 
 @pytest.mark.asyncio
+async def test_v3_statutory_rows_use_snapshot_designation_and_financial_year(session, monkeypatch):
+    world = await _june_world(session)
+    ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v3",
+        generated_at=datetime.now(UTC),
+        engine_version=str(world["engine_version"]),
+    )
+
+    async def fail_live_lookup(*args, **kwargs):
+        raise AssertionError("v3 must not read live employee profiles")
+
+    monkeypatch.setattr("app.reports.families.statutory.resolve_profile_as_of", fail_live_lookup)
+    built = []
+    for builder in (income_tax_builder, professional_tax_builder, gis_builder):
+        await _bind(session, world["org_id"], world["user_id"])
+        dto = await builder.build(session, ctx)
+        built.append(dto)
+        section = dto.sections[0]
+        assert "designation" in {column.key for column in section.columns}
+
+    section = built[0].sections[0]
+    keys = [column.key for column in section.columns]
+    assert set(row[keys.index("financial_year")] for row in section.rows) == {"2026-27"}
+
+
+@pytest.mark.asyncio
 async def test_unposted_run_raises_conflict(session):
     world = await _june_world(session)
     await _bind(session, world["org_id"], world["user_id"])

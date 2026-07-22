@@ -47,6 +47,7 @@ class ExportReportsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     posted_run_id: UUID
+    template_version: str | None = None
 
 
 class ExportReportsResponse(BaseModel):

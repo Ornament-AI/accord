@@ -55,6 +55,8 @@ Each line item carries a full **calculation trace**:
 | `rounded_value` | Post-round amount |
 | `calculator_kind` | Key in the typed calculator registry |
 | `engine_version` | Engine version string (denormalized for line-level audit if needed; at minimum on the run version) |
+| `reason` | User-entered or master-data narration that explains the line |
+| `service_period` | User-entered start/end dates for the line, when applicable |
 
 ### Typed calculator registry (no user-authored DSL)
 

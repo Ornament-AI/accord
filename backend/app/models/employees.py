@@ -12,6 +12,8 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
+    Index,
     Numeric,
     Table,
     Text,
@@ -83,6 +85,7 @@ employee_profile_versions = Table(
     Column("gpf_account_number", Text, nullable=True),
     Column("epf_number", Text, nullable=True),
     Column("pension_account", Text, nullable=True),
+    Column("payroll_export_remark", Text, nullable=True),
     Column(
         "created_at",
         DateTime(timezone=True),
@@ -151,6 +154,7 @@ employee_posting_versions = Table(
         ForeignKey("posts.id"),
         nullable=False,
     ),
+    Column("pay_bill_post_id", PG_UUID(as_uuid=True), nullable=True),
     Column(
         "created_at",
         DateTime(timezone=True),
@@ -161,6 +165,16 @@ employee_posting_versions = Table(
     Column("change_reason", Text, nullable=True),
     CheckConstraint(
         "NOT isempty(validity)", name="ck_employee_posting_versions_validity_not_empty"
+    ),
+    ForeignKeyConstraint(
+        ["organization_id", "pay_bill_post_id"],
+        ["posts.organization_id", "posts.id"],
+        name="fk_employee_posting_versions_org_pay_bill_post",
+    ),
+    Index(
+        "ix_employee_posting_versions_org_pay_bill_post_id",
+        "organization_id",
+        "pay_bill_post_id",
     ),
     ExcludeConstraint(
         ("organization_id", "="),

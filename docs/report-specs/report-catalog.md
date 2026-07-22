@@ -1,6 +1,8 @@
 # Report catalog
 
-This file covers the payroll report builders, the shared DTO contract, the reconciliation invariants, and template versioning for Accord Phase 0.
+This file covers the payroll report builders, the shared DTO contract, the
+reconciliation invariants, and template versioning. The normalized v3 layout is
+specified in [canonical-export-contract.md](canonical-export-contract.md).
 
 Related: [ADR 0010](../adr/0010-jobs-object-storage.md) (export artifacts, jobs, object storage), [ADR 0009](../adr/0009-audit-outbox.md) (audit + outbox), [ADR 0008](../adr/0008-command-workflow-idempotency.md) (command workflow / idempotency), [payroll-domain.md](../payroll-domain.md) (glossary, gross-to-net, remittance buckets).
 
@@ -46,7 +48,10 @@ Report builders read **only** posted immutable data:
 
 - Pay lines, component classifications, and totals come from the posted run version (`payroll_employee_results`, `payroll_result_lines`, run-version `totals`).
 - For the register, payments, recovery, and approval-note families, display data comes from the **immutable report snapshot** (`payroll_report_snapshots`). It is written at posting from the calc-time `inputs_snapshot`. It holds the component catalog (code, name, display order, classification), employee identity (name, designation, PAN, PRAN, GPF account number, bank account), the report profile (DDO code, heads, signatories, bank advice recipient), recovery sources, and run metadata.
-- The statutory and GPF/NPS schedule families resolve identity fields (name, PAN, account numbers) from the effective-dated employee versions active at period month-end. This is safe against posted data because versions are never edited in place — they are only superseded (ADR 0005).
+- Statutory, GPF/NPS, advance, accommodation, payment, and register display
+  fields come from the immutable report snapshot. Effective-dated master rows
+  are read while calculating that snapshot, not while regenerating a posted
+  artifact.
 - Rate and rule snapshots are captured at calculation time (see [ADR 0007](../adr/0007-payroll-run-calculation-model.md) and [payroll-domain.md](../payroll-domain.md)).
 
 Builders **never** read live master data for amounts, rates, bank accounts, or remittance routing. If a field was not snapshotted, it is absent or null in the DTO. It is never backfilled from today. A posted run with no report snapshot fails with a clear error. It needs an explicit audited backfill first (`backend/app/reports/snapshots.py`).
@@ -59,11 +64,15 @@ Every generated file (preview payload reference, Excel, PDF) is an export artifa
 
 ## Catalog
 
-The product surface is the 18-sheet allowlist `PRODUCT_REPORT_SHEETS` in `backend/app/reports/registry_setup.py`. Its order is stable. It drives ZIP entry order and how the catalog is shown. Do not invent a second list on the frontend.
+The product surface is the 18-report allowlist `PRODUCT_REPORT_SHEETS` in
+`backend/app/reports/registry_setup.py`. The v2 exporter uses that report order
+for its legacy ZIP. The v3 workbook maps those same report kinds to the exact
+sheet names, order, and hidden states in `CANONICAL_PRODUCT_SHEETS`. Do not
+invent a third list on the frontend.
 
 | Report kind | Purpose | Output formats | Key totals to reconcile |
 | --- | --- | --- | --- |
-| **Payroll register — Pay Bill** | Primary bill register: earnings, employer contributions, deductions by classification, gross bill, and net payable for the posted run. Columns are catalog-driven: one column per snapshotted component, grouped by classification, plus aggregate columns. | JSON preview, Excel, PDF | `salary_earnings`, `employer_share`, gross adjustments, `gross_bill`, deduction buckets (AG / treasury / external), `net_payable`; component columns sum to each aggregate; line sum = header totals; builder fails on any mismatch with posted totals |
+| **Payroll register — Pay Bill** | Primary bill register. v2 is the generic catalog-driven register. v3 maps each snapshotted component to one of the canonical 28 columns and reproduces the grouped MSIDC register. | JSON preview, Excel, PDF | `salary_earnings`, `employer_share`, gross adjustments, `gross_bill`, deduction buckets (AG / treasury / external), `net_payable`; component columns sum to each aggregate; line sum = header totals; builder fails on any mismatch with posted totals or on a non-zero unmapped component |
 | **Payroll register — Treasury Face** | Treasury-facing face sheet / abstract of the same posted bill for treasury submission, with a bill header (Bill No., Demand No., heads, DDO code) from the snapshot. | JSON preview, Excel, PDF | Face totals = Pay Bill header totals for the same `posted_run_id`; treasury deduction aggregates match statutory schedules; builder fails if gross − deductions ≠ posted net |
 | **Bank / RTGS advice** | Payment instruction list to credit employee bank accounts (RTGS/NEFT/salary credit). Carries full account numbers by design; artifact access control is the protection layer. | JSON preview, Excel, PDF | Sum of advice credit amounts = posted **disbursement** (**not** net payable); one row per payable employee bank credit on the snapshot |
 | **Payslips** | Per-employee earnings and deduction statement for the posted period (PAN/PRAN masked). | JSON preview, Excel, PDF | Each payslip's lines and take-home = that employee's posted lines; run-level sum of payslip disbursements = posted disbursement |
@@ -158,27 +167,30 @@ Only actual recoveries affect net pay and remittance; foregone HRA remains infor
 ## Template versioning
 
 - Every export artifact records `template_version` (ADR 0010 `export_artifacts`).
-- New builds support **v2 only** (`SUPPORTED_TEMPLATE_VERSIONS` in `backend/app/services/report_generation.py`); v2 is also the default. The v2 layouts read the immutable report snapshot. Artifacts finalized under older versions stay downloadable. Requests for versions outside the supported set are rejected.
+- New builds support **v2** and **v3** (`SUPPORTED_TEMPLATE_VERSIONS` in
+  `backend/app/services/report_generation.py`). v3 is the canonical default;
+  v2 remains requestable for legacy integrations. Both read immutable report
+  snapshots. Finalized older artifacts stay downloadable. Requests for other
+  versions are rejected.
 - Building the same report again for the same posted run with a newer template makes a new artifact row. Old downloads stay tied to the template version used when that artifact was created.
-- JSON preview, Excel, and PDF for one job share one DTO and one `template_version`. The consolidated ZIP records a pack version of the form `{base_version}+{manifest_hash}`.
+- JSON preview, Excel, and PDF for one job share one DTO and one
+  `template_version`. A consolidated artifact records a pack version of the
+  form `{base_version}+{manifest_hash}`. v2 produces the historical ZIP; v3
+  produces one 18-sheet `.xlsx` workbook.
 - Template changes are versioned. Silent in-place edits of a shipped template id are forbidden.
 
 ---
 
-## First-release scope and exclusions
+## Layout scope
 
-First release ships **provisional / generic** formats for the catalog rows above only.
+v2 retains the generic formats for compatibility. v3 reproduces the accepted
+18-sheet workbook, including GPF-IV, motor-car, motorcycle, Festival, and the
+Mumbai/Worli accommodation forms. The canonical source can contain broken
+formulas or stale copy; v3 preserves layout and meaning while recalculating from
+posted facts as described in the canonical export contract.
 
-The named legacy / specialized **form layouts** are **NOT** in first release. Generic-layout schedules now cover the advance recoveries beneath them. The legacy printed forms wait for a later template pack:
-
-| Legacy form | Status |
-| --- | --- |
-| **GPF-IV** | Legacy form layout — not in first release; the generic **GPF advance schedule** covers GPF advance recoveries |
-| **Motor car advance** form | Legacy form layout — not in first release; the generic **motor car advance schedule** covers these recoveries |
-| **Motorcycle advance** form | Legacy form layout — not in first release; the generic **motorcycle advance schedule** covers these recoveries |
-| **Festival advance** form | Legacy form layout — not in first release; the generic **festival advance schedule** covers these recoveries |
-
-Non-HBA installment recoveries with advance type "other" use the registered `advance_schedule` builder, which sits outside the product pack.
+Non-HBA installment recoveries with advance type "other" still use the
+registered `advance_schedule` builder outside the fixed product pack.
 
 ---
 
@@ -191,18 +203,24 @@ Non-HBA installment recoveries with advance type "other" use the registered `adv
 5. Artifacts are stored and indexed per ADR 0010 with `template_version` on every row. If a finalized artifact already exists for the same run, kind, version, and format, it is reused. No rebuild happens.
 6. Audit/outbox side effects follow ADR 0009 (including sensitive download auditing).
 
-A consolidated export job (`consolidated_xlsx`) builds all 18 product sheets as Excel workbooks and stores them as one ZIP artifact.
+A consolidated export job (`consolidated_xlsx`) builds all 18 report DTOs. v2
+stores separate workbooks in a ZIP. v3 renders the exact canonical sheet pack
+as one workbook.
 
 ---
 
 ## Open follow-ups
 
-- Exact DTO field schemas per report kind. Today all kinds share the generic tabular `ReportDTO` / `TableSection` shape in `backend/app/reports/base.py`. Per-kind type specs can land under `docs/report-specs/` as needed.
-- Treasury-submission fields (Token No., Voucher No.) are not yet modeled on the run. The bill header renders what the snapshot and run metadata provide.
-- A single multi-sheet consolidated workbook (instead of the current ZIP of per-report workbooks) remains a separate design decision.
+- Report kinds still share the generic `ReportDTO` / `TableSection` transport
+  in `backend/app/reports/base.py`. The v3 renderers validate the per-kind keys
+  they consume; dedicated DTO classes may replace this later without changing
+  the workbook contract.
 
 Resolved since the first draft of this catalog:
 
 - Signatory source of truth for the office approval note: the `report_profile` block of the immutable report snapshot. The org-level `ReportConfiguration` "signatories" entry is the legacy source.
 - Treasury Face is its own builder and DTO over the same posted lines. It is not a strict subset layout of Pay Bill. Both must reconcile to the same posted totals.
+- Treasury token and voucher number/date pairs are run-owned report metadata.
+- The v3 single-workbook decision and exact sheet topology are recorded in the
+  canonical export contract.
 - Job-based async builds (ADR 0010) and live preview both exist. Preview is not limited to the product allowlist.

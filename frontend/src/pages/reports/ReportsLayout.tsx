@@ -3,7 +3,7 @@ import { CircleNotchIcon as Loader2 } from "@phosphor-icons/react/dist/csr/Circl
 import { DownloadSimpleIcon as Download } from "@phosphor-icons/react/dist/csr/DownloadSimple";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Outlet, useSearchParams } from "react-router";
+import { Link, Outlet, useSearchParams } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
@@ -21,7 +21,11 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { type PayrollRunListItem, usePayrollRuns } from "@/lib/api/payroll-runs";
+import {
+	type PayrollRunListItem,
+	usePayrollRunReportReadiness,
+	usePayrollRuns,
+} from "@/lib/api/payroll-runs";
 import {
 	isActiveJobStatus,
 	jobArtifactId,
@@ -34,6 +38,7 @@ import {
 } from "@/lib/api/reports";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
+import { reportReadinessAction } from "@/lib/report-readiness";
 
 import { ArtifactsSection } from "./ArtifactsSection";
 
@@ -58,6 +63,7 @@ export default function ReportsLayout() {
 	const downloadedArtifactRef = useRef<string | null>(null);
 
 	const runsQuery = usePayrollRuns({ status: "posted" });
+	const readinessQuery = usePayrollRunReportReadiness(selectedRunId ?? undefined);
 	const exportMutation = useExportReports();
 	const exportJobQuery = useReportJob(exportJobId);
 	const downloadMutation = useDownloadArtifact();
@@ -124,6 +130,10 @@ export default function ReportsLayout() {
 		exportMutation.isPending ||
 		downloadMutation.isPending ||
 		isActiveJobStatus(exportJobQuery.data?.status);
+	const exportBlocked = Boolean(
+		selectedRunId &&
+			(readinessQuery.isLoading || readinessQuery.isError || readinessQuery.data?.ready === false),
+	);
 	const exportError =
 		jobErrorMessage(exportJobQuery.data) ??
 		(exportMutation.error ? getErrorMessage(exportMutation.error, "Export failed.") : null);
@@ -142,10 +152,10 @@ export default function ReportsLayout() {
 	}
 
 	function handleExport() {
-		if (!selectedRunId) return;
+		if (!selectedRunId || exportBlocked) return;
 		downloadedArtifactRef.current = null;
 		exportMutation.mutate(
-			{ posted_run_id: selectedRunId },
+			{ posted_run_id: selectedRunId, template_version: "v3" },
 			{
 				onSuccess: (result) => {
 					setExportJobId(result.job_id);
@@ -188,8 +198,8 @@ export default function ReportsLayout() {
 										<Button
 											type="button"
 											onClick={() => void handleExport()}
-											disabled={!selectedRunId || exportBusy}
-											aria-label="Export all report sheets as Excel ZIP"
+											disabled={!selectedRunId || exportBusy || exportBlocked}
+											aria-label="Export one Excel workbook with 18 report sheets"
 										>
 											{exportBusy ? (
 												<Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -234,11 +244,50 @@ export default function ReportsLayout() {
 									<p className="text-muted-foreground text-sm">
 										Select a posted run to preview and export reports.
 									</p>
-								) : null}
+								) : (
+									<p className="text-muted-foreground text-sm">
+										Export creates one Excel workbook with all 18 report sheets.
+									</p>
+								)}
 								{exportError ? (
 									<p className="text-destructive text-sm" role="alert">
 										{exportError}
 									</p>
+								) : null}
+								{selectedRunId && readinessQuery.isError ? (
+									<ErrorWithRetry
+										message={getErrorMessage(
+											readinessQuery.error,
+											"Unable to verify report export readiness.",
+										)}
+										onRetry={() => void readinessQuery.refetch()}
+									/>
+								) : null}
+								{selectedRunId && readinessQuery.data && !readinessQuery.data.ready ? (
+									<div
+										className="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4"
+										role="alert"
+									>
+										<p className="font-medium">Complete report fields before export</p>
+										<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+											{readinessQuery.data.issues.map((issue) => {
+												const action = reportReadinessAction(issue, selectedRunId);
+												return (
+													<li
+														key={`${issue.report_type}-${issue.code}-${issue.entity_id ?? issue.href}-${issue.message}`}
+													>
+														{issue.message}{" "}
+														<Link
+															className="font-medium underline underline-offset-4"
+															to={action.to}
+														>
+															{action.label}
+														</Link>
+													</li>
+												);
+											})}
+										</ul>
+									</div>
 								) : null}
 							</PageSection>
 

@@ -21,15 +21,34 @@ const FIELDS: ReadonlyArray<{
 }> = [
 	{ key: "bill_number", label: "Bill No.", required: true },
 	{ key: "bill_date", label: "Bill date", kind: "date", required: true },
-	{ key: "payment_date", label: "Payment date", kind: "date" },
+	{ key: "payment_date", label: "Payment date", kind: "date", required: true },
 	{ key: "demand_number", label: "Demand No.", required: true },
 	{ key: "major_head", label: "Major head", required: true },
 	{ key: "sub_head", label: "Sub head", required: true },
 	{ key: "detailed_head", label: "Detailed head", required: true },
+	{ key: "token_number", label: "Token No." },
+	{ key: "token_date", label: "Token date", kind: "date" },
+	{ key: "voucher_number", label: "Voucher No." },
+	{ key: "voucher_date", label: "Voucher date", kind: "date" },
 	{ key: "bank_advice_number", label: "Bank advice No." },
 	{ key: "bank_advice_date", label: "Bank advice date", kind: "date" },
 	{ key: "approval_note_number", label: "Approval note No." },
 	{ key: "approval_note_date", label: "Approval note date", kind: "date" },
+];
+
+const NUMBER_DATE_PAIRS: ReadonlyArray<{
+	number: keyof PayrollRunReportMetadata;
+	date: keyof PayrollRunReportMetadata;
+	label: string;
+}> = [
+	{ number: "token_number", date: "token_date", label: "Token number and date" },
+	{ number: "voucher_number", date: "voucher_date", label: "Voucher number and date" },
+	{ number: "bank_advice_number", date: "bank_advice_date", label: "Bank advice number and date" },
+	{
+		number: "approval_note_number",
+		date: "approval_note_date",
+		label: "Approval note number and date",
+	},
 ];
 
 function normalized(metadata: PayrollRunReportMetadata): PayrollRunReportMetadata {
@@ -48,13 +67,27 @@ export function ReportMetadataSection({
 	editable: boolean;
 }) {
 	const [form, setForm] = useState<PayrollRunReportMetadata>(() => normalized(metadata));
+	const [formError, setFormError] = useState<string | null>(null);
 	const update = useUpdatePayrollRunReportMetadata(runId);
 
-	useEffect(() => setForm(normalized(metadata)), [metadata]);
-	const setField = (key: keyof PayrollRunReportMetadata, value: string | null) =>
+	useEffect(() => {
+		setForm(normalized(metadata));
+		setFormError(null);
+	}, [metadata]);
+	const setField = (key: keyof PayrollRunReportMetadata, value: string | null) => {
 		setForm((current) => ({ ...current, [key]: value }));
+		setFormError(null);
+	};
 
 	const save = async () => {
+		setFormError(null);
+		const incompletePair = NUMBER_DATE_PAIRS.find(
+			(pair) => Boolean(form[pair.number]) !== Boolean(form[pair.date]),
+		);
+		if (incompletePair) {
+			setFormError(`${incompletePair.label} must be entered together.`);
+			return;
+		}
 		try {
 			await update.mutateAsync(form);
 			toast.success("Report details saved");
@@ -115,6 +148,11 @@ export function ReportMetadataSection({
 					</div>
 				))}
 			</div>
+			{formError ? (
+				<p className="text-sm text-destructive" role="alert">
+					{formError}
+				</p>
+			) : null}
 		</PageSection>
 	);
 }

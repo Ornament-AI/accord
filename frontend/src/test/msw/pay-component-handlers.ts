@@ -6,6 +6,8 @@ import type {
 	PayComponentCreate,
 	PayComponentResponse,
 	PayComponentUpdate,
+	PayrollExportProfile,
+	PayrollExportProfileResponse,
 } from "@/lib/api/pay-setup";
 
 export type PayComponentHandlersOptions = {
@@ -17,8 +19,12 @@ export type PayComponentHandlersOptions = {
 	rateVersionError?: { status: number; body: Record<string, unknown> };
 	/** Collect PATCH bodies for assertions. */
 	onPatch?: (componentId: string, body: PayComponentUpdate) => void;
+	/** Collect create bodies for assertions. */
+	onCreate?: (body: PayComponentCreate) => void;
 	/** Collect rate-version create bodies for assertions. */
 	onCreateRateVersion?: (componentId: string, body: ComponentRateVersionCreate) => void;
+	reportProfile?: PayrollExportProfile;
+	onUpdateReportProfile?: (body: PayrollExportProfile) => void;
 };
 
 export function buildPayComponent(
@@ -38,6 +44,7 @@ export function buildPayComponent(
 		schedule_kind: overrides.schedule_kind ?? null,
 		schedule_title: overrides.schedule_title ?? null,
 		schedule_account_head: overrides.schedule_account_head ?? null,
+		register_column: overrides.register_column ?? null,
 		created_at: overrides.created_at ?? now,
 		updated_at: overrides.updated_at ?? now,
 	};
@@ -64,6 +71,7 @@ export function buildRateVersion(
 export function createPayComponentHandlers(options: PayComponentHandlersOptions = {}) {
 	const store = new Map<string, PayComponentResponse>();
 	const rateVersions = new Map<string, ComponentRateVersionResponse[]>();
+	let reportProfile: PayrollExportProfile = options.reportProfile ?? {};
 
 	const seed = options.components ?? [
 		buildPayComponent({
@@ -110,6 +118,25 @@ export function createPayComponentHandlers(options: PayComponentHandlersOptions 
 	}
 
 	const handlers = [
+		http.get("/api/report-profile", () => {
+			const response: PayrollExportProfileResponse = {
+				value: reportProfile,
+				updated_at: "2026-07-18T12:00:00Z",
+			};
+			return HttpResponse.json(response);
+		}),
+
+		http.put("/api/report-profile", async ({ request }) => {
+			const body = (await request.json()) as PayrollExportProfile;
+			options.onUpdateReportProfile?.(body);
+			reportProfile = body;
+			const response: PayrollExportProfileResponse = {
+				value: reportProfile,
+				updated_at: "2026-07-18T12:30:00Z",
+			};
+			return HttpResponse.json(response);
+		}),
+
 		http.get("/api/pay-components", () => {
 			const items = Array.from(store.values()).sort(
 				(a, b) => a.display_order - b.display_order || a.code.localeCompare(b.code),
@@ -124,6 +151,7 @@ export function createPayComponentHandlers(options: PayComponentHandlersOptions 
 				});
 			}
 			const body = (await request.json()) as PayComponentCreate;
+			options.onCreate?.(body);
 			const exists = Array.from(store.values()).some(
 				(component) => component.code.toLowerCase() === body.code.trim().toLowerCase(),
 			);
@@ -143,6 +171,7 @@ export function createPayComponentHandlers(options: PayComponentHandlersOptions 
 				display_order: body.display_order ?? 0,
 				employer_transfer: body.employer_transfer,
 				transfer_of: body.transfer_of ?? null,
+				register_column: body.register_column ?? null,
 				created_at: now,
 				updated_at: now,
 			});
@@ -176,6 +205,8 @@ export function createPayComponentHandlers(options: PayComponentHandlersOptions 
 				is_active: update.is_active ?? existing.is_active,
 				employer_transfer: update.employer_transfer ?? existing.employer_transfer,
 				transfer_of: update.transfer_of === undefined ? existing.transfer_of : update.transfer_of,
+				register_column:
+					update.register_column === undefined ? existing.register_column : update.register_column,
 				updated_at: "2026-07-18T12:30:00Z",
 			};
 			store.set(componentId, next);

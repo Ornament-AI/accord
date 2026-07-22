@@ -115,6 +115,7 @@ def serialize_catalog(catalog: Mapping[str, PayComponent]) -> list[dict[str, Any
             "schedule_kind": row.schedule_kind,
             "schedule_title": row.schedule_title,
             "schedule_account_head": row.schedule_account_head,
+            "register_column": row.register_column,
         }
         for row in sorted(catalog.values(), key=lambda item: (item.display_order, item.code))
         if row.is_standard or row.is_active
@@ -156,4 +157,6 @@ def trace_payload(trace: CalculationTrace) -> dict[str, Any]:
         "engine_version": trace.engine_version,
         "employer_transfer": trace.employer_transfer,
         "transfer_of": trace.transfer_of,
+        "service_period": trace.service_period,
+        "reason": trace.reason,
     }

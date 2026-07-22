@@ -19,6 +19,7 @@ from app.schemas.pay_setup import (
     AccommodationChargeVersionResponse,
     AccommodationCreate,
     AccommodationResponse,
+    AccommodationUpdate,
     AdvanceCreate,
     AdvanceInstallmentVersionCreate,
     AdvanceInstallmentVersionResponse,
@@ -308,6 +309,25 @@ async def list_accommodation(
         organization_id=tenant_org_id(tenant),
         employee_id=employee_id,
         as_of=as_of or current_ist_date(),
+    )
+
+
+@router.patch(
+    "/accommodation/{assignment_id}",
+    response_model=AccommodationResponse,
+)
+async def update_accommodation(
+    assignment_id: UUID,
+    body: AccommodationUpdate,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("manage_master_data")),
+) -> dict[str, Any]:
+    return await pay_setup_service.update_accommodation(
+        db,
+        organization_id=tenant_org_id(tenant),
+        assignment_id=assignment_id,
+        body=body,
     )
 
 

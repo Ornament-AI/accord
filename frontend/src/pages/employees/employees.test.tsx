@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "@/contexts/AuthContext";
+import { todayApiDate } from "@/lib/calendar-date";
 import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
@@ -215,7 +216,7 @@ describe("CreateEmployeeDialog", () => {
 		queryClient.clear();
 	});
 
-	it("requires gpf_jurisdiction when regime is GPF and surfaces 409 on duplicate number", async () => {
+	it("keeps GPF jurisdiction optional and surfaces 409 on duplicate number", async () => {
 		const { handlers: authHandlers } = createAuthHandlers({
 			me: buildRoleAuthMe("organization_administrator"),
 		});
@@ -251,15 +252,86 @@ describe("CreateEmployeeDialog", () => {
 		});
 
 		fireEvent.click(screen.getByRole("button", { name: "Create" }));
-		expect(
-			await screen.findByText("GPF jurisdiction is required when regime is GPF"),
-		).toBeInTheDocument();
-
-		openBaseUiSelect(screen.getByLabelText("GPF Jurisdiction"));
-		pickBaseUiOption("Mumbai");
-
-		fireEvent.click(screen.getByRole("button", { name: "Create" }));
 		expect(await screen.findByText("This employee number is already in use")).toBeInTheDocument();
+	});
+
+	it("submits nullable profile fields plus pay and bank groups without optional values", async () => {
+		const onCreate = vi.fn();
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: employeeHandlers } = createEmployeeHandlers({ onCreate });
+		const { handlers: orgHandlers } = createOrgSetupHandlers();
+		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
+
+		renderCreateDialog();
+		await screen.findByRole("heading", { name: "New Employee" });
+		fireEvent.change(screen.getByLabelText("Employee Number"), { target: { value: "E-NEW" } });
+		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Employee" } });
+		fireEvent.change(screen.getByLabelText("Pension Account"), {
+			target: { value: "PENSION-123" },
+		});
+		fireEvent.change(screen.getByLabelText("Payroll Export Remark"), {
+			target: { value: "Transferred from deputation" },
+		});
+
+		fireEvent.click(screen.getByRole("tab", { name: "Pay" }));
+		fireEvent.change(screen.getByLabelText("Basic Pay"), { target: { value: "51000" } });
+
+		fireEvent.click(screen.getByRole("tab", { name: "Bank" }));
+		fireEvent.change(screen.getByLabelText("Account Number"), { target: { value: "123456" } });
+		fireEvent.change(screen.getByLabelText("IFSC"), { target: { value: "SBIN0001234" } });
+		fireEvent.change(screen.getByLabelText("Bank Name"), { target: { value: "SBI" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		await waitFor(() => expect(onCreate).toHaveBeenCalledOnce());
+		expect(onCreate).toHaveBeenCalledWith({
+			employee_number: "E-NEW",
+			effective_from: todayApiDate(),
+			profile: {
+				name: "New Employee",
+				sevarth_id: null,
+				retirement_regime: "nps",
+				date_of_birth: null,
+				date_of_joining: null,
+				payroll_export_remark: "Transferred from deputation",
+				gpf_jurisdiction: null,
+				pan: null,
+				pran: null,
+				pension_account: "PENSION-123",
+				gpf_account_number: null,
+				epf_number: null,
+			},
+			pay: { pay_matrix_level: null, basic_pay: "51000" },
+			bank: {
+				account_number: "123456",
+				ifsc: "SBIN0001234",
+				bank_name: "SBI",
+				branch: null,
+				is_primary_salary: true,
+			},
+		});
+	});
+
+	it("shows a tab-specific error instead of dropping a partial pay group", async () => {
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: employeeHandlers } = createEmployeeHandlers();
+		server.use(...authHandlers, ...employeeHandlers);
+
+		renderCreateDialog();
+		await screen.findByRole("heading", { name: "New Employee" });
+		fireEvent.change(screen.getByLabelText("Employee Number"), { target: { value: "E-NEW" } });
+		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Employee" } });
+		fireEvent.click(screen.getByRole("tab", { name: "Pay" }));
+		fireEvent.change(screen.getByLabelText("Pay Matrix Level"), { target: { value: "S-20" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Basic pay is required when adding pay details.",
+		);
+		expect(screen.getByRole("tab", { name: "Pay" })).toHaveAttribute("aria-selected", "true");
 	});
 
 	it("shows named office / post selectors in posting section", async () => {
@@ -277,7 +349,12 @@ describe("CreateEmployeeDialog", () => {
 			],
 			posts: [
 				buildPost({ id: postId, designation: "Clerk", class_name: "Class III" }),
-				buildPost({ id: "post-2", designation: "Officer", class_name: "Class I" }),
+				buildPost({
+					id: "post-2",
+					designation: "Officer",
+					class_name: "Class I",
+					pay_bill_heading: "General Establishment",
+				}),
 			],
 		});
 		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
@@ -298,6 +375,9 @@ describe("CreateEmployeeDialog", () => {
 			"Select office",
 		);
 		expect(screen.getByRole("combobox", { name: "Post" })).toHaveTextContent("Select post");
+		expect(screen.getByRole("combobox", { name: "Pay Bill Group" })).toHaveTextContent(
+			"Same as designation post",
+		);
 
 		openBaseUiSelect(screen.getByRole("combobox", { name: "Office" }));
 		expect(await screen.findByRole("option", { name: "Head Office" })).toBeInTheDocument();
@@ -311,6 +391,14 @@ describe("CreateEmployeeDialog", () => {
 		pickBaseUiOption("Clerk");
 		await waitFor(() => {
 			expect(screen.getByRole("combobox", { name: "Post" })).toHaveTextContent("Clerk");
+		});
+
+		openBaseUiSelect(screen.getByRole("combobox", { name: "Pay Bill Group" }));
+		pickBaseUiOption("General Establishment");
+		await waitFor(() => {
+			expect(screen.getByRole("combobox", { name: "Pay Bill Group" })).toHaveTextContent(
+				"General Establishment",
+			);
 		});
 	});
 });
@@ -368,7 +456,8 @@ describe("ScheduleChangeDialog", () => {
 		const { handlers: authHandlers } = createAuthHandlers({
 			me: buildRoleAuthMe("organization_administrator"),
 		});
-		const { handlers: employeeHandlers } = createEmployeeHandlers();
+		const onCreateVersion = vi.fn();
+		const { handlers: employeeHandlers } = createEmployeeHandlers({ onCreateVersion });
 		const { handlers: orgHandlers } = createOrgSetupHandlers({
 			offices: [
 				buildOffice({ id: officeId, name: "Head Office" }),
@@ -376,7 +465,12 @@ describe("ScheduleChangeDialog", () => {
 			],
 			posts: [
 				buildPost({ id: postId, designation: "Clerk", class_name: "Class III" }),
-				buildPost({ id: "post-2", designation: "Officer", class_name: "Class I" }),
+				buildPost({
+					id: "post-2",
+					designation: "Officer",
+					class_name: "Class I",
+					pay_bill_heading: "General Establishment",
+				}),
 			],
 		});
 		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
@@ -387,6 +481,7 @@ describe("ScheduleChangeDialog", () => {
 			effective_to: null,
 			office_id: officeId,
 			post_id: postId,
+			pay_bill_post_id: null,
 			created_at: "2026-01-15T10:00:00Z",
 			created_by: "user-1",
 			change_reason: null,
@@ -423,6 +518,9 @@ describe("ScheduleChangeDialog", () => {
 			"Head Office",
 		);
 		expect(screen.getByRole("combobox", { name: "Post" })).toHaveTextContent("Clerk");
+		expect(screen.getByRole("combobox", { name: "Pay Bill Group" })).toHaveTextContent(
+			"Same as designation post",
+		);
 
 		openBaseUiSelect(screen.getByRole("combobox", { name: "Office" }));
 		expect(await screen.findByRole("option", { name: "Regional Office" })).toBeInTheDocument();
@@ -430,6 +528,21 @@ describe("ScheduleChangeDialog", () => {
 		await waitFor(() => {
 			expect(screen.getByRole("combobox", { name: "Office" })).toHaveTextContent("Regional Office");
 		});
+
+		openBaseUiSelect(screen.getByRole("combobox", { name: "Pay Bill Group" }));
+		pickBaseUiOption("General Establishment");
+		fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+		await waitFor(() =>
+			expect(onCreateVersion).toHaveBeenCalledWith(
+				"emp-1",
+				"posting",
+				expect.objectContaining({
+					office_id: "office-2",
+					post_id: postId,
+					pay_bill_post_id: "post-2",
+				}),
+			),
+		);
 	});
 });
 

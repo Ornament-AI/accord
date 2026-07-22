@@ -8,7 +8,7 @@ formatters all consume that same DTO — no per-format data fetching.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -93,6 +93,7 @@ class ReportDTO:
     organization_name: str
     subtitle: str
     sections: tuple[TableSection, ...]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable

@@ -145,7 +145,7 @@ async def handle_generate_report(job: Job) -> dict[str, Any] | None:
 
 
 async def handle_consolidated_xlsx(job: Job) -> dict[str, Any] | None:
-    """Build the product-sheet ZIP pack for a ``consolidated_xlsx`` job."""
+    """Build the v3 workbook or explicit legacy v2 ZIP for a consolidated job."""
     from app.services.report_generation import (
         DEFAULT_ENGINE_VERSION,
         execute_consolidated_xlsx,

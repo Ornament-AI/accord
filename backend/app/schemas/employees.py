@@ -69,6 +69,7 @@ class ProfileInput(BaseModel):
     gpf_account_number: str | None = None
     epf_number: str | None = None
     pension_account: str | None = None
+    payroll_export_remark: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _regime_jurisdiction_coupling(self) -> Self:
@@ -85,6 +86,7 @@ class PostingInput(BaseModel):
 
     office_id: UUID
     post_id: UUID
+    pay_bill_post_id: UUID | None = None
 
 
 class PayInput(BaseModel):
@@ -151,6 +153,7 @@ class ProfileVersionResponse(BaseModel):
     gpf_account_number: str | None
     epf_number: str | None
     pension_account: str | None
+    payroll_export_remark: str | None
     created_at: datetime
     created_by: UUID
     change_reason: str | None
@@ -162,6 +165,7 @@ class PostingVersionResponse(BaseModel):
     effective_to: date | None
     office_id: UUID
     post_id: UUID
+    pay_bill_post_id: UUID | None
     created_at: datetime
     created_by: UUID
     change_reason: str | None
@@ -241,6 +245,7 @@ def profile_from_row(row: Any, *, reveal: bool) -> ProfileVersionResponse:
         "gpf_account_number": row["gpf_account_number"],
         "epf_number": row["epf_number"],
         "pension_account": row["pension_account"],
+        "payroll_export_remark": row["payroll_export_remark"],
         "created_at": row["created_at"],
         "created_by": row["created_by"],
         "change_reason": row["change_reason"],
@@ -259,6 +264,7 @@ def posting_from_row(row: Any) -> PostingVersionResponse:
         effective_to=effective_to,
         office_id=row["office_id"],
         post_id=row["post_id"],
+        pay_bill_post_id=row["pay_bill_post_id"],
         created_at=row["created_at"],
         created_by=row["created_by"],
         change_reason=row["change_reason"],

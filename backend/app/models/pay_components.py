@@ -60,6 +60,19 @@ class PayComponent(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, 
             "schedule_kind IS NULL OR schedule_kind IN ('simple_component','loan_installment')",
             name="ck_pay_components_schedule_kind",
         ),
+        CheckConstraint(
+            "register_column IS NULL OR register_column IN ("
+            "'basic_pay','dearness_allowance','city_compensatory_allowance',"
+            "'house_rent_allowance','wash_child_other_charges',"
+            "'other_reimbursement_salary_increment_difference',"
+            "'additional_conveyance_transport_allowance','transport_pta_honorarium',"
+            "'employer_share','festival_advance_other_recovery',"
+            "'gpf_subscription_refund_arrears','pension_employer_share',"
+            "'pension_employee_share','advances','flood_affected','income_tax',"
+            "'insurance','house_rent_service_charge_arrears','professional_tax',"
+            "'cooperative_recovery')",
+            name="ck_pay_components_register_column",
+        ),
     )
 
     id: uuid.UUID = _id_field()
@@ -111,6 +124,7 @@ class PayComponent(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin, 
         default=None,
         sa_column=Column(Text, nullable=True),
     )
+    register_column: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
 
 
 component_rate_versions = Table(

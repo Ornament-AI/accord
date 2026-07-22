@@ -10,7 +10,7 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -19,6 +19,10 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+)
+from app.domain.payroll.export_metadata import (
+    RegisterColumn,
+    register_column_matches_classification,
 )
 from app.schemas.money import MoneyAmount, RateValue
 
@@ -75,6 +79,8 @@ class ScheduleKind(StrEnum):
 
 
 class PayComponentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: str = Field(min_length=1)
     name: str = Field(min_length=1)
     classification: Classification
@@ -88,6 +94,7 @@ class PayComponentCreate(BaseModel):
     schedule_kind: ScheduleKind | None = None
     schedule_title: str | None = Field(default=None, min_length=1)
     schedule_account_head: str | None = Field(default=None, min_length=1)
+    register_column: RegisterColumn | None = None
 
     @model_validator(mode="after")
     def _transfer_of_requires_employer_transfer(self) -> "PayComponentCreate":
@@ -99,6 +106,10 @@ class PayComponentCreate(BaseModel):
             Classification.EXTERNAL_RECOVERY,
         }:
             raise ValueError("employer_transfer requires a deduction classification")
+        if not register_column_matches_classification(
+            self.classification.value, self.register_column
+        ):
+            raise ValueError("register_column is incompatible with classification")
         return self
 
     @field_validator("transfer_of")
@@ -131,6 +142,7 @@ class PayComponentUpdate(BaseModel):
     schedule_kind: ScheduleKind | None = None
     schedule_title: str | None = Field(default=None, min_length=1)
     schedule_account_head: str | None = Field(default=None, min_length=1)
+    register_column: RegisterColumn | None = None
 
     @field_validator("name", "display_order", "is_active", "employer_transfer")
     @classmethod
@@ -173,6 +185,7 @@ class PayComponentResponse(BaseModel):
     schedule_kind: str | None
     schedule_title: str | None
     schedule_account_head: str | None
+    register_column: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -344,27 +357,89 @@ class AdvanceResponse(BaseModel):
     version_id: UUID | None = None
 
 
+def _validate_accommodation_breakdown(location: QuartersLocation | str, charge: Any) -> None:
+    location_value = location.value if isinstance(location, QuartersLocation) else location
+    breakdown_fields = (
+        ("house_rent", "house rent"),
+        ("service_charge", "service charge"),
+    )
+    if location_value == QuartersLocation.WORLI.value:
+        ignored_parking = (charge.parking_charge, charge.additional_parking_charge)
+        if any(value not in (None, Decimal("0")) for value in ignored_parking):
+            raise ValueError("Worli accommodation cannot include parking charges")
+    else:
+        breakdown_fields += (
+            ("parking_charge", "parking charge"),
+            ("additional_parking_charge", "additional parking charge"),
+        )
+    missing = [label for field, label in breakdown_fields if getattr(charge, field) is None]
+    if missing:
+        raise ValueError(f"accommodation charge requires explicit {', '.join(missing)}")
+    breakdown = (getattr(charge, field) for field, _label in breakdown_fields)
+    if sum((value or Decimal("0")) for value in breakdown) != charge.license_fee:
+        raise ValueError("accommodation charge breakdown must equal license_fee")
+
+
 class AccommodationChargeInput(BaseModel):
     license_fee: MoneyAmount
+    house_rent: MoneyAmount | None = None
+    service_charge: MoneyAmount | None = None
+    parking_charge: MoneyAmount | None = None
+    additional_parking_charge: MoneyAmount | None = None
     informational_hra_foregone: MoneyAmount | None = None
     effective_from: date
+
+    def validate_for_location(self, location: QuartersLocation | str) -> None:
+        _validate_accommodation_breakdown(location, self)
 
 
 class AccommodationCreate(BaseModel):
     quarters_location: QuartersLocation
     quarters_identifier: str = Field(min_length=1)
+    quarters_address: str | None = Field(default=None, min_length=1)
     charge: AccommodationChargeInput
+
+    @model_validator(mode="after")
+    def _canonical_breakdown_complete(self) -> Self:
+        self.charge.validate_for_location(self.quarters_location)
+        return self
+
+
+class AccommodationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    quarters_identifier: str | None = Field(default=None, min_length=1)
+    quarters_address: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("At least one updatable field is required.")
+        if "quarters_identifier" in self.model_fields_set and self.quarters_identifier is None:
+            raise ValueError("quarters_identifier must not be null")
+        return self
 
 
 class AccommodationChargeVersionCreate(BaseModel):
     effective_from: date
     license_fee: MoneyAmount
+    house_rent: MoneyAmount | None = None
+    service_charge: MoneyAmount | None = None
+    parking_charge: MoneyAmount | None = None
+    additional_parking_charge: MoneyAmount | None = None
     informational_hra_foregone: MoneyAmount | None = None
     change_reason: str | None = None
+
+    def validate_for_location(self, location: QuartersLocation | str) -> None:
+        _validate_accommodation_breakdown(location, self)
 
 
 class AccommodationChargeVersionResponse(VersionResponse):
     license_fee: str
+    house_rent: str | None = None
+    service_charge: str | None = None
+    parking_charge: str | None = None
+    additional_parking_charge: str | None = None
     informational_hra_foregone: str | None = None
 
 
@@ -373,9 +448,14 @@ class AccommodationResponse(BaseModel):
     employee_id: UUID
     quarters_location: str
     quarters_identifier: str
+    quarters_address: str | None = None
     created_at: datetime
     updated_at: datetime
     license_fee: str | None = None
+    house_rent: str | None = None
+    service_charge: str | None = None
+    parking_charge: str | None = None
+    additional_parking_charge: str | None = None
     informational_hra_foregone: str | None = None
     effective_from: date | None = None
     effective_to: date | None = None
@@ -409,10 +489,21 @@ class BankAdviceRecipient(BaseModel):
     address_lines: list[str] = Field(default_factory=list)
 
 
+class GpfRemittanceProfile(BaseModel):
+    """Jurisdiction-specific destination copy for canonical GPF schedules."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    office_name: str | None = None
+    address_lines: list[str] = Field(default_factory=list)
+    account_code: str | None = None
+    authority_text: str | None = None
+
+
 class ReportSignatory(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    role: str
+    role: Literal["maker", "checker", "approving_officer", "final_approver"]
     name: str
     designation: str
 
@@ -429,10 +520,19 @@ class PayrollExportProfile(BaseModel):
     ddo_name: str | None = None
     ddo_code: str | None = None
     department_code: str | None = None
+    administrative_department: str | None = None
     treasury_code: str | None = None
+    fund_source: str | None = None
+    plan_status: str | None = None
+    nps_employee_account_head: str | None = None
+    nps_employer_account_head: str | None = None
     head_of_account: HeadOfAccount = Field(default_factory=HeadOfAccount)
     bank_advice_recipient: BankAdviceRecipient = Field(default_factory=BankAdviceRecipient)
+    gpf_remittance_profiles: dict[Literal["mumbai", "nagpur"], GpfRemittanceProfile] = Field(
+        default_factory=dict
+    )
     salary_reference_prefix: str | None = None
+    pay_bill_footer_text: str | None = None
     signatories: list[ReportSignatory] = Field(default_factory=list)
 
 

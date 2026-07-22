@@ -49,7 +49,9 @@ function renderReports(initialPath = "/reports/pay-bill") {
 	);
 }
 
-function seedPostedRuns() {
+function seedPostedRuns(
+	reportReadiness?: NonNullable<Parameters<typeof createPayRunHandlers>[0]>["reportReadiness"],
+) {
 	const period = buildPeriod({ id: "period-1", period_year: 2026, period_month: 6 });
 	const runA = buildRun({
 		id: "run-a",
@@ -68,6 +70,7 @@ function seedPostedRuns() {
 	return createPayRunHandlers({
 		periods: [period],
 		runs: [runA, runB],
+		reportReadiness,
 	});
 }
 
@@ -137,10 +140,12 @@ describe("Reports page", () => {
 			});
 			const { handlers: payHandlers } = seedPostedRuns();
 			let exportCount = 0;
+			let exportRequest: unknown;
 			const { handlers: reportHandlers } = createReportHandlers({
 				jobStatusSequence: ["queued", "running", "succeeded"],
-				onExport: () => {
+				onExport: (body) => {
 					exportCount += 1;
+					exportRequest = body;
 				},
 			});
 			server.use(...authHandlers, ...payHandlers, ...reportHandlers);
@@ -149,15 +154,73 @@ describe("Reports page", () => {
 			await screen.findByTestId("reports-page", {}, { timeout: PAGE_TIMEOUT });
 			await selectPostedRun(/June 2026/);
 
-			fireEvent.click(screen.getByRole("button", { name: /Export all report sheets/i }));
+			const exportButton = screen.getByRole("button", {
+				name: "Export one Excel workbook with 18 report sheets",
+			});
+			expect(
+				screen.getByText("Export creates one Excel workbook with all 18 report sheets."),
+			).toBeInTheDocument();
+			await waitFor(() => expect(exportButton).toBeEnabled());
+			fireEvent.click(exportButton);
 
 			await waitFor(
 				() => {
 					expect(exportCount).toBe(1);
+					expect(exportRequest).toEqual({
+						posted_run_id: "run-a",
+						template_version: "v3",
+					});
 					expect(downloadBlob).toHaveBeenCalled();
 				},
 				{ timeout: PAGE_TIMEOUT },
 			);
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"blocks export and links to actionable pay run details when readiness fails",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = seedPostedRuns({
+				"run-a": {
+					ready: false,
+					issues: [
+						{
+							report_type: "bank_rtgs_advice",
+							code: "advice_bank_missing",
+							message: "Advice recipient bank is required for a complete export.",
+							owner: "organization_export_settings",
+							href: "/pay-components?reportDefaults=1&field=advice_bank",
+						},
+					],
+				},
+			});
+			const onExport = vi.fn();
+			const { handlers: reportHandlers } = createReportHandlers({ onExport });
+			server.use(...authHandlers, ...payHandlers, ...reportHandlers);
+
+			renderReports("/reports/pay-bill");
+			await screen.findByTestId("reports-page", {}, { timeout: PAGE_TIMEOUT });
+			await selectPostedRun(/June 2026/);
+
+			const alert = await screen.findByRole("alert", {}, { timeout: PAGE_TIMEOUT });
+			expect(within(alert).getByText("Complete report fields before export")).toBeInTheDocument();
+			expect(
+				within(alert).getByText("Advice recipient bank is required for a complete export."),
+			).toBeInTheDocument();
+			expect(within(alert).getByRole("link", { name: "Open report defaults" })).toHaveAttribute(
+				"href",
+				"/pay-components?reportDefaults=1&field=advice_bank",
+			);
+			expect(
+				screen.getByRole("button", {
+					name: "Export one Excel workbook with 18 report sheets",
+				}),
+			).toBeDisabled();
+			expect(onExport).not.toHaveBeenCalled();
 		},
 		PAGE_TIMEOUT,
 	);

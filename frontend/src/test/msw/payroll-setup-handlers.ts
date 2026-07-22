@@ -4,6 +4,7 @@ import type {
 	AccommodationChargeVersionCreate,
 	AccommodationCreate,
 	AccommodationResponse,
+	AccommodationUpdate,
 	AdvanceCreate,
 	AdvanceInstallmentVersionCreate,
 	AdvanceResponse,
@@ -31,6 +32,11 @@ export type PayrollSetupHandlersOptions = {
 	onCreateInstruction?: (body: RecurringInstructionCreate) => void;
 	onCreateAdvance?: (body: AdvanceCreate) => void;
 	onCreateAccommodation?: (body: AccommodationCreate) => void;
+	onUpdateAccommodation?: (assignmentId: string, body: AccommodationUpdate) => void;
+	onCreateAccommodationChargeVersion?: (
+		assignmentId: string,
+		body: AccommodationChargeVersionCreate,
+	) => void;
 };
 
 export function buildRecurringInstruction(
@@ -88,7 +94,12 @@ export function buildAccommodation(
 		employee_id: overrides.employee_id,
 		quarters_location: overrides.quarters_location ?? "mumbai",
 		quarters_identifier: overrides.quarters_identifier ?? "B-12",
+		quarters_address: overrides.quarters_address ?? null,
 		license_fee: overrides.license_fee === undefined ? "1200.00" : overrides.license_fee,
+		house_rent: overrides.house_rent ?? null,
+		service_charge: overrides.service_charge ?? null,
+		parking_charge: overrides.parking_charge ?? null,
+		additional_parking_charge: overrides.additional_parking_charge ?? null,
 		informational_hra_foregone:
 			overrides.informational_hra_foregone === undefined
 				? "8500.00"
@@ -341,7 +352,17 @@ export function createPayrollSetupHandlers(options: PayrollSetupHandlersOptions 
 				employee_id: String(params.employeeId),
 				quarters_location: body.quarters_location,
 				quarters_identifier: body.quarters_identifier,
+				quarters_address: body.quarters_address ?? null,
 				license_fee: String(body.charge.license_fee),
+				house_rent: body.charge.house_rent == null ? null : String(body.charge.house_rent),
+				service_charge:
+					body.charge.service_charge == null ? null : String(body.charge.service_charge),
+				parking_charge:
+					body.charge.parking_charge == null ? null : String(body.charge.parking_charge),
+				additional_parking_charge:
+					body.charge.additional_parking_charge == null
+						? null
+						: String(body.charge.additional_parking_charge),
 				informational_hra_foregone:
 					body.charge.informational_hra_foregone == null
 						? null
@@ -352,9 +373,29 @@ export function createPayrollSetupHandlers(options: PayrollSetupHandlersOptions 
 			return HttpResponse.json(created, { status: 201 });
 		}),
 
+		http.patch("/api/accommodation/:assignmentId", async ({ params, request }) => {
+			const body = (await request.json()) as AccommodationUpdate;
+			const assignmentId = String(params.assignmentId);
+			options.onUpdateAccommodation?.(assignmentId, body);
+			const existing = accommodationStore.get(assignmentId);
+			if (!existing) {
+				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+			}
+			const updated: AccommodationResponse = {
+				...existing,
+				quarters_identifier: body.quarters_identifier ?? existing.quarters_identifier,
+				quarters_address:
+					body.quarters_address === undefined ? existing.quarters_address : body.quarters_address,
+				updated_at: "2026-07-18T10:00:00Z",
+			};
+			accommodationStore.set(assignmentId, updated);
+			return HttpResponse.json(updated);
+		}),
+
 		http.post("/api/accommodation/:assignmentId/charge-versions", async ({ params, request }) => {
 			const body = (await request.json()) as AccommodationChargeVersionCreate;
 			const assignmentId = String(params.assignmentId);
+			options.onCreateAccommodationChargeVersion?.(assignmentId, body);
 			const existing = accommodationStore.get(assignmentId);
 			if (!existing) {
 				return HttpResponse.json({ detail: "Not found" }, { status: 404 });
@@ -362,6 +403,11 @@ export function createPayrollSetupHandlers(options: PayrollSetupHandlersOptions 
 			const updated: AccommodationResponse = {
 				...existing,
 				license_fee: String(body.license_fee),
+				house_rent: body.house_rent == null ? null : String(body.house_rent),
+				service_charge: body.service_charge == null ? null : String(body.service_charge),
+				parking_charge: body.parking_charge == null ? null : String(body.parking_charge),
+				additional_parking_charge:
+					body.additional_parking_charge == null ? null : String(body.additional_parking_charge),
 				informational_hra_foregone:
 					body.informational_hra_foregone == null
 						? existing.informational_hra_foregone
@@ -376,6 +422,11 @@ export function createPayrollSetupHandlers(options: PayrollSetupHandlersOptions 
 					effective_from: body.effective_from,
 					effective_to: null,
 					license_fee: String(body.license_fee),
+					house_rent: body.house_rent == null ? null : String(body.house_rent),
+					service_charge: body.service_charge == null ? null : String(body.service_charge),
+					parking_charge: body.parking_charge == null ? null : String(body.parking_charge),
+					additional_parking_charge:
+						body.additional_parking_charge == null ? null : String(body.additional_parking_charge),
 					informational_hra_foregone:
 						body.informational_hra_foregone == null
 							? null

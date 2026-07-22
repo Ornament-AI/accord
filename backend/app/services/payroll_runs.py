@@ -250,7 +250,16 @@ async def get_report_readiness(
             if profile_row is not None and isinstance(profile_row.value, dict)
             else {}
         )
-    issues = report_readiness_issues(metadata=metadata, profile=profile)
+    if run.status in {"calculated", "submitted", "approved", "posted", "reversed"}:
+        from app.services.report_readiness import v3_report_readiness_issues
+
+        issues = await v3_report_readiness_issues(
+            db,
+            organization_id=organization_id,
+            posted_run_id=run_id,
+        )
+    else:
+        issues = report_readiness_issues(metadata=metadata, profile=profile, run_id=run_id)
     return {"ready": not issues, "issues": issues}
 
 
@@ -258,10 +267,23 @@ def report_readiness_issues(
     *,
     metadata: PayrollRunReportMetadata,
     profile: dict[str, Any],
-) -> list[dict[str, str]]:
+    run_id: UUID | None = None,
+) -> list[dict[str, Any]]:
     """Return missing fields that would make final report exports incomplete."""
     heads = profile.get("head_of_account") or {}
-    issues: list[dict[str, str]] = []
+    issues: list[dict[str, Any]] = []
+    run_href = f"/pay-runs/{run_id}" if run_id is not None else "/pay-runs"
+    if metadata.payment_date is None:
+        issues.append(
+            {
+                "report_type": "pay_bill",
+                "code": "payment_date_missing",
+                "message": "Payment date is required for final Pay Bill export.",
+                "owner": "run_report_details",
+                "href": run_href,
+                "entity_id": None if run_id is None else str(run_id),
+            }
+        )
     for field, code, label in (
         (metadata.bill_number, "bill_number_missing", "Bill number"),
         (metadata.bill_date, "bill_date_missing", "Bill date"),
@@ -284,6 +306,9 @@ def report_readiness_issues(
                     "report_type": "treasury_face",
                     "code": code,
                     "message": f"{label} is required for final Treasury Face export.",
+                    "owner": "run_report_details",
+                    "href": run_href,
+                    "entity_id": None if run_id is None else str(run_id),
                 }
             )
     for field, report_type, code, label in (
@@ -301,6 +326,8 @@ def report_readiness_issues(
                     "report_type": report_type,
                     "code": code,
                     "message": f"{label} is required for a complete export.",
+                    "owner": "organization_export_settings",
+                    "href": "/pay-components?reportDefaults=1",
                 }
             )
     signatories = {
@@ -312,6 +339,7 @@ def report_readiness_issues(
         ("maker", "Maker signatory"),
         ("checker", "Checker signatory"),
         ("approving_officer", "Approving officer signatory"),
+        ("final_approver", "Final approver signatory"),
     ):
         signatory = signatories.get(role) or {}
         if (
@@ -323,6 +351,8 @@ def report_readiness_issues(
                     "report_type": "approval_note",
                     "code": f"{role}_signatory_missing",
                     "message": f"{label} name and designation are required.",
+                    "owner": "organization_export_settings",
+                    "href": "/pay-components?reportDefaults=1",
                 }
             )
     return issues

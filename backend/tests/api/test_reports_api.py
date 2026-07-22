@@ -193,7 +193,7 @@ async def test_preview_report_returns_json(client, session, dev_settings, regist
 
     resp = await client.get(
         f"/api/reports/{FAKE_REPORT_TYPE}/preview",
-        params={"posted_run_id": str(run_id)},
+        params={"posted_run_id": str(run_id), "template_version": "v2"},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -237,7 +237,11 @@ async def test_export_reports_enqueues_consolidated_job(
     org, admin = await _admin_world(session, dev_settings, client)
     run_id = await _seed_run(session, org_id=org.id, user_id=admin.id, status="posted")
 
-    resp = await client.post("/api/reports/export", json={"posted_run_id": str(run_id)})
+    resp = await client.post(
+        "/api/reports/export",
+        json={"posted_run_id": str(run_id), "template_version": "v2"},
+        headers={"Idempotency-Key": "consolidated-export-v2"},
+    )
     assert resp.status_code == 202, resp.text
     body = resp.json()
     job_id = UUID(body["job_id"])
@@ -245,6 +249,7 @@ async def test_export_reports_enqueues_consolidated_job(
     job = queue._jobs[job_id]
     assert job.job_type == rg.JOB_TYPE_CONSOLIDATED_XLSX
     assert str(run_id) in (job.dedupe_key or "")
+    assert job.payload["template_version"] == "v2"
     assert FAKE_REPORT_TYPE in registry
 
 
@@ -261,6 +266,7 @@ async def test_generate_then_job_status_with_artifact(
             "report_type": FAKE_REPORT_TYPE,
             "posted_run_id": str(run_id),
             "format": "json",
+            "template_version": "v2",
         },
     )
     assert resp.status_code == 202, resp.text

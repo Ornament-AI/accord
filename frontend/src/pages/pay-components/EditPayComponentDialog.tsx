@@ -23,6 +23,9 @@ import { Switch } from "@/components/ui/switch";
 import {
 	classificationLabel,
 	type PayComponentResponse,
+	REGISTER_COLUMNS_BY_CLASSIFICATION,
+	type RegisterColumn,
+	registerColumnLabel,
 	type ScheduleKind,
 	usePayComponentsList,
 	useUpdatePayComponent,
@@ -39,6 +42,7 @@ type EditPayComponentDialogProps = {
 type FormState = {
 	name: string;
 	display_order: string;
+	register_column: RegisterColumn | "";
 	is_active: boolean;
 	employer_transfer: boolean;
 	transfer_of: string;
@@ -59,6 +63,7 @@ export function EditPayComponentDialog({
 	const [form, setForm] = useState<FormState>({
 		name: "",
 		display_order: "0",
+		register_column: "",
 		is_active: true,
 		employer_transfer: false,
 		transfer_of: "",
@@ -73,6 +78,7 @@ export function EditPayComponentDialog({
 			setForm({
 				name: component.name,
 				display_order: String(component.display_order),
+				register_column: component.register_column ?? "",
 				is_active: component.is_active,
 				employer_transfer: component.employer_transfer,
 				transfer_of: component.transfer_of ?? "",
@@ -106,6 +112,7 @@ export function EditPayComponentDialog({
 				body: {
 					name: form.name.trim(),
 					display_order: displayOrder,
+					register_column: form.register_column || null,
 					...(component.is_standard ? {} : { is_active: form.is_active }),
 					employer_transfer: form.employer_transfer,
 					transfer_of: form.employer_transfer ? form.transfer_of || null : null,
@@ -132,6 +139,13 @@ export function EditPayComponentDialog({
 	const employerContributions = (componentsQuery.data ?? []).filter(
 		(item) => item.classification === "employer_contribution" && item.is_active,
 	);
+	const registerColumns = (
+		component
+			? REGISTER_COLUMNS_BY_CLASSIFICATION[
+					component.classification as keyof typeof REGISTER_COLUMNS_BY_CLASSIFICATION
+				]
+			: []
+	) as readonly RegisterColumn[];
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,6 +205,32 @@ export function EditPayComponentDialog({
 									onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
 									disabled={isSubmitting}
 								/>
+							</div>
+
+							<div className="grid gap-2">
+								<Label htmlFor="edit-pc-register-column">Pay Bill Column</Label>
+								<Select
+									value={form.register_column || "none"}
+									onValueChange={(value) =>
+										setForm((prev) => ({
+											...prev,
+											register_column: value === "none" ? "" : (value as RegisterColumn),
+										}))
+									}
+									disabled={isSubmitting || registerColumns.length === 0}
+								>
+									<SelectTrigger id="edit-pc-register-column" className="w-full">
+										<SelectValue placeholder="Not shown in Pay Bill" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="none">Not shown in Pay Bill</SelectItem>
+										{registerColumns.map((column) => (
+											<SelectItem key={column} value={column}>
+												{registerColumnLabel(column)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 
 							<div className="grid gap-2">

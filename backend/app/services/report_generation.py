@@ -4,7 +4,8 @@ Request path
 ------------
 ``request_report`` validates the report type / posted run / format, then
 enqueues ``job_type='generate_report'`` with org-scoped in-flight dedupe on
-``{report_type}:{posted_run_id}:{format}:{template_version}``.
+the report/run/format/template identity plus the canonical renderer revision
+for v3 product reports.
 
 ``request_consolidated_export`` enqueues ``consolidated_xlsx`` for the
 product-sheet allowlist; dedupe key is
@@ -14,7 +15,7 @@ Execution path
 --------------
 ``execute_generate_report`` is the handler body. Before regenerating it looks
 for an existing **finalized** ``ExportArtifact`` for
-``(organization_id, report_type, posted_run_id, template_version)`` whose
+``(organization_id, report_type, posted_run_id, template identity)`` whose
 ``content_type`` matches the requested format. If found, it returns
 ``{'artifact_id': ..., 'reused': True}`` without rebuilding or re-uploading
 (artifact-level idempotency after the job has already succeeded once).
@@ -23,8 +24,8 @@ Template version
 ----------------
 ``ReportRegistry`` registrations do not carry a default template version today
 (only ``filename_pattern`` / ``content_types``). Callers may pass
-``template_version``; when omitted we default to :data:`DEFAULT_TEMPLATE_VERSION`
-(``\"v1\"``). Family lanes can override per request once they version templates.
+``template_version``. Fixed product reports default to canonical ``v3``;
+generic parameterized reports default to legacy ``v2``.
 
 Listing
 -------
@@ -57,22 +58,35 @@ from app.models.payroll_runs import PayrollPeriod, PayrollRun
 from app.models.platform import ExportArtifact
 from app.models.platform import Job as JobRow
 from app.reports.base import ReportContext, ReportDTO, ReportRegistration, ReportRegistry
+from app.reports.canonical_excel import CANONICAL_PRODUCT_SHEETS, consolidate_v3_workbooks
+from app.reports.canonical_front_sheets import FRONT_SHEET_NAMES, render_front_sheet
+from app.reports.canonical_schedules import (
+    REPORT_SHEET_NAMES,
+    canonical_schedule_to_excel,
+)
 from app.reports.registry_setup import PRODUCT_REPORT_SHEET_TITLES, PRODUCT_REPORT_SHEETS
 from app.services.artifacts import create_artifact
 from app.services.audit_events import write_access_event
+from app.services.report_readiness import require_v3_report_readiness
 from app.storage.protocol import ObjectStorage
 
-DEFAULT_TEMPLATE_VERSION = "v2"
-SUPPORTED_TEMPLATE_VERSIONS = frozenset({"v2"})
+DEFAULT_TEMPLATE_VERSION = "v3"
+GENERIC_DEFAULT_TEMPLATE_VERSION = "v2"
+SUPPORTED_TEMPLATE_VERSIONS = frozenset({"v2", "v3"})
 DEFAULT_ENGINE_VERSION = "0.1.0"
+# Immutable identity for the canonical source contract and renderer behavior.
+# Bump whenever a v3 mapping/layout fix can change output bytes.
+CANONICAL_RENDERER_REVISION = "june-2026-contract-r5"
 
 SUPPORTED_FORMATS = frozenset({"excel", "pdf", "json"})
 JOB_TYPE_GENERATE_REPORT = "generate_report"
 JOB_TYPE_CONSOLIDATED_XLSX = "consolidated_xlsx"
 REPORT_TYPE_CONSOLIDATED_XLSX = "consolidated_xlsx"
 ZIP_CONTENT_TYPE = "application/zip"
+XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 _REPORT_JOB_TYPES = frozenset({JOB_TYPE_GENERATE_REPORT, JOB_TYPE_CONSOLIDATED_XLSX})
+_PRODUCT_REPORT_SET = frozenset(PRODUCT_REPORT_SHEETS)
 
 
 class ReportTypeNotFoundError(NotFoundError):
@@ -160,8 +174,14 @@ def product_sheet_manifest(
     *,
     template_version: str = DEFAULT_TEMPLATE_VERSION,
 ) -> tuple[tuple[str, str], ...]:
-    """Sorted ``(report_type, template_version)`` pairs for the product pack."""
-    return tuple(sorted((report_type, template_version) for report_type in PRODUCT_REPORT_SHEETS))
+    """Sorted product identities, including the canonical renderer revision."""
+
+    identity_version = (
+        f"{template_version}+{CANONICAL_RENDERER_REVISION}"
+        if template_version == "v3"
+        else template_version
+    )
+    return tuple(sorted((report_type, identity_version) for report_type in PRODUCT_REPORT_SHEETS))
 
 
 def manifest_hash(manifest: tuple[tuple[str, str], ...]) -> str:
@@ -184,9 +204,19 @@ async def _require_posted_run(
     return run
 
 
-def _resolve_template_version(template_version: str | None) -> str:
-    resolved = (
+def _resolve_template_version(
+    template_version: str | None,
+    *,
+    report_type: str | None = None,
+    consolidated: bool = False,
+) -> str:
+    default_version = (
         DEFAULT_TEMPLATE_VERSION
+        if consolidated or report_type in _PRODUCT_REPORT_SET
+        else GENERIC_DEFAULT_TEMPLATE_VERSION
+    )
+    resolved = (
+        default_version
         if template_version is None or not template_version.strip()
         else template_version.strip()
     )
@@ -198,6 +228,12 @@ def _resolve_template_version(template_version: str | None) -> str:
     return resolved
 
 
+def _artifact_template_identity(*, report_type: str, template_version: str) -> str:
+    if template_version == "v3" and report_type in _PRODUCT_REPORT_SET:
+        return f"v3+{CANONICAL_RENDERER_REVISION}"
+    return template_version
+
+
 def _dedupe_key(
     *,
     report_type: str,
@@ -205,9 +241,11 @@ def _dedupe_key(
     format: str,
     template_version: str,
     variant_key: str | None = None,
+    renderer_revision: str | None = None,
 ) -> str:
     variant = "" if variant_key is None else f":{variant_key}"
-    return f"{report_type}{variant}:{posted_run_id}:{format}:{template_version}"
+    revision = "" if renderer_revision is None else f":{renderer_revision}"
+    return f"{report_type}{variant}:{posted_run_id}:{format}:{template_version}{revision}"
 
 
 def _period_label(year: int, month: int) -> str:
@@ -229,6 +267,11 @@ def _zip_filename(*, period_label: str, posted_run_id: UUID) -> str:
 
 def _zip_entry_name(*, title: str, period_label: str) -> str:
     return f"{title} - {period_label}.xlsx"
+
+
+def _xlsx_filename(*, period_label: str, posted_run_id: UUID) -> str:
+    short_id = str(posted_run_id).replace("-", "")[:8]
+    return f"Payroll Reports - {period_label} - {short_id}.xlsx"
 
 
 async def request_report(
@@ -260,12 +303,25 @@ async def request_report(
         posted_run_id=posted_run_id,
     )
 
-    resolved_version = _resolve_template_version(template_version)
+    resolved_version = _resolve_template_version(template_version, report_type=report_type)
+    renderer_revision = (
+        CANONICAL_RENDERER_REVISION
+        if resolved_version == "v3" and report_type in _PRODUCT_REPORT_SET
+        else None
+    )
+    if resolved_version == "v3":
+        await require_v3_report_readiness(
+            session,
+            organization_id=organization_id,
+            posted_run_id=posted_run_id,
+            report_type=report_type,
+        )
     payload = {
         "report_type": report_type,
         "posted_run_id": str(posted_run_id),
         "format": format,
         "template_version": resolved_version,
+        "renderer_revision": renderer_revision,
         "variant_key": variant_key,
         "requested_by": str(requested_by),
     }
@@ -279,6 +335,7 @@ async def request_report(
             format=format,
             template_version=resolved_version,
             variant_key=variant_key,
+            renderer_revision=renderer_revision,
         ),
         created_by=requested_by,
     )
@@ -294,7 +351,7 @@ async def request_consolidated_export(
     registry: ReportRegistry,
     template_version: str | None = None,
 ) -> Job:
-    """Validate and enqueue a consolidated ZIP-of-xlsx export job."""
+    """Validate and enqueue a canonical XLSX or explicit legacy v2 ZIP job."""
     missing = [rt for rt in PRODUCT_REPORT_SHEETS if rt not in registry]
     if missing:
         raise ReportTypeNotFoundError(f"Product report sheets missing from registry: {missing!r}.")
@@ -310,7 +367,13 @@ async def request_consolidated_export(
         organization_id=organization_id,
         posted_run_id=posted_run_id,
     )
-    resolved_version = _resolve_template_version(template_version)
+    resolved_version = _resolve_template_version(template_version, consolidated=True)
+    if resolved_version == "v3":
+        await require_v3_report_readiness(
+            session,
+            organization_id=organization_id,
+            posted_run_id=posted_run_id,
+        )
 
     manifest = product_sheet_manifest(template_version=resolved_version)
     m_hash = manifest_hash(manifest)
@@ -318,6 +381,7 @@ async def request_consolidated_export(
         "posted_run_id": str(posted_run_id),
         "template_version": resolved_version,
         "manifest_hash": m_hash,
+        "renderer_revision": (CANONICAL_RENDERER_REVISION if resolved_version == "v3" else None),
         "requested_by": str(requested_by),
     }
     return await queue.enqueue(
@@ -360,7 +424,14 @@ async def preview_report(
         organization_id=organization_id,
         posted_run_id=posted_run_id,
     )
-    resolved_version = _resolve_template_version(template_version)
+    resolved_version = _resolve_template_version(template_version, report_type=report_type)
+    if resolved_version == "v3":
+        await require_v3_report_readiness(
+            session,
+            organization_id=organization_id,
+            posted_run_id=posted_run_id,
+            report_type=report_type,
+        )
     ctx = ReportContext(
         organization_id=organization_id,
         posted_run_id=posted_run_id,
@@ -479,7 +550,12 @@ async def execute_generate_report(
         posted_run_id=posted_run_id,
     )
     template_version = _resolve_template_version(
-        None if payload.get("template_version") is None else str(payload["template_version"])
+        None if payload.get("template_version") is None else str(payload["template_version"]),
+        report_type=report_type,
+    )
+    artifact_template_version = _artifact_template_identity(
+        report_type=report_type,
+        template_version=template_version,
     )
 
     existing = await _find_reusable_artifact(
@@ -487,7 +563,7 @@ async def execute_generate_report(
         organization_id=organization_id,
         report_type=report_type,
         posted_run_id=posted_run_id,
-        template_version=template_version,
+        template_version=artifact_template_version,
         content_type=content_type,
         variant_key=variant_key,
     )
@@ -510,7 +586,7 @@ async def execute_generate_report(
         storage,
         organization_id=organization_id,
         report_type=report_type,
-        template_version=template_version,
+        template_version=artifact_template_version,
         content=content,
         content_type=content_type,
         requested_by=requested_by,
@@ -529,11 +605,11 @@ async def execute_consolidated_xlsx(
     registry: ReportRegistry,
     engine_version: str = DEFAULT_ENGINE_VERSION,
 ) -> dict[str, Any]:
-    """Build all product sheets as xlsx and persist a ZIP artifact.
+    """Build all product sheets as canonical XLSX or explicit legacy v2 ZIP.
 
     Idempotency: reuse a finalized ``consolidated_xlsx`` artifact whose
-    ``template_version`` embeds the manifest hash
-    (``{base_version}+{manifest_hash}``).
+    ``template_version`` embeds the renderer revision and manifest hash for
+    v3 (legacy v2 continues to use ``{base_version}+{manifest_hash}``).
     """
     payload = job.payload
     posted_run_id = UUID(str(payload["posted_run_id"]))
@@ -546,31 +622,44 @@ async def execute_consolidated_xlsx(
         posted_run_id=posted_run_id,
     )
     base_template_version = _resolve_template_version(
-        None if payload.get("template_version") is None else str(payload["template_version"])
+        None if payload.get("template_version") is None else str(payload["template_version"]),
+        consolidated=True,
     )
 
     manifest = product_sheet_manifest(template_version=base_template_version)
-    m_hash = str(payload.get("manifest_hash") or manifest_hash(manifest))
-    pack_template_version = f"{base_template_version}+{m_hash}"
+    # A queued job may carry a pre-deploy hash. Execution always uses the
+    # immutable renderer contract shipped with this worker.
+    m_hash = manifest_hash(manifest)
+    pack_template_version = (
+        f"{base_template_version}+{CANONICAL_RENDERER_REVISION}+{m_hash}"
+        if base_template_version == "v3"
+        else f"{base_template_version}+{m_hash}"
+    )
 
+    is_v3 = base_template_version == "v3"
+    pack_content_type = XLSX_CONTENT_TYPE if is_v3 else ZIP_CONTENT_TYPE
     existing = await _find_reusable_artifact(
         session,
         organization_id=organization_id,
         report_type=REPORT_TYPE_CONSOLIDATED_XLSX,
         posted_run_id=posted_run_id,
         template_version=pack_template_version,
-        content_type=ZIP_CONTENT_TYPE,
+        content_type=pack_content_type,
     )
     period = await _period_for_run(session, run)
     period_label = _period_label(period.period_year, period.period_month)
-    zip_name = _zip_filename(period_label=period_label, posted_run_id=posted_run_id)
+    output_name = (
+        _xlsx_filename(period_label=period_label, posted_run_id=posted_run_id)
+        if is_v3
+        else _zip_filename(period_label=period_label, posted_run_id=posted_run_id)
+    )
 
     if existing is not None:
         return {
             "artifact_id": str(existing.id),
             "reused": True,
             "manifest_hash": m_hash,
-            "filename": zip_name,
+            "filename": output_name,
         }
 
     ctx = ReportContext(
@@ -581,19 +670,36 @@ async def execute_consolidated_xlsx(
         engine_version=engine_version,
     )
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for report_type in PRODUCT_REPORT_SHEETS:
+    if is_v3:
+        canonical_dtos: dict[str, ReportDTO] = {}
+        for _sheet_name, report_type, _state in CANONICAL_PRODUCT_SHEETS:
             registration = registry.get(report_type)
-            dto = await registration.builder.build(session, ctx)
-            xlsx_bytes = registration.formatters.to_excel(dto)
-            title = PRODUCT_REPORT_SHEET_TITLES.get(report_type, report_type)
-            archive.writestr(
-                _zip_entry_name(title=title, period_label=period_label),
-                xlsx_bytes,
-            )
-
-    zip_bytes = buffer.getvalue()
+            canonical_dtos[report_type] = await registration.builder.build(session, ctx)
+        canonical_sources: list[tuple[str, str, bytes]] = []
+        for sheet_name, report_type, state in CANONICAL_PRODUCT_SHEETS:
+            registration = registry.get(report_type)
+            dto = canonical_dtos[report_type]
+            if sheet_name in FRONT_SHEET_NAMES:
+                content = render_front_sheet(sheet_name, canonical_dtos)
+            elif sheet_name in REPORT_SHEET_NAMES.values():
+                content = canonical_schedule_to_excel(dto, sheet_name=sheet_name)
+            else:
+                content = registration.formatters.to_excel(dto)
+            canonical_sources.append((sheet_name, state, content))
+        output_bytes = consolidate_v3_workbooks(canonical_sources)
+    else:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for report_type in PRODUCT_REPORT_SHEETS:
+                registration = registry.get(report_type)
+                dto = await registration.builder.build(session, ctx)
+                xlsx_bytes = registration.formatters.to_excel(dto)
+                title = PRODUCT_REPORT_SHEET_TITLES.get(report_type, report_type)
+                archive.writestr(
+                    _zip_entry_name(title=title, period_label=period_label),
+                    xlsx_bytes,
+                )
+        output_bytes = buffer.getvalue()
 
     artifact = await create_artifact(
         session,
@@ -601,8 +707,8 @@ async def execute_consolidated_xlsx(
         organization_id=organization_id,
         report_type=REPORT_TYPE_CONSOLIDATED_XLSX,
         template_version=pack_template_version,
-        content=zip_bytes,
-        content_type=ZIP_CONTENT_TYPE,
+        content=output_bytes,
+        content_type=pack_content_type,
         requested_by=requested_by,
         posted_run_id=posted_run_id,
         engine_version=engine_version,
@@ -610,7 +716,7 @@ async def execute_consolidated_xlsx(
     return {
         "artifact_id": str(artifact.id),
         "manifest_hash": m_hash,
-        "filename": zip_name,
+        "filename": output_name,
     }
 
 
@@ -667,8 +773,10 @@ async def get_report_job(
 
 
 __all__ = [
+    "CANONICAL_RENDERER_REVISION",
     "DEFAULT_ENGINE_VERSION",
     "DEFAULT_TEMPLATE_VERSION",
+    "GENERIC_DEFAULT_TEMPLATE_VERSION",
     "JOB_TYPE_CONSOLIDATED_XLSX",
     "JOB_TYPE_GENERATE_REPORT",
     "REPORT_TYPE_CONSOLIDATED_XLSX",

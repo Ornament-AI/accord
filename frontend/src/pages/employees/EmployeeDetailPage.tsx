@@ -125,10 +125,12 @@ function ProfileFieldsTable({ profile }: { profile: ProfileVersionResponse | nul
 				{ label: "GPF Jurisdiction", value: displayValue(profile.gpf_jurisdiction) },
 				{ label: "PAN", value: displayValue(profile.pan) },
 				{ label: "PRAN", value: displayValue(profile.pran) },
+				{ label: "Pension Account", value: displayValue(profile.pension_account) },
 				{ label: "GPF Account", value: displayValue(profile.gpf_account_number) },
 				{ label: "EPF Number", value: displayValue(profile.epf_number) },
 				{ label: "Date of Birth", value: formatDate(profile.date_of_birth) },
 				{ label: "Date of Joining", value: formatDate(profile.date_of_joining) },
+				{ label: "Payroll Export Remark", value: displayValue(profile.payroll_export_remark) },
 				{ label: "Effective From", value: formatDate(profile.effective_from) },
 			]}
 		/>

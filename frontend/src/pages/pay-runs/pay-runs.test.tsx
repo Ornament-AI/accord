@@ -9,7 +9,9 @@ import { queryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildAuthMe, buildRoleAuthMe, ROLE_CAPABILITIES } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
-import { mockToast } from "@/test/helpers";
+import { mockToast, openBaseUiSelect, pickBaseUiOption, pickDateByLabel } from "@/test/helpers";
+import { createEmployeeHandlers } from "@/test/msw/employee-handlers";
+import { createPayComponentHandlers } from "@/test/msw/pay-component-handlers";
 import {
 	buildCurrentVersion,
 	buildPeriod,
@@ -22,6 +24,7 @@ import { server } from "@/test/msw-server";
 import { CreatePeriodDialog } from "./CreatePeriodDialog";
 import PayRunDetailPage from "./PayRunDetailPage";
 import PayRunsPage from "./PayRunsPage";
+import { UpsertInputDialog } from "./UpsertInputDialog";
 
 vi.mock("sonner", () => mockToast());
 
@@ -210,10 +213,204 @@ describe("Pay Runs list page", () => {
 	);
 });
 
+describe("Run input dialog", () => {
+	beforeEach(() => {
+		queryClient.clear();
+	});
+
+	it("selects a catalog component and submits one amount with a valid service period", async () => {
+		const onUpsertInput = vi.fn();
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: employeeHandlers } = createEmployeeHandlers();
+		const { handlers: componentHandlers } = createPayComponentHandlers();
+		const { handlers: payRunHandlers } = createPayRunHandlers({ onUpsertInput });
+		server.use(...authHandlers, ...employeeHandlers, ...componentHandlers, ...payRunHandlers);
+
+		renderDialog(<UpsertInputDialog open onOpenChange={vi.fn()} runId="run-1" />);
+		expect(await screen.findByRole("heading", { name: "Add Run Input" })).toBeInTheDocument();
+
+		await waitFor(() => expect(screen.getByLabelText("Employee")).toBeEnabled());
+		openBaseUiSelect(screen.getByLabelText("Employee"));
+		pickBaseUiOption(/Alice Example/);
+		await waitFor(() => expect(screen.getByLabelText("Component")).toBeEnabled());
+		openBaseUiSelect(screen.getByLabelText("Component"));
+		pickBaseUiOption(/Basic Pay/);
+		fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "750" } });
+		fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "DA arrears" } });
+		pickDateByLabel("Service Period Start", "2026-04-01");
+		pickDateByLabel("Service Period End", "2026-05-31");
+		fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+		await waitFor(() => expect(onUpsertInput).toHaveBeenCalledOnce());
+		expect(onUpsertInput).toHaveBeenCalledWith("run-1", "emp-1", "BASIC", {
+			input_kind: "exception",
+			amount: "750",
+			rate: null,
+			reason: "DA arrears",
+			expected_version: null,
+			service_period_start: "2026-04-01",
+			service_period_end: "2026-05-31",
+		});
+	});
+
+	it("requires exactly one amount or rate and a complete ordered service period", async () => {
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: employeeHandlers } = createEmployeeHandlers();
+		const { handlers: componentHandlers } = createPayComponentHandlers();
+		const { handlers: payRunHandlers } = createPayRunHandlers();
+		server.use(...authHandlers, ...employeeHandlers, ...componentHandlers, ...payRunHandlers);
+
+		renderDialog(<UpsertInputDialog open onOpenChange={vi.fn()} runId="run-1" />);
+		await screen.findByRole("heading", { name: "Add Run Input" });
+		await waitFor(() => expect(screen.getByLabelText("Employee")).toBeEnabled());
+		openBaseUiSelect(screen.getByLabelText("Employee"));
+		pickBaseUiOption(/Alice Example/);
+		await waitFor(() => expect(screen.getByLabelText("Component")).toBeEnabled());
+		openBaseUiSelect(screen.getByLabelText("Component"));
+		pickBaseUiOption(/Basic Pay/);
+		fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Correction" } });
+		expect(screen.getByLabelText("Rate")).toBeDisabled();
+		fireEvent.click(screen.getByRole("button", { name: "Add" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Provide exactly one of amount or rate.",
+		);
+
+		openBaseUiSelect(screen.getByLabelText("Input Kind"));
+		pickBaseUiOption("Override");
+		await waitFor(() => expect(screen.getByLabelText("Rate")).toBeEnabled());
+		fireEvent.change(screen.getByLabelText("Rate"), { target: { value: "5" } });
+		pickDateByLabel("Service Period Start", "2026-06-01");
+		fireEvent.click(screen.getByRole("button", { name: "Add" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Enter both service period dates, or leave both blank.",
+		);
+
+		pickDateByLabel("Service Period End", "2026-05-31");
+		fireEvent.click(screen.getByRole("button", { name: "Add" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Service period start must be on or before service period end.",
+		);
+	});
+});
+
 describe("Pay run detail — calculate gating", () => {
 	beforeEach(() => {
 		queryClient.clear();
 	});
+
+	it(
+		"opens the run input dialog from the draft pay run action bar",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: employeeHandlers } = createEmployeeHandlers();
+			const { handlers: componentHandlers } = createPayComponentHandlers();
+			const { handlers: payHandlers } = createPayRunHandlers();
+			server.use(...authHandlers, ...employeeHandlers, ...componentHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const actions = await screen.findByTestId(
+				"pay-run-menu-actions",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			fireEvent.click(within(actions).getByRole("button", { name: "Add Input" }));
+
+			expect(await screen.findByRole("heading", { name: "Add Run Input" })).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"captures token and voucher pairs in the exact report metadata request",
+		async () => {
+			const onUpdateReportMetadata = vi.fn();
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({ onUpdateReportMetadata });
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT });
+			fireEvent.change(screen.getByLabelText("Token No."), { target: { value: "TOK-101" } });
+			fireEvent.click(screen.getByRole("button", { name: "Save Details" }));
+			expect(await screen.findByRole("alert")).toHaveTextContent(
+				"Token number and date must be entered together.",
+			);
+			expect(onUpdateReportMetadata).not.toHaveBeenCalled();
+
+			pickDateByLabel("Token date", "2026-06-30");
+			fireEvent.change(screen.getByLabelText("Voucher No."), { target: { value: "VCH-202" } });
+			pickDateByLabel("Voucher date", "2026-07-01");
+			fireEvent.click(screen.getByRole("button", { name: "Save Details" }));
+
+			await waitFor(() =>
+				expect(onUpdateReportMetadata).toHaveBeenCalledWith("run-1", {
+					bill_number: null,
+					bill_date: null,
+					payment_date: null,
+					demand_number: null,
+					major_head: null,
+					sub_head: null,
+					detailed_head: null,
+					token_number: "TOK-101",
+					token_date: "2026-06-30",
+					voucher_number: "VCH-202",
+					voucher_date: "2026-07-01",
+					bank_advice_number: null,
+					bank_advice_date: null,
+					approval_note_number: null,
+					approval_note_date: null,
+				}),
+			);
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"shows report-readiness issues beside editable report details",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				reportReadiness: {
+					"run-1": {
+						ready: false,
+						issues: [
+							{
+								report_type: "treasury_face",
+								code: "bill_number_missing",
+								message: "Bill number is required for final Treasury Face export.",
+								owner: "run_report_details",
+								href: "/pay-runs/run-1?section=report-details",
+							},
+						],
+					},
+				},
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			expect(
+				await screen.findByText("Report export needs attention", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(
+				screen.getByText("Bill number is required for final Treasury Face export."),
+			).toBeInTheDocument();
+			expect(screen.getByRole("link", { name: "Open run report details" })).toHaveAttribute(
+				"href",
+				"/pay-runs/run-1?section=report-details",
+			);
+		},
+		PAGE_TIMEOUT,
+	);
 
 	it(
 		"renders an empty-state placeholder when the run has no employees",
@@ -286,8 +483,11 @@ describe("Pay run detail — calculate gating", () => {
 			const billDate = screen.getByRole("button", { name: "Bill date (required)" });
 			expect(billDate).toHaveAttribute("data-slot", "date-picker-trigger");
 			expect(screen.getByLabelText(/Bill No\./)).toBeRequired();
-			expect(screen.getByLabelText("Payment date")).not.toHaveAttribute("aria-required");
-			expect(screen.getAllByText("*")).toHaveLength(6);
+			expect(screen.getByRole("button", { name: "Payment date (required)" })).toHaveAttribute(
+				"data-slot",
+				"date-picker-trigger",
+			);
+			expect(screen.getAllByText("*")).toHaveLength(7);
 			expect(screen.queryByText("Some exports are incomplete")).not.toBeInTheDocument();
 			expect(document.querySelector('input[type="date"]')).not.toBeInTheDocument();
 			expect(screen.queryByPlaceholderText("Master")).not.toBeInTheDocument();
@@ -415,6 +615,7 @@ describe("Pay run detail — calculate gating", () => {
 		"calculate success shows toast and refreshes detail totals",
 		async () => {
 			const { toast } = await import("sonner");
+			const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
 			});
@@ -461,6 +662,9 @@ describe("Pay run detail — calculate gating", () => {
 
 			await waitFor(() => {
 				expect(toast.success).toHaveBeenCalledWith("Pay run calculated");
+			});
+			expect(invalidateSpy).toHaveBeenCalledWith({
+				queryKey: ["payroll-run-report-readiness", "run-1"],
 			});
 
 			expect(await screen.findByText("Calculated")).toBeInTheDocument();

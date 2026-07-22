@@ -21,6 +21,7 @@ export type AdvanceInstallmentVersionResponse =
 export type AdvanceType = components["schemas"]["AdvanceType"];
 
 export type AccommodationCreate = components["schemas"]["AccommodationCreate"];
+export type AccommodationUpdate = components["schemas"]["AccommodationUpdate"];
 export type AccommodationResponse = components["schemas"]["AccommodationResponse"];
 export type AccommodationChargeVersionCreate =
 	components["schemas"]["AccommodationChargeVersionCreate"];
@@ -147,6 +148,13 @@ export function createAccommodation(employeeId: string, body: AccommodationCreat
 	);
 }
 
+export function updateAccommodation(assignmentId: string, body: AccommodationUpdate) {
+	return fetchJson<AccommodationResponse>(
+		`/api/accommodation/${assignmentId}`,
+		jsonRequest("PATCH", body),
+	);
+}
+
 export function createAccommodationChargeVersion(
 	assignmentId: string,
 	body: AccommodationChargeVersionCreate,
@@ -245,6 +253,19 @@ export function useCreateAccommodation(employeeId: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (body: AccommodationCreate) => createAccommodation(employeeId, body),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({
+				queryKey: employeePayrollSetupQueryKeys.all(),
+			});
+		},
+	});
+}
+
+export function useUpdateAccommodation(_employeeId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({ assignmentId, body }: { assignmentId: string; body: AccommodationUpdate }) =>
+			updateAccommodation(assignmentId, body),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({
 				queryKey: employeePayrollSetupQueryKeys.all(),

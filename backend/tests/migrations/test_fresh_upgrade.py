@@ -6,7 +6,7 @@ import psycopg
 
 from .conftest import as_psycopg_url, diag, run_alembic
 
-HEAD_REVISION = "f2a7c9d4e601"
+HEAD_REVISION = "a7d3e5f9b102"
 PREVIOUS_REVISION = "c9f2e4a8b013"
 
 
@@ -104,7 +104,8 @@ def test_report_export_migration_backfills_existing_organization_catalog(
             (organization_id,),
         ).fetchall()
     catalog = {row[0]: row[1:] for row in rows}
-    assert len(catalog) == 25
+    assert len(catalog) == 26
+    assert catalog["ADDITIONAL_ALLOWANCE"][:2] == ("earning", True)
     assert catalog["CLA"] == ("earning", True, None)
     assert catalog["FOREGONE_HRA"] == ("informational", True, None)
     assert catalog["MOTOR_CAR_ADVANCE_INSTALLMENT"] == (

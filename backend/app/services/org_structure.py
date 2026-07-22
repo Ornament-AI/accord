@@ -8,9 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.org_structure import Office, Post
-from app.schemas.org_structure import PostResponse
+from app.schemas.org_structure import PostResponse, PostUpdate
 
 
 def post_to_response(post: Post) -> PostResponse:
@@ -18,7 +18,12 @@ def post_to_response(post: Post) -> PostResponse:
     return PostResponse(
         id=post.id,
         designation=post.designation,
+        pay_bill_heading=post.pay_bill_heading,
         class_name=post.class_,
+        sanctioned_strength=post.sanctioned_strength,
+        vacant_count=post.vacant_count,
+        pay_scale=post.pay_scale,
+        display_order=post.display_order,
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
@@ -83,11 +88,21 @@ async def create_post(
     *,
     designation: str,
     class_name: str,
+    pay_bill_heading: str | None = None,
+    sanctioned_strength: int | None = None,
+    vacant_count: int | None = None,
+    pay_scale: str | None = None,
+    display_order: int | None = None,
 ) -> Post:
     post = Post(
         organization_id=organization_id,
         designation=designation,
+        pay_bill_heading=pay_bill_heading,
         class_=class_name,
+        sanctioned_strength=sanctioned_strength,
+        vacant_count=vacant_count,
+        pay_scale=pay_scale,
+        display_order=display_order,
     )
     db.add(post)
     try:
@@ -103,7 +118,9 @@ async def create_post(
 
 async def list_posts(db: AsyncSession, organization_id: UUID) -> list[Post]:
     result = await db.execute(
-        select(Post).where(Post.organization_id == organization_id).order_by(Post.designation)
+        select(Post)
+        .where(Post.organization_id == organization_id)
+        .order_by(Post.display_order.asc().nulls_last(), Post.designation)
     )
     return list(result.scalars().all())
 
@@ -113,8 +130,7 @@ async def update_post(
     organization_id: UUID,
     post_id: UUID,
     *,
-    designation: str | None = None,
-    class_name: str | None = None,
+    body: PostUpdate,
 ) -> Post:
     result = await db.execute(
         select(Post).where(
@@ -126,11 +142,39 @@ async def update_post(
     if post is None:
         raise NotFoundError("Post not found.")
 
-    if designation is not None and designation != post.designation:
+    if body.designation is not None and body.designation != post.designation:
         raise ConflictError("Post designation cannot be changed.")
 
-    if class_name is not None:
-        post.class_ = class_name
+    if body.class_name is not None:
+        post.class_ = body.class_name
+    if "pay_bill_heading" in body.model_fields_set:
+        post.pay_bill_heading = body.pay_bill_heading
+
+    sanctioned_strength = (
+        body.sanctioned_strength
+        if "sanctioned_strength" in body.model_fields_set
+        else post.sanctioned_strength
+    )
+    vacant_count = (
+        body.vacant_count if "vacant_count" in body.model_fields_set else post.vacant_count
+    )
+    if vacant_count is not None and sanctioned_strength is None:
+        raise ValidationError("sanctioned_strength is required when vacant_count is provided")
+    if (
+        vacant_count is not None
+        and sanctioned_strength is not None
+        and vacant_count > sanctioned_strength
+    ):
+        raise ValidationError("vacant_count must not exceed sanctioned_strength")
+
+    if "sanctioned_strength" in body.model_fields_set:
+        post.sanctioned_strength = body.sanctioned_strength
+    if "vacant_count" in body.model_fields_set:
+        post.vacant_count = body.vacant_count
+    if "pay_scale" in body.model_fields_set:
+        post.pay_scale = body.pay_scale
+    if "display_order" in body.model_fields_set:
+        post.display_order = body.display_order
 
     await db.flush()
     await db.commit()

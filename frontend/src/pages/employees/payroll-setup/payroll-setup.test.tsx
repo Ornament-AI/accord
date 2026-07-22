@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RecurringInstructionVersionCreate } from "@/lib/api/employee-payroll-setup";
 import { queryClient } from "@/lib/query-client";
@@ -310,6 +310,165 @@ describe("Employee payroll-setup tabs", () => {
 			expect(
 				await screen.findByRole("heading", { name: "New Charge Version" }),
 			).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"captures quarters address and exact charge breakdowns for create and version flows",
+		async () => {
+			const onCreateAccommodation = vi.fn();
+			const onUpdateAccommodation = vi.fn();
+			const onCreateAccommodationChargeVersion = vi.fn();
+			setupEmployeePage("organization_administrator", {
+				accommodation: [],
+				onCreateAccommodation,
+				onUpdateAccommodation,
+				onCreateAccommodationChargeVersion,
+			});
+
+			await openEmployeeTab("Accommodation");
+			fireEvent.click(
+				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
+			);
+			const addDialog = await screen.findByRole("dialog");
+			fireEvent.change(within(addDialog).getByLabelText("Quarters Identifier"), {
+				target: { value: "C-18" },
+			});
+			fireEvent.change(within(addDialog).getByLabelText("Quarters Address"), {
+				target: { value: "18 Marine Drive, Mumbai" },
+			});
+			pickDateByLabel("Effective From", "2026-06-01");
+			fireEvent.change(within(addDialog).getByLabelText("License Fee"), {
+				target: { value: "1200" },
+			});
+			fireEvent.change(within(addDialog).getByLabelText("House Rent"), {
+				target: { value: "900" },
+			});
+			fireEvent.change(within(addDialog).getByLabelText("Service Charge"), {
+				target: { value: "200" },
+			});
+			fireEvent.change(within(addDialog).getByLabelText("Parking Charge"), {
+				target: { value: "100" },
+			});
+			fireEvent.change(within(addDialog).getByLabelText("Additional Parking Charge"), {
+				target: { value: "0" },
+			});
+			fireEvent.click(within(addDialog).getByRole("button", { name: /^Add$/ }));
+
+			await waitFor(() =>
+				expect(onCreateAccommodation).toHaveBeenCalledWith({
+					quarters_location: "mumbai",
+					quarters_identifier: "C-18",
+					quarters_address: "18 Marine Drive, Mumbai",
+					charge: {
+						effective_from: "2026-06-01",
+						license_fee: "1200",
+						informational_hra_foregone: null,
+						house_rent: "900",
+						service_charge: "200",
+						parking_charge: "100",
+						additional_parking_charge: "0",
+					},
+				}),
+			);
+			expect(await screen.findByText("18 Marine Drive, Mumbai")).toBeInTheDocument();
+
+			const row = screen.getByTestId("accommodation-row-acc-1");
+			expect(within(row).getByTestId("accommodation-charge-breakdown")).toHaveTextContent(
+				"House Rent: 900 · Service Charge: 200 · Parking Charge: 100",
+			);
+			fireEvent.click(within(row).getByRole("button", { name: "Edit Assignment" }));
+			const assignmentDialog = await screen.findByRole("dialog");
+			fireEvent.change(within(assignmentDialog).getByLabelText("Quarters Identifier"), {
+				target: { value: "C-18A" },
+			});
+			fireEvent.change(within(assignmentDialog).getByLabelText("Quarters Address"), {
+				target: { value: "18 Marine Drive, Churchgate, Mumbai" },
+			});
+			fireEvent.click(within(assignmentDialog).getByRole("button", { name: "Save" }));
+
+			await waitFor(() =>
+				expect(onUpdateAccommodation).toHaveBeenCalledWith("acc-1", {
+					quarters_identifier: "C-18A",
+					quarters_address: "18 Marine Drive, Churchgate, Mumbai",
+				}),
+			);
+			expect(await screen.findByText("18 Marine Drive, Churchgate, Mumbai")).toBeInTheDocument();
+
+			fireEvent.click(within(row).getByRole("button", { name: "Update Fee" }));
+			const versionDialog = await screen.findByRole("dialog");
+			pickDateByLabel("Effective From", "2026-07-01");
+			fireEvent.change(within(versionDialog).getByLabelText("License Fee"), {
+				target: { value: "1500" },
+			});
+			fireEvent.change(within(versionDialog).getByLabelText("House Rent"), {
+				target: { value: "1000" },
+			});
+			fireEvent.change(within(versionDialog).getByLabelText("Service Charge"), {
+				target: { value: "250" },
+			});
+			fireEvent.change(within(versionDialog).getByLabelText("Parking Charge"), {
+				target: { value: "150" },
+			});
+			fireEvent.change(within(versionDialog).getByLabelText("Additional Parking Charge"), {
+				target: { value: "100" },
+			});
+			fireEvent.click(within(versionDialog).getByRole("button", { name: "Create Version" }));
+
+			await waitFor(() =>
+				expect(onCreateAccommodationChargeVersion).toHaveBeenCalledWith("acc-1", {
+					effective_from: "2026-07-01",
+					license_fee: "1500",
+					informational_hra_foregone: null,
+					house_rent: "1000",
+					service_charge: "250",
+					parking_charge: "150",
+					additional_parking_charge: "100",
+					change_reason: null,
+				}),
+			);
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"accepts exact decimal charge breakdowns without floating-point drift",
+		async () => {
+			const onCreateAccommodation = vi.fn();
+			setupEmployeePage("organization_administrator", {
+				accommodation: [],
+				onCreateAccommodation,
+			});
+
+			await openEmployeeTab("Accommodation");
+			fireEvent.click(
+				await screen.findByRole("button", { name: /^Add$/ }, { timeout: PAGE_TIMEOUT }),
+			);
+			const dialog = await screen.findByRole("dialog");
+			fireEvent.change(within(dialog).getByLabelText("Quarters Identifier"), {
+				target: { value: "D-1" },
+			});
+			pickDateByLabel("Effective From", "2026-06-01");
+			fireEvent.change(within(dialog).getByLabelText("License Fee"), {
+				target: { value: "0.30" },
+			});
+			fireEvent.change(within(dialog).getByLabelText("House Rent"), {
+				target: { value: "0.10" },
+			});
+			fireEvent.change(within(dialog).getByLabelText("Service Charge"), {
+				target: { value: "0.20" },
+			});
+			fireEvent.change(within(dialog).getByLabelText("Parking Charge"), {
+				target: { value: "0.00" },
+			});
+			fireEvent.change(within(dialog).getByLabelText("Additional Parking Charge"), {
+				target: { value: "0.00" },
+			});
+			fireEvent.click(within(dialog).getByRole("button", { name: /^Add$/ }));
+
+			await waitFor(() => expect(onCreateAccommodation).toHaveBeenCalledOnce());
+			expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);

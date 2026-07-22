@@ -17,6 +17,7 @@ Key invariants (docs/report-specs/report-catalog.md):
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -89,6 +90,15 @@ FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 _FOREGONE_HRA_HEADER = "Informational foregone HRA (not recovered)"
 
 
+def _v3_metadata(snapshot: dict[str, Any] | None, *, canonical: bool) -> dict[str, Any]:
+    if snapshot is None or not canonical:
+        return {}
+    return {
+        "report_profile": dict(snapshot.get("report_profile") or {}),
+        "run_metadata": dict(snapshot.get("run_metadata") or {}),
+    }
+
+
 async def _resolve_employee_name(
     session: AsyncSession,
     *,
@@ -114,7 +124,33 @@ async def _resolve_employee_name(
     return str(profile["name"]) if profile is not None else ""
 
 
-def _advance_columns() -> tuple[ReportColumn, ...]:
+def _advance_columns(*, canonical: bool = False) -> tuple[ReportColumn, ...]:
+    if canonical:
+        return (
+            ReportColumn(key="employee_number", header="Employee No.", kind=ColumnKind.TEXT),
+            ReportColumn(key="name", header="Name", kind=ColumnKind.TEXT),
+            ReportColumn(key="designation", header="Designation", kind=ColumnKind.TEXT),
+            ReportColumn(
+                key="advance_reference", header="Sanction reference", kind=ColumnKind.TEXT
+            ),
+            ReportColumn(key="sanctioned_on", header="Sanction date", kind=ColumnKind.DATE),
+            ReportColumn(key="principal", header="Principal", kind=ColumnKind.MONEY),
+            ReportColumn(
+                key="scheduled_installment_amount",
+                header="Scheduled installment",
+                kind=ColumnKind.MONEY,
+            ),
+            ReportColumn(
+                key="installment_amount",
+                header="Recovery this month",
+                kind=ColumnKind.MONEY,
+            ),
+            ReportColumn(
+                key="installments_progress",
+                header="Installments recovered/total",
+                kind=ColumnKind.TEXT,
+            ),
+        )
     return (
         ReportColumn(key="employee_number", header="Employee No.", kind=ColumnKind.TEXT),
         ReportColumn(key="name", header="Name", kind=ColumnKind.TEXT),
@@ -133,7 +169,32 @@ def _advance_columns() -> tuple[ReportColumn, ...]:
     )
 
 
-def _accommodation_columns() -> tuple[ReportColumn, ...]:
+def _accommodation_columns(*, canonical: bool = False) -> tuple[ReportColumn, ...]:
+    if canonical:
+        return (
+            ReportColumn(key="employee_number", header="Employee No.", kind=ColumnKind.TEXT),
+            ReportColumn(key="name", header="Name", kind=ColumnKind.TEXT),
+            ReportColumn(key="designation", header="Designation", kind=ColumnKind.TEXT),
+            ReportColumn(key="quarters_address", header="Address", kind=ColumnKind.TEXT),
+            ReportColumn(
+                key="informational_foregone_hra",
+                header=_FOREGONE_HRA_HEADER,
+                kind=ColumnKind.MONEY,
+            ),
+            ReportColumn(key="house_rent", header="House Rent", kind=ColumnKind.MONEY),
+            ReportColumn(key="service_charge", header="Service Charges", kind=ColumnKind.MONEY),
+            ReportColumn(key="parking_charge", header="Parking Charges", kind=ColumnKind.MONEY),
+            ReportColumn(
+                key="additional_parking_charge",
+                header="Additional Parking Charges",
+                kind=ColumnKind.MONEY,
+            ),
+            ReportColumn(
+                key="license_fee_actual",
+                header="Total actual recovery",
+                kind=ColumnKind.MONEY,
+            ),
+        )
     return (
         ReportColumn(key="employee_number", header="Employee No.", kind=ColumnKind.TEXT),
         ReportColumn(key="name", header="Name", kind=ColumnKind.TEXT),
@@ -174,7 +235,7 @@ async def build_advance_schedule(
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
         )
-        if ctx.template_version == "v2"
+        if ctx.template_version in {"v2", "v3"}
         else None
     )
     advance_sources = (
@@ -215,6 +276,7 @@ async def build_advance_schedule(
 
     rows: list[tuple[Any, ...]] = []
     schedule_total = ZERO
+    canonical = ctx.template_version == "v3"
 
     for line in lines:
         installment_amount = money(line["amount"])
@@ -225,6 +287,8 @@ async def build_advance_schedule(
         reference = ""
         principal = ZERO
         progress = ""
+        sanctioned_on = None
+        scheduled_installment_amount = ZERO
         if installment_version_id is not None and snapshot is not None:
             advance = advance_sources.get(str(installment_version_id))
             if not isinstance(advance, dict):
@@ -239,6 +303,8 @@ async def build_advance_schedule(
             progress = f"{opening + 1}/{total}"
             reference = str(advance.get("reference") or "")
             principal = money(advance["principal"])
+            sanctioned_on = advance.get("sanctioned_on")
+            scheduled_installment_amount = money(advance["installment_amount"])
         elif installment_version_id is not None:
             inst = (
                 (
@@ -264,10 +330,13 @@ async def build_advance_schedule(
                 progress = f"{opening + 1}/{total}"
                 reference = advance.reference or ""
                 principal = money(advance.principal)
+                sanctioned_on = advance.sanctioned_on
+                scheduled_installment_amount = money(inst["installment_amount"])
 
         if snapshot is not None:
             identity = identities.get(str(line["employee_id"]), {})
             name = str(identity.get("name") or "")
+            designation = str(identity.get("designation") or "")
         else:
             name = await _resolve_employee_name(
                 session,
@@ -275,31 +344,44 @@ async def build_advance_schedule(
                 employee_id=line["employee_id"],
                 as_of=as_of,
             )
+            designation = ""
         schedule_total += installment_amount
-        rows.append(
-            (
-                str(line["employee_number"]),
-                name,
-                reference,
-                principal,
-                installment_amount,
-                progress,
+        if canonical:
+            rows.append(
+                (
+                    str(line["employee_number"]),
+                    name,
+                    designation,
+                    reference,
+                    sanctioned_on,
+                    principal,
+                    scheduled_installment_amount,
+                    installment_amount,
+                    progress,
+                )
             )
-        )
+        else:
+            rows.append(
+                (
+                    str(line["employee_number"]),
+                    name,
+                    reference,
+                    principal,
+                    installment_amount,
+                    progress,
+                )
+            )
 
     title = (
         "HBA recovery schedule"
         if advance_type == "hba"
         else f"Advance recovery schedule ({advance_type})"
     )
-    columns = _advance_columns()
+    columns = _advance_columns(canonical=canonical)
     totals: tuple[Any, ...] = (
-        "TOTAL",
-        None,
-        None,
-        None,
-        money(schedule_total),
-        None,
+        (("TOTAL",) + (None,) * 6 + (money(schedule_total), None))
+        if canonical
+        else ("TOTAL", None, None, None, money(schedule_total), None)
     )
 
     return ReportDTO(
@@ -320,6 +402,7 @@ async def build_advance_schedule(
                 totals=totals,
             ),
         ),
+        metadata=_v3_metadata(snapshot, canonical=canonical),
     )
 
 
@@ -360,7 +443,7 @@ async def build_accommodation_schedule(
             organization_id=ctx.organization_id,
             run_version_id=version["id"],
         )
-        if ctx.template_version == "v2"
+        if ctx.template_version in {"v2", "v3"}
         else None
     )
     accommodation_sources = (
@@ -369,6 +452,7 @@ async def build_accommodation_schedule(
         else {}
     )
     identities = snapshot.get("employee_identity") or {} if snapshot is not None else {}
+    canonical = ctx.template_version == "v3"
 
     result_rows = (
         (
@@ -394,9 +478,13 @@ async def build_accommodation_schedule(
             sections=(
                 TableSection(
                     title="Schedule",
-                    columns=_accommodation_columns(),
+                    columns=_accommodation_columns(canonical=canonical),
                     rows=(),
-                    totals=("TOTAL", None, None, ZERO, None),
+                    totals=(
+                        ("TOTAL",) + (None,) * 8 + (ZERO,)
+                        if canonical
+                        else ("TOTAL", None, None, ZERO, None)
+                    ),
                 ),
                 TableSection(
                     title="Informational foregone HRA (not part of recovery total)",
@@ -410,6 +498,7 @@ async def build_accommodation_schedule(
                     rows=((ZERO,),),
                 ),
             ),
+            metadata=_v3_metadata(snapshot, canonical=canonical),
         )
 
     result_ids = [row["id"] for row in result_rows]
@@ -438,7 +527,7 @@ async def build_accommodation_schedule(
     for line in lines:
         lines_by_result[line["employee_result_id"]].append(line)
 
-    async def _assignment_for_line(line: Any) -> tuple[str, str] | None:
+    async def _assignment_for_line(line: Any) -> dict[str, Any] | None:
         # Result-line traces currently omit accommodation_location (engine gap);
         # resolve location + quarters from the charge version pinned in source_version_ids.
         source_ids = list((line["trace"] or {}).get("source_version_ids") or [])
@@ -451,10 +540,7 @@ async def build_accommodation_schedule(
                     "Posted report snapshot is missing accommodation presentation data.",
                     details={"source_version_id": str(source_ids[0])},
                 )
-            return (
-                str(assignment.get("quarters_location") or ""),
-                str(assignment.get("quarters_identifier") or ""),
-            )
+            return dict(assignment)
         charge = (
             (
                 await session.execute(
@@ -472,7 +558,10 @@ async def build_accommodation_schedule(
         assignment = await session.get(AccommodationAssignment, charge["header_id"])
         if assignment is None or assignment.organization_id != ctx.organization_id:
             return None
-        return assignment.quarters_location, assignment.quarters_identifier
+        return {
+            "quarters_location": assignment.quarters_location,
+            "quarters_identifier": assignment.quarters_identifier,
+        }
 
     schedule_rows: list[tuple[Any, ...]] = []
     actual_recovery_total = ZERO
@@ -482,13 +571,13 @@ async def build_accommodation_schedule(
         emp_lines = lines_by_result.get(result["id"], [])
         license_line = None
         foregone_line = None
-        assignment: tuple[str, str] | None = None
+        assignment: dict[str, Any] | None = None
 
         for line in emp_lines:
             code = str(line["component_code"])
             line_assignment = await _assignment_for_line(line)
             if line_assignment is not None:
-                if line_assignment[0] != location:
+                if line_assignment.get("quarters_location") != location:
                     continue
             else:
                 # Fallback when charge version is missing: use trace if present.
@@ -512,11 +601,14 @@ async def build_accommodation_schedule(
         actual_recovery_total += license_fee
         informational_foregone_hra_total += foregone
 
-        quarters_identifier = assignment[1] if assignment is not None else ""
+        quarters_identifier = (
+            str(assignment.get("quarters_identifier") or "") if assignment is not None else ""
+        )
 
         if snapshot is not None:
             identity = identities.get(str(result["employee_id"]), {})
             name = str(identity.get("name") or "")
+            designation = str(identity.get("designation") or "")
         else:
             name = await _resolve_employee_name(
                 session,
@@ -524,15 +616,72 @@ async def build_accommodation_schedule(
                 employee_id=result["employee_id"],
                 as_of=as_of,
             )
-        schedule_rows.append(
-            (
-                str(result["employee_number"]),
-                name,
-                quarters_identifier,
-                license_fee,
-                foregone,
+            designation = ""
+        if canonical:
+            assignment = assignment or {}
+            bucket_fields = (
+                ("house_rent", "service_charge")
+                if location == "worli"
+                else (
+                    "house_rent",
+                    "service_charge",
+                    "parking_charge",
+                    "additional_parking_charge",
+                )
             )
-        )
+            missing_buckets = [field for field in bucket_fields if assignment.get(field) is None]
+            if not str(assignment.get("quarters_address") or "").strip():
+                raise ConflictError(
+                    "Canonical accommodation schedule requires a quarters address.",
+                    details={"employee_id": str(result["employee_id"])},
+                )
+            if missing_buckets:
+                raise ConflictError(
+                    "Canonical accommodation schedule requires every charge bucket.",
+                    details={
+                        "employee_id": str(result["employee_id"]),
+                        "missing_fields": missing_buckets,
+                    },
+                )
+            bucket_total = sum(money(assignment[field]) for field in bucket_fields)
+            if money(bucket_total) != license_fee:
+                raise ConflictError(
+                    "Canonical accommodation charge buckets do not equal the posted recovery.",
+                    details={
+                        "employee_id": str(result["employee_id"]),
+                        "bucket_total": str(money(bucket_total)),
+                        "posted_recovery": str(license_fee),
+                    },
+                )
+
+            def optional_money(field: str) -> Decimal | None:
+                value = assignment.get(field)
+                return None if value is None else money(value)
+
+            schedule_rows.append(
+                (
+                    str(result["employee_number"]),
+                    name,
+                    designation,
+                    str(assignment.get("quarters_address") or quarters_identifier),
+                    foregone,
+                    optional_money("house_rent"),
+                    optional_money("service_charge"),
+                    optional_money("parking_charge"),
+                    optional_money("additional_parking_charge"),
+                    license_fee,
+                )
+            )
+        else:
+            schedule_rows.append(
+                (
+                    str(result["employee_number"]),
+                    name,
+                    quarters_identifier,
+                    license_fee,
+                    foregone,
+                )
+            )
 
     # Defense in depth: recovery total is actual only — never actual + foregone.
     actual_recovery_total = money(actual_recovery_total)
@@ -551,10 +700,14 @@ async def build_accommodation_schedule(
         sections=(
             TableSection(
                 title="Schedule",
-                columns=_accommodation_columns(),
+                columns=_accommodation_columns(canonical=canonical),
                 rows=tuple(schedule_rows),
                 # Only actual recovery is totaled here; foregone cell stays None.
-                totals=("TOTAL", None, None, actual_recovery_total, None),
+                totals=(
+                    ("TOTAL",) + (None,) * 8 + (actual_recovery_total,)
+                    if canonical
+                    else ("TOTAL", None, None, actual_recovery_total, None)
+                ),
             ),
             TableSection(
                 title="Informational foregone HRA (not part of recovery total)",
@@ -579,6 +732,7 @@ async def build_accommodation_schedule(
                 rows=((actual_recovery_total,),),
             ),
         ),
+        metadata=_v3_metadata(snapshot, canonical=canonical),
     )
 
 
@@ -751,6 +905,11 @@ def recovery_to_json(dto: ReportDTO) -> dict[str, Any]:
 
 
 def recovery_to_excel(dto: ReportDTO) -> bytes:
+    if dto.template_version == "v3":
+        from app.reports.canonical_schedules import REPORT_SHEET_NAMES, canonical_schedule_to_excel
+
+        if dto.report_type in REPORT_SHEET_NAMES:
+            return canonical_schedule_to_excel(dto)
     return base_to_excel(dto)
 
 

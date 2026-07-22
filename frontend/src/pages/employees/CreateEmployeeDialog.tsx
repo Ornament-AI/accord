@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
 	type CreateEmployeeRequest,
 	type GpfJurisdiction,
@@ -33,6 +34,8 @@ import { parseApiDate, toApiDate, todayApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
+
+const SAME_AS_DESIGNATION_POST = "__same_as_designation_post__";
 
 function labelForId(
 	id: string | null | undefined,
@@ -57,12 +60,15 @@ type FormState = {
 	gpf_jurisdiction: GpfJurisdiction | "";
 	pan: string;
 	pran: string;
+	pension_account: string;
 	gpf_account_number: string;
 	epf_number: string;
 	date_of_birth: string;
 	date_of_joining: string;
+	payroll_export_remark: string;
 	office_id: string;
 	post_id: string;
+	pay_bill_post_id: string;
 	pay_matrix_level: string;
 	basic_pay: string;
 	account_number: string;
@@ -82,12 +88,15 @@ const emptyForm = (): FormState => ({
 	gpf_jurisdiction: "",
 	pan: "",
 	pran: "",
+	pension_account: "",
 	gpf_account_number: "",
 	epf_number: "",
 	date_of_birth: "",
 	date_of_joining: "",
+	payroll_export_remark: "",
 	office_id: "",
 	post_id: "",
+	pay_bill_post_id: "",
 	pay_matrix_level: "",
 	basic_pay: "",
 	account_number: "",
@@ -126,6 +135,11 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 		() => Object.fromEntries(posts.map((item) => [item.id, postEntityLabel(item)])),
 		[posts],
 	);
+	const payBillPostLabels = useMemo(
+		() =>
+			Object.fromEntries(posts.map((item) => [item.id, item.pay_bill_heading ?? item.designation])),
+		[posts],
+	);
 
 	const [form, setForm] = useState<FormState>(emptyForm);
 	const [activeTab, setActiveTab] = useState<CreateEmployeeTab>("details");
@@ -160,19 +174,39 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 			setActiveTab("details");
 			return;
 		}
-		if (!form.name.trim() || !form.sevarth_id.trim()) {
-			setFormError("Name and Sevarth ID are required.");
+		if (!form.effective_from) {
+			setFormError("Effective from is required.");
 			setActiveTab("details");
 			return;
 		}
-		if (!form.date_of_birth || !form.date_of_joining) {
-			setFormError("Date of birth and date of joining are required.");
+		if (!form.name.trim()) {
+			setFormError("Name is required.");
 			setActiveTab("details");
 			return;
 		}
-		if (form.retirement_regime === "gpf" && !form.gpf_jurisdiction) {
-			setGpfJurisdictionError("GPF jurisdiction is required when regime is GPF");
-			setActiveTab("details");
+
+		const hasPosting = Boolean(
+			form.office_id.trim() || form.post_id.trim() || form.pay_bill_post_id.trim(),
+		);
+		if (hasPosting && (!form.office_id.trim() || !form.post_id.trim())) {
+			setFormError("Select both an office and a post, or leave both blank.");
+			setActiveTab("posting");
+			return;
+		}
+
+		const hasPay = Boolean(form.pay_matrix_level.trim() || form.basic_pay.trim());
+		if (hasPay && !form.basic_pay.trim()) {
+			setFormError("Basic pay is required when adding pay details.");
+			setActiveTab("pay");
+			return;
+		}
+
+		const hasBank = Boolean(
+			form.account_number.trim() || form.ifsc.trim() || form.bank_name.trim() || form.branch.trim(),
+		);
+		if (hasBank && (!form.account_number.trim() || !form.ifsc.trim() || !form.bank_name.trim())) {
+			setFormError("Account number, IFSC, and bank name are required when adding bank details.");
+			setActiveTab("bank");
 			return;
 		}
 
@@ -181,44 +215,42 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 			effective_from: form.effective_from,
 			profile: {
 				name: form.name.trim(),
-				sevarth_id: form.sevarth_id.trim(),
+				sevarth_id: form.sevarth_id.trim() || null,
 				retirement_regime: form.retirement_regime,
-				date_of_birth: form.date_of_birth,
-				date_of_joining: form.date_of_joining,
+				date_of_birth: form.date_of_birth || null,
+				date_of_joining: form.date_of_joining || null,
+				payroll_export_remark: form.payroll_export_remark.trim() || null,
 				gpf_jurisdiction:
 					form.retirement_regime === "gpf" && form.gpf_jurisdiction ? form.gpf_jurisdiction : null,
 				pan: form.pan.trim() || null,
 				pran: form.pran.trim() || null,
+				pension_account: form.pension_account.trim() || null,
 				gpf_account_number: form.gpf_account_number.trim() || null,
 				epf_number: form.epf_number.trim() || null,
 			},
 		};
 
-		if (form.office_id.trim() && form.post_id.trim()) {
+		if (hasPosting) {
 			body.posting = {
 				office_id: form.office_id.trim(),
 				post_id: form.post_id.trim(),
+				pay_bill_post_id: form.pay_bill_post_id.trim() || null,
 			};
 		}
 
-		if (form.pay_matrix_level.trim() && form.basic_pay.trim()) {
+		if (hasPay) {
 			body.pay = {
-				pay_matrix_level: form.pay_matrix_level.trim(),
+				pay_matrix_level: form.pay_matrix_level.trim() || null,
 				basic_pay: form.basic_pay.trim(),
 			};
 		}
 
-		if (
-			form.account_number.trim() &&
-			form.ifsc.trim() &&
-			form.bank_name.trim() &&
-			form.branch.trim()
-		) {
+		if (hasBank) {
 			body.bank = {
 				account_number: form.account_number.trim(),
 				ifsc: form.ifsc.trim(),
 				bank_name: form.bank_name.trim(),
-				branch: form.branch.trim(),
+				branch: form.branch.trim() || null,
 				is_primary_salary: true,
 			};
 		}
@@ -321,14 +353,14 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 													onChange={(event) => setField("name", event.target.value)}
 												/>
 											</DataEntryField>
-											<DataEntryField label="Sevarth ID" htmlFor="create-emp-sevarth" required>
+											<DataEntryField label="Sevarth ID" htmlFor="create-emp-sevarth">
 												<Input
 													id="create-emp-sevarth"
 													value={form.sevarth_id}
 													onChange={(event) => setField("sevarth_id", event.target.value)}
 												/>
 											</DataEntryField>
-											<DataEntryField label="Date of Birth" htmlFor="create-emp-dob" required>
+											<DataEntryField label="Date of Birth" htmlFor="create-emp-dob">
 												<DatePicker
 													id="create-emp-dob"
 													value={form.date_of_birth ? parseApiDate(form.date_of_birth) : undefined}
@@ -340,7 +372,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 													calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
 												/>
 											</DataEntryField>
-											<DataEntryField label="Date of Joining" htmlFor="create-emp-doj" required>
+											<DataEntryField label="Date of Joining" htmlFor="create-emp-doj">
 												<DatePicker
 													id="create-emp-doj"
 													value={
@@ -373,7 +405,13 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 														setGpfJurisdictionError(null);
 														if (value !== "gpf") {
 															setField("gpf_jurisdiction", "");
+															setField("gpf_account_number", "");
 														}
+														if (value !== "nps") {
+															setField("pran", "");
+															setField("pension_account", "");
+														}
+														if (value !== "epf") setField("epf_number", "");
 													}}
 												>
 													<SelectTrigger id="create-emp-regime" className="w-full">
@@ -394,7 +432,6 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 												<DataEntryField
 													label="GPF Jurisdiction"
 													htmlFor="create-emp-gpf-jurisdiction"
-													required
 													error={gpfJurisdictionError ?? undefined}
 													errorId="create-emp-gpf-jurisdiction-error"
 												>
@@ -430,12 +467,24 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 													</Select>
 												</DataEntryField>
 											) : null}
-											{form.retirement_regime === "nps" || form.retirement_regime === "gpf" ? (
+											{form.retirement_regime === "nps" ? (
 												<DataEntryField label="PRAN" htmlFor="create-emp-pran">
 													<Input
 														id="create-emp-pran"
 														value={form.pran}
 														onChange={(event) => setField("pran", event.target.value)}
+													/>
+												</DataEntryField>
+											) : null}
+											{form.retirement_regime === "nps" ? (
+												<DataEntryField
+													label="Pension Account"
+													htmlFor="create-emp-pension-account"
+												>
+													<Input
+														id="create-emp-pension-account"
+														value={form.pension_account}
+														onChange={(event) => setField("pension_account", event.target.value)}
 													/>
 												</DataEntryField>
 											) : null}
@@ -465,6 +514,22 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 												/>
 											</DataEntryField>
 										</DataEntryFieldGrid>
+									</FormSection>
+
+									<FormSectionDivider />
+
+									<FormSection title="Pay Bill Export">
+										<DataEntryField
+											label="Payroll Export Remark"
+											htmlFor="create-emp-payroll-export-remark"
+										>
+											<Textarea
+												id="create-emp-payroll-export-remark"
+												value={form.payroll_export_remark}
+												onChange={(event) => setField("payroll_export_remark", event.target.value)}
+												placeholder="Optional employee-specific note printed on canonical Pay Bills"
+											/>
+										</DataEntryField>
 									</FormSection>
 
 									{formError ? (
@@ -522,7 +587,44 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 												</Select>
 											</DataEntryField>
 										</DataEntryFieldGrid>
+										<DataEntryField label="Pay Bill Group" htmlFor="create-emp-pay-bill-post">
+											<Select
+												value={form.pay_bill_post_id || SAME_AS_DESIGNATION_POST}
+												onValueChange={(value) =>
+													setField(
+														"pay_bill_post_id",
+														value === SAME_AS_DESIGNATION_POST ? "" : (value ?? ""),
+													)
+												}
+												disabled={postingCatalogLoading}
+											>
+												<SelectTrigger id="create-emp-pay-bill-post" className="w-full">
+													<SelectValue>
+														{(value: string | null) =>
+															value === SAME_AS_DESIGNATION_POST
+																? "Same as designation post"
+																: labelForId(value, payBillPostLabels, "Same as designation post")
+														}
+													</SelectValue>
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value={SAME_AS_DESIGNATION_POST}>
+														Same as designation post
+													</SelectItem>
+													{posts.map((post) => (
+														<SelectItem key={post.id} value={post.id}>
+															{post.pay_bill_heading ?? post.designation}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</DataEntryField>
 									</FormSection>
+									{formError ? (
+										<p className="text-sm text-destructive" role="alert">
+											{formError}
+										</p>
+									) : null}
 								</TabsContent>
 
 								<TabsContent value="pay" className="mt-0 flex flex-col gap-7">
@@ -544,6 +646,11 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 											</DataEntryField>
 										</DataEntryFieldGrid>
 									</FormSection>
+									{formError ? (
+										<p className="text-sm text-destructive" role="alert">
+											{formError}
+										</p>
+									) : null}
 								</TabsContent>
 
 								<TabsContent value="bank" className="mt-0 flex flex-col gap-7">
@@ -579,6 +686,11 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 											</DataEntryField>
 										</DataEntryFieldGrid>
 									</FormSection>
+									{formError ? (
+										<p className="text-sm text-destructive" role="alert">
+											{formError}
+										</p>
+									) : null}
 								</TabsContent>
 							</fieldset>
 						</div>

@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DatePicker, HISTORICAL_DATE_CALENDAR_PROPS } from "@/components/ui/date-picker";
 import {
 	Dialog,
 	DialogBody,
@@ -20,14 +21,16 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useEmployeesList } from "@/lib/api/employees";
+import { usePayComponentsList } from "@/lib/api/pay-setup";
 import {
 	INPUT_KINDS,
 	type InputKind,
 	type PayrollRunInputResponse,
 	useUpsertPayrollRunInput,
 } from "@/lib/api/payroll-runs";
+import { parseApiDate, toApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
-import { employeeEntityLabel } from "@/lib/entity-labels";
+import { employeeEntityLabel, payComponentEntityLabel } from "@/lib/entity-labels";
 import { inputKindLabel } from "@/lib/payroll-display";
 
 type UpsertInputDialogProps = {
@@ -43,6 +46,8 @@ type FormState = {
 	input_kind: InputKind;
 	amount: string;
 	rate: string;
+	service_period_start: string;
+	service_period_end: string;
 	reason: string;
 	employee_search: string;
 };
@@ -53,19 +58,24 @@ const emptyForm = (): FormState => ({
 	input_kind: "exception",
 	amount: "",
 	rate: "",
+	service_period_start: "",
+	service_period_end: "",
 	reason: "",
 	employee_search: "",
 });
 
 function formFromInput(input: PayrollRunInputResponse): FormState {
+	const inputKind = (
+		INPUT_KINDS.includes(input.input_kind as InputKind) ? input.input_kind : "exception"
+	) as InputKind;
 	return {
 		employee_id: input.employee_id,
 		component_code: input.component_code,
-		input_kind: (INPUT_KINDS.includes(input.input_kind as InputKind)
-			? input.input_kind
-			: "exception") as InputKind,
+		input_kind: inputKind,
 		amount: input.amount ?? "",
-		rate: input.rate ?? "",
+		rate: inputKind === "override" ? (input.rate ?? "") : "",
+		service_period_start: input.service_period_start ?? "",
+		service_period_end: input.service_period_end ?? "",
 		reason: input.reason,
 		employee_search: "",
 	};
@@ -78,6 +88,7 @@ export function UpsertInputDialog({
 	editing = null,
 }: UpsertInputDialogProps) {
 	const upsertInput = useUpsertPayrollRunInput(runId);
+	const componentsQuery = usePayComponentsList();
 	const [form, setForm] = useState<FormState>(emptyForm);
 	const [formError, setFormError] = useState<string | null>(null);
 
@@ -87,6 +98,7 @@ export function UpsertInputDialog({
 		size: 20,
 	});
 	const employees = employeesQuery.data?.items ?? [];
+	const components = (componentsQuery.data ?? []).filter((component) => component.is_active);
 
 	const isEdit = Boolean(editing);
 
@@ -120,6 +132,30 @@ export function UpsertInputDialog({
 			setFormError("Reason is required.");
 			return;
 		}
+		const hasAmount = Boolean(form.amount.trim());
+		const hasRate = Boolean(form.rate.trim());
+		if (hasAmount === hasRate) {
+			setFormError("Provide exactly one of amount or rate.");
+			return;
+		}
+		if (hasRate && form.input_kind !== "override") {
+			setFormError("Rate is available only for overrides.");
+			return;
+		}
+		const hasServiceStart = Boolean(form.service_period_start);
+		const hasServiceEnd = Boolean(form.service_period_end);
+		if (hasServiceStart !== hasServiceEnd) {
+			setFormError("Enter both service period dates, or leave both blank.");
+			return;
+		}
+		if (
+			form.service_period_start &&
+			form.service_period_end &&
+			form.service_period_start > form.service_period_end
+		) {
+			setFormError("Service period start must be on or before service period end.");
+			return;
+		}
 
 		try {
 			await upsertInput.mutateAsync({
@@ -127,9 +163,11 @@ export function UpsertInputDialog({
 				componentCode: form.component_code.trim(),
 				body: {
 					input_kind: form.input_kind,
-					amount: form.amount.trim() === "" ? null : form.amount.trim(),
-					rate: form.rate.trim() === "" ? null : form.rate.trim(),
+					amount: hasAmount ? form.amount.trim() : null,
+					rate: hasRate ? form.rate.trim() : null,
 					reason: form.reason.trim(),
+					service_period_start: form.service_period_start || null,
+					service_period_end: form.service_period_end || null,
 					expected_version: editing?.version ?? null,
 				},
 			});
@@ -177,7 +215,7 @@ export function UpsertInputDialog({
 									<Select
 										value={form.employee_id || null}
 										onValueChange={(value) => setField("employee_id", value ?? "")}
-										disabled={isSubmitting}
+										disabled={isSubmitting || employeesQuery.isLoading}
 									>
 										<SelectTrigger id="upsert-input-employee" className="w-full">
 											<SelectValue placeholder="Select employee">
@@ -200,14 +238,30 @@ export function UpsertInputDialog({
 								</div>
 
 								<div className="grid gap-2">
-									<Label htmlFor="upsert-input-component">Component Code</Label>
-									<Input
-										id="upsert-input-component"
-										value={form.component_code}
-										onChange={(event) => setField("component_code", event.target.value)}
-										disabled={isSubmitting}
-										autoComplete="off"
-									/>
+									<Label htmlFor="upsert-input-component">Component</Label>
+									<Select
+										value={form.component_code || null}
+										onValueChange={(value) => setField("component_code", value ?? "")}
+										disabled={isSubmitting || componentsQuery.isLoading}
+									>
+										<SelectTrigger id="upsert-input-component" className="w-full">
+											<SelectValue placeholder="Select component">
+												{(value: string | null) => {
+													const component = components.find((item) => item.code === value);
+													return component
+														? payComponentEntityLabel(component)
+														: "Select component";
+												}}
+											</SelectValue>
+										</SelectTrigger>
+										<SelectContent>
+											{components.map((component) => (
+												<SelectItem key={component.id} value={component.code}>
+													{payComponentEntityLabel(component)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
 							</>
 						) : (
@@ -226,7 +280,14 @@ export function UpsertInputDialog({
 							<Label htmlFor="upsert-input-kind">Input Kind</Label>
 							<Select
 								value={form.input_kind}
-								onValueChange={(value) => setField("input_kind", value as InputKind)}
+								onValueChange={(value) => {
+									const inputKind = value as InputKind;
+									setForm((previous) => ({
+										...previous,
+										input_kind: inputKind,
+										rate: inputKind === "override" ? previous.rate : "",
+									}));
+								}}
 								disabled={isSubmitting}
 							>
 								<SelectTrigger id="upsert-input-kind" className="w-full">
@@ -251,8 +312,12 @@ export function UpsertInputDialog({
 							<Input
 								id="upsert-input-amount"
 								value={form.amount}
-								onChange={(event) => setField("amount", event.target.value)}
-								disabled={isSubmitting}
+								onChange={(event) => {
+									setField("amount", event.target.value);
+									if (event.target.value) setField("rate", "");
+								}}
+								disabled={isSubmitting || Boolean(form.rate.trim())}
+								inputMode="decimal"
 								autoComplete="off"
 							/>
 						</div>
@@ -262,10 +327,54 @@ export function UpsertInputDialog({
 							<Input
 								id="upsert-input-rate"
 								value={form.rate}
-								onChange={(event) => setField("rate", event.target.value)}
-								disabled={isSubmitting}
+								onChange={(event) => {
+									setField("rate", event.target.value);
+									if (event.target.value) setField("amount", "");
+								}}
+								disabled={
+									isSubmitting || form.input_kind !== "override" || Boolean(form.amount.trim())
+								}
+								inputMode="decimal"
 								autoComplete="off"
 							/>
+							<p className="text-xs text-muted-foreground">
+								Rates can only override an existing rate-based component.
+							</p>
+						</div>
+
+						<div className="grid grid-cols-2 gap-3">
+							<div className="grid gap-2">
+								<Label htmlFor="upsert-input-service-start">Service Period Start</Label>
+								<DatePicker
+									id="upsert-input-service-start"
+									value={
+										form.service_period_start ? parseApiDate(form.service_period_start) : undefined
+									}
+									onValueChange={(date) =>
+										setField("service_period_start", date ? toApiDate(date) : "")
+									}
+									disabled={isSubmitting}
+									calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
+									className="w-full"
+									placeholder="Start date"
+								/>
+							</div>
+							<div className="grid gap-2">
+								<Label htmlFor="upsert-input-service-end">Service Period End</Label>
+								<DatePicker
+									id="upsert-input-service-end"
+									value={
+										form.service_period_end ? parseApiDate(form.service_period_end) : undefined
+									}
+									onValueChange={(date) =>
+										setField("service_period_end", date ? toApiDate(date) : "")
+									}
+									disabled={isSubmitting}
+									calendarProps={HISTORICAL_DATE_CALENDAR_PROPS}
+									className="w-full"
+									placeholder="End date"
+								/>
+							</div>
 						</div>
 
 						<div className="grid gap-2">

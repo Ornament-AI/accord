@@ -15,6 +15,7 @@ from app.services.pay_setup.accommodation import (
     create_accommodation,
     create_accommodation_charge_version,
     list_accommodation,
+    update_accommodation,
 )
 from app.services.pay_setup.advances import (
     create_advance,
@@ -60,6 +61,7 @@ __all__ = [
     "list_recurring_instructions",
     "list_report_configurations",
     "update_pay_component",
+    "update_accommodation",
     "upsert_payroll_export_profile",
     "upsert_report_configuration",
     "validate_report_config_key",

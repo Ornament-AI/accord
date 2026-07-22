@@ -212,6 +212,42 @@ async def test_nps_schedule_golden_excludes_epf(session):
 
 
 @pytest.mark.asyncio
+async def test_v3_retirement_rows_use_snapshot_identifiers_and_pay_facts(session, monkeypatch):
+    world = await _retirement_june_world(session)
+    ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v3",
+        generated_at=datetime.now(UTC),
+        engine_version=str(world["engine_version"]),
+    )
+
+    async def fail_live_lookup(*args, **kwargs):
+        raise AssertionError("v3 must not read live employee profiles")
+
+    monkeypatch.setattr("app.reports.families.retirement.resolve_profile_as_of", fail_live_lookup)
+    await _bind(session, world["org_id"], world["user_id"])
+    gpf = await gpf_mumbai_builder.build(session, ctx)
+    gpf_keys = [column.key for column in gpf.sections[0].columns]
+    assert "designation" in gpf_keys
+    assert "basic_pay" in gpf_keys
+    assert all(_dec(row[gpf_keys.index("basic_pay")]) > 0 for row in gpf.sections[0].rows)
+
+    await _bind(session, world["org_id"], world["user_id"])
+    nps = await nps_contribution_builder.build(session, ctx)
+    nps_keys = [column.key for column in nps.sections[0].columns]
+    assert {
+        "pension_account",
+        "sevarth_id",
+        "pran",
+        "month",
+        "basic_pay",
+        "dearness_allowance",
+        "remarks",
+    } <= set(nps_keys)
+
+
+@pytest.mark.asyncio
 async def test_gpf_excel_round_trip_and_pdf_contains_title_total(session):
     world = await _retirement_june_world(session)
     await _bind(session, world["org_id"], world["user_id"])

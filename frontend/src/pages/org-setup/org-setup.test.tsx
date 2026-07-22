@@ -97,6 +97,61 @@ describe("Org setup catalog pages", () => {
 		},
 		PAGE_TIMEOUT,
 	);
+
+	it(
+		"captures canonical Pay Bill heading, strength, pay scale, and display order",
+		async () => {
+			const onCreatePost = vi.fn();
+			await setupPage("/organization/posts", "organization_administrator", { onCreatePost });
+			await screen.findByTestId("posts-page", {}, { timeout: PAGE_TIMEOUT });
+
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
+			fireEvent.change(screen.getByLabelText("Designation"), {
+				target: { value: "Senior Clerk" },
+			});
+			fireEvent.change(screen.getByLabelText("Class"), { target: { value: "Class III" } });
+			fireEvent.change(screen.getByLabelText("Pay Bill Heading"), {
+				target: { value: "Senior Clerks" },
+			});
+			fireEvent.change(screen.getByLabelText("Sanctioned Strength"), { target: { value: "12" } });
+			fireEvent.change(screen.getByLabelText("Vacant Count"), { target: { value: "3" } });
+			fireEvent.change(screen.getByLabelText("Pay Scale"), {
+				target: { value: "S-15: 41800–132300" },
+			});
+			fireEvent.change(screen.getByLabelText("Display Order"), { target: { value: "4" } });
+			fireEvent.click(screen.getByRole("button", { name: "Create Post" }));
+
+			await waitFor(() =>
+				expect(onCreatePost).toHaveBeenCalledWith({
+					designation: "Senior Clerk",
+					class_name: "Class III",
+					pay_bill_heading: "Senior Clerks",
+					sanctioned_strength: 12,
+					vacant_count: 3,
+					pay_scale: "S-15: 41800–132300",
+					display_order: 4,
+				}),
+			);
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it("rejects a vacant count above sanctioned strength", async () => {
+		const onCreatePost = vi.fn();
+		await setupPage("/organization/posts", "organization_administrator", { onCreatePost });
+		await screen.findByTestId("posts-page", {}, { timeout: PAGE_TIMEOUT });
+		fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
+		fireEvent.change(screen.getByLabelText("Designation"), { target: { value: "Clerk II" } });
+		fireEvent.change(screen.getByLabelText("Class"), { target: { value: "Class III" } });
+		fireEvent.change(screen.getByLabelText("Sanctioned Strength"), { target: { value: "2" } });
+		fireEvent.change(screen.getByLabelText("Vacant Count"), { target: { value: "3" } });
+		fireEvent.click(screen.getByRole("button", { name: "Create Post" }));
+
+		expect(
+			await screen.findByText("Vacant count cannot exceed sanctioned strength."),
+		).toBeInTheDocument();
+		expect(onCreatePost).not.toHaveBeenCalled();
+	});
 });
 
 describe("Org setup capability gating", () => {

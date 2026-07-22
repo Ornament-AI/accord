@@ -83,18 +83,78 @@ async def test_post_crud_with_class_field_mapping(client, session):
 
     created = await client.post(
         "/api/posts",
-        json={"designation": "Junior Engineer", "class_name": "Class III"},
+        json={
+            "designation": "Junior Engineer",
+            "pay_bill_heading": "Engineering Establishment",
+            "class_name": "Class III",
+            "sanctioned_strength": 8,
+            "vacant_count": 2,
+            "pay_scale": "S-14: 38600-122800",
+            "display_order": 20,
+        },
     )
     assert created.status_code == 201, created.text
     post = created.json()
     assert post["class_name"] == "Class III"
+    assert post["pay_bill_heading"] == "Engineering Establishment"
+    assert post["sanctioned_strength"] == 8
+    assert post["vacant_count"] == 2
+    assert post["pay_scale"] == "S-14: 38600-122800"
+    assert post["display_order"] == 20
 
     patched = await client.patch(
         f"/api/posts/{post['id']}",
-        json={"class_name": "Class II"},
+        json={
+            "class_name": "Class II",
+            "vacant_count": 1,
+            "pay_bill_heading": "Technical Establishment",
+        },
     )
     assert patched.status_code == 200
     assert patched.json()["class_name"] == "Class II"
+    assert patched.json()["vacant_count"] == 1
+    assert patched.json()["pay_bill_heading"] == "Technical Establishment"
+
+    cleared = await client.patch(
+        f"/api/posts/{post['id']}",
+        json={"pay_bill_heading": None},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["pay_bill_heading"] is None
+
+
+@pytest.mark.asyncio
+async def test_post_strength_validation_applies_to_create_and_partial_update(client, session):
+    await _create_org_as_admin(client, session)
+
+    invalid_create = await client.post(
+        "/api/posts",
+        json={
+            "designation": "Invalid",
+            "class_name": "Class I",
+            "sanctioned_strength": 2,
+            "vacant_count": 3,
+        },
+    )
+    assert invalid_create.status_code == 422
+
+    created = await client.post(
+        "/api/posts",
+        json={
+            "designation": "Valid",
+            "class_name": "Class I",
+            "sanctioned_strength": 4,
+            "vacant_count": 2,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    invalid_update = await client.patch(
+        f"/api/posts/{created.json()['id']}",
+        json={"sanctioned_strength": 1},
+    )
+    assert invalid_update.status_code == 400
+    assert invalid_update.json()["error"] == "ValidationError"
 
 
 # --- Conflicts and immutability -------------------------------------------------

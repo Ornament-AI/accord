@@ -330,16 +330,24 @@ async def _seed_employee_amounts(
         if code == "ACCOMMODATION_LICENSE_FEE":
             assert employee.accommodation is not None
             foregone = line_amount(employee, "FOREGONE_HRA")
+            location = map_quarters_location(employee.accommodation.location)
             charge: dict[str, Any] = {
                 "license_fee": money_str(line.amount),
+                "house_rent": money_str(line.amount),
+                "service_charge": "0.00",
                 "effective_from": EFFECTIVE_FROM,
             }
+            if location != "worli":
+                charge.update(
+                    parking_charge="0.00",
+                    additional_parking_charge="0.00",
+                )
             if foregone is not None:
                 charge["informational_hra_foregone"] = money_str(foregone)
             resp = await client.post(
                 f"/api/employees/{employee_id}/accommodation",
                 json={
-                    "quarters_location": map_quarters_location(employee.accommodation.location),
+                    "quarters_location": location,
                     "quarters_identifier": f"Q-{employee.fixture_id}",
                     "charge": charge,
                 },

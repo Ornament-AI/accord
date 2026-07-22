@@ -9,10 +9,12 @@ import type {
 	PayrollRunInputResponse,
 	PayrollRunInputUpsert,
 	PayrollRunListItem,
+	PayrollRunReportMetadata,
 	PayrollRunResults,
 	PayrollRunRosterHistoryResponse,
 	PayrollRunRosterUpdate,
 	PayrollRunTotals,
+	ReportReadinessResponse,
 } from "@/lib/api/payroll-runs";
 import type { components } from "@/types/api.generated";
 
@@ -24,6 +26,7 @@ export type PayRunHandlersOptions = {
 	results?: Record<string, PayrollRunResults>;
 	rosters?: Record<string, PayrollRunEmployeeResponse[]>;
 	rosterHistory?: Record<string, PayrollRunRosterHistoryResponse[]>;
+	reportReadiness?: Record<string, ReportReadinessResponse>;
 	/** When set, POST /api/payroll-periods returns this status/body (e.g. 409). */
 	createPeriodError?: { status: number; body: Record<string, unknown> };
 	/** When set, POST /api/payroll-runs returns this status/body. */
@@ -43,6 +46,7 @@ export type PayRunHandlersOptions = {
 		body: PayrollRunInputUpsert,
 	) => void;
 	onDeleteInput?: (runId: string, inputId: string) => void;
+	onUpdateReportMetadata?: (runId: string, body: PayrollRunReportMetadata) => void;
 };
 
 const DEFAULT_TOTALS: PayrollRunTotals = {
@@ -115,6 +119,7 @@ export function buildRunDetail(
 		current_version: overrides.current_version ?? null,
 		lock_version: overrides.lock_version ?? 1,
 		roster_initialized: overrides.roster_initialized ?? true,
+		report_metadata: overrides.report_metadata ?? {},
 		created_at: overrides.created_at ?? now,
 		updated_at: overrides.updated_at ?? now,
 	};
@@ -497,6 +502,26 @@ export function createPayRunHandlers(options: PayRunHandlersOptions = {}) {
 				return HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
 			}
 			return HttpResponse.json(detail);
+		}),
+
+		http.put("/api/payroll-runs/:runId/report-metadata", async ({ params, request }) => {
+			const runId = String(params.runId);
+			const detail = details.get(runId);
+			if (!detail) {
+				return HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
+			}
+			const body = (await request.json()) as PayrollRunReportMetadata;
+			options.onUpdateReportMetadata?.(runId, body);
+			details.set(runId, { ...detail, report_metadata: body });
+			return HttpResponse.json(body);
+		}),
+
+		http.get("/api/payroll-runs/:runId/report-readiness", ({ params }) => {
+			const runId = String(params.runId);
+			if (!details.has(runId)) {
+				return HttpResponse.json({ detail: "Not found", error: "NotFound" }, { status: 404 });
+			}
+			return HttpResponse.json(options.reportReadiness?.[runId] ?? { ready: true, issues: [] });
 		}),
 
 		http.get("/api/payroll-runs/:runId/results", ({ params }) => {

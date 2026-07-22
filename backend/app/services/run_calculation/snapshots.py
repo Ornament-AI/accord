@@ -67,7 +67,12 @@ async def employee_report_identity_snapshot(
         .all()
     )
     banks = {row["header_id"]: row for row in bank_rows}
-    post_ids = {posting["post_id"] for posting in postings.values()}
+    post_ids = {
+        post_id
+        for posting in postings.values()
+        for post_id in (posting["post_id"], posting.get("pay_bill_post_id"))
+        if post_id is not None
+    }
     office_ids = {posting["office_id"] for posting in postings.values()}
     posts = (
         {
@@ -94,17 +99,52 @@ async def employee_report_identity_snapshot(
         posting = postings.get(employee.id)
         bank = banks.get(employee.id)
         post = None if posting is None else posts.get(posting["post_id"])
+        pay_bill_post = (
+            None
+            if posting is None
+            else posts.get(posting.get("pay_bill_post_id") or posting["post_id"])
+        )
         office = None if posting is None else offices.get(posting["office_id"])
         snapshot[str(employee.id)] = {
             "employee_number": employee.employee_number,
             "name": None if profile is None else profile.get("name"),
             "designation": None if post is None else post.designation,
+            "post": (
+                None
+                if post is None
+                else {
+                    "id": str(post.id),
+                    "designation": post.designation,
+                    "class_name": post.class_,
+                    "sanctioned_strength": post.sanctioned_strength,
+                    "vacant_count": post.vacant_count,
+                    "pay_scale": post.pay_scale,
+                    "display_order": post.display_order,
+                }
+            ),
+            "pay_bill_post": (
+                None
+                if pay_bill_post is None
+                else {
+                    "id": str(pay_bill_post.id),
+                    "heading": pay_bill_post.pay_bill_heading or pay_bill_post.designation,
+                    "designation": pay_bill_post.designation,
+                    "sanctioned_strength": pay_bill_post.sanctioned_strength,
+                    "vacant_count": pay_bill_post.vacant_count,
+                    "pay_scale": pay_bill_post.pay_scale,
+                    "display_order": pay_bill_post.display_order,
+                }
+            ),
             "pan": None if profile is None else profile.get("pan"),
             "sevarth_id": None if profile is None else profile.get("sevarth_id"),
             "pran": None if profile is None else profile.get("pran"),
             "gpf_account_number": (None if profile is None else profile.get("gpf_account_number")),
             "gpf_jurisdiction": (None if profile is None else profile.get("gpf_jurisdiction")),
+            "epf_number": None if profile is None else profile.get("epf_number"),
             "pension_account": None if profile is None else profile.get("pension_account"),
+            "payroll_export_remark": (
+                None if profile is None else profile.get("payroll_export_remark")
+            ),
             "retirement_regime": (None if profile is None else profile.get("retirement_regime")),
             "office_name": None if office is None else office.name,
             "office_jurisdiction": None if office is None else office.jurisdiction,
@@ -149,8 +189,10 @@ async def recovery_sources_snapshot(
                 advance_installment_versions.c.id,
                 advance_installment_versions.c.installments_total,
                 advance_installment_versions.c.installments_recovered_opening,
+                advance_installment_versions.c.installment_amount,
                 AdvanceAccount.advance_type,
                 AdvanceAccount.principal,
+                AdvanceAccount.sanctioned_on,
                 AdvanceAccount.reference,
             )
             .join(AdvanceAccount, AdvanceAccount.id == advance_installment_versions.c.header_id)
@@ -166,7 +208,15 @@ async def recovery_sources_snapshot(
             sa.select(
                 accommodation_charge_versions.c.id,
                 AccommodationAssignment.quarters_location,
+                AccommodationAssignment.id.label("assignment_id"),
                 AccommodationAssignment.quarters_identifier,
+                AccommodationAssignment.quarters_address,
+                accommodation_charge_versions.c.license_fee,
+                accommodation_charge_versions.c.house_rent,
+                accommodation_charge_versions.c.service_charge,
+                accommodation_charge_versions.c.parking_charge,
+                accommodation_charge_versions.c.additional_parking_charge,
+                accommodation_charge_versions.c.informational_hra_foregone,
             )
             .join(
                 AccommodationAssignment,
@@ -184,7 +234,9 @@ async def recovery_sources_snapshot(
             str(row["id"]): {
                 "advance_type": row["advance_type"],
                 "principal": str(row["principal"]),
+                "sanctioned_on": row["sanctioned_on"].isoformat(),
                 "reference": row["reference"],
+                "installment_amount": str(row["installment_amount"]),
                 "installments_total": row["installments_total"],
                 "installments_recovered_opening": row["installments_recovered_opening"],
             }
@@ -192,8 +244,28 @@ async def recovery_sources_snapshot(
         },
         "accommodation_charges": {
             str(row["id"]): {
+                "assignment_id": str(row["assignment_id"]),
                 "quarters_location": row["quarters_location"],
                 "quarters_identifier": row["quarters_identifier"],
+                "quarters_address": row["quarters_address"],
+                "license_fee": str(row["license_fee"]),
+                "house_rent": None if row["house_rent"] is None else str(row["house_rent"]),
+                "service_charge": (
+                    None if row["service_charge"] is None else str(row["service_charge"])
+                ),
+                "parking_charge": (
+                    None if row["parking_charge"] is None else str(row["parking_charge"])
+                ),
+                "additional_parking_charge": (
+                    None
+                    if row["additional_parking_charge"] is None
+                    else str(row["additional_parking_charge"])
+                ),
+                "informational_hra_foregone": (
+                    None
+                    if row["informational_hra_foregone"] is None
+                    else str(row["informational_hra_foregone"])
+                ),
             }
             for row in accommodation_rows
         },

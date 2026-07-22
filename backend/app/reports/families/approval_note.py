@@ -40,6 +40,7 @@ from app.reports.posted_run import (
     DEFAULT_CONTENT_TYPES,
     DEFAULT_FILENAME_PATTERN,
     ZERO,
+    load_result_rows,
     money,
     period_label,
     require_posted_run,
@@ -199,7 +200,9 @@ class ApprovalNoteBuilder:
         snapshot = None
         header_sections: tuple[TableSection, ...] = ()
         organization_name = org.name
-        if ctx.template_version == "v2":
+        beneficiary_sections: tuple[TableSection, ...] = ()
+        dto_metadata: dict[str, Any] = {}
+        if ctx.template_version in {"v2", "v3"}:
             snapshot = await load_report_snapshot(
                 session,
                 organization_id=ctx.organization_id,
@@ -230,6 +233,47 @@ class ApprovalNoteBuilder:
                 ),
             )
             organization_name = str((snapshot.get("organization") or {}).get("name") or org.name)
+            if ctx.template_version == "v3":
+                dto_metadata = {
+                    "report_profile": dict(profile),
+                    "run_metadata": dict(metadata),
+                }
+                identities = snapshot.get("employee_identity") or {}
+                packed = await load_result_rows(
+                    session,
+                    organization_id=ctx.organization_id,
+                    run_version_id=version["id"],
+                )
+                beneficiary_sections = (
+                    TableSection(
+                        title="Beneficiaries",
+                        columns=(
+                            ReportColumn("employee_number", "Employee No."),
+                            ReportColumn("name", "Name"),
+                            ReportColumn("designation", "Designation"),
+                            ReportColumn("net_payable", "Net Payable", ColumnKind.MONEY),
+                        ),
+                        rows=tuple(
+                            (
+                                str(item["result"]["employee_number"]),
+                                str(
+                                    (identities.get(str(item["result"]["employee_id"])) or {}).get(
+                                        "name"
+                                    )
+                                    or ""
+                                ),
+                                str(
+                                    (identities.get(str(item["result"]["employee_id"])) or {}).get(
+                                        "designation"
+                                    )
+                                    or ""
+                                ),
+                                money(item["result"]["net_payable"]),
+                            )
+                            for item in packed
+                        ),
+                    ),
+                )
         else:
             signatories = await _load_signatories(session, organization_id=ctx.organization_id)
 
@@ -256,6 +300,7 @@ class ApprovalNoteBuilder:
             organization_name=organization_name,
             subtitle=period_text,
             sections=header_sections
+            + beneficiary_sections
             + (
                 TableSection(
                     title="Run identity",
@@ -317,6 +362,7 @@ class ApprovalNoteBuilder:
                     ),
                 ),
             ),
+            metadata=dto_metadata,
         )
 
 
@@ -386,6 +432,10 @@ def approval_note_to_excel(dto: ReportDTO) -> bytes:
             ),
         ),
     )
+    if dto.template_version == "v3":
+        from app.reports.canonical_front_sheets import office_tip_to_excel
+
+        return office_tip_to_excel(dto)
     return base_to_excel(summary)
 
 

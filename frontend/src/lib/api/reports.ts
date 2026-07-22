@@ -36,9 +36,7 @@ export type GenerateReportResponse = {
 	status: string;
 };
 
-export type ExportReportsRequest = {
-	posted_run_id: string;
-};
+export type ExportReportsRequest = components["schemas"]["ExportReportsRequest"];
 
 export type ExportReportsResponse = {
 	job_id: string;
