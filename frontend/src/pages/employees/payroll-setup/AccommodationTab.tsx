@@ -77,15 +77,23 @@ const emptyBreakdown = (): ChargeBreakdownForm => ({
 	additional_parking_charge: "",
 });
 
-function validateBreakdown(form: ChargeBreakdownForm & { license_fee: string }): string | null {
+function validateBreakdown(
+	form: ChargeBreakdownForm & { license_fee: string },
+	location: QuartersLocation | string,
+): string | null {
 	for (const field of CHARGE_BREAKDOWN_FIELDS) {
 		const value = form[field.key].trim();
 		if (!value) continue;
 		const error = validateNonNegativeMoney(value, field.label);
 		if (error) return error;
 	}
+	const requiredFields =
+		location === "worli" ? CHARGE_BREAKDOWN_FIELDS.slice(0, 2) : CHARGE_BREAKDOWN_FIELDS;
+	const missing = requiredFields.filter((field) => !form[field.key].trim());
+	if (missing.length > 0) {
+		return `${missing.map((field) => field.label).join(", ")} must be entered. Use 0.00 when there is no charge.`;
+	}
 	const values = CHARGE_BREAKDOWN_FIELDS.map((field) => form[field.key].trim());
-	if (!values.some(Boolean)) return null;
 	const breakdownTotal = values.reduce((total, value) => {
 		const parsed = value ? parseMoneyString(value) : 0;
 		return total + Math.round((parsed ?? 0) * 100);
@@ -441,7 +449,7 @@ function AddAssignmentDialog({
 				return;
 			}
 		}
-		const breakdownError = validateBreakdown(form);
+		const breakdownError = validateBreakdown(form, form.quarters_location);
 		if (breakdownError) {
 			setFormError(breakdownError);
 			return;
@@ -464,7 +472,7 @@ function AddAssignmentDialog({
 			});
 			onOpenChange(false);
 		} catch (error) {
-			if (error instanceof ApiError && error.status === 422) {
+			if (error instanceof ApiError && (error.status === 400 || error.status === 422)) {
 				setFormError(error.detail || "Validation failed.");
 				return;
 			}
@@ -699,7 +707,7 @@ function NewChargeVersionDialog({
 				return;
 			}
 		}
-		const breakdownError = validateBreakdown(form);
+		const breakdownError = validateBreakdown(form, assignment.quarters_location);
 		if (breakdownError) {
 			setFormError(breakdownError);
 			return;
@@ -721,7 +729,7 @@ function NewChargeVersionDialog({
 			});
 			onOpenChange(false);
 		} catch (error) {
-			if (error instanceof ApiError && error.status === 422) {
+			if (error instanceof ApiError && (error.status === 400 || error.status === 422)) {
 				setFormError(error.detail || "Validation failed.");
 				return;
 			}

@@ -351,6 +351,9 @@ describe("Employee payroll-setup tabs", () => {
 			fireEvent.change(within(addDialog).getByLabelText("Parking Charge"), {
 				target: { value: "100" },
 			});
+			fireEvent.change(within(addDialog).getByLabelText("Additional Parking Charge"), {
+				target: { value: "0" },
+			});
 			fireEvent.click(within(addDialog).getByRole("button", { name: /^Add$/ }));
 
 			await waitFor(() =>
@@ -365,7 +368,7 @@ describe("Employee payroll-setup tabs", () => {
 						house_rent: "900",
 						service_charge: "200",
 						parking_charge: "100",
-						additional_parking_charge: null,
+						additional_parking_charge: "0",
 					},
 				}),
 			);
@@ -455,6 +458,12 @@ describe("Employee payroll-setup tabs", () => {
 			});
 			fireEvent.change(within(dialog).getByLabelText("Service Charge"), {
 				target: { value: "0.20" },
+			});
+			fireEvent.change(within(dialog).getByLabelText("Parking Charge"), {
+				target: { value: "0.00" },
+			});
+			fireEvent.change(within(dialog).getByLabelText("Additional Parking Charge"), {
+				target: { value: "0.00" },
 			});
 			fireEvent.click(within(dialog).getByRole("button", { name: /^Add$/ }));
 

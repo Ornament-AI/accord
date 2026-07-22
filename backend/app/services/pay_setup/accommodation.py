@@ -184,7 +184,13 @@ async def create_accommodation_charge_version(
     created_by: UUID,
     body: AccommodationChargeVersionCreate,
 ) -> dict[str, Any]:
-    await _get_accommodation(db, organization_id=organization_id, assignment_id=assignment_id)
+    assignment = await _get_accommodation(
+        db, organization_id=organization_id, assignment_id=assignment_id
+    )
+    try:
+        body.validate_for_location(assignment.quarters_location)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
     payload = {
         "license_fee": body.license_fee,
         "house_rent": body.house_rent,

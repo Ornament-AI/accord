@@ -357,6 +357,29 @@ class AdvanceResponse(BaseModel):
     version_id: UUID | None = None
 
 
+def _validate_accommodation_breakdown(location: QuartersLocation | str, charge: Any) -> None:
+    location_value = location.value if isinstance(location, QuartersLocation) else location
+    breakdown_fields = (
+        ("house_rent", "house rent"),
+        ("service_charge", "service charge"),
+    )
+    if location_value == QuartersLocation.WORLI.value:
+        ignored_parking = (charge.parking_charge, charge.additional_parking_charge)
+        if any(value not in (None, Decimal("0")) for value in ignored_parking):
+            raise ValueError("Worli accommodation cannot include parking charges")
+    else:
+        breakdown_fields += (
+            ("parking_charge", "parking charge"),
+            ("additional_parking_charge", "additional parking charge"),
+        )
+    missing = [label for field, label in breakdown_fields if getattr(charge, field) is None]
+    if missing:
+        raise ValueError(f"accommodation charge requires explicit {', '.join(missing)}")
+    breakdown = (getattr(charge, field) for field, _label in breakdown_fields)
+    if sum((value or Decimal("0")) for value in breakdown) != charge.license_fee:
+        raise ValueError("accommodation charge breakdown must equal license_fee")
+
+
 class AccommodationChargeInput(BaseModel):
     license_fee: MoneyAmount
     house_rent: MoneyAmount | None = None
@@ -366,23 +389,8 @@ class AccommodationChargeInput(BaseModel):
     informational_hra_foregone: MoneyAmount | None = None
     effective_from: date
 
-    @model_validator(mode="after")
-    def _breakdown_matches_total(self) -> Self:
-        breakdown = (
-            self.house_rent,
-            self.service_charge,
-            self.parking_charge,
-            self.additional_parking_charge,
-        )
-        if any(value is not None for value in breakdown):
-            if any(value is None for value in breakdown):
-                raise ValueError(
-                    "accommodation charge breakdown must be fully specified "
-                    "(enter explicit zeros for empty buckets)"
-                )
-            if sum((value or Decimal("0")) for value in breakdown) != self.license_fee:
-                raise ValueError("accommodation charge breakdown must equal license_fee")
-        return self
+    def validate_for_location(self, location: QuartersLocation | str) -> None:
+        _validate_accommodation_breakdown(location, self)
 
 
 class AccommodationCreate(BaseModel):
@@ -390,6 +398,11 @@ class AccommodationCreate(BaseModel):
     quarters_identifier: str = Field(min_length=1)
     quarters_address: str | None = Field(default=None, min_length=1)
     charge: AccommodationChargeInput
+
+    @model_validator(mode="after")
+    def _canonical_breakdown_complete(self) -> Self:
+        self.charge.validate_for_location(self.quarters_location)
+        return self
 
 
 class AccommodationUpdate(BaseModel):
@@ -417,23 +430,8 @@ class AccommodationChargeVersionCreate(BaseModel):
     informational_hra_foregone: MoneyAmount | None = None
     change_reason: str | None = None
 
-    @model_validator(mode="after")
-    def _breakdown_matches_total(self) -> Self:
-        breakdown = (
-            self.house_rent,
-            self.service_charge,
-            self.parking_charge,
-            self.additional_parking_charge,
-        )
-        if any(value is not None for value in breakdown):
-            if any(value is None for value in breakdown):
-                raise ValueError(
-                    "accommodation charge breakdown must be fully specified "
-                    "(enter explicit zeros for empty buckets)"
-                )
-            if sum((value or Decimal("0")) for value in breakdown) != self.license_fee:
-                raise ValueError("accommodation charge breakdown must equal license_fee")
-        return self
+    def validate_for_location(self, location: QuartersLocation | str) -> None:
+        _validate_accommodation_breakdown(location, self)
 
 
 class AccommodationChargeVersionResponse(VersionResponse):

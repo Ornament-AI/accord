@@ -394,7 +394,33 @@ async def test_accommodation_crud_and_charge_versioning(client, session):
             "house_rent": "900.00",
         },
     )
-    assert invalid_breakdown.status_code == 422
+    assert invalid_breakdown.status_code == 400
+
+    partial_breakdown = await client.post(
+        f"/api/accommodation/{assignment_id}/charge-versions",
+        json={
+            "effective_from": "2026-08-01",
+            "license_fee": "100.00",
+            "house_rent": "100.00",
+        },
+    )
+    assert partial_breakdown.status_code == 400
+
+    worli_with_parking = await client.post(
+        f"/api/employees/{employee_id}/accommodation",
+        json={
+            "quarters_location": "worli",
+            "quarters_identifier": "Worli-12",
+            "charge": {
+                "license_fee": "100.00",
+                "house_rent": "80.00",
+                "service_charge": "10.00",
+                "parking_charge": "10.00",
+                "effective_from": "2026-09-01",
+            },
+        },
+    )
+    assert worli_with_parking.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -857,6 +883,8 @@ async def test_accommodation_license_fee_and_hra_foregone_independent(client, se
             "quarters_identifier": "W-9",
             "charge": {
                 "license_fee": "1000.00",
+                "house_rent": "800.00",
+                "service_charge": "200.00",
                 "informational_hra_foregone": "2500.00",
                 "effective_from": "2026-01-01",
             },

@@ -615,6 +615,7 @@ describe("Pay run detail — calculate gating", () => {
 		"calculate success shows toast and refreshes detail totals",
 		async () => {
 			const { toast } = await import("sonner");
+			const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 			const { handlers: authHandlers } = createAuthHandlers({
 				me: buildRoleAuthMe("organization_administrator"),
 			});
@@ -661,6 +662,9 @@ describe("Pay run detail — calculate gating", () => {
 
 			await waitFor(() => {
 				expect(toast.success).toHaveBeenCalledWith("Pay run calculated");
+			});
+			expect(invalidateSpy).toHaveBeenCalledWith({
+				queryKey: ["payroll-run-report-readiness", "run-1"],
 			});
 
 			expect(await screen.findByText("Calculated")).toBeInTheDocument();
