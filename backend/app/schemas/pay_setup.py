@@ -374,11 +374,14 @@ class AccommodationChargeInput(BaseModel):
             self.parking_charge,
             self.additional_parking_charge,
         )
-        if (
-            any(value is not None for value in breakdown)
-            and sum((value or Decimal("0")) for value in breakdown) != self.license_fee
-        ):
-            raise ValueError("accommodation charge breakdown must equal license_fee")
+        if any(value is not None for value in breakdown):
+            if any(value is None for value in breakdown):
+                raise ValueError(
+                    "accommodation charge breakdown must be fully specified "
+                    "(enter explicit zeros for empty buckets)"
+                )
+            if sum((value or Decimal("0")) for value in breakdown) != self.license_fee:
+                raise ValueError("accommodation charge breakdown must equal license_fee")
         return self
 
 
@@ -422,11 +425,14 @@ class AccommodationChargeVersionCreate(BaseModel):
             self.parking_charge,
             self.additional_parking_charge,
         )
-        if (
-            any(value is not None for value in breakdown)
-            and sum((value or Decimal("0")) for value in breakdown) != self.license_fee
-        ):
-            raise ValueError("accommodation charge breakdown must equal license_fee")
+        if any(value is not None for value in breakdown):
+            if any(value is None for value in breakdown):
+                raise ValueError(
+                    "accommodation charge breakdown must be fully specified "
+                    "(enter explicit zeros for empty buckets)"
+                )
+            if sum((value or Decimal("0")) for value in breakdown) != self.license_fee:
+                raise ValueError("accommodation charge breakdown must equal license_fee")
         return self
 
 

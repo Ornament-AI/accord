@@ -378,6 +378,7 @@ async def test_accommodation_crud_and_charge_versioning(client, session):
             "house_rent": "900.00",
             "service_charge": "200.00",
             "parking_charge": "100.00",
+            "additional_parking_charge": "0.00",
             "informational_hra_foregone": "2700.00",
         },
     )
@@ -394,6 +395,30 @@ async def test_accommodation_crud_and_charge_versioning(client, session):
         },
     )
     assert invalid_breakdown.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_accommodation_rejects_partial_breakdown_even_when_it_sums(client, session):
+    # A breakdown that leaves buckets NULL is rejected at input, even when the
+    # provided buckets already sum to license_fee: the v3 export path treats NULL
+    # buckets as incomplete, so explicit zeros must be entered here.
+    ctx = await _admin_context(client, session)
+    employee_id = ctx["employee_id"]
+
+    resp = await client.post(
+        f"/api/employees/{employee_id}/accommodation",
+        json={
+            "quarters_location": "mumbai",
+            "quarters_identifier": "Block-B-1",
+            "quarters_address": "1 Example Road, Mumbai",
+            "charge": {
+                "license_fee": "100.00",
+                "house_rent": "100.00",
+                "effective_from": "2026-01-01",
+            },
+        },
+    )
+    assert resp.status_code == 422, resp.text
 
 
 @pytest.mark.asyncio

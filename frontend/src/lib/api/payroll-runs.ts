@@ -372,6 +372,9 @@ export function useCalculatePayrollRun(runId: string) {
 			void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
+			void queryClient.invalidateQueries({
+				queryKey: payrollRunQueryKeys.reportReadiness(runId),
+			});
 		},
 	});
 }
