@@ -330,7 +330,7 @@ download controls (see §8).
 | --- | --- | --- |
 | Direct deps are mostly exact pins | `backend/requirements.txt`, `frontend/package.json` | Info — good |
 | Frontend `msw` uses caret `^2.4.9` | `frontend/package.json:53` | Info — floating transitive surface |
-| TypeScript 7 RC alias `typescript-7` | `frontend/package.json:57` | Info — pre-stable toolchain |
+| TypeScript compiler is exactly pinned to stable 7.0.2; the OpenAPI generator's TypeScript 6 API runtime is isolated from the frontend | `frontend/package.json`, `tools/openapi-typescript-runtime/package.json` | Info — stable compiler with a tooling-only compatibility boundary |
 | CI has **no** `pip-audit` / `npm audit` / image scan / SBOM steps | `.github/workflows/ci.yml` (full file) | Medium vs security.md §Dependency scanning |
 | Threat-model proven-by suites for supply chain are CI artifacts only | Not present in workflow | Partial |
 
