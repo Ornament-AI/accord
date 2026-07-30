@@ -83,6 +83,7 @@ jobs:
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
+              - 'tools/openapi-typescript-runtime/**'
               - 'deploy/Dockerfile.web'
               - 'deploy/nginx/**'
               - '.dockerignore'

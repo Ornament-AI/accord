@@ -1,5 +1,6 @@
 packages:
   - frontend
+  - tools/openapi-typescript-runtime
 overrides:
   protobufjs: 7.6.4
   js-yaml: 4.3.0

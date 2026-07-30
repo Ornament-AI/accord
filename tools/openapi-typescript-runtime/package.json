@@ -1,0 +1,10 @@
+{
+  "name": "@accord/openapi-typescript-runtime",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Tooling-only legacy TypeScript API runtime for OpenAPI type generation",
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "npm:@typescript/typescript6@6.0.1"
+  }
+}

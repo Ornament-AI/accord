@@ -625,8 +625,8 @@ These are exact pins as read from files. The source is noted for each one.
 | React | **19.2.7** | `frontend/package.json` + lock |
 | react-dom | **19.2.7** | `frontend/package.json` + lock |
 | Vite | **8.1.0** | `frontend/package.json` + lock |
-| TypeScript (alias `typescript`) | **npm:@typescript/typescript6@6.0.1** | `frontend/package.json` |
-| TypeScript 7 toolchain | **npm:typescript@7.0.1-rc** (as `typescript-7`) | `frontend/package.json` |
+| TypeScript compiler | **7.0.2** | `frontend/package.json` |
+| OpenAPI generator TypeScript API runtime | **npm:@typescript/typescript6@6.0.1** (tooling-only) | `tools/openapi-typescript-runtime/package.json` |
 | Tailwind CSS | **4.3.1** | `frontend/package.json` (`tailwindcss`, `@tailwindcss/vite`) |
 | TanStack Query | **5.101.2** | `frontend/package.json` (`@tanstack/react-query`) |
 | TanStack Table | **8.21.3** | `frontend/package.json` |

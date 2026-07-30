@@ -8,12 +8,12 @@
 	},
 	"scripts": {
 		"dev": "vite",
-		"build": "node node_modules/typescript-7/bin/tsc -b && vite build && node scripts/check-bundle-size.mjs",
+		"build": "tsc -b && vite build && node scripts/check-bundle-size.mjs",
 		"lint": "biome check src",
 		"lint:fix": "biome check --write src",
 		"format": "biome format --write src",
 		"format:check": "biome format src",
-		"typecheck": "node node_modules/typescript-7/bin/tsc -b --noEmit",
+		"typecheck": "tsc -b --noEmit",
 		"test": "vitest",
 		"test:run": "vitest run",
 		"preview": "vite preview",
@@ -52,10 +52,8 @@
 		"@vitejs/plugin-react": "6.0.3",
 		"jsdom": "29.1.1",
 		"msw": "^2.4.9",
-		"openapi-typescript": "7.13.0",
 		"tailwindcss": "4.3.1",
-		"typescript": "npm:@typescript/typescript6@6.0.1",
-		"typescript-7": "npm:typescript@7.0.1-rc",
+		"typescript": "7.0.2",
 		"vite": "8.1.0",
 		"vitest": "4.1.9"
 	}

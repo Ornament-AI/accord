@@ -41,5 +41,5 @@ ui_step "exporting OpenAPI spec from backend"
 
 cd "$FRONTEND"
 ui_step "generating TypeScript types"
-run_pnpm exec openapi-typescript "$SCHEMA_PATH" -o "$OUTPUT_PATH"
+run_pnpm --fail-if-no-match --filter @accord/openapi-typescript-runtime exec openapi-typescript "$SCHEMA_PATH" -o "$OUTPUT_PATH"
 ui_kv "generated" "$OUTPUT_PATH"
