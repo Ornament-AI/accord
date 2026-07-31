@@ -6,11 +6,8 @@ and the gate → suite mapping for release acceptance. Cross-ref:
 [release-acceptance.md](release-acceptance.md),
 [threat-model.md](threat-model.md), [security.md](security.md).
 
-Every path below is checked against the current tree. Some suites named in
-the original Phase 0 contract have not landed yet. This page says so in each
-case, instead of pretending the file exists.
-[release-acceptance.md](release-acceptance.md) still lists the original
-planned suite names.
+Every path below is checked against the current tree. Missing controls are
+described as gaps instead of being represented by paths that do not exist.
 
 ## How to run everything
 
@@ -56,12 +53,15 @@ TEST_DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:${PGPORT}/accord
   backend/.venv/bin/python -m pytest backend/tests -q
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same checks in jobs. The `backend`
+CI (`.github/workflows/ci.yml`) runs backend/frontend equivalents plus
+migration and image-build jobs. The `backend`
 job runs ruff and pytest against a Postgres 18 service container. The
 `migrations` job runs `alembic upgrade head` plus `alembic check` on a fresh
 database. The `frontend` job runs lint, format, typecheck, test, and build.
 Two more jobs build the backend and web Docker images. On pull requests,
-jobs are skipped when their lane did not change.
+jobs are skipped when their lane did not change. Shell-syntax validation and
+generated API-type drift remain local `verify.sh` checks; the hosted
+`api-type-drift` job is a visible placeholder and does not enforce drift.
 
 ## Test pyramid
 
@@ -151,9 +151,7 @@ rows. A second `organizations` insert must fail the singleton unique index
   `fixtures/sanitized/june-2026/`): engine-level in
   `backend/tests/domain/test_engine_june_golden.py`, and full-stack in
   `backend/tests/e2e/test_june_golden_e2e.py` (create → calculate → submit
-  → approve → post against `expected_totals.json`). The fixture README still
-  points at a planned `test_june_2026_totals.py` path; these two suites are
-  the actual consumers.
+  → approve → post against `expected_totals.json`).
 
 ### Workflow (maker/checker, post, idempotency)
 
@@ -206,9 +204,10 @@ There is no `backend/tests/security/` directory. Current coverage:
 - Privilege escalation / capability matrix:
   `backend/tests/gate_d/test_capability_matrix.py`,
   `backend/tests/api/test_deps_capabilities.py`.
-- PII masking with an audited reveal (`reveal_sensitive_fields` capability):
+- PII masking and capability-gated reveal (`reveal_sensitive_fields`):
   `backend/tests/api/test_employees.py`,
-  `backend/tests/services/test_employees.py`.
+  `backend/tests/services/test_employees.py`. The reveal read is not yet
+  audit-logged.
 - Log redaction: `backend/tests/test_log_redaction.py`.
 - Posted SQL immutability: `backend/tests/rls/test_immutable_grants.py`.
 - Deploy hardening contract: `backend/tests/ops/test_msidc_deploy_contract.py`.
@@ -224,8 +223,9 @@ There is no `backend/tests/security/` directory. Current coverage:
 - Playwright critical paths against the real local stack (see
   `frontend/e2e/README.md` for setup and the `accord_e2e` database):
   `frontend/e2e/auth-and-org.spec.ts`, `frontend/e2e/master-data.spec.ts`,
-  `frontend/e2e/payroll-flow.spec.ts` (run creation, maker/checker,
-  posting), `frontend/e2e/reports.spec.ts` (generation/download).
+  `frontend/e2e/payroll-flow.spec.ts` (run creation and maker/checker
+  denial), `frontend/e2e/reports.spec.ts` (empty state; generation/download
+  is explicitly skipped because one dev identity cannot produce a posted run).
 - Accessibility (axe-core): `frontend/e2e/axe-a11y.spec.ts`.
 - An Atlas visual parity spec (`visual-shell.spec.ts`) was planned but has
   not landed.
@@ -248,12 +248,11 @@ There is no `backend/tests/security/` directory. Current coverage:
 
 Gates are **A, B, C, D, E, F, H, I, J, K**. There is no gate G. The
 lettering matches [release-acceptance.md](release-acceptance.md); the suite
-paths below are the current tree (release-acceptance.md still names the
-original planned files).
+paths below are the current tree.
 
 | Gate | Name | Named suites / checks (current tree) |
 | --- | --- | --- |
-| **A** | Atlas baseline | `scripts/verify_atlas_baseline.sh` (named in the contract; not yet in the repo) |
+| **A** | Atlas baseline | Review/comparison against the pinned source and inventory in `docs/atlas-upstream-manifest.md` (no executable verifier exists) |
 | **B** | Phase 0 contracts | Review checklist against `docs/testing.md`, `docs/threat-model.md`, `docs/release-acceptance.md`, `docs/security.md`, ADRs, and payroll-domain contracts |
 | **C** | Transplant shell CI | Lint, typecheck, unit, and API smoke: `backend/tests/domain/`, `backend/tests/api/`, `backend/tests/services/`, `frontend/src/**/*.test.ts(x)` (`.github/workflows/ci.yml`) |
 | **D** | Fail-closed RLS isolation | `backend/tests/gate_d/`, `backend/tests/rls/`, plus API/services/storage/worker paths that prove empty/wrong GUC returns zero rows under `accord_app` (singleton org; ADR 0011) |
@@ -262,7 +261,7 @@ original planned files).
 | **H** | Workflow integrity | `backend/tests/services/test_run_workflow.py`, `backend/tests/services/test_run_posting.py`, `backend/tests/services/test_idempotency.py`, `backend/tests/rls/test_immutable_grants.py` |
 | **I** | Export durability & object isolation | `backend/tests/storage/`, `backend/tests/services/test_artifacts.py`, `backend/tests/api/test_artifacts.py` |
 | **J** | Reports & reconciliation | `backend/tests/reports/` family suites + `backend/tests/e2e/test_june_golden_e2e.py` reconciliation assertions |
-| **K** | Deploy / restore / E2E | Clean-env deploy per [operations.md](operations.md); backup/restore rehearsal via `scripts/backup-restore.sh` (a `test_backup_restore_rls.py` suite has not landed); `frontend/e2e/payroll-flow.spec.ts`, `frontend/e2e/axe-a11y.spec.ts` |
+| **K** | Deploy / restore / E2E | `backend/tests/ops/test_msidc_deploy_contract.py`; clean-env deploy per [operations.md](operations.md); `scripts/backup-restore.sh`; `scripts/smoke-test.sh`; Playwright specs under `frontend/e2e/` |
 
 ## Sanitized fixture policy
 
@@ -299,10 +298,11 @@ yet; these remain the policy for when it lands):
 
 ### CI (expensive)
 
-- `scripts/ci/pii_fixture_guard.sh` — hash-denylist of real file content
-  hashes; diff newly added fixtures; fail the build on match. This script is
-  named by the contract but has not been added to the repo yet.
-- Complements pre-commit; does not replace it.
+- A hash/name denylist guard for newly added fixtures is still missing from
+  CI. Until it lands, reviewers must inspect fixture changes and run the
+  synthetic validator; this is an acceptance gap, not an existing command.
+- When implemented, the CI guard should complement the proposed fast local
+  guard above; neither exists in the current tree.
 
 ## CSRF and session proof points
 
@@ -337,5 +337,5 @@ Documented decision (see [security.md](security.md),
 | append-only audit log tables | workflow suites; `backend/tests/api/test_audit_read.py` |
 | SQL immutability of posted data | `backend/tests/rls/test_immutable_grants.py` |
 | capability/permission checks at the API layer | `backend/tests/gate_d/test_capability_matrix.py`, `backend/tests/api/test_deps_capabilities.py` |
-| masked fields with a separate audited "reveal" action | `backend/tests/api/test_employees.py`, `backend/tests/services/test_employees.py` |
+| masked fields with capability-gated reveal | `backend/tests/api/test_employees.py`, `backend/tests/services/test_employees.py` (reveal audit remains a gap) |
 | log redaction of sensitive fields | `backend/tests/test_log_redaction.py` |

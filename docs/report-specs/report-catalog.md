@@ -58,7 +58,14 @@ Builders **never** read live master data for amounts, rates, bank accounts, or r
 
 ### Artifact recording
 
-Every generated file (preview payload reference, Excel, PDF) is an export artifact under [ADR 0010](../adr/0010-jobs-object-storage.md). Each artifact row records at least `organization_id`, `posted_run_id`, `report_kind`, `template_version`, content hash / storage key, and format. Downloads are audit-sensitive per [ADR 0009](../adr/0009-audit-outbox.md) / ADR 0010 (`artifact.download`). Live previews write a matching `report.preview` access event. Requests follow the command idempotency patterns in [ADR 0008](../adr/0008-command-workflow-idempotency.md).
+Generated JSON, Excel, and PDF files are export artifacts under
+[ADR 0010](../adr/0010-jobs-object-storage.md). Each artifact row records
+`organization_id`, `posted_run_id`, `report_type`, `variant_key`,
+`template_version`, checksum/storage metadata, `content_type`, and size.
+Downloads are audit-sensitive per
+[ADR 0009](../adr/0009-audit-outbox.md) / ADR 0010
+(`artifact.download`). Live JSON preview is returned synchronously and does
+not create an artifact; it writes a `report.preview` access event.
 
 ---
 
@@ -173,10 +180,11 @@ Only actual recoveries affect net pay and remittance; foregone HRA remains infor
   snapshots. Finalized older artifacts stay downloadable. Requests for other
   versions are rejected.
 - Building the same report again for the same posted run with a newer template makes a new artifact row. Old downloads stay tied to the template version used when that artifact was created.
-- JSON preview, Excel, and PDF for one job share one DTO and one
-  `template_version`. A consolidated artifact records a pack version of the
-  form `{base_version}+{manifest_hash}`. v2 produces the historical ZIP; v3
-  produces one 18-sheet `.xlsx` workbook.
+- A single `generate_report` job renders one requested format from one DTO.
+  Separate requests for JSON, Excel, or PDF rebuild the same report DTO from
+  the immutable snapshot. A consolidated artifact records a pack version of
+  the form `{base_version}+{manifest_hash}`. v2 produces the historical ZIP;
+  v3 produces one 18-sheet `.xlsx` workbook.
 - Template changes are versioned. Silent in-place edits of a shipped template id are forbidden.
 
 ---
@@ -196,11 +204,20 @@ registered `advance_schedule` builder outside the fixed product pack.
 
 ## Generation flow (normative sketch)
 
-1. The caller sends a generate-report command with `(organization_id, posted_run_id, report_kind, template_version, formats[])` under ADR 0008 idempotency. A live JSON preview path exists for any registered report kind. It writes a `report.preview` audit event.
+1. The caller sends `POST /api/reports/generate` with
+   `(posted_run_id, report_type, format, template_version, variant_key)`; the
+   server derives organization scope from the authenticated session. Job
+   dedupe is keyed by the normalized request. The route accepts an optional
+   HTTP `Idempotency-Key` but does not require one. A live JSON preview path
+   exists for any registered report type and writes a `report.preview` audit
+   event.
 2. The handler checks that the run is posted and readable in org scope, and that the template version is supported.
 3. The report builder loads **only** posted snapshot data and emits one typed DTO.
-4. Each requested format runs a pure formatter over that DTO.
-5. Artifacts are stored and indexed per ADR 0010 with `template_version` on every row. If a finalized artifact already exists for the same run, kind, version, and format, it is reused. No rebuild happens.
+4. The single requested format runs its formatter over that DTO.
+5. Artifacts are stored and indexed per ADR 0010 with `template_version` on
+   every row. If a finalized artifact already exists for the same run,
+   `report_type`, `variant_key`, template version, and content type, it is
+   reused. No rebuild happens.
 6. Audit/outbox side effects follow ADR 0009 (including sensitive download auditing).
 
 A consolidated export job (`consolidated_xlsx`) builds all 18 report DTOs. v2

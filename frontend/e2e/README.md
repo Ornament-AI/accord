@@ -99,24 +99,12 @@ Config: `frontend/playwright.config.ts` — `baseURL` `http://127.0.0.1:5173`, `
 
 Specs share one org per run via `storageState` and `e2e/.auth/run-context.json` (unique slug each process).
 
-## Known app bugs found by this lane
+## Resolved defects retained as regression coverage
 
-### Payroll run input upsert 500 (`PayrollRunInput` refresh)
-
-- **Repro:** Add a draft run input via Pay Run detail → Add input (or `PUT /api/payroll-runs/{id}/inputs/...`).
-- **Expected:** Input saved; dialog closes; row appears in the inputs table.
-- **Actual:** UI alert “An unexpected error occurred.” Backend:
-  `sqlalchemy.exc.InvalidRequestError: Could not refresh instance '<PayrollRunInput …>'`
-  after `commit` in `backend/app/services/payroll_runs.py` (`upsert_run_input`, `db.refresh(row)`).
-- **E2E handling:** `payroll-flow.spec.ts` marks the add-input step `test.fixme` and continues Calculate using the employee’s basic-pay version from master-data.
-
-### Submit/approve with Idempotency-Key → 404 “Payroll run not found.”
-
-- **Repro:** Calculate + Validate a run (200). Click Submit (UI sends `Idempotency-Key`).
-- **Expected:** Status → Submitted.
-- **Actual:** Confirm dialog shows “Payroll run not found.” (`POST …/submit` 404).
-- **Suspect:** `idempotent_command` commits the in-progress lease before the executor (`backend/app/services/idempotency.py`), which clears request-scoped RLS `SET LOCAL` GUCs; `_lock_run` (`FOR UPDATE`) then finds no row.
-- **E2E handling:** Main payroll flow strips `Idempotency-Key` via `page.route` (header is optional). A `test.fixme` keeps the failing case documented.
+`payroll-flow.spec.ts` now exercises draft input creation and normal
+idempotency headers without a workaround. It retains regression context for
+two fixed defects: a post-commit refresh that lost the RLS GUC, and an
+idempotency lease commit that failed to rebind tenant context.
 
 ## Dev auth limitation (maker/checker & reports)
 
@@ -137,25 +125,9 @@ Consequences for this lane:
 - Fail the suite on **serious** / **critical** violations.
 - **Moderate** violations are logged to the console and documented in the run output; they do not fail the test.
 
-## Live-run status (2026-07-18)
+## Verification expectation
 
-The suite runs green on a fresh `accord_e2e` DB: **9 passed, 1 skipped**
-(setup, axe a11y ×3, master-data, payroll-flow ×3, reports empty-state; the
-reports *generate* journey stays skipped under the single dev-auth identity).
-
-Three real defects were driven out and fixed:
-
-- **Fixed (harness)** — dev-login interception now stops at the backend 302 before
-  rewriting its host. Following the redirect inside `route.fetch()` left the browser
-  URL on `/api/auth/login` while serving SPA HTML, which correctly rendered the
-  catch-all page.
-- **Fixed** — `PUT /api/payroll-runs/{id}/inputs/...` 500: response is now built
-  before commit (a post-commit `db.refresh` ran under cleared RLS GUCs).
-- **Fixed** — submit/approve with `Idempotency-Key` 404: `idempotent_command`
-  now snapshots and rebinds tenant GUCs across its mid-command commit.
-- **Fixed (harness)** — setup flakiness was a race in `ensureUniqueOrganization`:
-  a non-waiting `isVisible()` during `/me` settling took the wrong branch. The
-  helper now waits for the no-org title *or* the capability-aware authenticated
-  landing page before branching and opens dialogs via `clickUntilDialog` (Base
-  UI portal retry). payroll-flow is
-  serial and retry-safe around the single monthly payroll run.
+Run the suite against a freshly prepared `accord_e2e` database for release
+evidence. The report generation/download test is intentionally skipped for
+the single-identity reason above; do not describe the browser lane as complete
+report-export proof. Backend report API/service tests provide that coverage.

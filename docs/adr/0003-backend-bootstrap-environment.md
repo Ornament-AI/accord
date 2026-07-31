@@ -1,10 +1,14 @@
 # ADR-0003: Backend Bootstrap and Environment
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
-Accord’s backend is FastAPI/Python with PostgreSQL. It keeps the Atlas habits that still hold under multi-tenancy and WorkOS: fail-fast config via `pydantic-settings`, JSON logs via `structlog` with request IDs, Problem Detail error bodies, security headers, health and readiness probes, and an async `SQLAlchemy` lifecycle.
+Accord’s backend is FastAPI/Python with PostgreSQL. It keeps the Atlas habits
+that still hold under the singleton-organization product and its retained RLS
+kernel: fail-fast config via `pydantic-settings`, JSON logs via `structlog`
+with request IDs, Problem Detail error bodies, security headers, health and
+readiness probes, and an async `SQLAlchemy` lifecycle.
 
 Atlas builds a module-level `app`. Accord should keep Atlas’s safety habits but make testing easier. Auth moves from Firebase to WorkOS ([0002-workos-authentication-sessions.md](0002-workos-authentication-sessions.md)). Tenancy needs separate migrator and runtime DSNs ([0001-tenancy-rls-database-roles.md](0001-tenancy-rls-database-roles.md)).
 
@@ -55,7 +59,10 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", alias="ENVIRONMENT")
     workos_client_id: str = Field(default="", alias="WORKOS_CLIENT_ID")
     workos_api_key: str = Field(default="", alias="WORKOS_API_KEY")
-    workos_redirect_uri: str = Field(default="", alias="WORKOS_REDIRECT_URI")
+    workos_redirect_uri: str = Field(
+        default="http://localhost:8000/api/auth/callback",
+        alias="WORKOS_REDIRECT_URI",
+    )
     workos_webhook_secret: str = Field(default="", alias="WORKOS_WEBHOOK_SECRET")
     session_secret_key: str = Field(default="", alias="SESSION_SECRET_KEY")
     dev_auth_bypass: bool = Field(default=False, alias="DEV_AUTH_BYPASS")
@@ -116,6 +123,7 @@ def configure_logging(log_level: str = "INFO") -> None:
                     structlog.processors.CallsiteParameter.LINENO,
                 }
             ),
+            redact_sensitive,
             structlog.processors.JSONRenderer(serializer=json.dumps),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
@@ -148,7 +156,11 @@ async def request_context_middleware(request: Request, call_next):
         structlog.contextvars.clear_contextvars()
 ```
 
-Also stamp `X-Organization-Id` on org-scoped responses once the auth context is known (see ADR 0004).
+The recursive `redact_sensitive` processor runs immediately before JSON
+rendering so sensitive values are removed from nested structures. The
+middleware emits `X-Request-ID`; the earlier plan to emit
+`X-Organization-Id` was not implemented and is no longer part of the
+single-organization product contract (see ADR 0004).
 
 ### 4. RFC 9457 Problem Detail error envelope
 
@@ -180,67 +192,12 @@ def problem_content(
     return body
 ```
 
-Exception handlers:
-
-```python
-class AccordError(Exception):
-    def __init__(self, detail: str, *, status_code: int = 400, error: str = "AccordError"):
-        self.detail = detail
-        self.status_code = status_code
-        self.error = error
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return problem_response(
-        status_code=exc.status_code,
-        detail=str(exc.detail),
-        instance=str(request.url.path),
-        request_id=getattr(request.state, "request_id", None),
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    return problem_response(
-        status_code=422,
-        detail="Request validation failed.",
-        instance=str(request.url.path),
-        error="RequestValidationError",
-        request_id=getattr(request.state, "request_id", None),
-        errors=[
-            {
-                "loc": [str(p) for p in err.get("loc", ())],
-                "msg": str(err.get("msg", "")),
-                "type": str(err.get("type", "")),
-            }
-            for err in exc.errors()
-        ],
-    )
-
-
-@app.exception_handler(AccordError)
-async def accord_error_handler(request: Request, exc: AccordError):
-    return problem_response(
-        status_code=exc.status_code,
-        detail=exc.detail,
-        instance=str(request.url.path),
-        error=exc.error,
-        request_id=getattr(request.state, "request_id", None),
-    )
-
-
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception("unhandled_exception")
-    return problem_response(
-        status_code=500,
-        detail="An unexpected error occurred.",
-        instance=str(request.url.path),
-        error="InternalServerError",
-        request_id=getattr(request.state, "request_id", None),
-    )
-```
+`AccordError` subclasses declare `status_code` and optional `error_code` class
+attributes; instances carry a message and optional details. `create_app()`
+registers handlers for rate limits, `AccordError`, FastAPI `HTTPException`,
+request validation, and otherwise-unhandled exceptions. The implementation in
+`backend/app/main.py` delegates envelope construction to
+`backend/app/api/responses.py` and preserves `X-Request-ID` on error responses.
 
 The catch-all handler **must not** leak stack traces or internal error text to clients.
 
@@ -267,43 +224,37 @@ _SECURITY_HEADERS = {
 | Endpoint | Role | Checks |
 | --- | --- | --- |
 | `GET /api/healthz` | Liveness | None — returns `{"status": "ok"}` if the process is up |
-| `GET /api/readyz` | Readiness | DB `SELECT 1` now; auth subsystem ready (WorkOS config loaded / provider initialized); **designed to extend** later with queue (Celery/Arq if adopted) and object storage checks |
+| `GET /api/readyz` | Readiness | Database and auth are hard requirements. The response also reports the PostgreSQL jobs table, configured object storage, and report registry. |
 
-If any readiness check fails, return **503** with a Problem Detail body (not a bare string). Example success body:
+Database or auth failure returns **503** through the Problem Detail handler.
+Jobs, configured storage, or report-registry failure returns **503** with a
+component-level degraded response. Unconfigured object storage is allowed so
+the API can run without artifact storage in local/test environments. Example
+success body without configured storage:
 
 ```json
 {
   "status": "ok",
   "database": "ok",
-  "auth": "ok"
+  "auth": "ok",
+  "jobs": "ok",
+  "storage": "unconfigured",
+  "reports": "ok"
 }
 ```
 
-Future keys (not needed until those systems exist): `"queue": "ok"`, `"object_storage": "ok"`.
+The executable contract is
+`backend/app/api/routes/health.py`, covered by
+`backend/tests/api/test_health.py` and
+`backend/tests/api/test_observability.py`.
 
 ### 7. Graceful shutdown / lifespan
 
-```python
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    settings = get_settings()
-    try:
-        async with session_context() as session:
-            await session.execute(text("SELECT 1"))
-        logger.info("startup_complete", database="ok")
-    except Exception:
-        logger.error("startup_database_unavailable")
-        raise
-    # Mark auth provider readiness on app.state (WorkOS or DevTest)
-    try:
-        yield
-    finally:
-        await dispose_engine()
-        logger.info("shutdown_complete")
-```
-
-- Startup: fail loudly if the DB cannot be reached. Do not serve traffic.
-- Shutdown: `dispose_engine()` disposes the async engine after in-flight requests drain. The uvicorn/gunicorn graceful timeout still applies at the process manager layer.
+At startup the lifespan builds the report registry and configured object
+storage, records auth readiness, proves the database with `SELECT 1`, and
+installs a `PostgresJobQueue` on application state. A database failure aborts
+startup. On shutdown, `dispose_engine()` closes the async engine after
+in-flight requests drain; the process manager still owns the graceful timeout.
 
 Pool tuning (Atlas defaults unless overridden): `pool_size`, `max_overflow`, `pool_timeout`, `pool_recycle`, `pool_pre_ping=True`, `pool_use_lifo=True`, `statement_timeout` via asyncpg `server_settings`, `application_name=accord-api`.
 
@@ -311,25 +262,40 @@ Pool tuning (Atlas defaults unless overridden): `pool_size`, `max_overflow`, `po
 
 | Variable | Required in prod? | Default in dev | Secret? | Description |
 | --- | --- | --- | --- | --- |
-| `DATABASE_URL` | yes | local Postgres DSN as `accord_app` | yes | Runtime/API role DSN (`NOSUPERUSER`, `NOBYPASSRLS`) |
-| `MIGRATIONS_DATABASE_URL` | yes | local DSN as `accord_migrator` | yes | Migration-owner role DSN (`BYPASSRLS` / table owner); Alembic only |
-| `WORKOS_CLIENT_ID` | yes | empty / test value | no | WorkOS client id |
+| `DATABASE_URL` | yes | none | yes | Runtime/API role DSN (`NOSUPERUSER`, `NOBYPASSRLS`) |
+| `MIGRATIONS_DATABASE_URL` | yes | empty | yes | Migration-owner role DSN (`BYPASSRLS` / table owner); Alembic only |
+| `WORKOS_CLIENT_ID` | yes | empty | no | WorkOS client id |
 | `WORKOS_API_KEY` | yes | empty | yes | WorkOS server-side API key |
 | `WORKOS_REDIRECT_URI` | yes | `http://localhost:8000/api/auth/callback` | no | OAuth redirect URI registered in WorkOS |
 | `WORKOS_WEBHOOK_SECRET` | yes | empty | yes | Webhook signing secret |
-| `SESSION_SECRET_KEY` | yes | dev-only random | yes | Signs/encrypts session cookie material / session id MAC |
+| `WORKOS_WEBHOOK_TOLERANCE_SECONDS` | no | `300` | no | Accepted WorkOS webhook timestamp skew |
+| `SESSION_SECRET_KEY` | yes | empty | yes | Signs the opaque database-session cookie value |
 | `SESSION_COOKIE_NAME` | no | `accord_session` | no | Session cookie name |
-| `ENVIRONMENT` | yes | `development` | no | `development` / `staging` / `production` |
-| `CORS_ORIGINS` | yes (non-empty) | Vite localhost origins | no | Comma-separated allowed browser origins |
-| `BASE_URL` / `PUBLIC_APP_URL` | yes | `http://localhost:5173` | no | Public app URL for redirects/links |
+| `SESSION_IDLE_TIMEOUT_SECONDS` | no | `7200` | no | Server-side idle-session timeout |
+| `ENVIRONMENT` | no | `development` | no | `production` enables production validation and secure cookies |
+| `CORS_ORIGINS` | no | Vite localhost ports 5173–5176 | no | Comma-separated allowed browser origins |
+| `BASE_URL` | no | `http://localhost:5173` | no | Default public app URL |
+| `PUBLIC_APP_URL` | no | empty (falls back to `BASE_URL`) | no | Public redirect/link origin |
 | `LOG_LEVEL` | no | `INFO` | no | Logging level |
-| `OBJECT_STORAGE_ENDPOINT` | when storage used | empty / local MinIO | no | S3-compatible endpoint |
+| `APP_VERSION` | no | `dev` | no | Version exposed in FastAPI/OpenAPI application metadata |
+| `MAX_REQUEST_BODY_BYTES` | no | `10485760` | no | Request-body limit |
+| `OBJECT_STORAGE_ENDPOINT` | when storage used | empty | no | S3-compatible endpoint |
 | `OBJECT_STORAGE_BUCKET` | when storage used | empty | no | Bucket name |
 | `OBJECT_STORAGE_ACCESS_KEY` | when storage used | empty | yes | Object storage access key |
 | `OBJECT_STORAGE_SECRET_KEY` | when storage used | empty | yes | Object storage secret key |
-| `DEV_AUTH_BYPASS` | must be false | `false` | no | Enables `DevTestAuthProvider`; **fails closed in production** |
+| `DEV_AUTH_BYPASS` | must be false | `false` | no | Enables `DevAuthAdapter`; **fails closed in production** |
+| `DEV_AUTH_EMAIL` / `DEV_AUTH_NAME` | no | local test identity | no | Non-production bypass identity |
+| `ACCORD_ALLOW_WEAK_SECRETS` | no | `false` | no | Allows a short session secret in local/test only |
 | `DB_POOL_SIZE` | no | `5` | no | Async SQLAlchemy pool size |
+| `DB_MAX_OVERFLOW` | no | `5` | no | Extra pool connections above the base size |
+| `DB_POOL_TIMEOUT_SECONDS` | no | `30` | no | Pool checkout timeout |
+| `DB_POOL_RECYCLE_SECONDS` | no | `1800` | no | Connection recycle interval |
 | `DB_STATEMENT_TIMEOUT_MS` | no | `60000` | no | Postgres `statement_timeout` for API connections |
+
+`backend/app/config.py` is authoritative for aliases, defaults, clamps, and
+production validation. The operationally complete reference, including
+compose-only variables, is
+[developer-reference.md](../developer-reference.md#application-configuration).
 
 **Why migration DSN ≠ runtime DSN:** Alembic must run as `accord_migrator`. That role owns tables and may `BYPASSRLS` for DDL and data migrations. The API must run as `accord_app` (`NOBYPASSRLS`) so RLS always applies. One shared credential either weakens RLS in production or blocks migrations. See ADR 0001.
 
@@ -338,7 +304,7 @@ Pool tuning (Atlas defaults unless overridden): `pool_size`, `max_overflow`, `po
 - Tests can build isolated apps via `create_app()` without fighting import-time singletons.
 - A bad production config (missing WorkOS or session secrets, dev bypass on) fails at boot.
 - Logs and errors match Atlas: JSON logs, request ids, Problem Detail bodies.
-- Readiness can grow to cover queue and storage without changing what liveness means.
+- Readiness covers jobs, storage, and reports without changing what liveness means.
 - Ops must manage two DSNs from day one.
 
 ## Alternatives Considered

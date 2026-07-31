@@ -23,7 +23,7 @@ Clients and workers retry. Operators race each other. So the system must:
 > **Implementation status (2026-07-20):** This accepted ADR records the target
 > workflow contract. The current implementation has deliberate gaps in statuses,
 > transitions, submission-binding storage, and database enforcement. See
-> [Architecture: payroll run workflow](../architecture.md#payroll-run-workflow-current-implementation)
+> [Architecture: payroll run workflow](../architecture.md#pay-run-command-workflow-as-implemented)
 > for the authoritative description of current behavior. Do not infer that the
 > target trigger, GUC, or `payroll_runs` binding columns already exist.
 

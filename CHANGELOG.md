@@ -1,13 +1,67 @@
 # Changelog
 
-All notable changes to Accord are summarized here. Dates are absolute.
+Notable released changes are summarized here. Git tags and their commits are
+the authoritative release boundaries.
 
-## 0.1.0 (unreleased) — 2026-07-18
+## Unreleased
+
+- Upgrade the frontend compiler to TypeScript 7.0.2 while isolating the OpenAPI
+  generator on its compatible TypeScript runtime.
+
+## 0.4.3 — 2026-07-22
+
+- Add the normalized canonical payroll export and its fixed 18-sheet workbook.
+- Enforce report-readiness requirements before canonical generation.
+- Reject incomplete accommodation breakdowns and refresh readiness after
+  calculation.
+
+## 0.4.2 — 2026-07-20
+
+- Reconcile architecture, ADR, security, testing, operations, payroll-domain,
+  and report documentation with the refactored service layout.
+- Split calculation and pay-setup services along their ownership boundaries,
+  batch effective-dated lookups, and simplify frontend API modules.
+- Close onboarding, local URL, report, and review-boundary gaps.
+
+## 0.4.1 — 2026-07-20
+
+- Add Accord-owned WorkOS password and magic-code login flows.
+- Return Problem Detail responses for provider misconfiguration and login
+  failures.
+- Scope CI work by changed backend/frontend lanes.
+
+## 0.4.0 — 2026-07-20
+
+- Add catalog-driven report exports with immutable identity, bank, and
+  presentation snapshots.
+- Reconcile gross adjustments and protect report snapshots from runtime DML.
+- Add the report preview/export user experience.
+
+## 0.3.1 — 2026-07-20
+
+- Make the production deploy path safe for a clean first install.
+
+## 0.3.0 — 2026-07-20
+
+- Add the immutable-SHA MSIDC deployment workflow and provisioning helpers.
+- Add singleton-organization provisioning, invitations, payroll-run rosters,
+  report previews, and audited report access.
+- Harden roster integrity, legacy schema removal, and deployment validation.
+
+## 0.2.1 — 2026-07-19
+
+- Bootstrap restricted database roles during release migration replay.
+
+## 0.2.0 — 2026-07-19
+
+- Separate off-bill employer remittance from treasury net payable and employee
+  disbursement.
+- Extend structured audit history and harden pay-setup and payroll UI behavior.
+
+## 0.1.0 — 2026-07-18
 
 First product cut of Accord: Atlas shell transplant plus Phase 0–5 payroll
-platform (tenancy through reports and operations). Status relative to the
-release gate matrix is tracked in `docs/release-readiness.md` (not all gates
-are fully met).
+platform (tenancy through reports and operations).
 
 ### Atlas upstream & stack
 

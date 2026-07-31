@@ -2,9 +2,7 @@ name: CI
 
 # Adapted from Atlas .github/workflows/ci.yml (v1.1.0) for Accord's stack
 # (PostgreSQL + WorkOS + MinIO/S3 object storage; no Firebase). Renamed
-# images: ghcr.io/ornament-ai/accord/{backend,web} (registry org carried over
-# from Atlas's ghcr.io/ornament-ai/* convention — confirm with the
-# orchestrator if that assumption is wrong). Every backend/frontend job is
+# images: ghcr.io/ornament-ai/accord/{backend,web}. Every backend/frontend job is
 # gated on a `detect` job that checks for the presence of the files each lane
 # owns, so a lane that has not landed yet reports a clean "skipped" (not
 # "pending") status and does not block required checks, matching Atlas's own
@@ -198,11 +196,10 @@ jobs:
         working-directory: backend
         run: python -m alembic check
 
-  # Placeholder — activates once scripts/generate-api-types.sh wires
-  # backend/scripts/export_openapi.py output into
-  # frontend/src/types/api.generated.ts (see docs/atlas-upstream-manifest.md
-  # §2A). Runs unconditionally (not gated) so its own presence check is
-  # always visible in CI output.
+  # Visible placeholder: scripts/generate-api-types.sh is wired and
+  # ./scripts/verify.sh enforces the generated diff locally, but this hosted
+  # job still needs to run that command and fail on drift. It stays
+  # unconditional so the missing hosted enforcement remains visible.
   api-type-drift:
     name: API type drift check
     needs: detect

@@ -26,7 +26,8 @@ Fixture totals must be reproducible byte for byte. One example is the Proven Jun
 
 The guard works like this:
 
-1. Keep a path allowlist for the payroll domain package. That package now lives at `backend/app/domain/payroll/`.
+1. Scan the complete domain package under `backend/app/domain/` (the payroll
+   implementation lives in its `payroll/` subpackage).
 2. A CI job runs an AST scan over those modules. The scan fails when it finds:
    - `ast.Constant` / `ast.Num` with `isinstance(value, float)`
    - calls to `float(...)`
@@ -54,13 +55,14 @@ Payroll calculation code must not merge without this guard.
 
 ### Named rounding modes / rules
 
-Define a registry of **named** rounding rules. Examples follow; the names are normative for traces.
+The closed registry in `backend/app/domain/payroll/rounding.py` defines these
+**named** rounding rules; the names are normative for traces.
 
 | Rule name | Meaning |
 | --- | --- |
 | `ROUND_HALF_UP_PAISE` | Round to 2 decimal places, half away from zero / half-up (document exact `decimal` rounding constant: `ROUND_HALF_UP`). |
 | `ROUND_HALF_UP_RUPEE` | Round to **0** decimal places (nearest whole rupee) using half-up. |
-| `ROUND_DOWN_RUPEE` | Truncate toward zero / floor toward 0 rupees as defined when implemented—must be specified before use. |
+| `ROUND_DOWN_RUPEE` | Quantize to a whole rupee with `decimal.ROUND_DOWN` (toward zero, including for negative values). |
 | `ROUND_NONE` | Intermediate-only; not allowed as final statutory output without an explicit product exception. |
 
 **Government payroll convention:** many or most salary components round to the nearest **whole rupee**, not paise. This is **not** a global hardcode. Each pay component’s effective-dated config (ADR 0005) selects which **named** rounding rule applies.
@@ -74,14 +76,19 @@ Define a registry of **named** rounding rules. Examples follow; the names are no
 ### Determinism and content hashing
 
 - Same inputs, same engine version, and same component config versions must yield **byte-identical** canonical run output and **identical content hashes**.
-- Canonical serialization for hashing means: stable key order, decimal strings with fixed scale, UTF-8, and no stray whitespace. Define a canonical JSON or CBOR snapshot format at implementation time.
+- Canonical serialization is compact JSON with sorted keys, canonical decimal
+  strings, UTF-8 encoding, and no insignificant whitespace
+  (`_canonical_run_payload` in `backend/app/domain/payroll/engine.py`).
 - Hash algorithm: **SHA-256** over the canonical snapshot bytes.
 - Every `payroll_run_version` records:
   - `engine_version` (string; semver or a commit-stamped engine id)
   - `content_hash` (SHA-256 hex)
   - references to the source master version ids (ADR 0005)
 
-Re-running a calculation on the same draft inputs must give the same hash. A new run version may appear only when inputs, config, or engine differ. Output must never drift silently.
+Re-running a calculation on the same draft inputs must give the same hash.
+The workflow may append another immutable run version for a distinct
+calculation command as described in ADR 0008, but identical canonical inputs
+must not produce a different hash. Output must never drift silently.
 
 ## Consequences
 
@@ -96,7 +103,7 @@ Re-running a calculation on the same draft inputs must give the same hash. A new
 - API clients must handle decimal strings, not native JSON numbers.
 - Developers must keep `Decimal` discipline. The float guard may need rare allowlist exceptions for non-money math outside payroll domain paths.
 
-**Open questions:**
-
-- The exact `decimal` rounding constant for each named rule, once edge cases (negative recoveries) appear in workbooks.
-- Whether remittance files must enforce whole rupees even when internal display shows paise. Confirm per treasury/AG specification.
+**External policy question:** whether a specific remittance format must enforce
+whole rupees even when internal display shows paise remains a
+treasury/AG-format decision. It must be represented by an explicit named rule,
+not a hidden global rounding change.

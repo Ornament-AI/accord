@@ -7,7 +7,9 @@ This directory is a **fully synthetic**, structure-preserving golden payroll fix
 - No real employee PII is present or derivable.
 - Amounts are invented to satisfy the documented **Proven June 2026 invariants** in `docs/payroll-domain.md` exactly (whole INR rupees, no paise).
 - Identity fields use obviously fake namespaces documented below.
-- This fixture is the golden source that `backend/tests/calculations/test_june_2026_totals.py` will consume in a later phase.
+- Current consumers are
+  `backend/tests/domain/test_engine_june_golden.py` and
+  `backend/tests/e2e/test_june_golden_e2e.py`.
 
 > **WARNING — Gate F golden source**
 >

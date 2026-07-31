@@ -45,30 +45,14 @@ Historical behavior (for archaeology only):
 - Update session `active_organization_id`, rotate the session id, set the cookie.
 - The response includes the new effective `organization_id`.
 
-### 3. Echo effective organization on every org-scoped response
+### 3. Response correlation under the singleton contract
 
-Every org-scoped API response must echo the **effective** org id. The frontend can then confirm scope without trusting client-only state:
-
-| Mechanism | Requirement |
-| --- | --- |
-| Header | `X-Organization-Id: <uuid>` on org-scoped responses |
-| Body (optional envelope) | Include `organization_id` in a stable response envelope field when lists/resources are returned |
-
-Example:
-
-```http
-HTTP/1.1 200 OK
-X-Request-ID: a1b2c3d4e5f6789012345678abcdef01
-X-Organization-Id: 11111111-1111-1111-1111-111111111111
-Content-Type: application/json
-
-{
-  "organization_id": "11111111-1111-1111-1111-111111111111",
-  "data": [ /* employees */ ]
-}
-```
-
-The client may display or assert this value. It must **not** send the value back as trusted scoping input on later writes (ADR 0001).
+The original design required `X-Organization-Id` on org-scoped responses. It
+was not implemented and is no longer required by the singleton product
+contract. Responses emit `X-Request-ID` for correlation; the server derives
+organization scope from the authenticated session and binds it for RLS.
+Clients must not depend on an organization response header or send an
+organization identifier as trusted scoping input.
 
 ### 4. Why not org-id-in-every-path (IDOR)
 
@@ -86,11 +70,7 @@ Putting `{org_id}` in every route looks explicit, but it creates systemic IDOR r
 async def require_tenant_context(request: Request) -> TenantContext:
     session = await load_session(request)
     if session.active_organization_id is None:
-        raise AccordError(
-            "Active organization required.",
-            status_code=409,
-            error="OrganizationContextRequired",
-        )
+        raise OrganizationContextRequiredError("Active organization required.")
     await assert_membership_active(session.user_id, session.active_organization_id)
     # bind SET LOCAL on the request's DB connection/transaction here or in get_session()
     return TenantContext(
@@ -101,7 +81,8 @@ async def require_tenant_context(request: Request) -> TenantContext:
 
 ### 5. Narrow exceptions where org appears in the URL
 
-An org id (or slug) may appear in the URL only in these cases:
+No support-administration router exists today. If a future support surface
+introduces an org id (or slug) in the URL, it is limited to this route class:
 
 | Route class | Example | Why allowed |
 | --- | --- | --- |
@@ -116,42 +97,36 @@ Rules for support routes:
 
 Normal tenant users never pass `organization_id` in a path or body to select read or write scope for ordinary resources.
 
-### 6. Frontend cache clearing on identity / org change
+### 6. Frontend cache clearing on identity change
 
-Whenever identity changes (login/logout), or the active org changes (switch), the frontend **must fully clear** all client-side data caches. One org’s data must never flash or merge into another org’s UI.
+Whenever identity changes, the frontend must clear client-side data caches.
+There is no organization switch in the singleton UI. The current login uses a
+hard navigation; logout calls `queryClient.clear()`, remounts the app shell,
+and navigates to `/login`.
 
 **Required reset actions:**
 
 1. Clear the React Query / SWR (or similar) cache in full — e.g. `queryClient.clear()` (not selective `invalidateQueries` alone).
 2. Reset in-memory stores (Zustand/Redux/context) that hold org-scoped entities.
 3. Clear any org-scoped `localStorage` / `sessionStorage` keys.
-4. Prefer a **hard navigation** or a **full remount** of the app shell after switch/login/logout, so no mounted component keeps stale props or state.
-
-```ts
-// On successful org switch (and on login/logout)
-async function onOrganizationSwitched(nextOrganizationId: string): Promise<void> {
-  queryClient.clear();
-  resetOrgScopedStores();
-  clearOrgScopedWebStorage();
-  // Full remount / navigation — do not patch-merge old org pages
-  window.location.assign("/"); // or router hard-nav to org home
-}
-```
-
-**Never** merge or patch stale cross-org collections into the UI after a switch. Treat an org switch like a soft “relogin” for client state.
+4. Prefer a **hard navigation** or a **full remount** of the app shell after
+   login/logout, so no mounted component keeps stale props or state.
 
 ## Consequences
 
-- Handlers stay thin. They do not re-implement tenant binding. The IDOR surface for org selection shrinks to the switch and support routes.
-- The frontend must always honor `X-Organization-Id` / the echoed `organization_id`, and reset caches on switch. The product UX includes a brief full reload or remount.
-- Deep links to “org B while the session is org A” are, by design, unsupported for normal users. They must switch first.
-- Platform support tooling gets explicit cross-org URLs, with stronger audit rules.
+- Handlers stay thin. They do not re-implement tenant binding. The ordinary
+  product API has no client-selected organization surface.
+- The frontend resets caches on identity changes and does not expose an
+  organization switcher.
+- Cross-organization deep links are outside the singleton product contract.
+- Any future platform-support tooling needs a distinct audited authorization
+  surface; none is implemented today.
 - Consistent with ADR 0001 (no body-supplied org scope) and ADR 0002 (session-stored active org).
 
 ## Alternatives Considered
 
 1. **Org id in every path (`/api/organizations/{org_id}/…`)** — Rejected as the default. It looks explicit, but it is IDOR-prone. Every handler must remember path↔membership checks. Session plus a central dependency is safer for a large payroll API surface.
-2. **Org id only in an `X-Organization-Id` request header** — Rejected as the primary selector. Headers are still client-controlled. They are easier to forget to check than a server session field set only by switch. The response echo header is fine; the request header must not authorize scope.
+2. **Org id only in an `X-Organization-Id` request header** — Rejected as the primary selector. Headers are client-controlled and must not authorize scope. The originally proposed response echo was never implemented and is unnecessary for the singleton contract.
 3. **Org id in the request body for all writes** — Rejected (ADR 0001). Hostile input; ignored or 422.
 4. **Allow soft cache invalidation only** — Rejected. Selective invalidation risks leaving org-scoped detail queries in memory. A full `queryClient.clear()` plus remount is mandatory.
 5. **Subdomain-per-org (`org-slug.accord.example`)** — Deferred. It is a possible future UX. It would still resolve to server-side session/org binding, and it must not bypass membership checks.

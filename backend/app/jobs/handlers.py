@@ -3,8 +3,9 @@
 Extension seam
 --------------
 Built-in handlers are registered onto the module-level :data:`registry` at
-import time via :func:`register_handlers`. Future lanes (artifact generation,
-report jobs, storage maintenance) should add their handlers in one of two ways:
+import time via :func:`register_handlers`: ``noop``, ``generate_report``, and
+``consolidated_xlsx``. Future lanes, including storage maintenance, should add
+their handlers in one of two ways:
 
 1. **Compose at startup** — create or reuse a ``JobHandlerRegistry``, call
    ``register_handlers(registry)`` for the built-ins, then register lane-specific

@@ -27,7 +27,9 @@ The flow below is at the HTTP/redirect level. Exact WorkOS SDK method names are 
 2. The user signs in at WorkOS.
 3. WorkOS redirects to `GET /api/auth/callback?code=…&state=…`.
 4. The Accord backend exchanges the `code` for the WorkOS profile and identity **server-side**. It never returns WorkOS access, refresh, or id tokens to the browser.
-5. Accord upserts the local `users` row (keyed by WorkOS user id), loads active `organization_memberships`, selects or prompts for the active org, and **mints an Accord session**.
+5. Accord upserts the local `users` row (keyed by WorkOS user id), loads the
+   singleton organization and active membership (or records an unprovisioned
+   access state), and **mints an Accord session**.
 6. The response sets a secure HTTP-only cookie. From then on, the frontend calls APIs with that cookie only.
 
 **Invariant:** No WorkOS access token, refresh token, or ID token is ever readable by frontend JavaScript. The SPA only ever sees the opaque Accord session cookie.
@@ -48,16 +50,22 @@ Cookie attributes:
 | --- | --- | --- |
 | Name | `accord_session` (`SESSION_COOKIE_NAME`, default `accord_session`) | Configurable |
 | HttpOnly | `true` | Not accessible to JS |
-| Secure | `true` outside local development | Required in staging/production |
+| Secure | `true` when `ENVIRONMENT=production` | Current implementation contract; staging must set `ENVIRONMENT=production` to receive production cookie/config enforcement |
 | SameSite | `Lax` | **Lax vs Strict:** login is redirect-based. After WorkOS auth, the browser lands on `/api/auth/callback` as a top-level cross-site navigation. `SameSite=Strict` would omit the cookie on that first landing (and can break redirect-back session establishment). `Lax` allows the cookie to be set/sent on top-level GET navigations while still blocking CSRF on cross-site POSTs. |
 | Path | `/` | Entire API/app |
-| Max-Age / expiry | **12 hours** absolute session lifetime; idle timeout **2 hours** (server-side) | Tunable via settings |
-| Value | Opaque cryptographically random session id (e.g. 32+ bytes, URL-safe) | References server-side session row |
-| Integrity | Session id unguessable; optional signing of cookie value with `SESSION_SECRET_KEY` as defense-in-depth | Server store is source of truth |
+| Max-Age / expiry | **12 hours** absolute session lifetime; idle timeout **2 hours** (server-side) | Absolute TTL is `SESSION_MAX_AGE_SECONDS`; idle timeout is configurable with `SESSION_IDLE_TIMEOUT_SECONDS` |
+| Value | Signed opaque session-row UUID | References the server-side session row without exposing identity data |
+| Integrity | `SESSION_SECRET_KEY` signs the opaque UUID | Server store remains the source of truth |
 
-The server-side session payload includes at least: `user_id`, `active_organization_id` (nullable until selected), `created_at`, `expires_at`, `last_seen_at`, and `auth_provider` (`workos` | `dev_test`).
+The server-side `sessions` row includes `user_id`,
+`active_organization_id`, `issued_at`, `expires_at`, `last_seen_at`,
+`revoked_at`, and an optional user-agent hash. The cookie does not carry those
+fields.
 
-**Rotation:** On events that affect privilege (org switch, detected role change, logout, or password/SSO re-auth where it applies), issue a **new** session id, invalidate the old row, and `Set-Cookie` the new value. Never reuse a session id across a privilege boundary.
+Each successful login creates a new session row and signed cookie. Logout
+revokes that row and clears the cookie. Membership and role changes are
+re-checked on every authenticated request, so they take effect without
+trusting stale capabilities stored in the session.
 
 ### 3. WorkOS authenticates; Accord authorizes
 
@@ -91,14 +99,23 @@ The active org lives in the **server-side session**, not in a client-trusted hea
 
 - Endpoint: `POST /api/auth/webhooks/workos` (no session auth; the signature is the credential).
 - Check the signature with WorkOS’s webhook signing-secret scheme (header plus the signing secret from `WORKOS_WEBHOOK_SECRET`). Reject missing or bad signatures with 401/400 — fail closed.
-- Process events **idempotently**: dedupe by WorkOS event id. Store processed event ids in a `workos_webhook_events` table, or reuse `idempotency_keys` from ADR 0001 with a platform/system org or a dedicated non-tenant table. A redelivered event must not apply a membership create or deactivate twice.
-- Typical events (examples only): user updated, org membership changed. These map to local `users` / `organization_memberships` upserts. Confirm exact event type names against WorkOS docs at build time.
+- Process events **idempotently**: `webhook_events` claims the WorkOS event id
+  and stores its payload digest in the same transaction as handling. A
+  redelivery is acknowledged without applying the event twice.
+- The current handler applies `user.updated` to an existing local `users` row.
+  Other validly signed events are acknowledged and durably deduplicated but do
+  not change memberships. Any membership-sync behavior requires an explicit
+  implementation change and tests.
 
 ### 6. Fail-closed configuration and auth providers
 
 Mirror Atlas’s pydantic-settings `model_validator` pattern (see [0003-backend-bootstrap-environment.md](0003-backend-bootstrap-environment.md)):
 
-- In **production**, if any of `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, or `SESSION_SECRET_KEY` is missing, settings load raises `ValueError` and the app **refuses to start**.
+- In **production**, empty `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`,
+  `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, or `SESSION_SECRET_KEY`
+  values raise `ValueError`. `WORKOS_REDIRECT_URI` has a nonempty localhost
+  default, so operators must override it with the registered production
+  callback; omitting the variable does not currently fail startup.
 - `DEV_AUTH_BYPASS` (or any stand-in for it) **cannot** be enabled in production.
 - Auth is never “silently disabled” in production.
 
@@ -107,7 +124,7 @@ Mirror Atlas’s pydantic-settings `model_validator` pattern (see [0003-backend-
 ```python
 from typing import Protocol
 
-class AuthProvider(Protocol):
+class AuthAdapter(Protocol):
     def get_authorization_url(self, *, state: str, redirect_uri: str) -> str: ...
     async def exchange_code(self, *, code: str) -> AuthenticatedIdentity: ...
     # AuthenticatedIdentity: stable subject id, email, display name — no tokens to browser
@@ -115,16 +132,21 @@ class AuthProvider(Protocol):
 
 | Implementation | When |
 | --- | --- |
-| `WorkOSAuthProvider` | Default when WorkOS settings present |
-| `DevTestAuthProvider` | Non-production only; gated by `DEV_AUTH_BYPASS=true` (or `AUTH_PROVIDER=dev_test`) which itself fails closed if set in production |
+| `WorkOSAuthAdapter` | Selected when WorkOS settings are present; mandatory in production |
+| `DevAuthAdapter` | Non-production only; selected only when `DEV_AUTH_BYPASS=true`, which fails closed in production |
 
-`DevTestAuthProvider` issues the same Accord session cookie after a local test-identity login path. No code path may import it or turn it on when `ENVIRONMENT=production`.
+`DevAuthAdapter` issues the same Accord session cookie after a local
+test-identity login path. No `AUTH_PROVIDER` setting exists. Production
+selection is guarded both by settings validation and `get_auth_adapter()`.
 
 ### 7. Auth endpoint surface
 
 | Method | Path | Purpose | Auth requirement |
 | --- | --- | --- | --- |
 | `GET` | `/api/auth/login` | Start WorkOS redirect (or dev-test login entry) | Anonymous |
+| `POST` | `/api/auth/login/password` | Server-side WorkOS password authentication | Anonymous; rate limited |
+| `POST` | `/api/auth/magic-code` | Request a WorkOS email sign-in code | Anonymous; rate limited |
+| `POST` | `/api/auth/login/magic-code` | Exchange an email sign-in code for an Accord session | Anonymous; rate limited |
 | `GET` | `/api/auth/callback` | Handle WorkOS code; mint session cookie | Anonymous (one-time code) |
 | `POST` | `/api/auth/logout` | Invalidate server session; clear cookie | Authenticated session (idempotent if already logged out) |
 | `GET` | `/api/auth/me` | Current user, `access_state`, singular organization, membership, capabilities | Authenticated session |
@@ -132,22 +154,26 @@ class AuthProvider(Protocol):
 
 ### 8. Capability matrix
 
-Roles (rows) × capabilities (columns). Cells: **yes** / **no** / **scoped** (scoped = within the active org only, and subject to audit).
+`backend/app/auth/capabilities.py` is the executable source of truth. Every
+capability is organization-scoped through the authenticated membership.
 
-| Role | Master data CRUD | Sensitive field reveal (SSN/bank unmask) | Payroll run create/calculate | Run submit | Run approve | Run post | Run reverse | Report generation/download | Org settings management | Membership management | Audit log read |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Organization administrator | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| Payroll preparer | yes | no | yes | yes | no | no | no | yes | no | no | scoped |
-| Payroll reviewer | scoped | no | no | no | no | no | no | yes | no | no | scoped |
-| Payroll approver | no | no | no | no | yes | no | no | yes | no | no | scoped |
-| Payment/report releaser | no | no | no | no | no | yes | scoped | yes | no | no | scoped |
-| Auditor (read-only) | no | no | no | no | no | no | no | yes | no | no | yes |
-| Platform support administrator | scoped | scoped | no | no | no | no | no | scoped | scoped | scoped | yes |
+| Role | Granted capabilities |
+| --- | --- |
+| Organization administrator | All current capabilities: `manage_organization`, `manage_master_data`, `view_master_data`, `reveal_sensitive_fields`, `create_run`, `submit_run`, `approve_run`, `post_run`, `generate_reports`, `release_reports`, `view_audit` |
+| Payroll preparer | `manage_master_data`, `view_master_data`, `create_run`, `submit_run`, `generate_reports`, `view_audit` |
+| Payroll reviewer | `view_master_data`, `generate_reports`, `view_audit` |
+| Payroll approver | `approve_run`, `generate_reports`, `view_audit` |
+| Payment/report releaser | `post_run`, `generate_reports`, `release_reports`, `view_audit` |
+| Auditor (read-only) | `generate_reports`, `view_audit` |
 
 Notes:
 
-- **Platform support administrator** is not a normal org role. Its access is audited and logged apart from the rest (distinct audit actor type / break-glass trail). It may use the narrow cross-org route exceptions in ADR 0004.
-- **Separation of duties (policy point, future ADR):** even when the matrix would allow both, policy should in general stop one person from holding both **submit and approve**, or both **approve and post**, on the same payroll run. This ADR defines capability primitives only. The run-approval workflow ADR will enforce the SoD rules (for example dual control, or incompatible capability pairs per run).
+- Platform support is not an organization-membership role and receives no
+  capability bypass in the current implementation.
+- There is no standalone run-reversal capability or membership-management API.
+- Maker/checker separation is implemented in the run workflow: a submitter
+  cannot approve or reject the same submission. Posting follows ADR 0008 and
+  may be performed by the approver when that user also has `post_run`.
 
 ## Consequences
 
@@ -156,7 +182,8 @@ Notes:
 - Server-side sessions let us rotate and revoke at will. The cost is a session store and one lookup per request.
 - `SameSite=Lax` is required for redirect login. CSRF protection for state-changing routes still relies on SameSite plus standard API CSRF strategies as needed for cookie auth.
 - A bad production config fails at startup, instead of shipping an open API.
-- The capability matrix is the Phase 0 contract for the RBAC build. SoD across submit/approve/post remains a workflow concern.
+- The capability matrix is enforced by request dependencies; maker/checker
+  separation is additionally enforced by the run-workflow service.
 
 ## Alternatives Considered
 

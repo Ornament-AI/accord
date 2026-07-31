@@ -14,7 +14,7 @@ that flow.
 
 ### A — Self-hosted Compose (Postgres + MinIO)
 
-Use `deploy/docker-compose.yml` for a single-host stack. It runs six
+Use `deploy/docker-compose.yml` for a single-host stack. It runs these
 services:
 
 | Service | Role |
@@ -258,18 +258,20 @@ including `payroll_unit_id NOT NULL`.
 
 ## Release / rollback (`.github/workflows/deploy.yml`)
 
-The release pipeline is tag-triggered (a `push` of a `v*` tag) and has three
+The release pipeline is tag-triggered (a `push` of a `v*` tag) and uses these
 jobs:
 
-1. **build-and-push-backend** / **build-and-push-web** — build and push
+1. **build-and-push-backend** — builds and pushes the backend image.
+2. **build-and-push-web** — builds and pushes the web image. Both image jobs
+   publish:
    `ghcr.io/ornament-ai/accord/{backend,web}` with tags:
    - `${{ github.ref_name }}` (for example `v1.2.3`)
    - `sha-<full-git-sha>`
-2. **migrations-release-upgrade** — on a scratch Postgres, upgrade from the
+3. **migrations-release-upgrade** — on a scratch Postgres, upgrade from the
    previous `v*` tag to the current tag with Alembic, then run
    `alembic check` and confirm the head matches. The first release (no
    prior `v*`) skips the replay; images still publish.
-3. **deployment-summary** — writes the image, tag, and sha to the job
+4. **deployment-summary** — writes the image, tag, and sha to the job
    summary.
 
 ### Release steps (operator)
