@@ -9,9 +9,8 @@
 # the local deploy/docker-compose.yml `web` port (127.0.0.1:8085) instead of
 # a fixed production domain; Docker service names renamed db/backend/web ->
 # postgres/api/web; the Atlas-domain auth-probe path (/api/bills) is replaced
-# with a generic readyz-based check since Accord has no such route yet — full
-# authn-enforcement smoke coverage should be added once the API surface
-# exists.
+# with a generic readyz-based check. This unauthenticated smoke command proves
+# deployment health only; authenticated product flows belong to API/E2E tests.
 #
 # Exit codes:
 #   0  — all checks passed

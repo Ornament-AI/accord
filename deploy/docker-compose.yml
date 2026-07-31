@@ -6,9 +6,9 @@
 #   set -a && source deploy/.env && set +a   # or export required vars
 #   docker compose -f deploy/docker-compose.yml up -d
 #
-# Build contexts reference backend/ and frontend/ paths that land in other lanes.
+# Build contexts reference the maintained backend and frontend trees.
 # Image pulls use ghcr.io/ornament-ai/accord/{backend,web}:${ACCORD_TAG:-latest}
-# (registry org assumption — confirm with orchestrator).
+# as published by .github/workflows/deploy.yml.
 
 # Never inherit the generic directory name `deploy` as the Compose project on
 # a shared host. The explicit project name isolates containers, networks, and
@@ -111,8 +111,7 @@ services:
     networks:
       - backend-net
 
-  # One-shot Alembic upgrade. Alembic config/migrations land in a later DB lane;
-  # this service references backend/Dockerfile once that lane lands.
+  # One-shot Alembic upgrade using the restricted migration-owner role.
   migrations:
     image: ghcr.io/ornament-ai/accord/backend:${ACCORD_TAG:-latest}
     build:

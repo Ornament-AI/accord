@@ -14,11 +14,10 @@ release time. Cross-ref: [threat-model.md](threat-model.md),
 [testing.md](testing.md), [release-acceptance.md](release-acceptance.md), and
 ADRs 0001–0004, 0008–0011.
 
-**How to read suite paths.** "Contract suite" paths come verbatim from
-[testing.md](testing.md). Some do not exist in the tree yet. The point-in-time
-[security-review.md](security-review.md) records which controls are built
-today and which suites are missing. Where real suites exist, this document
-names them as "current coverage".
+Suite paths in this page are current tree paths. Missing controls are stated as
+gaps instead of being assigned hypothetical filenames. The dated
+[security-review.md](security-review.md) is historical evidence; this page and
+[release-readiness.md](release-readiness.md) describe the current baseline.
 
 ---
 
@@ -27,10 +26,10 @@ names them as "current coverage".
 | Control | Behavior | Expectation |
 | --- | --- | --- |
 | Env / secret manager | Runtime secrets load from environment or a secret manager (never from committed files). | `WORKOS_API_KEY`, WorkOS webhook secrets, `DATABASE_URL` / migrator DSN, S3 keys, session signing keys exist only in env/secret store. |
-| No commit of secrets | `.env`, private keys, WorkOS secrets, DB/S3 credentials are gitignored and absent from history. | Pre-commit / CI reject accidental secret-shaped commits. Rotate immediately if leaked. |
+| No commit of secrets | `.env`, private keys, WorkOS secrets, DB/S3 credentials are gitignored and must stay out of history. | No dedicated secret-scanning CI job is currently wired. Review changes for secret-shaped values and rotate immediately if one leaks. |
 | Rotation | Support rotation without downtime where possible (dual-key session accept window, staged DB password rotate). | Documented rotation runbook; post-incident rotation is mandatory. |
 | Least privilege | Distinct credentials per role/purpose. | Migrator ≠ app ≠ worker ≠ backup reader (see DB role separation). |
-| Production fail-closed settings | `backend/app/config.py` (`_validate_production_invariants`) refuses to boot production without `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, `SESSION_SECRET_KEY`, and `MIGRATIONS_DATABASE_URL`; it rejects `DEV_AUTH_BYPASS` in production. | A misconfigured production instance fails at startup, not at request time. |
+| Production fail-closed settings | `backend/app/config.py` (`_validate_production_invariants`) refuses empty `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, `SESSION_SECRET_KEY`, and `MIGRATIONS_DATABASE_URL`; it rejects `DEV_AUTH_BYPASS` in production. The redirect has a localhost default, so omission is not detected and operators must override it with the registered production callback. | Secret/auth omissions fail at startup; deployment validation must separately prove the redirect URI is production-safe. |
 
 ---
 
@@ -44,10 +43,10 @@ Browsers never receive bearer JWTs for ordinary sessions.
 | Control | Behavior | Expectation |
 | --- | --- | --- |
 | HTTP-only | Cookie not readable from JavaScript (`httponly=True` in `backend/app/auth/session.py`). | XSS cannot exfiltrate `accord_session` via `document.cookie`. |
-| Secure | Cookie sent only over HTTPS in non-local environments. Current code sets `secure` only when `ENVIRONMENT=production`; the [security review](security-review.md) flags staging as a gap. | No cleartext session on the wire in staging/production. |
+| Secure | Cookie is marked Secure when `ENVIRONMENT=production`. A staging deployment using another environment value does not receive that flag; the [security review](security-review.md) records this gap. | Run internet-facing staging with the production security mode, or close the environment-policy gap before relying on a separate staging value. |
 | SameSite=Lax | Cookie sent on top-level navigations; withheld on most cross-site subrequests. | **Why Lax, not Strict:** the AuthKit login/callback flow needs top-level cross-site redirects that must carry the session cookie; `Strict` breaks that flow. Lax alone is **not** enough CSRF defense for APIs. |
-| Synchronizer CSRF | State-changing routes must require a synchronizer CSRF token — a server-issued token the client echoes back in a header. | SameSite=Lax session cookie **plus** synchronizer CSRF token on POSTs/PUTs/PATCHes/DELETEs. Lax covers WorkOS redirect navigations; the token defends mutations, including same-site adjacent risks. Contract suite: `backend/tests/security/test_csrf.py`. **Not yet implemented** — only signed OAuth `state` exists today; see [security-review.md](security-review.md). |
-| Expiry / refresh | Absolute 12-hour TTL (`SESSION_MAX_AGE_SECONDS`) plus an idle timeout (`SESSION_IDLE_TIMEOUT_SECONDS`, default 2 h). A fresh session row is minted at login; logout revokes the row. | Stolen cookies have a bounded lifetime; fixation is resisted. Contract suite: `backend/tests/security/test_session_hardening.py`. Current coverage: `backend/tests/auth/test_session.py`, `backend/tests/gate_d/test_session_adversarial.py`. |
+| Synchronizer CSRF | State-changing routes must require a synchronizer CSRF token — a server-issued token the client echoes back in a header. | **Not yet implemented.** SameSite=Lax and signed OAuth `state` exist today, but general mutations do not have the required token proof. |
+| Expiry / refresh | Absolute 12-hour TTL (`SESSION_MAX_AGE_SECONDS`) plus an idle timeout (`SESSION_IDLE_TIMEOUT_SECONDS`, default 2 h). A fresh session row is minted at login; logout revokes the row. | Covered by `backend/tests/auth/test_session.py` and `backend/tests/gate_d/test_session_adversarial.py`. |
 | Login rate limits | Password and magic-code login routes are rate limited per client IP (`backend/app/middleware/rate_limit.py`; decorators in `backend/app/api/routes/auth.py`). | Credential stuffing and code guessing are throttled. |
 | Logging | Session tokens never appear in structured logs. | Redaction rules below. |
 
@@ -104,11 +103,9 @@ Alembic).
   connections.
 - If the GUC is unset, the system fails closed: RLS matches no rows and
   rejects writes.
-- Contract suites: `backend/tests/rls/test_cross_tenant_isolation.py`,
-  `backend/tests/rls/test_forced_rls_coverage.py` (not yet present). Current
-  coverage: `backend/tests/rls/` (identity, master-data, payroll-run, and
-  platform suites) plus `backend/tests/gate_d/test_sql_isolation.py`, which
-  connect as the restricted runtime roles.
+- Current coverage: `backend/tests/rls/` (identity, master-data, payroll-run,
+  platform, helper, and immutable-grant suites) plus `backend/tests/gate_d/`,
+  which connect as the restricted runtime roles and exercise empty/wrong GUCs.
 
 ---
 
@@ -123,7 +120,7 @@ PITR means point-in-time recovery: restoring the database to a chosen moment.
 | Retention | Meet customer/regulatory retention; default engineering floor documented in ops runbook (e.g. ≥ 30 days backups). |
 | PITR window | Provider/configured PITR window documented per environment; production window ≥ 7 days unless waived. |
 | Access | Backup credentials are not `accord_app`; restore uses controlled procedure. |
-| Restore rehearsals | Periodic restore into isolated environment; prove forced RLS and the `NOSUPERUSER NOBYPASSRLS` runtime roles still enforce isolation. Contract suite: `backend/tests/security/test_backup_restore_rls.py` (not yet present). Gate **K** in [release-acceptance.md](release-acceptance.md). |
+| Restore rehearsals | Periodic restore into an isolated environment; prove forced RLS and the `NOSUPERUSER NOBYPASSRLS` runtime roles still enforce isolation. `scripts/backup-restore.sh` rehearses logical restore integrity, but the post-restore RLS proof is not automated. Gate **K** in [release-acceptance.md](release-acceptance.md). |
 
 Threat mapping: [threat-model.md](threat-model.md) §12 (Backup / restore exposure).
 
@@ -159,8 +156,8 @@ Evidence feeds gate C / security reviewer sign-off in
 | Format | JSON structured logs (structlog) with `request_id`; wired in `backend/app/logging_config.py`. | Machine-parseable; correlatable. |
 | Never log | PAN, bank account numbers, PRAN, GPF numbers, full legal names where avoidable, session tokens, passwords, API keys, WorkOS secrets, raw webhook signatures. | CI/log review finds zero hits. The `redact_sensitive` processor in `backend/app/logging_config.py` redacts `pan`, `pran`, `account_number`, `password`, `secret`, `token`, `authorization`, and `cookie` keys recursively. |
 | Prefer | Stable opaque ids (`employee_id`, `organization_id`, `payroll_run_id`). | Support can debug without PII. |
-| PII reveal | The API shows masked fields by default; full reveal needs a separate audited "reveal" action. Today `reveal=true` is gated on the `reveal_sensitive_fields` capability (`backend/app/api/routes/employees.py`), but the reveal is **not yet audited** — see [security-review.md](security-review.md). | Reveal writes append-only audit rows. Contract suite: `backend/tests/security/test_pii_masking.py` (not yet present). |
-| Fixtures | Real June 2026 workbook PII never enters git/CI/logs; only synthetic data in `fixtures/sanitized/june-2026/`. | Contract guard: `scripts/ci/pii_fixture_guard.sh` (not yet present) + pre-commit policy in [testing.md](testing.md). |
+| PII reveal | The API shows masked fields by default; `reveal=true` is gated on `reveal_sensitive_fields` (`backend/app/api/routes/employees.py`). The reveal is **not yet audited**. | Masking/capability coverage exists in the employee API/service suites; an append-only reveal access event remains required. |
+| Fixtures | Real June 2026 workbook PII never enters git/CI/logs; only synthetic data in `fixtures/sanitized/june-2026/`. | The fixture validator exists; a dedicated CI hash/name guard remains missing. See [testing.md](testing.md). |
 
 ---
 
@@ -174,7 +171,7 @@ Platform support administrator access is **not** ordinary tenancy.
 | Time-boxing | Access expires automatically (short TTL). | No indefinite impersonation. |
 | Mandatory audit | Every support read/write emits append-only audit events with the support actor and target `organization_id`. | Auditable after the fact. |
 | Distinct from normal RLS | The support path is a controlled elevation, not "RLS off" for `accord_app`. Prefer a dedicated procedure/role with logging; never ship `BYPASSRLS` on the default API role. | Normal tenant users remain under forced RLS + `SET LOCAL` per-request tenant context. |
-| Capability checks | Capability/permission checks at the API layer for platform support actions. | Contract suite: `backend/tests/security/test_support_break_glass.py` (not yet present). |
+| Capability checks | Capability/permission checks at the API layer for platform support actions. | No support elevation path or suite exists today; default deny is the current behavior. |
 
 Status: the break-glass path is not built yet. Today `is_platform_admin` is
 display-only with **no** capability bypass
@@ -189,8 +186,8 @@ Gate checklist item in [release-acceptance.md](release-acceptance.md).
 
 | Control | Behavior | Expectation |
 | --- | --- | --- |
-| API | A posted `payroll_run_version` cannot be mutated in place; corrections use `reverse` + a new version (`backend/app/api/routes/run_posting.py`, `backend/app/services/run_posting.py`). | Contract suite: `backend/tests/workflow/test_posted_immutability.py` (not yet present). Current coverage: `backend/tests/api/test_run_posting.py`, `backend/tests/services/test_run_posting.py`. |
-| SQL | Immutability triggers (`accord_forbid_update_delete`) block UPDATE/DELETE even if the API is bypassed. Migration `b33a3a7b5f84_revoke_immutable_table_dml.py` also revokes UPDATE/DELETE/TRUNCATE on the snapshot tables from `accord_app` / `accord_worker`, so the trigger escape hatch is useless to runtime roles. | Contract suite: `backend/tests/security/test_posted_sql_immutability.py` (not yet present). Current coverage: `backend/tests/rls/test_immutable_grants.py`, `backend/tests/rls/test_payroll_run_rls.py`. |
+| API | A posted `payroll_run_version` cannot be mutated in place; corrections use `reverse` + a new version (`backend/app/api/routes/run_posting.py`, `backend/app/services/run_posting.py`). | Covered by `backend/tests/api/test_run_posting.py` and `backend/tests/services/test_run_posting.py`. |
+| SQL | Immutability triggers (`accord_forbid_update_delete`) block UPDATE/DELETE even if the API is bypassed. Migration `b33a3a7b5f84_revoke_immutable_table_dml.py` also revokes UPDATE/DELETE/TRUNCATE on the snapshot tables from `accord_app` / `accord_worker`, so the trigger escape hatch is useless to runtime roles. | Covered by `backend/tests/rls/test_immutable_grants.py` and `backend/tests/rls/test_payroll_run_rls.py`. |
 | Audit | Append-only `audit_events` (UPDATE/DELETE revoked in migrations) record post/reverse with actor and content hash. | Traceability for gate H / final checklist. |
 
 ---
@@ -201,29 +198,28 @@ Gate checklist item in [release-acceptance.md](release-acceptance.md).
 | --- | --- |
 | Identity | WorkOS AuthKit; memberships/roles in Accord Postgres. Login paths: hosted redirect, password, and magic-code — all server-side (`backend/app/api/routes/auth.py`, `backend/app/auth/adapters.py`). |
 | Roles | Membership roles (`backend/app/auth/capabilities.py`): `organization_administrator`, `payroll_preparer`, `payroll_reviewer`, `payroll_approver`, `report_releaser` (payment/report releaser), `auditor`. Platform support administrator is display-only this phase — it is not a membership role and grants no capabilities. |
-| Commands | `calculate`, `submit`, `withdraw`, `approve`, `reject`, `post`, `reverse` — each capability-checked, idempotent where state-changing, audited. `reverse` currently reuses the `post_run` capability; there is no separate reverse capability yet. |
+| Commands | `calculate`, `submit`, `withdraw`, `approve`, `reject`, `post`, `reverse` are capability-checked. Workflow/posting commands use the idempotency/audit services; `calculate` currently does neither and can append another version on a distinct retry. `reverse` reuses `post_run`; there is no separate reverse capability. |
 | Tenancy | `organization_id` on tenant rows; forced RLS; `SET LOCAL` per-request tenant context via `backend/app/api/deps.py` + `backend/app/tenancy.py`. |
-| Webhooks | WorkOS webhook signature verification in `backend/app/auth/webhooks.py`. Contract suite: `backend/tests/security/test_workos_webhooks.py` (not yet present). Current coverage: `backend/tests/api/test_webhooks_workos.py`. |
-| Money | Decimal / minor-units only (`backend/app/schemas/money.py`); contract guard `scripts/ci/no_float_payroll_domain.sh` (not yet present). |
+| Webhooks | WorkOS webhook signature verification in `backend/app/auth/webhooks.py`; covered by `backend/tests/api/test_webhooks_workos.py`. |
+| Money | Decimal / minor-units only (`backend/app/schemas/money.py`); enforced by `backend/tests/domain/test_no_float_guard.py` and money/property suites. |
 
 ---
 
 ## Verification map
 
-| Area | Contract suite / script (testing.md) | Current coverage in tree |
+| Area | Current coverage | Remaining gap |
 | --- | --- | --- |
-| Session hardening | `backend/tests/security/test_session_hardening.py` | `backend/tests/auth/test_session.py`, `backend/tests/gate_d/test_session_adversarial.py` |
-| CSRF | `backend/tests/security/test_csrf.py` | None — control not yet implemented |
-| WorkOS webhooks | `backend/tests/security/test_workos_webhooks.py` | `backend/tests/api/test_webhooks_workos.py` |
-| Privilege escalation | `backend/tests/security/test_privilege_escalation.py` | `backend/tests/gate_d/test_capability_matrix.py`, `backend/tests/api/test_deps_capabilities.py` |
-| PII masking / reveal | `backend/tests/security/test_pii_masking.py` | Masking covered in employee API/service suites; reveal audit missing |
-| Support break-glass | `backend/tests/security/test_support_break_glass.py` | None — control not yet implemented (fails closed) |
-| Posted SQL immutability | `backend/tests/security/test_posted_sql_immutability.py` | `backend/tests/rls/test_immutable_grants.py`, `backend/tests/rls/test_payroll_run_rls.py` |
-| Backup/restore RLS | `backend/tests/security/test_backup_restore_rls.py` | None |
-| Cross-tenant / fail-closed RLS | `backend/tests/rls/test_cross_tenant_isolation.py` | `backend/tests/rls/`, `backend/tests/gate_d/test_sql_isolation.py` |
-| Forced RLS coverage | `backend/tests/rls/test_forced_rls_coverage.py` | `backend/tests/rls/test_rls_helper_sql.py` + per-phase RLS suites |
-| PII fixture guard | `scripts/ci/pii_fixture_guard.sh` | None |
-| Float ban | `scripts/ci/no_float_payroll_domain.sh` | None |
+| Session hardening | `backend/tests/auth/test_session.py`, `backend/tests/gate_d/test_session_adversarial.py` | Secure-cookie behavior treats staging as non-production |
+| CSRF | Signed OAuth-state coverage in session/auth tests | No synchronizer token on general mutations |
+| WorkOS webhooks | `backend/tests/api/test_webhooks_workos.py` | None identified in current contract |
+| Privilege escalation | `backend/tests/gate_d/test_capability_matrix.py`, `backend/tests/api/test_deps_capabilities.py` | Support elevation is intentionally absent |
+| PII masking / reveal | Employee API/service suites | Reveal read is not audit-logged |
+| Support break-glass | Default deny; no capability bypass | No time-boxed audited support path |
+| Posted SQL immutability | `backend/tests/rls/test_immutable_grants.py`, `backend/tests/rls/test_payroll_run_rls.py` | None identified in current contract |
+| Backup/restore RLS | Runtime-role and RLS suites; `scripts/backup-restore.sh` integrity rehearsal | No automated combined restore-under-runtime-role proof |
+| Fail-closed RLS | `backend/tests/rls/`, `backend/tests/gate_d/`, tenant-context API tests | Re-run against the release commit |
+| PII fixture guard | Synthetic validator and review policy | No dedicated CI hash/name guard |
+| Float ban | `backend/tests/domain/test_no_float_guard.py` | None identified in current contract |
 
 This baseline is mandatory for production promotion. Deviations require a
 signed, time-bounded waiver referencing [threat-model.md](threat-model.md)

@@ -88,22 +88,31 @@ Each calculator kind lists what it needs first: component codes and the outputs 
 2. Sorts the graph in topological order, so every line runs after the lines it needs.
 3. **Rejects cycles loudly.** If it finds a cycle, the run **fails** with an explicit error that names the cycle. It must not loop, cut off at some point, or emit partial wrong nets.
 
-### Workflow statuses (enumeration only)
+### Workflow statuses (historical enumeration)
 
-A full workflow contract will come in a **separate future document**. For Phase 0, we only list the states:
+This ADR originally listed workflow concepts without transitions. The
+implemented contract is recorded in [architecture.md](../architecture.md);
+[ADR 0008](0008-command-workflow-idempotency.md) retains target-state
+differences called out there. The persisted status set is:
 
-| Status / action | One-line description |
+| Status | One-line description |
 | --- | --- |
 | `draft` | Run exists; draft exceptions may be edited (with optimistic concurrency). |
+| `calculating` | Transient status while calculation resolves inputs and appends a version. |
 | `calculated` | At least one immutable `payroll_run_version` has been produced for review. |
 | `submitted` | Maker has submitted a run version for checker approval. |
 | `approved` | Checker approved a specific run version. |
+| `rejected` | Checker rejected a submitted version. No implemented command returns it to `draft` or `calculated`, so this is currently a dead-end workflow state. |
 | `posted` | Approved version committed to books/remittance outputs; source version ids frozen by reference. |
-| `withdraw` | Pull back from submitted (or analogous) before approval completes. |
-| `reject` | Checker rejects a submission; returns to an editable pre-submit state per future workflow doc. |
-| `reverse` | Formal reversal of a posted run without mutating the original posted version. |
+| `reversed` | Posted run was formally reversed without mutating the original version. |
 
-Allowed transitions and who may do what are **out of scope** here.
+`validate` is a read-only check and does not create a `validated` status.
+`withdraw` moves `submitted` back to `calculated`; `reject` and `reverse` are
+commands whose results are the persisted statuses above. The missing recovery
+path from `rejected` is an implementation gap, not an available transition.
+
+Allowed transitions and authorization remain out of scope for this
+calculation-model ADR; use ADR 0008 for that contract.
 
 ## Consequences
 

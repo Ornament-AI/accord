@@ -750,9 +750,8 @@ async def reject_run(
 ) -> dict[str, Any]:
     """submitted → rejected; approver ≠ submitter (same SoD as approve).
 
-    Note: per the ADR 0008 matrix, rejected runs can later be recalculated
-    (calculate from rejected) — that path is owned by the calculate command
-    and is NOT implemented here.
+    The current calculate command accepts only draft/calculated runs, so
+    ``rejected`` is a dead-end until an explicit recovery transition is added.
     """
     run = await _lock_run(db, organization_id=organization_id, run_id=run_id)
     if run.status != "submitted":

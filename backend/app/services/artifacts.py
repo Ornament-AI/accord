@@ -1,9 +1,9 @@
 """Export artifact lifecycle service (ADR 0010).
 
 Consistency protocol: INSERT pending intent → storage.put → finalize
-(uploaded → finalized). Orphan reconciliation and retention expiry are
-scheduled by the worker lane as periodic jobs
-(``storage.reconcile_orphans``, ``storage.purge_expired``).
+(uploaded → finalized). This module exposes orphan reconciliation and
+retention-expiry service functions; no periodic worker handlers or scheduler
+are currently wired for them.
 """
 
 from __future__ import annotations
@@ -301,8 +301,8 @@ async def reconcile_orphans(
     If the object exists in storage → finalize (uploaded → finalized).
     If missing → mark ``deleted``.
 
-    The worker lane schedules this as a periodic ``storage.reconcile_orphans``
-    job (per-org GUC / privileged cross-org claim as appropriate).
+    This service function is callable directly. A periodic worker handler and
+    scheduler have not yet been registered.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
     stmt = sa.select(ExportArtifact).where(
@@ -336,8 +336,8 @@ async def expire_artifacts(
 ) -> int:
     """Mark finalized artifacts past ``retention_expires_at`` as ``expired``.
 
-    Object deletion from storage is deferred to a later purge step (worker
-    job ``storage.purge_expired``); this function only transitions metadata.
+    This function only transitions metadata. Object deletion and the worker
+    handler/scheduler for expiry remain follow-up work.
     """
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)

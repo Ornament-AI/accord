@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     public_app_url: str = Field(default="", alias="PUBLIC_APP_URL")
     max_request_body_bytes: int = Field(default=10 * 1024 * 1024, alias="MAX_REQUEST_BODY_BYTES")
 
-    # WorkOS auth seam (wired by a later lane; no WorkOS SDK usage here).
+    # WorkOS server-side authentication.
     workos_client_id: str = Field(default="", alias="WORKOS_CLIENT_ID")
     workos_api_key: str = Field(default="", alias="WORKOS_API_KEY")
     workos_redirect_uri: str = Field(
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
     workos_webhook_secret: str = Field(default="", alias="WORKOS_WEBHOOK_SECRET")
 
-    # Session cookie seam (wired by a later lane).
+    # Signed opaque cookie + database-backed session.
     session_secret_key: str = Field(default="", alias="SESSION_SECRET_KEY")
     session_cookie_name: str = Field(default="accord_session", alias="SESSION_COOKIE_NAME")
     session_idle_timeout_seconds: int = Field(default=7200, alias="SESSION_IDLE_TIMEOUT_SECONDS")
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # Allow short SESSION_SECRET_KEY in local/test (checked lazily by session signer).
     accord_allow_weak_secrets: bool = Field(default=False, alias="ACCORD_ALLOW_WEAK_SECRETS")
 
-    # Object storage seam (wired when storage is adopted).
+    # S3-compatible report artifact storage.
     object_storage_endpoint: str = Field(default="", alias="OBJECT_STORAGE_ENDPOINT")
     object_storage_bucket: str = Field(default="", alias="OBJECT_STORAGE_BUCKET")
     object_storage_access_key: str = Field(default="", alias="OBJECT_STORAGE_ACCESS_KEY")

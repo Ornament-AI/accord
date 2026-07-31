@@ -3,8 +3,8 @@
 Uses a local ``decimal.Context(prec=28)`` for quantize operations and never
 mutates the process-global ``decimal.getcontext()``.
 
-``ROUND_DOWN_RUPEE`` uses ``decimal.ROUND_DOWN`` (toward zero). ADR 0006 left
-the exact toward-zero vs floor choice TBD; we document toward-zero here.
+``ROUND_DOWN_RUPEE`` uses ``decimal.ROUND_DOWN`` (toward zero), including for
+negative values.
 
 ``ROUND_NONE`` is identity (no rounding). It is intended for intermediate
 values only and is **not** valid for final statutory output, but this module

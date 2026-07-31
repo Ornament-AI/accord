@@ -10,7 +10,9 @@ the review date. Each threat-model item and each of the nine mandated scope
 areas gets a verdict: **Implemented / Partial / Gap**. Each verdict cites
 code evidence. Findings for a future remediation lane are ranked at the end.
 File and line references are as of the review date. They may have moved
-since.
+since. Do not use this dated verdict table as the current release decision;
+use [security.md](security.md), [threat-model.md](threat-model.md), and
+[release-readiness.md](release-readiness.md) for the maintained contract.
 
 Three terms show up a lot. RLS is row-level security: Postgres itself
 filters rows by tenant. A GUC is a Postgres setting; Accord binds tenant

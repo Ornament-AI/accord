@@ -1,5 +1,10 @@
 # Atlas → Accord upstream transplant manifest
 
+> Historical provenance record (2026-07-17): this is not a current Accord
+> toolchain, path, or implementation inventory. For the maintained Accord
+> contract, use [developer-reference.md](developer-reference.md), the current
+> manifests, and the current source tree.
+
 This is a research-only inventory. It lists the portable infrastructure in
 the Atlas monorepo. Every path below was checked on disk at the listed
 commit, via `test -e` / `ls` / `find`. Versions were read from

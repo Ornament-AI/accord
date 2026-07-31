@@ -43,11 +43,13 @@ plus object storage.
 
 You need four things installed first:
 
-1. **pnpm 10.x** — see `packageManager` in the root `package.json`.
+1. **pnpm 10.x** — use the exact version in `packageManager` in the root
+   `package.json`.
 2. **Python 3.14** — the version CI uses.
 3. **PostgreSQL 18** — running locally. (Or skip local setup and use Docker
    Compose; see the next section.)
-4. **Node.js 22.22 or newer** — for the frontend.
+4. **Node.js 24** — the version CI uses. The frontend manifest allows Node
+   22.22 or newer.
 
 Then run these three commands from the repository root:
 
@@ -151,38 +153,44 @@ Compose `web` service and `scripts/smoke-test.sh`).
 ## Verify your setup
 
 ```bash
-./scripts/verify.sh          # lint, typecheck, unit tests (skips missing lanes)
+./scripts/verify.sh          # shell, backend, API drift, frontend, and build gates
 ./scripts/smoke-test.sh      # health checks against a running deploy (default http://127.0.0.1:8085)
 ```
 
 ## Current status
 
-Release gates are defined in
+The latest release tag is `v0.4.3`. The current `main` branch also carries the
+TypeScript 7.0.2 toolchain upgrade. Release gates are defined in
 [`docs/release-acceptance.md`](docs/release-acceptance.md) (letters A–F and
-H–K; **there is no gate G**). Gate K (deploy/restore/E2E) is the active
-release gate.
+H–K; **there is no gate G**). Status is based on evidence in the current tree,
+not on a historical release label:
 
 | Gate | Status | One-line description |
 | --- | --- | --- |
-| A — Atlas baseline | Complete | Upstream Atlas shell/transplant baseline verified |
-| B — Phase 0 contracts | Complete | Testing, threat model, release acceptance, security, ADRs, domain contracts |
-| C — Transplant shell CI | Complete | Lint, typecheck, unit, and API smoke on FastAPI + React shell |
-| D — Cross-tenant isolation | Complete | Forced RLS + no cross-tenant IDOR via API/services/storage/workers |
-| E — Effective-dated master data | Complete | Hire/pay/org effective-dating across period boundaries |
-| F — Calculation correctness | Complete | Synthetic totals + Decimal-only payroll domain (no float) |
-| H — Workflow integrity | Complete | Maker/checker, post, idempotency, posted SQL immutability |
-| I — Export durability | Complete | S3-compatible artifacts endure; tenant object isolation |
-| J — Reports & reconciliation | Complete | Shared DTO for Excel/PDF; reconciliation to posted source |
-| K — Deploy / restore / E2E | In progress | Tag deploy workflow, clean-env deploy, backup/restore RLS, Playwright |
+| A — Atlas baseline | Partial | Pinned transplant manifest exists; no executable baseline verifier |
+| B — Contracts | Partial | Maintained documents exist; release sign-off is external evidence |
+| C — CI | Met | Backend, migration, frontend, and Docker lanes are wired |
+| D — Isolation | Met | Forced-RLS and adversarial fail-closed suites are present |
+| E — Effective dating | Met | Model, service, migration, and RLS coverage is present |
+| F — Calculations | Met | Synthetic golden totals, property tests, and the AST float guard are present |
+| H — Workflow | Partial | Maker/checker, posting, reversal, and immutability are covered; calculate is not idempotent or audited |
+| I — Export durability | Partial | Storage/artifact tests exist; no automated restore/object-persistence rehearsal |
+| J — Reports | Met | Family, formatter, canonical-contract, and reconciliation suites are present |
+| K — Deploy / restore / E2E | Partial | Release/deploy scripts and Playwright exist; visual parity and automated restore-RLS proof do not |
+
+See [release readiness](docs/release-readiness.md) for the evidence and
+remaining acceptance gaps.
 
 ## Docs
 
 | Doc | Description |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Runtime components, workflow state machine, tenancy, report pipeline |
+| [docs/developer-reference.md](docs/developer-reference.md) | Current API, frontend routes, configuration, scripts, and CI source map |
 | [docs/payroll-domain.md](docs/payroll-domain.md) | Payroll domain glossary and gross-to-net model |
 | [docs/operations.md](docs/operations.md) | Deploy, backup/restore, and day-two operations |
 | [docs/release-acceptance.md](docs/release-acceptance.md) | Release gate matrix (A–K) and evidence requirements |
+| [docs/release-readiness.md](docs/release-readiness.md) | Current-tree evidence and open release gaps |
 | [docs/security.md](docs/security.md) | Security controls, roles, and operational expectations |
 | [docs/testing.md](docs/testing.md) | Test strategy and gate → suite mapping |
 | [docs/threat-model.md](docs/threat-model.md) | Threat model for tenancy, workflow, and exports |
@@ -192,8 +200,9 @@ release gate.
 
 ## Provenance
 
-Accord transplants the design system and infrastructure conventions of the
-Atlas application from a pinned upstream release tag. See
+Accord originally transplanted the design system and infrastructure
+conventions of the Atlas application from a pinned upstream release tag. The
+application has since diverged. See the historical
 [`docs/atlas-upstream-manifest.md`](docs/atlas-upstream-manifest.md) for exact
 provenance, exclusions, and licenses.
 

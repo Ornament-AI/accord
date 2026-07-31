@@ -22,8 +22,8 @@ gate runs.
 | Field | Content |
 | --- | --- |
 | **Description** | Verify Accord’s declared Atlas upstream baseline (shell/transplant expectations) before product gates. |
-| **Named checks / suites** | `scripts/verify_atlas_baseline.sh` |
-| **Evidence artifact** | CI job log URL for gate A; script stdout transcript attached to release packet |
+| **Checks / evidence** | Review the pinned source tag, inclusion/exclusion inventory, rename map, and license checklist in `docs/atlas-upstream-manifest.md`; compare the transplanted shell to the pin when the baseline changes. |
+| **Evidence artifact** | Review link or comparison transcript attached to the release packet. There is no executable baseline verifier in the current tree. |
 
 ### Gate B — Phase 0 contracts review
 
@@ -43,8 +43,8 @@ transplanted shell.
 | Field | Content |
 | --- | --- |
 | **Description** | Lint, typecheck, unit, and API smoke on the transplanted FastAPI + React shell. |
-| **Named checks / suites** | `backend/tests/unit/test_money_decimal.py`; `backend/tests/unit/test_calculation_invariants.py`; `backend/tests/api/`; `backend/tests/services/`; `frontend/src/**/*.test.tsx`; plus lint/typecheck CI jobs |
-| **Evidence artifact** | CI workflow URL (green); junit/coverage reports stored as CI artifacts |
+| **Named checks / suites** | `./scripts/verify.sh`; backend suites under `backend/tests/domain/`, `backend/tests/api/`, and `backend/tests/services/`; frontend `src/**/*.test.ts(x)`; migration and Docker jobs in `.github/workflows/ci.yml` |
+| **Evidence artifact** | Green CI workflow URL plus the local verification transcript when required by the release packet |
 
 ### Gate D — Cross-tenant isolation
 
@@ -53,8 +53,8 @@ Tests must prove that no tenant can ever read another tenant's data.
 | Field | Content |
 | --- | --- |
 | **Description** | Prove organization isolation under forced RLS with the restricted runtime role; no cross-tenant IDOR via API, services, storage, or workers. |
-| **Named checks / suites** | `backend/tests/rls/test_cross_tenant_isolation.py`; `backend/tests/rls/test_forced_rls_coverage.py`; API/services/storage/worker isolation paths under `backend/tests/api/`, `backend/tests/services/`, `backend/tests/storage/test_tenant_object_isolation.py` |
-| **Evidence artifact** | CI URL for RLS job; RLS coverage report listing tenant tables with forced RLS (`ALTER TABLE ... FORCE ROW LEVEL SECURITY`) |
+| **Named checks / suites** | `backend/tests/rls/`; `backend/tests/gate_d/`; tenant-context API coverage in `backend/tests/api/test_tenant_context.py`; per-phase forced-RLS assertions in `backend/tests/migrations/` |
+| **Evidence artifact** | Green backend CI URL and a test transcript proving empty/wrong organization context fails closed under `accord_app` / `accord_worker` |
 
 ### Gate E — Effective-dated master data
 
@@ -64,8 +64,8 @@ boundaries.
 | Field | Content |
 | --- | --- |
 | **Description** | Effective-dating semantics for master data (hire, pay components, org hierarchy) are correct across period boundaries. |
-| **Named checks / suites** | `backend/tests/master_data/test_effective_dating.py` |
-| **Evidence artifact** | CI URL; pytest report for master_data suite |
+| **Named checks / suites** | `backend/tests/services/test_versioning.py`; `backend/tests/models/test_master_data_models.py`; `backend/tests/rls/test_master_data_rls.py`; master-data API/service suites |
+| **Evidence artifact** | Green backend CI URL and focused pytest transcript when effective-dating code changes |
 
 ### Gate F — Calculation correctness
 
@@ -74,8 +74,8 @@ Tests must prove the payroll math is exact and uses no floats.
 | Field | Content |
 | --- | --- |
 | **Description** | June 2026 synthetic totals and money/invariant unit proofs; Decimal-only payroll domain (no float). |
-| **Named checks / suites** | `backend/tests/calculations/test_june_2026_totals.py`; `backend/tests/unit/test_calculation_invariants.py`; `backend/tests/unit/test_money_decimal.py`; `scripts/ci/no_float_payroll_domain.sh` |
-| **Evidence artifact** | CI URL; calculation golden diff report; float-ban script transcript |
+| **Named checks / suites** | `backend/tests/domain/test_engine_june_golden.py`; `backend/tests/e2e/test_june_golden_e2e.py`; `backend/tests/domain/test_money.py`; `backend/tests/domain/test_money_properties.py`; `backend/tests/domain/test_no_float_guard.py` |
+| **Evidence artifact** | Green backend CI URL, golden fixture validation, and the relevant pytest transcript |
 
 ### Gate H — Workflow integrity (maker/checker, post, idempotency)
 
@@ -85,7 +85,7 @@ stays frozen, and repeated commands stay safe.
 | Field | Content |
 | --- | --- |
 | **Description** | Maker/checker segregation; immutable posted `payroll_run_version`; command idempotency; SQL-level immutability. Commands: `calculate`, `submit`, `withdraw`, `approve`, `reject`, `post`, `reverse`. |
-| **Named checks / suites** | `backend/tests/workflow/test_maker_checker.py`; `backend/tests/workflow/test_posted_immutability.py`; `backend/tests/workflow/test_idempotency.py`; `backend/tests/security/test_posted_sql_immutability.py` |
+| **Named checks / suites** | `backend/tests/services/test_run_workflow.py`; `backend/tests/services/test_run_posting.py`; `backend/tests/services/test_idempotency.py`; matching API suites; `backend/tests/rls/test_immutable_grants.py`; `backend/tests/rls/test_payroll_run_rls.py` |
 | **Evidence artifact** | CI URL; workflow report; sample append-only `audit_events` excerpt (synthetic ids only) |
 
 ### Gate I — Export durability & object isolation
@@ -95,8 +95,8 @@ Tests must prove that export files endure and stay private to their tenant.
 | Field | Content |
 | --- | --- |
 | **Description** | S3-compatible export artifacts endure and cannot be read across tenants. |
-| **Named checks / suites** | `backend/tests/storage/test_export_durability.py`; `backend/tests/storage/test_tenant_object_isolation.py` |
-| **Evidence artifact** | CI URL; storage isolation report |
+| **Named checks / suites** | `backend/tests/storage/`; `backend/tests/services/test_artifacts.py`; `backend/tests/api/test_artifacts.py`; Compose object persistence rehearsal in `docs/operations.md` |
+| **Evidence artifact** | Green backend CI URL plus a persistence/restart rehearsal transcript for the release environment |
 
 ### Gate J — Reports & reconciliation
 
@@ -106,8 +106,8 @@ consistent across Excel and PDF.
 | Field | Content |
 | --- | --- |
 | **Description** | Every report type uses one DTO/source of truth for Excel+PDF; semantic goldens; reconciliation to posted source. |
-| **Named checks / suites** | `backend/tests/reports/test_reconciliation.py`; `backend/tests/reports/test_excel_golden.py`; `backend/tests/reports/test_pdf_golden.py`; `backend/tests/reports/test_excel_pdf_parity.py` |
-| **Evidence artifact** | CI URL; golden comparison report (sanitized fixtures only — no real PII) |
+| **Named checks / suites** | Report-family and formatter suites under `backend/tests/reports/`; report API/service suites; `backend/tests/scripts/test_validate_canonical_export.py`; `backend/tests/e2e/test_june_golden_e2e.py` |
+| **Evidence artifact** | Green backend CI URL and canonical validator/report reconciliation transcript using sanitized fixtures only |
 
 ### Gate K — Deploy / restore / E2E
 
@@ -115,9 +115,9 @@ Tests must prove that deploy, restore, and browser flows work end to end.
 
 | Field | Content |
 | --- | --- |
-| **Description** | Clean-environment deploy; backup/restore RLS rehearsal; Playwright critical paths, a11y, and Atlas visual parity. |
-| **Named checks / suites** | Clean-env deploy runbook; `backend/tests/security/test_backup_restore_rls.py`; `frontend/e2e/critical-paths.spec.ts`; `frontend/e2e/a11y.spec.ts`; `frontend/e2e/visual-shell.spec.ts` |
-| **Evidence artifact** | Deploy CI/CD URL; restore rehearsal report; Playwright HTML report + visual baseline hashes |
+| **Description** | Clean-environment deploy; backup/restore and runtime-role rehearsal; Playwright critical paths and accessibility; visual parity evidence when the shell changes. |
+| **Named checks / suites** | `backend/tests/ops/test_msidc_deploy_contract.py`; `scripts/backup-restore.sh`; `scripts/smoke-test.sh`; `frontend/e2e/auth-and-org.spec.ts`, `master-data.spec.ts`, `payroll-flow.spec.ts`, `reports.spec.ts`, and `axe-a11y.spec.ts` |
+| **Evidence artifact** | Deploy/release workflow URL, exact-image runtime proof, restore/RLS rehearsal report, and Playwright report. The current tree has no automated visual-parity spec. |
 
 ---
 
@@ -127,16 +127,16 @@ Each gate at a glance.
 
 | Gate | Short name | Primary suite paths | Evidence |
 | --- | --- | --- | --- |
-| A | Atlas baseline | `scripts/verify_atlas_baseline.sh` | CI URL + transcript |
+| A | Atlas baseline | `docs/atlas-upstream-manifest.md` comparison | Review link + transcript |
 | B | Phase 0 contracts | docs checklist (`testing.md`, `threat-model.md`, `release-acceptance.md`, `security.md`) | Signed checklist |
-| C | Transplant shell CI | unit + `backend/tests/api/` + `backend/tests/services/` + `frontend/src/**/*.test.tsx` | CI URL |
-| D | Cross-tenant isolation | `backend/tests/rls/test_cross_tenant_isolation.py` (+ forced RLS, API/services/storage) | CI URL + RLS report |
-| E | Effective dating | `backend/tests/master_data/test_effective_dating.py` | CI URL |
-| F | Calculations | `backend/tests/calculations/test_june_2026_totals.py` + unit invariants + float ban | CI URL + golden report |
-| H | Workflow | maker_checker + posted_immutability + idempotency + posted_sql_immutability | CI URL |
-| I | Storage | `backend/tests/storage/test_export_durability.py`; `backend/tests/storage/test_tenant_object_isolation.py` | CI URL |
-| J | Reports | reconciliation + excel/pdf golden + parity | CI URL + golden report |
-| K | Deploy/restore/E2E | `backend/tests/security/test_backup_restore_rls.py`; Playwright critical/a11y/visual | Deploy + Playwright reports |
+| C | CI | `./scripts/verify.sh` + `.github/workflows/ci.yml` | CI URL + transcript |
+| D | Isolation | `backend/tests/rls/`, `backend/tests/gate_d/`, tenant-context tests | CI URL + RLS transcript |
+| E | Effective dating | versioning/model/RLS master-data suites | CI URL |
+| F | Calculations | domain golden, HTTP golden, money/property, and float-guard suites | CI URL + golden transcript |
+| H | Workflow | workflow/posting/idempotency API, service, and immutable-grant suites | CI URL |
+| I | Storage | storage/artifact suites + persistence rehearsal | CI URL + rehearsal |
+| J | Reports | `backend/tests/reports/`, report services/API, canonical validator | CI URL + validator |
+| K | Deploy/restore/E2E | deploy contract, backup/smoke scripts, current Playwright specs | Deploy + restore + Playwright reports |
 
 ---
 
@@ -146,18 +146,18 @@ The release manager confirms each item before tagging.
 
 | # | Requirement | Pointer |
 | --- | --- | --- |
-| 1 | **No real PII** in repo, CI logs, screenshots, or golden artifacts | [testing.md](testing.md) sanitized fixture policy; `scripts/ci/pii_fixture_guard.sh` |
-| 2 | **No float** in payroll calculation domain — `Decimal` / minor-units only | `scripts/ci/no_float_payroll_domain.sh`; `backend/tests/unit/test_money_decimal.py` |
-| 3 | **Every tenant-scoped table** has forced RLS (`ALTER TABLE ... FORCE ROW LEVEL SECURITY`) + isolation tests | `backend/tests/rls/test_forced_rls_coverage.py`; `backend/tests/rls/test_cross_tenant_isolation.py`; gate D |
+| 1 | **No real PII** in repo, CI logs, screenshots, or golden artifacts | [testing.md](testing.md) sanitized fixture policy. A dedicated fixture-PII CI guard is still an acceptance gap. |
+| 2 | **No float** in payroll calculation domain — `Decimal` / minor-units only | `backend/tests/domain/test_no_float_guard.py`; money/property suites |
+| 3 | **Every tenant-scoped table** has forced RLS (`ALTER TABLE ... FORCE ROW LEVEL SECURITY`) + isolation tests | `backend/tests/rls/`; `backend/tests/gate_d/`; per-phase migration assertions; gate D |
 | 4 | **Every state-changing command** is authorized (capability/permission checks at the API layer), idempotent (idempotency keys), lock-protected where needed, and audited (append-only audit log tables) | gates H + C; [threat-model.md](threat-model.md) §5–6 |
-| 5 | **Posted results** are traceable to source data versions, approval who/when, and content hash | `backend/tests/workflow/test_posted_immutability.py`; immutability triggers |
-| 6 | **Every report type** has one DTO/source of truth for Excel+PDF, parity tested, reconciliation to source | gate J suites |
-| 7 | **Atlas visual parity** snapshots at `frontend/e2e/visual-shell.spec.ts` / Playwright baselines | gate K |
-| 8 | **Session/CSRF baseline** matches [security.md](security.md): HTTP-only + Secure + SameSite=Lax cookies (justify Lax for WorkOS redirect auth) **plus** synchronizer CSRF token on state-changing routes | `backend/tests/security/test_csrf.py`; `backend/tests/security/test_session_hardening.py` |
-| 9 | **WorkOS webhook signature verification** enabled in all deployed environments | `backend/tests/security/test_workos_webhooks.py`; [threat-model.md](threat-model.md) §3 |
-| 10 | **Support break-glass** is time-boxed and audited; distinct from normal RLS | `backend/tests/security/test_support_break_glass.py`; [security.md](security.md); [threat-model.md](threat-model.md) §10 |
-| 11 | **Backup/restore** rehearsed with RLS still enforced under NOSUPERUSER NOBYPASSRLS runtime database role | `backend/tests/security/test_backup_restore_rls.py`; gate K |
-| 12 | **Migration chain + drift** clean | `backend/tests/migrations/test_alembic_chain.py`; `backend/tests/migrations/test_migration_drift.py` |
+| 5 | **Posted results** are traceable to source data versions, approval who/when, and content hash | run posting/workflow suites plus immutable-grant/RLS tests |
+| 6 | **Every report type** has one DTO/source of truth for Excel+PDF, parity tested, reconciliation to source | gate J suites and canonical contract validator |
+| 7 | **Atlas visual parity** evidence exists when shell code changes | gate K; no automated visual spec exists today |
+| 8 | **Session/CSRF baseline** matches [security.md](security.md) | session/auth tests cover cookie/session behavior; synchronizer CSRF remains an implementation and acceptance gap |
+| 9 | **WorkOS webhook signature verification** enabled in all deployed environments | `backend/tests/api/test_webhooks_workos.py`; [threat-model.md](threat-model.md) §3 |
+| 10 | **Support break-glass** is time-boxed and audited; distinct from normal RLS | no elevation path exists today (fails closed); implementing it requires dedicated evidence |
+| 11 | **Backup/restore** rehearsed with RLS still enforced under NOSUPERUSER NOBYPASSRLS runtime database role | `scripts/backup-restore.sh` plus a release-environment RLS transcript; not automated today |
+| 12 | **Migration chain + drift** clean | fresh-upgrade/per-migration suites plus the CI `alembic upgrade head` and `alembic check` job |
 
 ---
 

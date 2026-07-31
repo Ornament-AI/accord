@@ -48,12 +48,13 @@ REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}")
 
 
 def _auth_provider_ready(settings: Settings) -> bool:
-    """Mark auth readiness for the WorkOS / DevTest seam.
+    """Mark auth readiness for the WorkOS / DevAuth adapter seam.
 
-    A later lane initializes real providers. Until then:
-    - DEV_AUTH_BYPASS ⇒ DevTest ready
-    - WorkOS client id + API key present ⇒ config seam ready
-    - non-production with neither ⇒ allow skeleton boot
+    Adapter construction still happens when an auth route is used. Readiness
+    reports whether the configured environment has a usable adapter path:
+    - DEV_AUTH_BYPASS ⇒ DevAuth ready
+    - WorkOS client id + API key present ⇒ WorkOS config ready
+    - non-production with neither ⇒ allow app boot, while auth routes fail closed
     """
     if settings.dev_auth_bypass:
         return True
