@@ -96,7 +96,7 @@ function resolveLoginError(urlError: string | null, storedError: string | null):
 }
 
 function requestCodeErrorMessage(error: unknown): string {
-	if (error instanceof ApiError && error.status === 403) {
+	if (error instanceof ApiError && error.code === "EmailNotRegistered") {
 		return "This email is not registered with us.";
 	}
 	return error instanceof Error ? error.message : "Sign-in failed. Please try again.";

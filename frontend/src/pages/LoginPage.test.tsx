@@ -134,6 +134,34 @@ describe("LoginPage", () => {
 		expect(screen.queryByLabelText("Sign-in code")).not.toBeInTheDocument();
 	});
 
+	it("preserves non-registration 403 errors on the code-request screen", async () => {
+		const { handlers } = createAuthHandlers({ unauthenticated: true });
+		server.use(
+			...handlers,
+			http.post("/api/auth/magic-code", () =>
+				HttpResponse.json(
+					{
+						detail: "Sign-in is unavailable for this request.",
+						error: "SignInForbidden",
+					},
+					{ status: 403 },
+				),
+			),
+		);
+
+		renderLogin();
+		fireEvent.click(await screen.findByRole("button", { name: "Email me a sign-in code" }));
+		fireEvent.change(screen.getByLabelText("Email"), {
+			target: { value: "member@example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Sign-in is unavailable for this request.",
+		);
+		expect(screen.queryByLabelText("Sign-in code")).not.toBeInTheDocument();
+	});
+
 	it("uses the safe hosted continuation only when WorkOS requires a challenge", async () => {
 		const assignSpy = vi.fn();
 		vi.stubGlobal("location", { ...window.location, assign: assignSpy });
