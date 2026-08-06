@@ -1,10 +1,12 @@
 import { GrainGradient } from "@paper-design/shaders-react";
+import { REGEXP_ONLY_DIGITS } from "input-otp";
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { ThemeSwitcher } from "@/components/ui/theme-switcher";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,6 +28,12 @@ const GRAIN_GRADIENT_COLORS = {
 		colors: ["#123331", "#1f5a55", "#2f8179", "#6aa99f"],
 	},
 };
+
+const EMAIL_CODE_LENGTH = 6;
+
+function sanitizeEmailCode(value: string) {
+	return value.replace(/\D/g, "").slice(0, EMAIL_CODE_LENGTH);
+}
 
 function useResolvedDarkTheme() {
 	const { theme } = useTheme();
@@ -87,6 +95,13 @@ function resolveLoginError(urlError: string | null, storedError: string | null):
 	return storedError;
 }
 
+function requestCodeErrorMessage(error: unknown): string {
+	if (error instanceof ApiError && error.status === 403) {
+		return "This email is not registered with us.";
+	}
+	return error instanceof Error ? error.message : "Sign-in failed. Please try again.";
+}
+
 export default function LoginPage() {
 	const { user, isLoading } = useAuth();
 	const navigate = useNavigate();
@@ -131,7 +146,13 @@ export default function LoginPage() {
 				window.location.assign(fallbackUrl);
 				return;
 			}
-			setAuthError(error instanceof Error ? error.message : "Sign-in failed. Please try again.");
+			setAuthError(
+				step === "request-code"
+					? requestCodeErrorMessage(error)
+					: error instanceof Error
+						? error.message
+						: "Sign-in failed. Please try again.",
+			);
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -166,9 +187,13 @@ export default function LoginPage() {
 
 				<div className="flex flex-col gap-6 rounded-lg border app-border-level-1 bg-card p-6 shadow-sm">
 					<div className="flex flex-col items-center gap-2 text-center">
-						<h1 className="text-2xl font-semibold">Welcome</h1>
+						<h1 className="text-2xl font-semibold">
+							{step === "verify-code" ? "Check your email" : "Welcome"}
+						</h1>
 						<p className="text-sm text-muted-foreground">
-							Sign in to continue to your payroll workspace.
+							{step === "verify-code"
+								? "Enter the six-digit code sent to your email."
+								: "Sign in to continue to your payroll workspace."}
 						</p>
 					</div>
 
@@ -183,19 +208,20 @@ export default function LoginPage() {
 							disabled={isSubmitting}
 							className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
 						>
-							<div className="grid gap-2">
-								<Label htmlFor="login-email">Email</Label>
-								<Input
-									id="login-email"
-									type="email"
-									autoComplete="username"
-									autoCapitalize="none"
-									value={email}
-									onChange={(event) => setEmail(event.target.value)}
-									readOnly={step === "verify-code"}
-									required
-								/>
-							</div>
+							{step !== "verify-code" ? (
+								<div className="grid gap-2">
+									<Label htmlFor="login-email">Email</Label>
+									<Input
+										id="login-email"
+										type="email"
+										autoComplete="username"
+										autoCapitalize="none"
+										value={email}
+										onChange={(event) => setEmail(event.target.value)}
+										required
+									/>
+								</div>
+							) : null}
 							{step === "password" ? (
 								<div className="grid gap-2">
 									<Label htmlFor="login-password">Password</Label>
@@ -210,22 +236,32 @@ export default function LoginPage() {
 								</div>
 							) : null}
 							{step === "verify-code" ? (
-								<>
-									<p className="text-sm text-muted-foreground" role="status">
-										Check your email for the one-time sign-in code.
-									</p>
-									<div className="grid gap-2">
-										<Label htmlFor="login-code">Sign-in code</Label>
-										<Input
-											id="login-code"
-											inputMode="numeric"
-											autoComplete="one-time-code"
-											value={code}
-											onChange={(event) => setCode(event.target.value)}
-											required
-										/>
-									</div>
-								</>
+								<div className="flex flex-col gap-3">
+									<Label htmlFor="login-code" className="sr-only">
+										Sign-in code
+									</Label>
+									<InputOTP
+										id="login-code"
+										maxLength={EMAIL_CODE_LENGTH}
+										inputMode="numeric"
+										autoComplete="one-time-code"
+										pattern={REGEXP_ONLY_DIGITS}
+										pasteTransformer={sanitizeEmailCode}
+										value={code}
+										onChange={(value) => setCode(sanitizeEmailCode(value))}
+										required
+										containerClassName="justify-center"
+									>
+										<InputOTPGroup className="gap-1.5">
+											<InputOTPSlot className="size-10 rounded-md border text-base" index={0} />
+											<InputOTPSlot className="size-10 rounded-md border text-base" index={1} />
+											<InputOTPSlot className="size-10 rounded-md border text-base" index={2} />
+											<InputOTPSlot className="size-10 rounded-md border text-base" index={3} />
+											<InputOTPSlot className="size-10 rounded-md border text-base" index={4} />
+											<InputOTPSlot className="size-10 rounded-md border text-base" index={5} />
+										</InputOTPGroup>
+									</InputOTP>
+								</div>
 							) : null}
 							<Button type="submit" className="w-full">
 								{submitLabel}

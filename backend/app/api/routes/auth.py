@@ -6,6 +6,7 @@ import hashlib
 
 from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy import select
 
 from app.api.deps import Session
 from app.api.responses import problem_response
@@ -22,15 +23,18 @@ from app.auth.errors import (
 from app.auth.session import get_session_store, sign_oauth_state, verify_oauth_state
 from app.auth.webhooks import handle_workos_event, verify_workos_webhook
 from app.config import get_settings
-from app.models.identity import User
+from app.models.identity import OrganizationInvitation, OrganizationMembership, User
 from app.middleware.rate_limit import get_auth_client_ip, get_auth_rate_limit_key, limiter
 from app.schemas.identity import MagicCodeLoginRequest, MagicCodeRequest, PasswordLoginRequest
 from app.services.identity import (
     build_me_payload,
     establish_session_for_identity,
 )
+from app.services.bootstrap import get_singleton_organization
+from app.tenancy import bind_tenant_context
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+EMAIL_NOT_REGISTERED_DETAIL = "This email is not registered with us."
 
 
 def _request_id(request: Request) -> str | None:
@@ -110,6 +114,46 @@ async def _complete_headless_login(
     return response
 
 
+async def _email_is_registered(db: Session, email: str) -> bool:
+    """Return whether an email has active or pending access to Accord."""
+    normalized_email = email.strip()
+    user = (
+        await db.execute(select(User).where(User.email == normalized_email))
+    ).scalar_one_or_none()
+    if user is not None and user.is_platform_admin:
+        return True
+
+    organization = await get_singleton_organization(db)
+    if organization is None:
+        return False
+    await bind_tenant_context(db, organization_id=organization.id)
+
+    if user is not None:
+        membership = (
+            await db.execute(
+                select(OrganizationMembership.id).where(
+                    OrganizationMembership.organization_id == organization.id,
+                    OrganizationMembership.user_id == user.id,
+                    OrganizationMembership.is_active.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        if membership is not None:
+            return True
+
+    invitation = (
+        await db.execute(
+            select(OrganizationInvitation.id).where(
+                OrganizationInvitation.organization_id == organization.id,
+                OrganizationInvitation.email == normalized_email,
+                OrganizationInvitation.accepted_at.is_(None),
+                OrganizationInvitation.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    return invitation is not None
+
+
 @router.get("/login")
 async def login(
     request: Request,
@@ -185,8 +229,9 @@ async def login_with_password(
 async def request_magic_code(
     request: Request,
     body: MagicCodeRequest,
+    db: Session,
 ) -> Response:
-    """Send an email sign-in code without revealing whether an account exists."""
+    """Send an email sign-in code to a registered Accord user."""
     settings = get_settings()
     try:
         adapter = get_auth_adapter(settings)
@@ -196,6 +241,13 @@ async def request_magic_code(
             status_code=exc.status_code,
             detail=exc.detail,
             error=exc.error,
+        )
+    if not await _email_is_registered(db, body.email):
+        return _problem(
+            request,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=EMAIL_NOT_REGISTERED_DETAIL,
+            error="EmailNotRegistered",
         )
     await adapter.send_magic_code(
         email=body.email,

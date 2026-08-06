@@ -226,13 +226,19 @@ async def test_password_login_returns_generic_401_for_invalid_credentials(client
 
 
 @pytest.mark.asyncio
-async def test_magic_code_flow_stays_on_accord_and_mints_session(client, monkeypatch):
+async def test_magic_code_flow_stays_on_accord_and_mints_session(client, session, monkeypatch):
     value = settings(
         dev_auth_bypass=False,
         workos_client_id="client_test",
         workos_api_key="key_test",
     )
     patch_get_settings(monkeypatch, value)
+    await provision_organization(
+        session,
+        name="Headless Magic Org",
+        slug="headless-magic-org",
+        admin_email="headless-magic@example.com",
+    )
     mock_adapter = MagicMock()
     mock_adapter.send_magic_code = AsyncMock(return_value=None)
     mock_adapter.authenticate_with_magic_code = AsyncMock(
@@ -258,6 +264,29 @@ async def test_magic_code_flow_stays_on_accord_and_mints_session(client, monkeyp
     assert session_cookie_from_response(login_response)
     mock_adapter.send_magic_code.assert_awaited_once()
     mock_adapter.authenticate_with_magic_code.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_magic_code_request_rejects_unregistered_email(client, monkeypatch):
+    value = settings(
+        dev_auth_bypass=False,
+        workos_client_id="client_test",
+        workos_api_key="key_test",
+    )
+    patch_get_settings(monkeypatch, value)
+    mock_adapter = MagicMock()
+    mock_adapter.send_magic_code = AsyncMock(return_value=None)
+    monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
+
+    response = await client.post(
+        "/api/auth/magic-code",
+        json={"email": "missing@example.com"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "This email is not registered with us."
+    assert response.json()["error"] == "EmailNotRegistered"
+    mock_adapter.send_magic_code.assert_not_awaited()
 
 
 @pytest.mark.asyncio
