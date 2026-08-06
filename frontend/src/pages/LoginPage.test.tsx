@@ -97,13 +97,69 @@ describe("LoginPage", () => {
 			target: { value: "hello@ornament.systems" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-		expect(
-			await screen.findByText("Check your email for the one-time sign-in code."),
-		).toBeVisible();
+		expect(await screen.findByText("Enter the six-digit code sent to your email.")).toBeVisible();
+		expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
 		fireEvent.change(screen.getByLabelText("Sign-in code"), { target: { value: "123456" } });
 		fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 
 		await waitFor(() => expect(assignSpy).toHaveBeenCalledWith("/"));
+	});
+
+	it("keeps an unregistered email on the initial code-request screen", async () => {
+		const { handlers } = createAuthHandlers({ unauthenticated: true });
+		server.use(
+			...handlers,
+			http.post("/api/auth/magic-code", () =>
+				HttpResponse.json(
+					{
+						detail: "This email is not registered with us.",
+						error: "EmailNotRegistered",
+					},
+					{ status: 403 },
+				),
+			),
+		);
+
+		renderLogin();
+		fireEvent.click(await screen.findByRole("button", { name: "Email me a sign-in code" }));
+		fireEvent.change(screen.getByLabelText("Email"), {
+			target: { value: "missing@example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"This email is not registered with us.",
+		);
+		expect(screen.getByLabelText("Email")).toHaveValue("missing@example.com");
+		expect(screen.queryByLabelText("Sign-in code")).not.toBeInTheDocument();
+	});
+
+	it("preserves non-registration 403 errors on the code-request screen", async () => {
+		const { handlers } = createAuthHandlers({ unauthenticated: true });
+		server.use(
+			...handlers,
+			http.post("/api/auth/magic-code", () =>
+				HttpResponse.json(
+					{
+						detail: "Sign-in is unavailable for this request.",
+						error: "SignInForbidden",
+					},
+					{ status: 403 },
+				),
+			),
+		);
+
+		renderLogin();
+		fireEvent.click(await screen.findByRole("button", { name: "Email me a sign-in code" }));
+		fireEvent.change(screen.getByLabelText("Email"), {
+			target: { value: "member@example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Sign-in is unavailable for this request.",
+		);
+		expect(screen.queryByLabelText("Sign-in code")).not.toBeInTheDocument();
 	});
 
 	it("uses the safe hosted continuation only when WorkOS requires a challenge", async () => {

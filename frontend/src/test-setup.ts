@@ -3,6 +3,17 @@ import { afterAll, afterEach, beforeAll, vi } from "vitest";
 
 import { server } from "@/test/msw-server";
 
+if (typeof globalThis.ResizeObserver === "undefined") {
+	Object.defineProperty(globalThis, "ResizeObserver", {
+		configurable: true,
+		value: class ResizeObserverMock {
+			disconnect() {}
+			observe() {}
+			unobserve() {}
+		},
+	});
+}
+
 beforeAll(() => {
 	server.listen({ onUnhandledRequest: "bypass" });
 });

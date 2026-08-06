@@ -268,7 +268,7 @@ export interface paths {
         put?: never;
         /**
          * Request Magic Code
-         * @description Send an email sign-in code without revealing whether an account exists.
+         * @description Send an email sign-in code to a registered Accord user.
          */
         post: operations["request_magic_code_api_auth_magic_code_post"];
         delete?: never;

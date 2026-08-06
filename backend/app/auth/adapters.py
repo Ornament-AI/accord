@@ -164,8 +164,8 @@ class WorkOSAuthAdapter:
                 user_agent=user_agent,
             )
         except NotFoundError:
-            # Unknown account: return the same 204 as a known account so the
-            # email-code screen cannot be used to enumerate registered users.
+            # The route has already confirmed local registration. Keep the
+            # provider's missing-account detail out of the public response.
             # Other 4xx/config failures (BadRequestError, etc.) fall through to
             # WorkOSError below so we never advance the UI when no email was sent.
             return
