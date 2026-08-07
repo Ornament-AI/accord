@@ -27,7 +27,7 @@ function useAuditor(events = createAuditHandlers()) {
 	return events;
 }
 
-describe("Atlas-parity audit history", () => {
+describe("audit history", () => {
 	beforeEach(() => {
 		queryClient.clear();
 		Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });

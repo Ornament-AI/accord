@@ -25,6 +25,7 @@ test-results/
 .ruff_cache/
 .eslintcache
 .turbo/
+.hypothesis/
 
 # Environment / secrets — never commit real credentials
 .env

@@ -10,8 +10,8 @@
 # accord_migrator / accord_worker) against the app database when
 # backend/scripts/create_roles.sql is present.
 #
-# Adapted from Atlas scripts/dev-setup.sh (v1.1.0): ATLAS_* -> ACCORD_*, shared
-# Homebrew cluster with auto-detected local port (see scripts/lib/postgres.sh).
+# Uses a shared Homebrew Postgres cluster with an auto-detected local port
+# (see scripts/lib/postgres.sh).
 
 set -euo pipefail
 

@@ -5,12 +5,9 @@
 #   ./scripts/smoke-test.sh                       # default: http://127.0.0.1:${ACCORD_WEB_PORT:-8085}
 #   ./scripts/smoke-test.sh http://10.0.0.5:8080   # custom base URL
 #
-# Adapted from Atlas deploy/smoke-test.sh (v1.1.0): default target points at
-# the local deploy/docker-compose.yml `web` port (127.0.0.1:8085) instead of
-# a fixed production domain; Docker service names renamed db/backend/web ->
-# postgres/api/web; the Atlas-domain auth-probe path (/api/bills) is replaced
-# with a generic readyz-based check. This unauthenticated smoke command proves
-# deployment health only; authenticated product flows belong to API/E2E tests.
+# Default target is the local deploy/docker-compose.yml `web` port
+# (127.0.0.1:8085). This unauthenticated smoke command proves deployment
+# health only; authenticated product flows belong to API/E2E tests.
 #
 # Exit codes:
 #   0  — all checks passed

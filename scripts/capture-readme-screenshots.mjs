@@ -142,11 +142,6 @@ async function main() {
 	await page.getByTestId("employee-detail-page").waitFor({ timeout: 30_000 });
 	await shot(page, "employee-detail.png");
 
-	console.log("pay runs list…");
-	await page.goto(`${baseURL}/pay-runs`);
-	await page.getByTestId("pay-runs-page").waitFor({ timeout: 30_000 });
-	await shot(page, "pay-runs.png");
-
 	console.log("pay run detail…");
 	try {
 		await ensureJunePayRunCalculated(page);
@@ -166,11 +161,6 @@ async function main() {
 	await page.goto(`${baseURL}/reports/pay-bill`);
 	await page.getByTestId("reports-page").waitFor({ timeout: 30_000 });
 	await shot(page, "reports.png");
-
-	console.log("audit…");
-	await page.goto(`${baseURL}/audit`);
-	await page.getByTestId("audit-page").waitFor({ timeout: 30_000 });
-	await shot(page, "audit.png");
 
 	await compressLoginJpeg();
 	await browser.close();

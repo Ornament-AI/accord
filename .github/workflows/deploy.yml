@@ -1,8 +1,8 @@
 name: Deploy
 
 # Tag-triggered release pipeline for Accord.
-# Adapted from Atlas deploy.yml (image build/push to ghcr.io/ornament-ai/*)
-# and Atlas ci.yml migrations-release-upgrade (cross-release alembic replay).
+# Builds/pushes ghcr.io/ornament-ai/accord images and runs cross-release
+# Alembic upgrade replay.
 #
 # First-release behavior: when this is the first v* tag on the repo (no prior
 # v* tag exists), the migrations-release-upgrade job resolves has_previous=false
@@ -118,10 +118,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   # Cross-release Alembic upgrade path (previous v* → current tag).
-  # Mirrors Atlas ci.yml migrations-release-upgrade; active here because Accord
-  # ships real alembic revisions under backend/migrations/. Accord migrations
-  # create RLS policies for cluster roles that are provisioned out of band, so
-  # the scratch database must mirror CI and bootstrap those roles first.
+  # Accord migrations create RLS policies for cluster roles that are
+  # provisioned out of band, so the scratch database must mirror CI and
+  # bootstrap those roles first.
   migrations-release-upgrade:
     name: Migrations release upgrade
     runs-on: ubuntu-latest

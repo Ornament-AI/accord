@@ -23,7 +23,6 @@ and any required runtime/restore evidence.
 
 | Gate | Status | Current evidence | Remaining requirement |
 | --- | --- | --- | --- |
-| **A — Atlas baseline** | **partial** | `docs/atlas-upstream-manifest.md` records the pinned Atlas source, copy/exclusion inventory, rename map, versions, licenses, and parity checklist. | No executable baseline comparison exists. Attach a review/comparison transcript when the transplanted shell changes. |
 | **B — Contracts** | **partial** | Architecture, ADRs, payroll domain, testing, threat model, security, operations, report specs, acceptance, and this readiness map are maintained in-tree. | Engineering, security, and release-manager sign-off is external evidence and is not stored in this repository. |
 | **C — CI** | **met** | `./scripts/verify.sh`; `.github/workflows/ci.yml` backend, migration, frontend, and Docker jobs. | The hosted API-type job is still a placeholder; local `verify.sh` is the actual generated-type drift gate. |
 | **D — Isolation** | **met** | `backend/tests/rls/`, `backend/tests/gate_d/`, `backend/tests/api/test_tenant_context.py`, and per-phase migration RLS assertions run under restricted roles. | Re-run the backend lane for the exact release commit. |

@@ -60,15 +60,13 @@ the authoritative release boundaries.
 
 ## 0.1.0 — 2026-07-18
 
-First product cut of Accord: Atlas shell transplant plus Phase 0–5 payroll
+First product cut of Accord: application shell plus Phase 0–5 payroll
 platform (tenancy through reports and operations).
 
-### Atlas upstream & stack
+### Stack
 
-- Pinned Atlas upstream **v1.1.0** (`docs/atlas-upstream-manifest.md`; Accord
-  commit `d73414e`), upstream commit `4d5d1f980f3b17144cc6f6173974ff9205fb573a`.
-- Backend transplant of Atlas infrastructure skeleton (`52589ea`); frontend
-  design system / app shell transplant (`c5970b0`).
+- Initial backend infrastructure (`52589ea`) and frontend design system / app
+  shell (`c5970b0`).
 - Stack pins (read from repo files on 2026-07-18):
   - **Python** 3.14.6 (`backend/Dockerfile`); Ruff target py313 (`pyproject.toml`)
   - **FastAPI** 0.139.0, **SQLModel** 0.0.39, **SQLAlchemy** 2.0.51,

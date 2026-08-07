@@ -1,6 +1,6 @@
 """Generic safe Excel writer for tabular :class:`~app.reports.base.ReportDTO` values.
 
-Formula-injection neutralization follows Atlas ``excel_export_helpers`` mechanics:
+Formula-injection neutralization for Excel cells:
 strip openpyxl ``ILLEGAL_CHARACTERS_RE``, then escape leading ``=``, ``+``, ``-``,
 ``@`` (including after leading whitespace/control chars) with a leading apostrophe.
 
@@ -8,7 +8,7 @@ Money cells are written as numbers (``float`` conversion at the cell boundary
 only, from :class:`~decimal.Decimal` quantized to 2 decimal places) with the
 Indian-grouping number format ``#,##,##0.00``.
 
-Tradeoff vs Atlas: Atlas uses western ``#,##0.00``. Accord deliberately uses
+Western ``#,##0.00`` is common elsewhere. Accord deliberately uses
 ``#,##,##0.00`` because payroll amounts are INR and display grouping follows
 :mod:`app.reports.formatting` (Indian lakh/crore). Excel applies the custom
 group sizes only to the trailing groups of this pattern — it is not a perfect
@@ -36,7 +36,7 @@ _FORMULA_PREFIXES = ("=", "+", "-", "@")
 _UNSAFE_LEADING_CHARS = frozenset({"\t", "\r", "\n", "\0"})
 _TWO_PLACES = Decimal("0.01")
 
-# Indian-grouping money format (see module docstring tradeoff vs Atlas #,##0.00).
+# Indian-grouping money format (see module docstring).
 MONEY_FORMAT = "#,##,##0.00"
 COUNT_FORMAT = "#,##0"
 DATE_FORMAT = "dd-mmm-yyyy"

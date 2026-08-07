@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Shared package-manager resolution for local dev scripts.
-# Adapted from Atlas scripts/lib/package-manager.sh (v1.1.0); load-guard
-# variable renamed from ATLAS_PACKAGE_MANAGER_LOADED to
-# ACCORD_PACKAGE_MANAGER_LOADED.
+# Load-guarded helper shared by local verification and start scripts.
 
 if [[ -n "${ACCORD_PACKAGE_MANAGER_LOADED:-}" ]]; then
 	return 0

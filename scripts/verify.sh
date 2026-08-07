@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Canonical local verification contract for Accord.
-# Adapted from Atlas scripts/verify.sh (v1.1.0): env/venv paths renamed for
-# Accord, no Firebase, and every backend/frontend step is guarded so a
-# lane that hasn't landed a given piece yet prints a clear notice and is
-# skipped rather than crashing with an unclear stack trace. A step that DID
-# run and failed still fails the whole script (non-zero exit).
+# Every backend/frontend step is guarded so a lane that has not landed a
+# given piece yet prints a clear notice and is skipped rather than crashing
+# with an unclear stack trace. A step that did run and failed still fails
+# the whole script (non-zero exit).
 
 set -uo pipefail
 
@@ -74,7 +73,7 @@ if [[ -x "$ROOT/scripts/generate-api-types.sh" ]]; then
 		die_step "frontend/src/types/api.generated.ts is out of date — run ./scripts/generate-api-types.sh and commit the diff"
 	fi
 else
-	skip_step "API type drift check — scripts/generate-api-types.sh does not exist yet (pending wiring of backend/scripts/export_openapi.py -> frontend/src/types/api.generated.ts; see docs/atlas-upstream-manifest.md §2A)"
+	skip_step "API type drift check — scripts/generate-api-types.sh does not exist yet"
 fi
 
 step "Lint frontend"

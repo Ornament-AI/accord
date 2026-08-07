@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Stop Accord dev backend and frontend processes. Postgres is left running.
-# Adapted from Atlas scripts/stop.sh (v1.1.0): state dir renamed .atlas-dev ->
-# .accord-dev; listen ports come from cache / env (see scripts/lib/ports.sh).
+# Listen ports come from cache / env (see scripts/lib/ports.sh).
 
 set -euo pipefail
 
@@ -99,8 +98,8 @@ stop_port() {
 
 stop_pidfile backend
 stop_pidfile frontend
-# Only reclaim cached Accord ports — never the hard-coded defaults when cache
-# pointed elsewhere (avoids killing Atlas on 5173/8000).
+# Only reclaim cached Accord ports, never the hard-coded defaults when the
+# cache pointed elsewhere (avoids killing unrelated processes on 5173/8000).
 if cached="$(read_cached_port backend)" && [[ "$BACKEND_PORT" == "$cached" ]]; then
 	stop_port "$BACKEND_PORT" "backend"
 fi

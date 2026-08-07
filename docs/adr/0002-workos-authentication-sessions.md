@@ -13,7 +13,7 @@ Requirements:
 3. Access rights sourced only from local `organization_memberships` and capabilities — never from WorkOS Organization membership alone.
 4. Auto-bind the singleton org when the user has an active membership. There is no multi-org switch or selection UX ([0011](0011-single-organization.md)).
 5. Verified, idempotent WorkOS webhooks (identity updates only, unless later extended).
-6. Fail-closed production config, plus a non-production test-identity adapter (mirroring Atlas’s `DEV_AUTH_BYPASS` fail-closed rules).
+6. Fail-closed production config, plus a non-production test-identity adapter (including a non-production `DEV_AUTH_BYPASS` adapter with fail-closed production rules).
 
 Related: [0003-backend-bootstrap-environment.md](0003-backend-bootstrap-environment.md), [0004-organization-url-session-context.md](0004-organization-url-session-context.md), [0011-single-organization.md](0011-single-organization.md).
 
@@ -109,7 +109,7 @@ The active org lives in the **server-side session**, not in a client-trusted hea
 
 ### 6. Fail-closed configuration and auth providers
 
-Mirror Atlas’s pydantic-settings `model_validator` pattern (see [0003-backend-bootstrap-environment.md](0003-backend-bootstrap-environment.md)):
+Use the pydantic-settings `model_validator` pattern (see [0003-backend-bootstrap-environment.md](0003-backend-bootstrap-environment.md)):
 
 - In **production**, empty `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`,
   `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, or `SESSION_SECRET_KEY`
@@ -187,9 +187,9 @@ Notes:
 
 ## Alternatives Considered
 
-1. **Firebase Auth (Atlas parity)** — Rejected for Accord. Multi-org SaaS plus SSO/enterprise needs favor WorkOS AuthKit. Firebase assumptions must not be copied.
+1. **Firebase Auth** — Rejected for Accord. Multi-org SaaS plus SSO/enterprise needs favor WorkOS AuthKit. Firebase assumptions must not be copied.
 2. **Expose WorkOS tokens to the SPA** — Rejected. It widens the XSS blast radius. The Accord session cookie is enough for API auth.
 3. **Signed/encrypted cookie with no server store** — A viable option with simpler ops, but weaker instant revocation. Rejected for Phase 0 in favor of an opaque id plus server store. May revisit if session store ops become a bottleneck.
 4. **WorkOS Organizations as live authz source** — Rejected. Accord’s `organization_memberships` stays the source of truth for payroll access.
 5. **`SameSite=Strict` cookies** — Rejected. Strict breaks the session on the first redirect back from WorkOS.
-6. **Silent auth disable when WorkOS env vars missing** — Rejected. Fail-closed startup checks are mandatory in production (Atlas pattern).
+6. **Silent auth disable when WorkOS env vars missing** — Rejected. Fail-closed startup checks are mandatory in production.

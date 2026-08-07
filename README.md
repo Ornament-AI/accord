@@ -283,13 +283,12 @@ TEST_DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:5432/accord_test
 ## Current status
 
 Release gates are defined in
-[`docs/release-acceptance.md`](docs/release-acceptance.md) (letters A–F and H–K;
+[`docs/release-acceptance.md`](docs/release-acceptance.md) (letters B–F and H–K;
 there is no gate G). Evidence for the current tree is in
 [`docs/release-readiness.md`](docs/release-readiness.md).
 
 | Gate | Status | One-line description |
 | --- | --- | --- |
-| A. Atlas baseline | Partial | Pinned transplant manifest exists; no executable baseline verifier |
 | B. Contracts | Partial | Maintained documents exist; release sign-off is external evidence |
 | C. CI | Met | Backend, migration, frontend, and Docker lanes are wired |
 | D. Isolation | Met | Forced-RLS and adversarial fail-closed suites are present |
@@ -298,7 +297,7 @@ there is no gate G). Evidence for the current tree is in
 | H. Workflow | Partial | Maker/checker, posting, reversal, and immutability are covered; calculate is not idempotent or audited |
 | I. Export durability | Partial | Storage/artifact tests exist; no automated restore/object-persistence rehearsal |
 | J. Reports | Met | Family, formatter, canonical-contract, and reconciliation suites are present |
-| K. Deploy / restore / E2E | Partial | Release/deploy scripts and Playwright exist; visual parity and automated restore-RLS proof do not |
+| K. Deploy / restore / E2E | Partial | Release/deploy scripts and Playwright exist; visual regression and automated restore-RLS proof do not |
 
 ## Documentation
 
@@ -334,14 +333,6 @@ there is no gate G). Evidence for the current tree is in
 | [docs/security.md](docs/security.md) | Controls, roles, operational expectations |
 | [docs/threat-model.md](docs/threat-model.md) | Tenancy, workflow, and export threats |
 | [docs/adr/](docs/adr/) | Architecture decision records 0001–0011 |
-
-## Provenance
-
-Accord originally transplanted the design system and infrastructure conventions
-of the Atlas application from a pinned upstream release tag. The application has
-since diverged. See
-[`docs/atlas-upstream-manifest.md`](docs/atlas-upstream-manifest.md) for exact
-provenance, exclusions, and licenses.
 
 ## License
 

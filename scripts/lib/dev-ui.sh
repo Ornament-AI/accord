@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Minimal, dependency-free terminal UI helpers for local dev scripts.
-# Adapted from Atlas scripts/lib/dev-ui.sh (v1.1.0) — no behavior change,
-# just the branding defaults below are Accord's.
+# Branding defaults below are Accord's.
 
 if [[ -n "${DEV_UI_LOADED:-}" ]]; then
 	return 0

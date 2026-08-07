@@ -1,6 +1,5 @@
 # Accord deploy / local-stack compose.
-# Adapted from Atlas deploy/docker-compose.yml (v1.1.0) with PostgreSQL + MinIO,
-# WorkOS env matrix (ADR 0003), and no Firebase / restore-point / data-action machinery.
+# PostgreSQL + MinIO local/self-hosted stack with the WorkOS env matrix (ADR 0003).
 #
 # Usage (from repo root):
 #   set -a && source deploy/.env && set +a   # or export required vars

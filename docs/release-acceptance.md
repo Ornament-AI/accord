@@ -1,8 +1,8 @@
 # Release Acceptance
 
 This matrix defines the gates a release must pass. It covers Accord Phase 0
-and every later release. The gates are lettered **A, B, C, D, E, F, H, I, J,
-K** — the same letters as [testing.md](testing.md). **There is no Gate G.**
+and every later release. The gates are lettered **B, C, D, E, F, H, I, J, K**,
+the same letters as [testing.md](testing.md). **There is no Gate G.**
 
 Cross-references: [testing.md](testing.md), [threat-model.md](threat-model.md),
 [security.md](security.md).
@@ -14,17 +14,6 @@ evidence. A partial pass does not ship.
 
 ## Gate matrix
 
-### Gate A — Atlas baseline
-
-This gate confirms the declared Atlas upstream baseline before any product
-gate runs.
-
-| Field | Content |
-| --- | --- |
-| **Description** | Verify Accord’s declared Atlas upstream baseline (shell/transplant expectations) before product gates. |
-| **Checks / evidence** | Review the pinned source tag, inclusion/exclusion inventory, rename map, and license checklist in `docs/atlas-upstream-manifest.md`; compare the transplanted shell to the pin when the baseline changes. |
-| **Evidence artifact** | Review link or comparison transcript attached to the release packet. There is no executable baseline verifier in the current tree. |
-
 ### Gate B — Phase 0 contracts review
 
 Humans review the Phase 0 contract documents and sign off on them.
@@ -35,14 +24,13 @@ Humans review the Phase 0 contract documents and sign off on them.
 | **Named checks / suites** | Phase 0 contracts review checklist against `docs/testing.md`, `docs/threat-model.md`, `docs/release-acceptance.md`, `docs/security.md` (and linked ADRs / payroll-domain contracts) |
 | **Evidence artifact** | Signed checklist (PR review + release manager sign-off); checklist PDF/markdown in release packet |
 
-### Gate C — Transplant shell CI
+### Gate C — CI
 
-CI must pass lint, typecheck, unit tests, and API smoke tests on the
-transplanted shell.
+CI must pass lint, typecheck, unit tests, and API smoke tests.
 
 | Field | Content |
 | --- | --- |
-| **Description** | Lint, typecheck, unit, and API smoke on the transplanted FastAPI + React shell. |
+| **Description** | Lint, typecheck, unit, and API smoke on the FastAPI + React application. |
 | **Named checks / suites** | `./scripts/verify.sh`; backend suites under `backend/tests/domain/`, `backend/tests/api/`, and `backend/tests/services/`; frontend `src/**/*.test.ts(x)`; migration and Docker jobs in `.github/workflows/ci.yml` |
 | **Evidence artifact** | Green CI workflow URL plus the local verification transcript when required by the release packet |
 
@@ -115,7 +103,7 @@ Tests must prove that deploy, restore, and browser flows work end to end.
 
 | Field | Content |
 | --- | --- |
-| **Description** | Clean-environment deploy; backup/restore and runtime-role rehearsal; Playwright critical paths and accessibility; visual parity evidence when the shell changes. |
+| **Description** | Clean-environment deploy; backup/restore and runtime-role rehearsal; Playwright critical paths and accessibility; visual regression evidence when the shell changes. |
 | **Named checks / suites** | `backend/tests/ops/test_msidc_deploy_contract.py`; `scripts/backup-restore.sh`; `scripts/smoke-test.sh`; `frontend/e2e/auth-and-org.spec.ts`, `master-data.spec.ts`, `payroll-flow.spec.ts`, `reports.spec.ts`, and `axe-a11y.spec.ts` |
 | **Evidence artifact** | Deploy/release workflow URL, exact-image runtime proof, restore/RLS rehearsal report, and Playwright report. The current tree has no automated visual-parity spec. |
 
@@ -127,7 +115,6 @@ Each gate at a glance.
 
 | Gate | Short name | Primary suite paths | Evidence |
 | --- | --- | --- | --- |
-| A | Atlas baseline | `docs/atlas-upstream-manifest.md` comparison | Review link + transcript |
 | B | Phase 0 contracts | docs checklist (`testing.md`, `threat-model.md`, `release-acceptance.md`, `security.md`) | Signed checklist |
 | C | CI | `./scripts/verify.sh` + `.github/workflows/ci.yml` | CI URL + transcript |
 | D | Isolation | `backend/tests/rls/`, `backend/tests/gate_d/`, tenant-context tests | CI URL + RLS transcript |
@@ -152,7 +139,7 @@ The release manager confirms each item before tagging.
 | 4 | **Every state-changing command** is authorized (capability/permission checks at the API layer), idempotent (idempotency keys), lock-protected where needed, and audited (append-only audit log tables) | gates H + C; [threat-model.md](threat-model.md) §5–6 |
 | 5 | **Posted results** are traceable to source data versions, approval who/when, and content hash | run posting/workflow suites plus immutable-grant/RLS tests |
 | 6 | **Every report type** has one DTO/source of truth for Excel+PDF, parity tested, reconciliation to source | gate J suites and canonical contract validator |
-| 7 | **Atlas visual parity** evidence exists when shell code changes | gate K; no automated visual spec exists today |
+| 7 | **UI visual regression** evidence exists when shell code changes | gate K; no automated visual spec exists today |
 | 8 | **Session/CSRF baseline** matches [security.md](security.md) | session/auth tests cover cookie/session behavior; synchronizer CSRF remains an implementation and acceptance gap |
 | 9 | **WorkOS webhook signature verification** enabled in all deployed environments | `backend/tests/api/test_webhooks_workos.py`; [threat-model.md](threat-model.md) §3 |
 | 10 | **Support break-glass** is time-boxed and audited; distinct from normal RLS | no elevation path exists today (fails closed); implementing it requires dedicated evidence |
@@ -165,7 +152,7 @@ The release manager confirms each item before tagging.
 
 | Role | Name | Date | Gates reviewed | Signature |
 | --- | --- | --- | --- | --- |
-| Engineering lead | | | A–F, H–K | |
+| Engineering lead | | | B–F, H–K | |
 | Security reviewer | | | D, H, K + threat-model | |
 | Release manager | | | All + final checklist | |
 
