@@ -105,7 +105,7 @@ Tests must prove that deploy, restore, and browser flows work end to end.
 | --- | --- |
 | **Description** | Clean-environment deploy; backup/restore and runtime-role rehearsal; Playwright critical paths and accessibility; visual regression evidence when the shell changes. |
 | **Named checks / suites** | `backend/tests/ops/test_msidc_deploy_contract.py`; `scripts/backup-restore.sh`; `scripts/smoke-test.sh`; `frontend/e2e/auth-and-org.spec.ts`, `master-data.spec.ts`, `payroll-flow.spec.ts`, `reports.spec.ts`, and `axe-a11y.spec.ts` |
-| **Evidence artifact** | Deploy/release workflow URL, exact-image runtime proof, restore/RLS rehearsal report, and Playwright report. The current tree has no automated visual-parity spec. |
+| **Evidence artifact** | Deploy/release workflow URL, exact-image runtime proof, restore/RLS rehearsal report, and Playwright report. The current tree has no automated visual regression spec. |
 
 ---
 
