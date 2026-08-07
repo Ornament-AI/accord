@@ -114,7 +114,9 @@ async function ensureJunePayRunCalculated(page) {
 		return;
 	}
 	await calc.click();
-	await page.getByTestId("pay-run-totals").waitFor({ timeout: 120_000 });
+	await page
+		.locator('[data-testid="run-status-badge"][data-status="calculated"]')
+		.waitFor({ timeout: 120_000 });
 }
 
 async function main() {
