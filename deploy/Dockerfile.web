@@ -1,8 +1,7 @@
 # syntax=docker/dockerfile:1
 # Accord web image: multi-stage pnpm frontend build → nginx static + API proxy.
-# Adapted from Atlas deploy/Dockerfile.web (v1.1.0).
 # No Firebase build args. No shared/ COPY — Accord has no shared/ package
-# (Atlas shared/ was domain fixture data; excluded per upstream manifest §3).
+# No shared/ fixture tree is copied into the image.
 
 FROM node:24.18.0-alpine AS builder
 

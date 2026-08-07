@@ -276,20 +276,25 @@ def _seed_employee_amounts(
 		if code == "ACCOMMODATION_LICENSE_FEE":
 			if employee.accommodation is None:
 				raise SeedError(f"{employee.fixture_id} missing accommodation")
+			location = map_quarters_location(employee.accommodation.location)
 			foregone = line_amount(employee, "FOREGONE_HRA")
+			# Match backend/tests/e2e/test_june_golden_e2e.py: breakdown must equal license_fee.
 			charge: dict[str, Any] = {
 				"license_fee": money_str(line.amount),
+				"house_rent": money_str(line.amount),
+				"service_charge": "0.00",
 				"effective_from": EFFECTIVE_FROM,
 			}
+			if location != "worli":
+				charge["parking_charge"] = "0.00"
+				charge["additional_parking_charge"] = "0.00"
 			if foregone is not None:
 				charge["informational_hra_foregone"] = money_str(foregone)
 			_require(
 				client.post(
 					f"/api/employees/{employee_id}/accommodation",
 					json={
-						"quarters_location": map_quarters_location(
-							employee.accommodation.location
-						),
+						"quarters_location": location,
 						"quarters_identifier": f"Q-{employee.fixture_id}",
 						"charge": charge,
 					},

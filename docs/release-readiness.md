@@ -23,7 +23,6 @@ and any required runtime/restore evidence.
 
 | Gate | Status | Current evidence | Remaining requirement |
 | --- | --- | --- | --- |
-| **A — Atlas baseline** | **partial** | `docs/atlas-upstream-manifest.md` records the pinned Atlas source, copy/exclusion inventory, rename map, versions, licenses, and parity checklist. | No executable baseline comparison exists. Attach a review/comparison transcript when the transplanted shell changes. |
 | **B — Contracts** | **partial** | Architecture, ADRs, payroll domain, testing, threat model, security, operations, report specs, acceptance, and this readiness map are maintained in-tree. | Engineering, security, and release-manager sign-off is external evidence and is not stored in this repository. |
 | **C — CI** | **met** | `./scripts/verify.sh`; `.github/workflows/ci.yml` backend, migration, frontend, and Docker jobs. | The hosted API-type job is still a placeholder; local `verify.sh` is the actual generated-type drift gate. |
 | **D — Isolation** | **met** | `backend/tests/rls/`, `backend/tests/gate_d/`, `backend/tests/api/test_tenant_context.py`, and per-phase migration RLS assertions run under restricted roles. | Re-run the backend lane for the exact release commit. |
@@ -32,7 +31,7 @@ and any required runtime/restore evidence.
 | **H — Workflow integrity** | **partial** | Workflow/posting/idempotency service and API suites cover maker/checker, submit/approve/post/reverse, audit/outbox, and SQL immutability. | `calculate` appends a new immutable version without an idempotency-key path or audit event. ADR 0008 also records stronger status/DB-trigger targets than the implementation. |
 | **I — Export durability** | **partial** | Storage protocol/S3 adapter tests and artifact service/API tests cover keys, checksums, state transitions, authorization, and audited streaming. | Attach an environment-level object persistence/restart rehearsal. Artifact reconciliation/expiry functions exist, but maintenance handlers and scheduling are not wired. |
 | **J — Reports** | **met** | Report family/formatter suites, report service/API tests, canonical contract tests, and the independent validator under `scripts/validate_canonical_export.py`. | Re-run the canonical validator and relevant render checks for changes to report mappings/layout. |
-| **K — Deploy / restore / E2E** | **partial** | Immutable tag workflow, production deploy contract test, `scripts/deploy.sh`, `scripts/smoke-test.sh`, `scripts/backup-restore.sh`, and Playwright critical/a11y specs. | No automated visual-parity spec or restore-under-runtime-role RLS suite exists. The report download browser journey remains skipped under the single local dev identity. |
+| **K — Deploy / restore / E2E** | **partial** | Immutable tag workflow, production deploy contract test, `scripts/deploy.sh`, `scripts/smoke-test.sh`, `scripts/backup-restore.sh`, and Playwright critical/a11y specs. | No automated visual regression spec or restore-under-runtime-role RLS suite exists. The report download browser journey remains skipped under the single local dev identity. |
 
 There is no gate G.
 

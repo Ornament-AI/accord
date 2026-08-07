@@ -1,13 +1,10 @@
 name: CI
 
-# Adapted from Atlas .github/workflows/ci.yml (v1.1.0) for Accord's stack
-# (PostgreSQL + WorkOS + MinIO/S3 object storage; no Firebase). Renamed
-# images: ghcr.io/ornament-ai/accord/{backend,web}. Every backend/frontend job is
-# gated on a `detect` job that checks for the presence of the files each lane
-# owns, so a lane that has not landed yet reports a clean "skipped" (not
-# "pending") status and does not block required checks, matching Atlas's own
-# documented reasoning for preferring job-level `if:` over workflow `paths:`
-# filtering.
+# PostgreSQL + WorkOS + MinIO/S3. Images: ghcr.io/ornament-ai/accord/{backend,web}.
+# Every backend/frontend job is gated on a `detect` job that checks for the
+# files each lane owns, so a lane that has not landed yet reports "skipped"
+# (not "pending") and does not block required checks. Prefer job-level `if:`
+# over workflow `paths:` filtering for that reason.
 
 on:
   push:
@@ -31,8 +28,7 @@ jobs:
   # Cheap file-presence probe (not a paths-filter): downstream jobs gate on
   # these booleans instead of skipping via workflow-level `paths:`, so a
   # not-yet-landed lane reports "skipped" (satisfies required checks) rather
-  # than leaving the check stuck "Pending". See Atlas ci.yml for the same
-  # reasoning documented in more detail.
+  # than leaving the check stuck "Pending".
   detect:
     runs-on: ubuntu-latest
     outputs:

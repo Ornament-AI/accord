@@ -227,9 +227,6 @@ There is no `backend/tests/security/` directory. Current coverage:
   denial), `frontend/e2e/reports.spec.ts` (empty state; generation/download
   is explicitly skipped because one dev identity cannot produce a posted run).
 - Accessibility (axe-core): `frontend/e2e/axe-a11y.spec.ts`.
-- An Atlas visual parity spec (`visual-shell.spec.ts`) was planned but has
-  not landed.
-
 ## Conventions
 
 1. **No skip-to-green.** Do not use skip / xfail / conditional disable just
@@ -246,15 +243,14 @@ There is no `backend/tests/security/` directory. Current coverage:
 
 ## Gate → suite mapping
 
-Gates are **A, B, C, D, E, F, H, I, J, K**. There is no gate G. The
-lettering matches [release-acceptance.md](release-acceptance.md); the suite
-paths below are the current tree.
+Gates are **B, C, D, E, F, H, I, J, K**. There is no gate G. The lettering
+matches [release-acceptance.md](release-acceptance.md); the suite paths below
+are the current tree.
 
 | Gate | Name | Named suites / checks (current tree) |
 | --- | --- | --- |
-| **A** | Atlas baseline | Review/comparison against the pinned source and inventory in `docs/atlas-upstream-manifest.md` (no executable verifier exists) |
 | **B** | Phase 0 contracts | Review checklist against `docs/testing.md`, `docs/threat-model.md`, `docs/release-acceptance.md`, `docs/security.md`, ADRs, and payroll-domain contracts |
-| **C** | Transplant shell CI | Lint, typecheck, unit, and API smoke: `backend/tests/domain/`, `backend/tests/api/`, `backend/tests/services/`, `frontend/src/**/*.test.ts(x)` (`.github/workflows/ci.yml`) |
+| **C** | CI | Lint, typecheck, unit, and API smoke: `backend/tests/domain/`, `backend/tests/api/`, `backend/tests/services/`, `frontend/src/**/*.test.ts(x)` (`.github/workflows/ci.yml`) |
 | **D** | Fail-closed RLS isolation | `backend/tests/gate_d/`, `backend/tests/rls/`, plus API/services/storage/worker paths that prove empty/wrong GUC returns zero rows under `accord_app` (singleton org; ADR 0011) |
 | **E** | Effective-dated master data | `backend/tests/services/test_versioning.py`, `backend/tests/models/test_master_data_models.py`, `backend/tests/rls/test_master_data_rls.py` |
 | **F** | Calculation correctness | `backend/tests/domain/test_engine_june_golden.py`, `backend/tests/e2e/test_june_golden_e2e.py`, `backend/tests/domain/test_money_properties.py`, `backend/tests/domain/test_money.py`, `backend/tests/domain/test_no_float_guard.py` |

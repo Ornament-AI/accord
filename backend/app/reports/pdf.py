@@ -1,6 +1,6 @@
 """Minimal generic tabular PDF renderer for :class:`~app.reports.base.ReportDTO`.
 
-Uses fpdf2 (same library as Atlas). Page header shows organization name, report
+Uses fpdf2. Page header shows organization name, report
 title, and period/subtitle; footer uses fpdf2 ``alias_nb_pages`` mechanics for
 ``Page x of y``. Money cells are right-aligned and rendered via
 :func:`app.reports.formatting.format_inr`.

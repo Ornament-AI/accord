@@ -8,13 +8,10 @@
 # Stop:
 #   ./scripts/stop.sh
 #
-# Adapted from Atlas scripts/start.sh (v1.1.0): env vars renamed to the
-# ADR-0003 app-settings matrix (no ATLAS_* app vars), local-Postgres-bootstrap
-# vars renamed ATLAS_DB_* -> ACCORD_DB_*, state dir renamed .atlas-dev ->
-# .accord-dev. Dev-auth users are created lazily by the backend login route;
-# the launcher only needs to forward the configured local identity.
-# Listen ports are auto-resolved when FRONTEND_PORT / BACKEND_PORT / PGPORT
-# are unset (see scripts/lib/ports.sh and scripts/lib/postgres.sh).
+# Dev-auth users are created lazily by the backend login route; the launcher
+# only needs to forward the configured local identity. Listen ports are
+# auto-resolved when FRONTEND_PORT / BACKEND_PORT / PGPORT are unset (see
+# scripts/lib/ports.sh and scripts/lib/postgres.sh).
 
 set -euo pipefail
 

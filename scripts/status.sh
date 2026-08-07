@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Show local Accord dev process and port status.
-# Adapted from Atlas scripts/status.sh (v1.1.0): state dir renamed .atlas-dev
-# -> .accord-dev; Postgres / app ports are auto-resolved via scripts/lib.
+# Postgres / app ports are auto-resolved via scripts/lib.
 
 set -euo pipefail
 

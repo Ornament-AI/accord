@@ -132,7 +132,7 @@ resolve_app_port() {
 			fi
 			return 0
 		fi
-		# Cached port taken by something else (e.g. Atlas) — fall through.
+		# Cached port taken by something else; fall through.
 		if declare -F warn >/dev/null 2>&1; then
 			warn "Cached $cache_name port $cached is in use; picking another"
 		fi
