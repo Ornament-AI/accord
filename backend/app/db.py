@@ -83,13 +83,6 @@ def configure_engine(database_url: str | None = None) -> AsyncEngine:
     return _engine
 
 
-def get_engine() -> AsyncEngine:
-    global _engine
-    if _engine is None:
-        return configure_engine()
-    return _engine
-
-
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     global _session_factory
     if _session_factory is None:
