@@ -7,7 +7,6 @@ import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -106,20 +105,6 @@ async def session_context() -> AsyncGenerator[AsyncSession, None]:
     factory = get_session_factory()
     async with factory() as session:
         try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-
-
-@asynccontextmanager
-async def repeatable_read_session_context() -> AsyncGenerator[AsyncSession, None]:
-    """Yield a read-only PostgreSQL session with one stable transaction snapshot."""
-    factory = get_session_factory()
-    async with factory() as session:
-        try:
-            await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
-            await session.execute(text("SET TRANSACTION READ ONLY"))
             yield session
         except Exception:
             await session.rollback()
