@@ -222,8 +222,3 @@ def get(calc_kind: str) -> CalculatorFn:
         return _REGISTRY[calc_kind]
     except KeyError as exc:
         raise UnknownCalculatorKindError(f"unknown calculator kind: {calc_kind!r}") from exc
-
-
-def known_kinds() -> frozenset[str]:
-    """Return the closed set of registered calculator kind names."""
-    return frozenset(_REGISTRY.keys())
