@@ -1,28 +1,12 @@
-"""Custom response classes and shared API response helpers."""
+"""Shared API response helpers."""
 
 from datetime import date
 from http import HTTPStatus
 from typing import Any
 
-from fastapi import Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 
 from app.timezone import current_ist_date
-
-PDF_MEDIA_TYPE = "application/pdf"
-XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-
-class PDFResponse(Response):
-    media_type = PDF_MEDIA_TYPE
-
-
-class PDFStreamingResponse(StreamingResponse):
-    media_type = PDF_MEDIA_TYPE
-
-
-class XLSXResponse(Response):
-    media_type = XLSX_MEDIA_TYPE
 
 
 def export_content_disposition(slug: str, extension: str, *, as_of: date | None = None) -> str:
