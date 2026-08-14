@@ -74,7 +74,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    mem_limit: 256m
+    # MinIO's Go runtime idles at ~200-250 MiB regardless of stored data;
+    # 256m left <30 MiB headroom before OOM once real uploads start.
+    mem_limit: 512m
     networks:
       - backend-net
     logging:

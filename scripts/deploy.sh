@@ -9,7 +9,7 @@ die() { echo -e "${R}✗${N} $1" >&2; exit 1; }
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SSH_TARGET="${MSIDC_SSH_TARGET:-msidcadmin@msidcacct}"
-REMOTE_ROOT="${ACCORD_REMOTE_ROOT:-/home/msidcadmin/accord}"
+REMOTE_ROOT="${ACCORD_REMOTE_ROOT:-/opt/accord}"
 FRESH_INSTALL="${ACCORD_CONFIRMED_FRESH_INSTALL:-false}"
 
 [[ "$REMOTE_ROOT" =~ ^/[A-Za-z0-9._/+@:-]+$ && "$REMOTE_ROOT" != *..* ]] \
