@@ -54,6 +54,8 @@ def test_compose_is_isolated_and_does_not_publish_minio() -> None:
     assert "127.0.0.1:${ACCORD_WEB_PORT:-8085}:80" in compose
     assert '"9000:9000"' not in compose
     assert '"9001:9001"' not in compose
+    minio_service = compose.split("  minio:\n", 1)[1].split("\n  minio-init:\n", 1)[0]
+    assert "mem_limit: 512m" in minio_service
 
 
 def test_setup_requires_immutable_images_and_production_auth() -> None:
@@ -75,6 +77,7 @@ def test_setup_requires_immutable_images_and_production_auth() -> None:
 def test_deploy_bundle_never_uploads_the_host_env() -> None:
     deploy = (ROOT / "scripts/deploy.sh").read_text()
 
+    assert 'REMOTE_ROOT="${ACCORD_REMOTE_ROOT:-/opt/accord}"' in deploy
     assert 'git -C "$ROOT" archive' in deploy
     assert "+refs/heads/main:refs/remotes/origin/main" in deploy
     assert "merge-base --is-ancestor" in deploy
