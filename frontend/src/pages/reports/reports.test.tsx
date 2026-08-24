@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider, AuthShellBoundary } from "@/contexts/AuthContext";
+import { downloadArtifact } from "@/lib/api/reports";
 import { NAV_REGISTRY } from "@/lib/nav-registry";
 import { queryClient } from "@/lib/query-client";
 import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
@@ -83,6 +84,30 @@ describe("Reports page", () => {
 	beforeEach(() => {
 		queryClient.clear();
 		vi.clearAllMocks();
+	});
+
+	it("uses the preferred artifact filename when one is provided", async () => {
+		const { downloadBlob } = await import("@/lib/download");
+		const artifact = buildArtifact({ id: "art-preferred", report_type: "pay_bill" });
+		const { handlers } = createReportHandlers({ artifacts: [artifact] });
+		server.use(...handlers);
+
+		await downloadArtifact(artifact.id, "fallback.xlsx", {
+			preferFilename: "  payroll-june-2026.xlsx  ",
+		});
+
+		expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "payroll-june-2026.xlsx");
+	});
+
+	it("uses the response filename when the preferred filename is blank", async () => {
+		const { downloadBlob } = await import("@/lib/download");
+		const artifact = buildArtifact({ id: "art-response", report_type: "pay_bill" });
+		const { handlers } = createReportHandlers({ artifacts: [artifact] });
+		server.use(...handlers);
+
+		await downloadArtifact(artifact.id, "fallback.xlsx", { preferFilename: "   " });
+
+		expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "pay_bill.xlsx");
 	});
 
 	it("FE product sheet keys are a subset of catalog product sheets", () => {

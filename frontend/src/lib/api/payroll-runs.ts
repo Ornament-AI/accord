@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchJson, fetchVoid, jsonRequest } from "@/lib/api/http";
+import { fetchJson, jsonRequest } from "@/lib/api/http";
 import { buildQueryString } from "@/lib/api/query-utils";
 import type { components } from "@/types/api.generated";
 
@@ -195,12 +195,6 @@ export function upsertPayrollRunInput(
 		`/api/payroll-runs/${runId}/inputs/${employeeId}/${encodedCode}`,
 		jsonRequest("PUT", body),
 	);
-}
-
-export function deletePayrollRunInput(runId: string, inputId: string) {
-	return fetchVoid(`/api/payroll-runs/${runId}/inputs/${inputId}`, {
-		method: "DELETE",
-	});
 }
 
 export function calculatePayrollRun(runId: string) {

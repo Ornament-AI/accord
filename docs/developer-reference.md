@@ -135,9 +135,7 @@ general scripts and document their options through `--help`.
 
 Pull requests into `main` run `.github/workflows/ci.yml`. Backend-related
 changes run Ruff, pytest, fresh Alembic replay/check, and backend image build.
-Frontend-related changes run Biome, TypeScript, Vitest, the production build,
-and web image build. The API-type job is currently a visible placeholder;
-the real drift gate runs in `./scripts/verify.sh`.
+Frontend-related changes run Biome, TypeScript, Playwright test discovery, Vitest, the production build, and web image build. The unconditional API-type job regenerates the OpenAPI client and fails on drift; `./scripts/verify.sh` enforces the same contract locally.
 
 Tags matching `v*` run `.github/workflows/deploy.yml`. The backend-image,
 web-image, and migration-replay jobs run independently; image publication can

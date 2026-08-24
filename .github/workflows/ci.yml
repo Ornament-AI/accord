@@ -34,7 +34,6 @@ jobs:
     outputs:
       backend: ${{ steps.detect.outputs.backend }}
       frontend: ${{ steps.detect.outputs.frontend }}
-      api_types: ${{ steps.detect.outputs.api_types }}
       # Which lanes changed in this PR. On push (main) these are ignored and the
       # full suite runs; on PRs, downstream jobs additionally gate on these so a
       # frontend-only PR does not spin up Postgres + the backend Docker build,
@@ -58,11 +57,6 @@ jobs:
           else
             echo "frontend=false" >> "$GITHUB_OUTPUT"
             echo "::notice::frontend/ lane not fully landed yet — frontend jobs will be skipped this run."
-          fi
-          if [[ -x scripts/generate-api-types.sh ]]; then
-            echo "api_types=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "api_types=false" >> "$GITHUB_OUTPUT"
           fi
       - id: changes
         uses: dorny/paths-filter@v3
@@ -192,23 +186,35 @@ jobs:
         working-directory: backend
         run: python -m alembic check
 
-  # Visible placeholder: scripts/generate-api-types.sh is wired and
-  # ./scripts/verify.sh enforces the generated diff locally, but this hosted
-  # job still needs to run that command and fail on drift. It stays
-  # unconditional so the missing hosted enforcement remains visible.
   api-type-drift:
     name: API type drift check
-    needs: detect
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check for generate-api-types wiring
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
         run: |
-          if [[ "${{ needs.detect.outputs.api_types }}" == "true" ]]; then
-            echo "::notice::scripts/generate-api-types.sh exists — wire the real drift check here (regenerate frontend/src/types/api.generated.ts and git diff --exit-code)."
-          else
-            echo "::notice::scripts/generate-api-types.sh does not exist yet — this job is a placeholder until backend/scripts/export_openapi.py is wired to frontend/src/types/api.generated.ts."
-          fi
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Regenerate API types and fail on drift
+        env:
+          PYTHON_BIN: python
+        run: |
+          ./scripts/generate-api-types.sh
+          git diff --exit-code -- frontend/src/types/api.generated.ts
 
   frontend:
     name: Frontend lint + typecheck + test + build
@@ -241,6 +247,8 @@ jobs:
         run: pnpm --filter frontend format:check
       - name: Typecheck
         run: pnpm --filter frontend typecheck
+      - name: Discover E2E tests
+        run: pnpm --filter frontend exec playwright test --list
       - name: Test
         run: pnpm --filter frontend test:run
       - name: Build

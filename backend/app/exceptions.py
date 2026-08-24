@@ -45,11 +45,5 @@ class StaleRowError(ConflictError):
         super().__init__(message)
 
 
-class StateError(AccordError):
-    """Workflow state machine violations."""
-
-    status_code = 400
-
-
 class ForbiddenError(AccordError):
     status_code = 403
