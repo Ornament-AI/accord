@@ -1,4 +1,4 @@
-"""E2E fixtures: full HTTP app (including run_results) + identity cleanup."""
+"""E2E fixtures for production HTTP routes and identity cleanup."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.api.routes.run_results import router as run_results_router
 from app.main import create_app
 from tests.identity_helpers import (  # noqa: F401
     clear_settings_cache,
@@ -38,9 +37,8 @@ def dev_settings(monkeypatch):
 
 
 def _e2e_app():
-    """Full create_app() plus run_results (not yet mounted on main)."""
+    """Build the app with its production route set."""
     application = create_app()
-    application.include_router(run_results_router, prefix="/api")
     application.state.auth_ready = True
     return application
 

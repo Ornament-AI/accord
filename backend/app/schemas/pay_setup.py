@@ -26,9 +26,6 @@ from app.domain.payroll.export_metadata import (
 )
 from app.schemas.money import MoneyAmount, RateValue
 
-# TODO: reconcile with a shared money schema type if one lands in app/domain or app/schemas/common
-
-
 REPORT_CONFIG_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 
 

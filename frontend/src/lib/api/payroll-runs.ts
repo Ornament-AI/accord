@@ -16,7 +16,6 @@ export type PayrollRunRosterUpdate = components["schemas"]["PayrollRunRosterUpda
 export type PayrollRunRosterHistoryResponse =
 	components["schemas"]["PayrollRunRosterHistoryResponse"];
 export type PayrollRunResults = components["schemas"]["RunResultsResponse"];
-export type PayrollEmployeeResult = components["schemas"]["EmployeeResultSummary"];
 export type InputKind = components["schemas"]["InputKind"];
 export type PayrollRunReportMetadata = components["schemas"]["PayrollRunReportMetadata"] & {
 	token_number?: string | null;
@@ -27,20 +26,6 @@ export type PayrollRunReportMetadata = components["schemas"]["PayrollRunReportMe
 export type ReportReadinessResponse = components["schemas"]["ReportReadinessResponse"];
 
 export const INPUT_KINDS: InputKind[] = ["exception", "override", "one_time"];
-
-/** Backend-visible payroll run statuses (DB check constraint). */
-export const PAYROLL_RUN_STATUSES = [
-	"draft",
-	"calculating",
-	"calculated",
-	"submitted",
-	"approved",
-	"rejected",
-	"posted",
-	"reversed",
-] as const;
-
-export type PayrollRunStatus = (typeof PAYROLL_RUN_STATUSES)[number];
 
 /**
  * Mirrors backend `calculate_run_command` / run-version totals payload.
@@ -180,10 +165,6 @@ export function getPayrollRunReportReadiness(runId: string) {
 	return fetchJson<ReportReadinessResponse>(`/api/payroll-runs/${runId}/report-readiness`);
 }
 
-export function listPayrollRunInputs(runId: string) {
-	return fetchJson<PayrollRunInputResponse[]>(`/api/payroll-runs/${runId}/inputs`);
-}
-
 export function listPayrollRunRoster(runId: string) {
 	return fetchJson<PayrollRunEmployeeResponse[]>(`/api/payroll-runs/${runId}/roster`);
 }
@@ -289,14 +270,6 @@ export function usePayrollRunReportReadiness(runId: string | undefined) {
 	});
 }
 
-export function usePayrollRunInputs(runId: string | undefined) {
-	return useQuery({
-		queryKey: payrollRunQueryKeys.inputs(runId ?? ""),
-		queryFn: () => listPayrollRunInputs(runId!),
-		enabled: Boolean(runId),
-	});
-}
-
 export function usePayrollRunRoster(runId: string | undefined) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.roster(runId ?? ""),
@@ -349,16 +322,6 @@ export function useUpsertPayrollRunInput(runId: string) {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
-		},
-	});
-}
-
-export function useDeletePayrollRunInput(runId: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (inputId: string) => deletePayrollRunInput(runId, inputId),
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
 		},
 	});
 }

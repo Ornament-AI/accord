@@ -7,8 +7,6 @@ import type { components } from "@/types/api.generated";
 export type AuditActor = components["schemas"]["AuditActor"];
 export type AuditEventListItem = components["schemas"]["AuditEventListItem"];
 export type AuditEventDetail = components["schemas"]["AuditEventDetailResponse"];
-/** @deprecated Use the compact list item or structured detail type explicitly. */
-export type AuditEventResponse = AuditEventListItem;
 export type AuditFilterOptions = components["schemas"]["AuditFilterOptionsResponse"];
 export type PaginatedAuditEventResponse =
 	components["schemas"]["PaginatedResponse_AuditEventListItem_"];

@@ -29,19 +29,6 @@ export async function clickUntilDialog(page: Page, trigger: Locator): Promise<Lo
 	return dialog;
 }
 
-/** Base UI select: open trigger, pick option by accessible name. */
-export async function selectByLabel(
-	page: Page,
-	label: string | RegExp,
-	optionName: string | RegExp,
-): Promise<void> {
-	const trigger = page.getByRole("combobox", { name: label });
-	await trigger.click();
-	const option = page.getByRole("option", { name: optionName });
-	await expect(option).toBeVisible();
-	await option.click();
-}
-
 export async function selectWithin(
 	scope: Locator,
 	label: string | RegExp,
@@ -60,13 +47,23 @@ export async function openNav(page: Page, title: string): Promise<void> {
 		.getByRole("link", { name: title })
 		.or(page.getByRole("menuitem", { name: title }));
 
-	if (!(await target.first().isVisible().catch(() => false))) {
+	if (
+		!(await target
+			.first()
+			.isVisible()
+			.catch(() => false))
+	) {
 		await page.goto("/");
 		await expect(authenticatedLanding(page)).toBeVisible({ timeout: 30_000 });
 	}
 
 	// Nested items live under Organization / Reports (expanded collapsible or compact flyout).
-	if (!(await target.first().isVisible().catch(() => false))) {
+	if (
+		!(await target
+			.first()
+			.isVisible()
+			.catch(() => false))
+	) {
 		for (const folderName of [/^Organization$/i, /^Reports$/i]) {
 			const folder = page.getByRole("button", { name: folderName });
 			if (await folder.isVisible().catch(() => false)) {

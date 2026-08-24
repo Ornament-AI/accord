@@ -1,9 +1,7 @@
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { InfoIcon as Info } from "@phosphor-icons/react/dist/csr/Info";
 import type * as React from "react";
-import type { ReactNode } from "react";
 
-import { CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -47,22 +45,5 @@ export function InfoTip({
 				{text}
 			</TooltipContent>
 		</Tooltip>
-	);
-}
-
-export function CardTitleWithInfo({
-	children,
-	info,
-	className,
-}: {
-	children: ReactNode;
-	info: string;
-	className?: string;
-}) {
-	return (
-		<CardTitle className={cn("inline-flex items-center gap-1.5", className)}>
-			{children}
-			<InfoTip text={info} />
-		</CardTitle>
 	);
 }

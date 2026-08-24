@@ -202,11 +202,6 @@ def _grow_table(
     return inserted_rows
 
 
-def _common_heading(ws: Worksheet, *, dto: ReportDTO, month_cell: str, org_cell: str) -> None:
-    _set(ws, month_cell, _month_label(dto.subtitle))
-    _set(ws, org_cell, dto.organization_name)
-
-
 def _income_tax(ws: Worksheet, dto: ReportDTO) -> None:
     section = dto.sections[0]
     inserted = _grow_table(

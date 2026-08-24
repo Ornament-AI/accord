@@ -80,20 +80,11 @@ export const PRODUCT_REPORT_SHEETS: readonly ProductReportSheet[] = [
 ] as const;
 
 const BY_SLUG = new Map(PRODUCT_REPORT_SHEETS.map((sheet) => [sheet.slug, sheet]));
-const BY_TYPE = new Map(PRODUCT_REPORT_SHEETS.map((sheet) => [sheet.reportType, sheet]));
 
 export function productSheetBySlug(slug: string): ProductReportSheet | undefined {
 	return BY_SLUG.get(slug);
 }
 
-export function productSheetByType(reportType: string): ProductReportSheet | undefined {
-	return BY_TYPE.get(reportType);
-}
-
 export function firstProductSheetSlug(): string {
 	return PRODUCT_REPORT_SHEETS[0]!.slug;
-}
-
-export function reportTypeToSlug(reportType: string): string {
-	return BY_TYPE.get(reportType)?.slug ?? reportType.replaceAll("_", "-");
 }

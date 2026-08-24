@@ -203,13 +203,6 @@ def _payslip_columns(*, canonical: bool = False) -> tuple[ReportColumn, ...]:
     return tuple(columns)
 
 
-def _posted_net_payable(version: Any) -> Decimal:
-    totals = version["totals"] or {}
-    if "net_payable" not in totals:
-        raise ConflictError("Posted run version totals missing net_payable.")
-    return money(totals["net_payable"])
-
-
 def _posted_disbursement(version: Any) -> Decimal:
     """Employee disbursement for a posted run version.
 

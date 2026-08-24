@@ -6,9 +6,8 @@ import { downloadBlob } from "@/lib/download";
 import type { components } from "@/types/api.generated";
 
 /**
- * Report generation / job types are defined locally until OpenAPI catches up.
- * Divergence to reconcile at integration: `api.generated.ts` currently exposes
- * artifacts + report-configurations only — not GET/POST /api/reports* job APIs.
+ * Report endpoints and schemas are available in `api.generated.ts`.
+ * Local types add UI-specific constraints or detail, or provide module-level names.
  */
 export type ReportFormat = "excel" | "pdf" | "json";
 
@@ -95,8 +94,6 @@ export type ListArtifactsParams = {
 export const REPORT_JOB_POLL_INTERVAL_MS = 1500;
 
 export const reportQueryKeys = {
-	all: () => ["reports"] as const,
-	catalog: () => ["reports", "catalog"] as const,
 	job: (jobId: string) => ["reports", "job", jobId] as const,
 	preview: (reportType: string, postedRunId: string) =>
 		["reports", "preview", reportType, postedRunId] as const,
@@ -108,25 +105,12 @@ export function isActiveJobStatus(status: ReportJobStatus | undefined): boolean 
 	return status === "queued" || status === "running";
 }
 
-export function isTerminalJobStatus(status: ReportJobStatus | undefined): boolean {
-	return (
-		status === "succeeded" ||
-		status === "failed" ||
-		status === "dead_letter" ||
-		status === "cancelled"
-	);
-}
-
 export function jobArtifactId(job: ReportJobResponse | undefined): string | undefined {
 	return job?.result?.artifact_id;
 }
 
 export function jobErrorMessage(job: ReportJobResponse | undefined): string | undefined {
 	return job?.last_error ?? undefined;
-}
-
-export function listReportCatalog() {
-	return fetchJson<ReportCatalogResponse>("/api/reports");
 }
 
 export function getReportPreview(reportType: string, postedRunId: string) {
@@ -173,13 +157,6 @@ export async function downloadArtifact(
 	downloadBlob(blob, options?.preferFilename?.trim() || filename);
 }
 
-export function useReportCatalog() {
-	return useQuery({
-		queryKey: reportQueryKeys.catalog(),
-		queryFn: listReportCatalog,
-	});
-}
-
 export function useReportPreview(reportType: string | undefined, postedRunId: string | null) {
 	return useQuery({
 		queryKey: reportQueryKeys.preview(reportType ?? "", postedRunId ?? ""),
@@ -206,16 +183,6 @@ export function useArtifactsList(params: ListArtifactsParams = {}) {
 		queryKey: reportQueryKeys.artifactList(params),
 		queryFn: () => listArtifacts(params),
 		placeholderData: (previous) => previous,
-	});
-}
-
-export function useGenerateReport() {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: generateReport,
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: reportQueryKeys.artifacts() });
-		},
 	});
 }
 

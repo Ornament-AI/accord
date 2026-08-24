@@ -41,8 +41,6 @@ export const employeeQueryKeys = {
 	list: (params: ListEmployeesParams) => ["employees", "list", params] as const,
 	detail: (employeeId: string, params: GetEmployeeParams) =>
 		["employees", "detail", employeeId, params] as const,
-	versions: (employeeId: string, kind: EmployeeVersionKind, reveal: boolean) =>
-		["employees", "versions", employeeId, kind, { reveal }] as const,
 };
 
 export function listEmployees(params: ListEmployeesParams = {}) {
@@ -68,17 +66,6 @@ export function createEmployee(body: CreateEmployeeRequest) {
 	return fetchJson<EmployeeDetail>("/api/employees", jsonRequest("POST", body));
 }
 
-export function listEmployeeVersions(
-	employeeId: string,
-	kind: EmployeeVersionKind,
-	params: { reveal?: boolean } = {},
-) {
-	const qs = buildQueryString({
-		reveal: params.reveal === true ? true : undefined,
-	});
-	return fetchJson<unknown[]>(`/api/employees/${employeeId}/versions/${kind}${qs}`);
-}
-
 export function createEmployeeVersion(
 	employeeId: string,
 	kind: EmployeeVersionKind,
@@ -102,18 +89,6 @@ export function useEmployeeDetail(employeeId: string | undefined, params: GetEmp
 	return useQuery({
 		queryKey: employeeQueryKeys.detail(employeeId ?? "", params),
 		queryFn: () => getEmployee(employeeId!, params),
-		enabled: Boolean(employeeId),
-	});
-}
-
-export function useEmployeeVersions(
-	employeeId: string | undefined,
-	kind: EmployeeVersionKind,
-	reveal: boolean,
-) {
-	return useQuery({
-		queryKey: employeeQueryKeys.versions(employeeId ?? "", kind, reveal),
-		queryFn: () => listEmployeeVersions(employeeId!, kind, { reveal }),
 		enabled: Boolean(employeeId),
 	});
 }

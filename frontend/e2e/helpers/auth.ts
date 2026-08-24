@@ -91,7 +91,7 @@ export async function ensureSingletonOrganization(page: Page): Promise<string> {
 		throw new Error(
 			"Dev auth user is not a member of the singleton org. " +
 				"Run: backend/.venv/bin/python scripts/provision_member.py " +
-				"--email \"$DEV_AUTH_EMAIL\" --role organization_administrator",
+				'--email "$DEV_AUTH_EMAIL" --role organization_administrator',
 		);
 	}
 
@@ -99,12 +99,4 @@ export async function ensureSingletonOrganization(page: Page): Promise<string> {
 	const brand = page.locator('[data-slot="sidebar-header"]').first();
 	const name = (await brand.innerText()).split("\n")[0]?.trim() ?? "Organization";
 	return name;
-}
-
-/** @deprecated Use ensureSingletonOrganization — kept as alias for older specs. */
-export async function ensureUniqueOrganization(
-	page: Page,
-	_opts?: { name: string },
-): Promise<void> {
-	await ensureSingletonOrganization(page);
 }

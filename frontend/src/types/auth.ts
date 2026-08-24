@@ -52,11 +52,6 @@ export type AuthMeResponse = {
 	membership: MeMembership | null;
 };
 
-/** @deprecated Use MeOrganization + MeMembership; kept for transitional UI helpers. */
-export type OrganizationMembership = MeOrganization & {
-	role: Role | string;
-};
-
 /** Active org view for capability checks (organization + membership). */
 export type ActiveOrganization = MeOrganization & {
 	role: Role | string;

@@ -198,11 +198,6 @@ export async function fetchPublicVoid(input: string, init?: RequestInit): Promis
 	await fetchPublic(input, init);
 }
 
-export async function fetchBlob(input: string, init?: RequestInit): Promise<Blob> {
-	const response = await fetchWithAuth(input, init);
-	return response.blob();
-}
-
 export async function fetchBlobWithHeaders(
 	input: string,
 	init?: RequestInit,
