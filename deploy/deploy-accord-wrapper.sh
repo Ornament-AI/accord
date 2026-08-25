@@ -469,8 +469,8 @@ fi
 if [[ -f "$MIGRATION_STATE_FILE" ]]; then
     APP_QUIESCED=false
     docker compose -f "$LIVE_ROOT/docker-compose.yml" --env-file "$LIVE_ROOT/.env" \
-        stop api worker web >/dev/null 2>&1 \
-        || echo "deploy-accord-wrapper: could not stop failed application services" >&2
+        stop api worker web minio >/dev/null 2>&1 \
+        || echo "deploy-accord-wrapper: could not stop failed application and object-store services" >&2
     if [[ "$BOOTSTRAP_MODE" == "true" ]]; then
         mv "$BOOTSTRAP_MARKER" "/opt/accord/.first-release-attempted-$SHA"
     fi

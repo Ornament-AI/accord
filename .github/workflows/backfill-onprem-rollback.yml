@@ -81,6 +81,17 @@ jobs:
               artifact_id="$ROLLBACK_WEB_ARTIFACT_ID"
               artifact_sha256="$ROLLBACK_WEB_ARTIFACT_SHA256"
             fi
+            artifact_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}")"
+            jq -e \
+              --argjson run_id "$ROLLBACK_BUILD_RUN_ID" \
+              --arg sha "$ROLLBACK_SHA" \
+              --arg digest "sha256:$artifact_sha256" \
+              '.expired == false and .digest == $digest and
+               .workflow_run.id == $run_id and .workflow_run.head_sha == $sha' \
+              <<<"$artifact_json" >/dev/null || {
+                echo "Pinned $component artifact is not retained evidence from build run $ROLLBACK_BUILD_RUN_ID" >&2
+                exit 1
+              }
             build_record="${RUNNER_TEMP}/${component}.dockerbuild"
             gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" >"$build_record"
             printf '%s  %s\n' "$artifact_sha256" "$build_record" | sha256sum --check --status || {

@@ -176,6 +176,10 @@ ssh -t "$SSH_TARGET" "set -e;
 printf '%s\n%s\n' "$ACCORD_GHCR_USERNAME" "$ACCORD_GHCR_READ_TOKEN" \
     | ssh "$SSH_TARGET" "sudo -n /usr/local/bin/deploy-accord '$SHA' '$REMOTE_RELEASE_ROOT'"
 unset ACCORD_GHCR_READ_TOKEN
+printf '%s' "$SHA" \
+    | gh secret set ONPREM_DEPLOYED_SHA \
+        --repo Ornament-AI/accord --env onprem-release \
+    || die "fresh Accord host is live at $SHA, but protected deployed-state evidence could not be initialized"
 ssh "$SSH_TARGET" "rm -f '$REMOTE_WRAPPER' '$REMOTE_ENV'"
 REMOTE_WRAPPER=""
 REMOTE_ENV=""

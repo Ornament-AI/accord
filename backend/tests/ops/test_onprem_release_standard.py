@@ -199,6 +199,10 @@ def test_fixed_live_rollback_is_backfilled_from_reviewed_main_tooling() -> None:
     assert 'ROLLBACK_BACKEND_ARTIFACT_ID: "9501399945"' in workflow
     assert 'ROLLBACK_WEB_ARTIFACT_ID: "9501403873"' in workflow
     assert "actions/runs/${ROLLBACK_BUILD_RUN_ID}" in workflow
+    assert "actions/artifacts/${artifact_id}" in workflow
+    assert ".workflow_run.id == $run_id" in workflow
+    assert ".workflow_run.head_sha == $sha" in workflow
+    assert ".expired == false" in workflow
     assert "actions/artifacts/${artifact_id}/zip" in workflow
     assert 'tar -tzf "$build_record"' in workflow
     assert (
@@ -369,6 +373,8 @@ def test_fresh_host_bootstrap_is_separate_authenticated_and_empty_only() -> None
     assert ".allow-first-release-$SHA" in bootstrap
     assert "sudo -n /usr/local/bin/deploy-accord" in bootstrap
     assert "ACCORD_CONFIRMED_FRESH_INSTALL" not in bootstrap
+    assert "gh secret set ONPREM_DEPLOYED_SHA" in bootstrap
+    assert "protected deployed-state evidence could not be initialized" in bootstrap
     assert "release-bootstrap-evidence" in wrapper
     assert ".first-release-attempted-$SHA" in wrapper
     assert "accord_pgdata accord_minio-data deploy_pgdata deploy_minio-data" in wrapper
@@ -384,6 +390,7 @@ def test_migration_marker_precedes_compose_mutation() -> None:
     assert "$PUBLIC_APP_URL/api/readyz" in setup
     backup = (ROOT / "deploy/backup-before-migrate.sh").read_text()
     deploy = (ROOT / "deploy/deploy-accord.sh").read_text()
+    wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
     assert 'MINIO_VOLUME="accord_minio-data"' in backup
     assert "POSTGRES_USER" in backup and "POSTGRES_DB" in backup
     assert 'pg_dump -U "$DB_USER" -d "$DB_NAME"' in backup
@@ -396,6 +403,7 @@ def test_migration_marker_precedes_compose_mutation() -> None:
     assert "Never restore only one member of the pair" in operations
     assert "restore the PostgreSQL dump and its matching" in operations
     assert "`.minio.tar.gz` archive to `accord_minio-data`" in operations
+    assert "stop api worker web minio" in wrapper
     assert 'WEB_BINDING="$(docker port "$WEB_CID" 80/tcp)"' in deploy
     assert '"http://127.0.0.1:$WEB_PORT/api/healthz"' in deploy
     assert '"http://127.0.0.1:$WEB_PORT/api/readyz"' in deploy
