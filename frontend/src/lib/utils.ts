@@ -5,63 +5,6 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
 
-export const RUPEES_PER_CRORE = 10_000_000n;
-const PAISE_PER_RUPEE = 100n;
-const PAISE_PER_CRORE = RUPEES_PER_CRORE * PAISE_PER_RUPEE;
-
-export function rupeesStringToCroresString(value: string | null | undefined): string {
-	if (value === null || value === undefined) return "";
-	const match = value.trim().match(/^(\d+)(?:\.(\d{1,2}))?$/);
-	if (!match) return "";
-
-	const rupees = BigInt(match[1]);
-	const paise = BigInt((match[2] ?? "").padEnd(2, "0"));
-	const totalPaise = rupees * PAISE_PER_RUPEE + paise;
-	const crore = totalPaise / PAISE_PER_CRORE;
-	const remainder = totalPaise % PAISE_PER_CRORE;
-	if (remainder === 0n) return crore.toString();
-
-	const fractionalCrore = remainder.toString().padStart(9, "0").replace(/0+$/, "");
-	return `${crore}.${fractionalCrore}`;
-}
-
-export function formatCurrency(value: number | string | null | undefined): string {
-	if (value === null || value === undefined) return "-";
-	const num = typeof value === "string" ? Number.parseFloat(value) : value;
-	if (Number.isNaN(num)) return "-";
-	if (num === 0) return "₹0";
-
-	const isNegative = num < 0;
-	const absFormatted = Math.abs(num).toLocaleString("en-IN", {
-		style: "currency",
-		currency: "INR",
-		minimumFractionDigits: 0,
-		maximumFractionDigits: 0,
-	});
-
-	return isNegative ? absFormatted.replace("\u20B9", "\u20B9-") : absFormatted;
-}
-
-export function formatCurrencyCompact(value: number | string | null | undefined): string {
-	if (value === null || value === undefined) return "-";
-	const num = typeof value === "string" ? Number.parseFloat(value) : value;
-	if (Number.isNaN(num)) return "-";
-	if (num === 0) return "₹0";
-
-	const isNegative = num < 0;
-	const abs = Math.abs(num);
-	const sign = isNegative ? "-" : "";
-	const rupeesPerCrore = Number(RUPEES_PER_CRORE);
-
-	if (abs >= rupeesPerCrore) {
-		return `\u20B9${sign}${(abs / rupeesPerCrore).toFixed(2)} Cr`;
-	}
-	if (abs >= 100000) {
-		return `\u20B9${sign}${(abs / 100000).toFixed(2)} L`;
-	}
-	return `\u20B9${sign}${abs.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
-
 /** Business timezone for all clock timestamps shown in the UI. */
 export const ACCORD_TIME_ZONE = "Asia/Kolkata";
 
@@ -163,22 +106,4 @@ export function formatFileSize(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Format a value already in crores as "₹X,XXX Cr" or "₹X,XXX.XX Cr". */
-export function formatCrores(value: number | string | null | undefined): string {
-	if (value === null || value === undefined) return "—";
-	const num = typeof value === "string" ? Number.parseFloat(value) : value;
-	if (Number.isNaN(num)) return "—";
-	if (num === 0) return "₹0 Cr";
-
-	const isNegative = num < 0;
-	const abs = Math.abs(num);
-	const sign = isNegative ? "-" : "";
-	const hasDecimals = abs % 1 >= 0.005;
-	const formatted = abs.toLocaleString("en-IN", {
-		minimumFractionDigits: hasDecimals ? 2 : 0,
-		maximumFractionDigits: hasDecimals ? 2 : 0,
-	});
-	return `\u20B9${sign}${formatted} Cr`;
 }

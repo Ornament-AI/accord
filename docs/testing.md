@@ -57,11 +57,7 @@ CI (`.github/workflows/ci.yml`) runs backend/frontend equivalents plus
 migration and image-build jobs. The `backend`
 job runs ruff and pytest against a Postgres 18 service container. The
 `migrations` job runs `alembic upgrade head` plus `alembic check` on a fresh
-database. The `frontend` job runs lint, format, typecheck, test, and build.
-Two more jobs build the backend and web Docker images. On pull requests,
-jobs are skipped when their lane did not change. Shell-syntax validation and
-generated API-type drift remain local `verify.sh` checks; the hosted
-`api-type-drift` job is a visible placeholder and does not enforce drift.
+database. The `frontend` job runs lint and format checks over source plus tracked E2E TypeScript, typecheck, Playwright test discovery, Vitest, and the production build. The dedicated `api-type-drift` job regenerates `frontend/src/types/api.generated.ts` and fails on a diff. Two more jobs build the backend and web Docker images. On pull requests, lane-specific jobs are skipped when their lane did not change; API drift remains unconditional. Shell-syntax validation remains a local `verify.sh` check.
 
 ## Test pyramid
 

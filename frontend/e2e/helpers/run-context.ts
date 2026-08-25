@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
-import { AUTH_DIR, type RunContext, RUN_CONTEXT_PATH } from "./paths";
+import { AUTH_DIR, RUN_CONTEXT_PATH, type RunContext } from "./paths";
 
 export function uniqueSlug(prefix = "e2e"): string {
 	const stamp = Date.now().toString(36);

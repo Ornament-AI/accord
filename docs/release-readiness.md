@@ -24,7 +24,7 @@ and any required runtime/restore evidence.
 | Gate | Status | Current evidence | Remaining requirement |
 | --- | --- | --- | --- |
 | **B — Contracts** | **partial** | Architecture, ADRs, payroll domain, testing, threat model, security, operations, report specs, acceptance, and this readiness map are maintained in-tree. | Engineering, security, and release-manager sign-off is external evidence and is not stored in this repository. |
-| **C — CI** | **met** | `./scripts/verify.sh`; `.github/workflows/ci.yml` backend, migration, frontend, and Docker jobs. | The hosted API-type job is still a placeholder; local `verify.sh` is the actual generated-type drift gate. |
+| **C — CI** | **met** | `./scripts/verify.sh`; `.github/workflows/ci.yml` backend, migration, generated API-type drift, frontend, and Docker jobs. | Re-run the complete hosted workflow for the exact release commit. |
 | **D — Isolation** | **met** | `backend/tests/rls/`, `backend/tests/gate_d/`, `backend/tests/api/test_tenant_context.py`, and per-phase migration RLS assertions run under restricted roles. | Re-run the backend lane for the exact release commit. |
 | **E — Effective dating** | **met** | `backend/tests/services/test_versioning.py`, master-data model/service/API tests, and `backend/tests/rls/test_master_data_rls.py`. | Re-run focused suites when effective-date ownership changes. |
 | **F — Calculation correctness** | **met** | Money/property/engine suites, `test_engine_june_golden.py`, `test_june_golden_e2e.py`, and `test_no_float_guard.py`; sanitized fixture validator. | Re-run the golden and float-guard evidence for the release commit. |

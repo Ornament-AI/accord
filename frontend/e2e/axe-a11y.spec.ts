@@ -21,7 +21,7 @@ async function runAxe(page: Page, label: string): Promise<void> {
 
 	if (moderate.length > 0) {
 		const summary = moderate.map((v) => `${v.id} (${v.impact}): ${v.description}`).join("\n  - ");
-		console.log(`[axe:${label}] moderate violations (documented, non-failing):\n  - ${summary}`);
+		console.warn(`[axe:${label}] moderate violations (documented, non-failing):\n  - ${summary}`);
 	}
 
 	expect(

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import Response
@@ -39,18 +39,6 @@ class SessionPayload:
     email: str
     name: str | None
     issued_at: str
-
-
-class SessionStore(Protocol):
-    """Seam for applying/clearing browser session cookies."""
-
-    def apply_session_cookie(self, response: Response, cookie_value: str) -> None:
-        """Attach the session cookie with ADR-0002 attributes."""
-        ...
-
-    def clear_session_cookie(self, response: Response) -> None:
-        """Expire/clear the session cookie on the response."""
-        ...
 
 
 def _assert_session_secret_strength(settings: Settings) -> None:
@@ -96,7 +84,7 @@ def _clear_cookie(settings: Settings, response: Response) -> None:
 
 
 class SignedCookieSessionStore:
-    """Phase 1 ``SessionStore`` using itsdangerous URLSafeTimedSerializer."""
+    """Phase 1 signed-cookie store using itsdangerous URLSafeTimedSerializer."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings

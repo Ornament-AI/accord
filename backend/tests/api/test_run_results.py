@@ -11,9 +11,6 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.api.routes.payroll_runs import router as payroll_runs_router
-from app.api.routes.run_commands import router as run_commands_router
-from app.api.routes.run_results import router as run_results_router
 from app.main import create_app
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
@@ -40,9 +37,6 @@ from tests.roster_helpers import initialize_run_roster
 
 def _run_results_app():
     application = create_app()
-    application.include_router(payroll_runs_router, prefix="/api")
-    application.include_router(run_commands_router, prefix="/api")
-    application.include_router(run_results_router, prefix="/api")
     application.state.auth_ready = True
     return application
 

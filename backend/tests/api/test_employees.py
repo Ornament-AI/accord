@@ -291,6 +291,59 @@ async def test_pay_version_as_of_before_on_after_boundary(client, session, dev_s
         assert detail["pay"]["basic_pay"] == pay
 
 
+@pytest.mark.asyncio
+async def test_list_employee_versions_returns_newest_first_and_honors_reveal(
+    client, session, dev_settings
+):
+    org, _, office, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    future = await client.post(
+        f"/api/employees/{employee_id}/versions/pay",
+        json={
+            "effective_from": "2026-07-01",
+            "pay_matrix_level": "L11",
+            "basic_pay": "55000.00",
+            "change_reason": "annual increment",
+        },
+    )
+    assert future.status_code == 201, future.text
+
+    pay_response = await client.get(f"/api/employees/{employee_id}/versions/pay")
+    assert pay_response.status_code == 200, pay_response.text
+    assert [
+        (version["effective_from"], version["effective_to"], version["basic_pay"])
+        for version in pay_response.json()
+    ] == [
+        ("2026-07-01", None, "55000.00"),
+        ("2026-01-01", "2026-07-01", "50732.00"),
+    ]
+
+    masked = await client.get(f"/api/employees/{employee_id}/versions/profile")
+    assert masked.status_code == 200, masked.text
+    assert masked.json()[0]["pan"] == "••••234F"
+
+    revealed = await client.get(
+        f"/api/employees/{employee_id}/versions/profile",
+        params={"reveal": "true"},
+    )
+    assert revealed.status_code == 200, revealed.text
+    assert revealed.json()[0]["pan"] == "ABCDE1234F"
+
+    preparer = await seed_user(session, name="Version History Preparer")
+    await _auth_as(session, dev_settings, client, org.id, preparer, "payroll_preparer")
+    blocked = await client.get(
+        f"/api/employees/{employee_id}/versions/profile",
+        params={"reveal": "true"},
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["error"] == "urn:accord:capability:reveal_sensitive_fields"
+
+
 # --- Version / employee conflicts -------------------------------------------------
 
 

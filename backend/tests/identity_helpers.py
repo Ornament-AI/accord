@@ -40,10 +40,6 @@ def settings(**overrides: Any) -> Settings:
     return Settings.model_construct(**base)
 
 
-# Back-compat alias used by package conftests / tests.
-_settings = settings
-
-
 def patch_get_settings(monkeypatch, value: Settings) -> None:
     """Patch get_settings at every import site used by identity routes/deps."""
     monkeypatch.setattr("app.api.routes.auth.get_settings", lambda: value)
@@ -64,9 +60,6 @@ def session_cookie_from_response(response) -> str | None:
         return None
     part = set_cookie.split("accord_session=", 1)[1]
     return part.split(";", 1)[0]
-
-
-_session_cookie_from_response = session_cookie_from_response
 
 
 async def login_dev(client, *, follow_redirects: bool = False):

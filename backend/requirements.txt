@@ -1,6 +1,7 @@
 # Core web framework
 fastapi[standard]==0.139.0
 uvicorn[standard]==0.50.0
+# Intentional direct pin for FastAPI's standard extra; multipart parser upgrades stay explicit.
 python-multipart==0.0.32
 
 # Database and ORM

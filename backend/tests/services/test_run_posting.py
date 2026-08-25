@@ -437,7 +437,7 @@ async def test_stale_approval_hash_409_writes_nothing(session):
 async def test_blocking_validation_409(session):
     world = await _seed_world(session)
     await _bind(session, world["org_id"], world["user_id"])
-    calc = await calculate_run_command(
+    await calculate_run_command(
         session,
         organization_id=world["org_id"],
         run_id=world["run_id"],
@@ -486,8 +486,6 @@ async def test_blocking_validation_409(session):
             run_id=world["run_id"],
             user_id=world["user_id"],
         )
-    # Silence unused calc warning for clarity of setup path.
-    assert calc["version_id"] != empty_version_id
 
 
 @pytest.mark.asyncio

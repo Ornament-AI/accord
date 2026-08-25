@@ -1,13 +1,15 @@
-# Development- and test-only dependencies.
-# These are NOT installed into the production Docker image (backend/Dockerfile
-# only installs requirements.txt).
+# Direct dependency pins for development, tests, and repository tooling.
+# The production Dockerfile reads only requirements.txt when installing Python
+# packages; some packages listed here may still be installed transitively.
 
-# Sync Postgres driver reserved for a later migration-test harness.
+# Sync Postgres driver used by database integration tests.
 # The application itself talks to Postgres via asyncpg.
 psycopg[binary]==3.3.4
 
-# Test runner and async HTTP client used only in backend/tests/.
+# HTTP client used by backend tests and repository seed scripts.
 httpx==0.28.1
+
+# Backend test runner and async test support.
 pytest==9.1.1
 pytest-asyncio==1.4.0
 

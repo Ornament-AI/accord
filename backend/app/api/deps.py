@@ -36,7 +36,7 @@ async def _resolve_current_user(
     settings = get_settings()
     cookie_value = request.cookies.get(settings.session_cookie_name)
     if not cookie_value:
-        # No silent AuthPrincipal.dev_test() fallback — login establishes real DB sessions.
+        # No silent development fallback — login establishes real DB sessions.
         return None
 
     try:
@@ -55,23 +55,6 @@ async def get_current_user(request: Request, db: Session) -> AuthPrincipal:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
-        )
-    return principal
-
-
-async def get_current_user_optional(request: Request, db: Session) -> AuthPrincipal | None:
-    """Return the AuthPrincipal from cookie/DB resolution, or None."""
-    return await _resolve_current_user(request, db)
-
-
-def require_admin(
-    principal: Annotated[AuthPrincipal, Depends(get_current_user)],
-) -> AuthPrincipal:
-    """Raise 403 unless the current user is an admin-capable role."""
-    if not principal.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
         )
     return principal
 
@@ -163,9 +146,7 @@ async def require_tenant_context(
     )
 
 
-# Convenience type aliases
-CurrentUser = Annotated[AuthPrincipal, Depends(get_current_user)]
-OptionalUser = Annotated[AuthPrincipal | None, Depends(get_current_user_optional)]
+# Tenant dependency alias
 TenantCtx = Annotated[TenantContext, Depends(require_tenant_context)]
 
 
