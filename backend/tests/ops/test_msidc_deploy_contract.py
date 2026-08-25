@@ -91,7 +91,9 @@ def test_deploy_bundle_never_uploads_the_host_env() -> None:
     stage = (ROOT / "scripts/stage-accord-release.sh").read_text()
     receipt = (ROOT / "scripts/run-release-with-receipt.py").read_text()
 
-    assert 'gh release download "onprem-sha-$SHA"' in stage
+    assert 'gh release download "$RELEASE_TAG"' in stage
+    assert 'RELEASE_TAG="onprem-sha-$SHA"' in stage
+    assert "rollback-from-${LIVE_SHA}-to-${SHA}-" in stage
     assert "onprem-signature-$SHA.sig" in stage
     assert "release signature verification failed" in stage
     assert "deploy/.env" not in stage

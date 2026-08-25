@@ -266,7 +266,11 @@ images for that exact commit. It records their registry digests, packages the
 self-contained Compose deployment, validates the shared on-prem contract,
 and signs its checksums with the protected `onprem-release` environment key.
 The four immutable assets are stored in the durable GitHub Release
-`onprem-sha-<full-sha>`.
+`onprem-sha-<full-sha>`. The same release also carries four separately signed,
+collision-free assets for the exact `new -> previous` rollback transition.
+Publication authenticates the previous release, rehearses `previous -> new`,
+restores the verified previous database snapshot, and validates the previous
+schema again before signing either direction.
 
 The protected `onprem-release` environment stores `ONPREM_DEPLOYED_SHA`, which
 is authoritative deployment evidence for migration rehearsal. Publication
@@ -274,6 +278,13 @@ fails closed when this value is absent, invalid, or not an ancestor of the
 candidate. A successful operator deployment updates it only after all live
 proofs pass, so skipped published releases are never mistaken for the schema
 currently on the VM.
+
+The successful rehearsal also writes its exact starting SHA into the signed
+release bundle. Under the root deployment lock, the VM compares that SHA with
+the running API's `APP_VERSION` and the current release identity before it
+stops any service or takes a backup. If another deployment or rollback changed
+the live baseline after publication, the stale bundle fails closed; publish a
+new candidate from the current live SHA instead.
 
 Publishing a release never changes the VM. A human must explicitly run the
 operator command below.
@@ -341,6 +352,10 @@ tags as signing inputs.
    root deployment lock remains held through this evidence write and is
    released only after the wrapper receives the matching nonce-bound receipt,
    so concurrent operators cannot overwrite the live SHA with stale evidence.
+   If that protected write fails after live proof, run
+   `MSIDC_SSH_TARGET=msidc ./scripts/repair-release-receipt.sh <exact-live-sha>`.
+   The repair reacquires the same root lock, proves the running `APP_VERSION`,
+   and completes the nonce-bound receipt without rerunning deployment.
 
 The normal signed updater is deliberately not an empty-host bootstrapper: it
 requires the existing root-owned `.env`, live Accord stack, PostgreSQL volume,
@@ -369,8 +384,10 @@ the paired PostgreSQL and MinIO backup path. Neither path accepts the legacy
 1. Identify the previous known-good full Git SHA. Review migration
    compatibility before changing the running app.
 2. Run `./scripts/deploy.sh <previous-full-sha>`. The previous SHA must have a
-   signed durable `onprem-sha-<sha>` release; rollback uses the same verified
-   installer and proof path as forward deployment.
+   transition-specific rollback bundle signed into the currently running
+   release. The operator stages that exact `current -> previous` evidence;
+   rollback uses the same verified installer and proof path as forward
+   deployment. Chained rollbacks proceed one release at a time.
 3. **Do not** auto-downgrade Alembic. If the new release's migrations
    already applied and are incompatible with the old app, keep API, worker,
    web, and MinIO stopped. Verify both checksum files in the SHA-bound release

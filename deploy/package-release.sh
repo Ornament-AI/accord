@@ -8,10 +8,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 OUTPUT_ROOT="${1:-${RUNNER_TEMP:-$REPO_ROOT/.release-output}}"
 TOOLING_SHA="${SOURCE_SHA:-${GITHUB_SHA:-}}"
 COMMIT_SHA="${ACCORD_RELEASE_SHA:-$TOOLING_SHA}"
-LEGACY_ROLLBACK_SHA="8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d"
 WORKFLOW_RUN_ID="${GITHUB_RUN_ID:-}"
 BACKEND_DIGEST="${ACCORD_BACKEND_DIGEST:-}"
 WEB_DIGEST="${ACCORD_WEB_DIGEST:-}"
+PREVIOUS_DEPLOYED_SHA="${ACCORD_PREVIOUS_DEPLOYED_SHA:-}"
 
 die() {
     echo "package-release: $1" >&2
@@ -44,19 +44,24 @@ replace_exact_line() {
     || die "SOURCE_SHA must be the exact 40-character lowercase release commit."
 [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] \
     || die "ACCORD_RELEASE_SHA must be a 40-character lowercase commit."
-if [[ "$COMMIT_SHA" != "$TOOLING_SHA" && "$COMMIT_SHA" != "$LEGACY_ROLLBACK_SHA" ]]; then
-    die "only the fixed pre-contract production rollback commit may differ from SOURCE_SHA"
-fi
 [[ "$WORKFLOW_RUN_ID" =~ ^[1-9][0-9]*$ ]] \
     || die "GITHUB_RUN_ID must identify the successful publication workflow."
 [[ "$BACKEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] \
     || die "ACCORD_BACKEND_DIGEST must be a SHA-256 manifest digest."
 [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] \
     || die "ACCORD_WEB_DIGEST must be a SHA-256 manifest digest."
+[[ "$PREVIOUS_DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+    || die "ACCORD_PREVIOUS_DEPLOYED_SHA must be the exact rehearsed live commit."
 git -C "$REPO_ROOT" cat-file -e "${TOOLING_SHA}^{commit}" 2>/dev/null \
     || die "SOURCE_SHA is not available in the checked-out repository."
 git -C "$REPO_ROOT" cat-file -e "${COMMIT_SHA}^{commit}" 2>/dev/null \
     || die "ACCORD_RELEASE_SHA is not available in the checked-out repository."
+if [[ "$COMMIT_SHA" != "$TOOLING_SHA" ]]; then
+    [[ "$PREVIOUS_DEPLOYED_SHA" == "$TOOLING_SHA" ]] \
+        || die "a rollback bundle must be bound from its exact release-tooling SHA"
+    git -C "$REPO_ROOT" merge-base --is-ancestor "$COMMIT_SHA" "$TOOLING_SHA" \
+        || die "a rollback target must be an ancestor of its release tooling"
+fi
 [[ "$(git -C "$REPO_ROOT" rev-parse HEAD)" == "$TOOLING_SHA" ]] \
     || die "The checked-out commit does not match SOURCE_SHA."
 
@@ -82,6 +87,7 @@ DEPLOY_FILES=(
     deploy/deploy-accord.sh
     deploy/deploy-accord-wrapper.sh
     deploy/backup-before-migrate.sh
+    deploy/verify-release-baseline.py
     deploy/onprem-release-signing-public.pem
     deploy/nginx
     deploy/object-storage
@@ -92,6 +98,8 @@ git -C "$REPO_ROOT" archive --format=tar "$TOOLING_SHA" "${DEPLOY_FILES[@]}" \
     | tar -xf - -C "$STAGE_ROOT"
 printf '%s\n' "$COMMIT_SHA" >"$STAGE_ROOT/deploy/release-source-sha"
 printf '%s\n' "$TOOLING_SHA" >"$STAGE_ROOT/deploy/release-tooling-source-sha"
+printf '%s\n' "$PREVIOUS_DEPLOYED_SHA" \
+    >"$STAGE_ROOT/deploy/release-rehearsed-from-sha"
 replace_exact_line \
     "$STAGE_ROOT/deploy/.env.example" \
     'ACCORD_TAG=latest' \

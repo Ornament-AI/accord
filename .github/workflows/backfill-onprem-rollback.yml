@@ -115,6 +115,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ env.TOOLING_SHA }}
           ACCORD_RELEASE_SHA: ${{ env.ROLLBACK_SHA }}
+          ACCORD_PREVIOUS_DEPLOYED_SHA: ${{ env.TOOLING_SHA }}
           ACCORD_BACKEND_DIGEST: ${{ env.ROLLBACK_BACKEND_DIGEST }}
           ACCORD_WEB_DIGEST: ${{ env.ROLLBACK_WEB_DIGEST }}
         run: bash deploy/package-release.sh "${RUNNER_TEMP}/release"

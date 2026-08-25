@@ -6,14 +6,30 @@ export PATH
 
 die() { echo "deploy-accord-wrapper: $1" >&2; exit 1; }
 
+if [[ "${1:-}" == "--current-sha" ]]; then
+    [[ $# -eq 1 ]] || die "--current-sha accepts no other arguments"
+    CURRENT_API="$(docker ps -q --filter 'label=com.docker.compose.service=api' \
+        --filter 'label=com.docker.compose.project.working_dir=/opt/accord/deploy')"
+    [[ -n "$CURRENT_API" && "$CURRENT_API" != *$'\n'* ]] \
+        || die "expected exactly one running Accord API container"
+    CURRENT_VERSION="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$CURRENT_API" \
+        | awk -F= '$1 == "APP_VERSION" {print substr($0, 13)}')"
+    [[ "$CURRENT_VERSION" =~ ^sha-([0-9a-f]{40})$ ]] \
+        || die "live APP_VERSION is not an immutable SHA"
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    exit 0
+fi
+
 # Re-exec once with a descriptor opened relative to the trusted app lock
 # directory. Shell redirection would follow an attacker-planted symlink.
 if [[ "${ACCORD_RELEASE_LOCK_HELD:-}" != "1" ]]; then
-    IFS= read -r ACCORD_RELEASE_GHCR_USERNAME \
-        || die "ephemeral registry username was not provided on standard input"
-    IFS= read -r ACCORD_RELEASE_GHCR_TOKEN \
-        || die "ephemeral registry token was not provided on standard input"
-    export ACCORD_RELEASE_GHCR_USERNAME ACCORD_RELEASE_GHCR_TOKEN
+    if [[ "${1:-}" != "--repair-receipt" ]]; then
+        IFS= read -r ACCORD_RELEASE_GHCR_USERNAME \
+            || die "ephemeral registry username was not provided on standard input"
+        IFS= read -r ACCORD_RELEASE_GHCR_TOKEN \
+            || die "ephemeral registry token was not provided on standard input"
+        export ACCORD_RELEASE_GHCR_USERNAME ACCORD_RELEASE_GHCR_TOKEN
+    fi
     exec /usr/bin/python3 - "${BASH_SOURCE[0]}" "$@" <<'PY'
 import fcntl
 import os
@@ -71,6 +87,37 @@ PY
 fi
 [[ "${ACCORD_RELEASE_LOCK_FD:-}" =~ ^[0-9]+$ ]] \
     || die "release lock descriptor is missing"
+
+if [[ "${1:-}" == "--repair-receipt" ]]; then
+    [[ $# -eq 3 ]] || die "usage: deploy-accord --repair-receipt <sha> <receipt-nonce>"
+    REPAIR_SHA="$2"
+    REPAIR_NONCE="$3"
+    [[ "$REPAIR_SHA" =~ ^[0-9a-f]{40}$ ]] || die "repair SHA is invalid"
+    [[ "$REPAIR_NONCE" =~ ^[0-9a-f]{64}$ ]] || die "repair nonce is invalid"
+    REPAIR_API="$(docker ps -q --filter 'label=com.docker.compose.service=api' \
+        --filter 'label=com.docker.compose.project.working_dir=/opt/accord/deploy')"
+    [[ -n "$REPAIR_API" && "$REPAIR_API" != *$'\n'* ]] \
+        || die "expected exactly one running Accord API container"
+    REPAIR_VERSION="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$REPAIR_API" \
+        | awk -F= '$1 == "APP_VERSION" {print substr($0, 13)}')"
+    [[ "$REPAIR_VERSION" == "sha-$REPAIR_SHA" ]] \
+        || die "receipt repair SHA does not match the live Accord release"
+    REPAIR_IDENTITY="/opt/accord/deploy/release-source-sha"
+    [[ -f "$REPAIR_IDENTITY" && ! -L "$REPAIR_IDENTITY" \
+        && "$(stat -c '%u:%g' "$REPAIR_IDENTITY")" == "0:0" \
+        && "$(cat "$REPAIR_IDENTITY")" == "$REPAIR_SHA" ]] \
+        || die "receipt repair does not match the trusted live release identity"
+    REPAIR_IDENTITY_MODE="$(stat -c '%a' "$REPAIR_IDENTITY")"
+    [[ "$REPAIR_IDENTITY_MODE" =~ ^[0-7]{3,4}$ ]] \
+        && (( (8#$REPAIR_IDENTITY_MODE & 8#022) == 0 )) \
+        || die "receipt repair live identity is writable by an untrusted user"
+    printf 'ACCORD_RELEASE_LIVE_PROOF=%s:%s\n' "$REPAIR_SHA" "$REPAIR_NONCE"
+    IFS= read -r REPAIR_ACK \
+        || die "receipt repair was not acknowledged"
+    [[ "$REPAIR_ACK" == "ACCORD_RELEASE_RECEIPT=$REPAIR_SHA:$REPAIR_NONCE" ]] \
+        || die "receipt repair acknowledgement is invalid"
+    exit 0
+fi
 
 [[ $# -eq 3 ]] || die "usage: deploy-accord <40-character-sha> <staged-release-root> <receipt-nonce>"
 SHA="$1"
@@ -310,10 +357,14 @@ MANIFEST_SHA="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.a
     || die "release tooling identity is missing or unsafe"
 TOOLING_SHA="$(cat "$EXTRACTED/deploy/release-tooling-source-sha")"
 [[ "$TOOLING_SHA" =~ ^[0-9a-f]{40}$ ]] || die "release tooling identity is invalid"
-LEGACY_ROLLBACK_SHA="8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d"
-if [[ "$TOOLING_SHA" != "$SHA" && "$SHA" != "$LEGACY_ROLLBACK_SHA" ]]; then
-    die "release tooling may differ only for the fixed pre-contract production rollback"
-fi
+[[ -f "$EXTRACTED/deploy/release-rehearsed-from-sha" \
+    && ! -L "$EXTRACTED/deploy/release-rehearsed-from-sha" ]] \
+    || die "release migration-baseline evidence is missing or unsafe"
+REHEARSED_FROM_SHA="$(cat "$EXTRACTED/deploy/release-rehearsed-from-sha")"
+[[ "$REHEARSED_FROM_SHA" =~ ^[0-9a-f]{40}$ ]] \
+    || die "release migration-baseline evidence is invalid"
+[[ -x "$EXTRACTED/deploy/verify-release-baseline.py" ]] \
+    || die "release migration-baseline verifier is missing or not executable"
 # Preserve the live environment only after opening it below the already trusted
 # live directory. Refuse to launder unsafe ownership or permissions into the
 # authenticated candidate, and prove the source did not change while copied.
@@ -428,6 +479,26 @@ if [[ -f "$BOOTSTRAP_MARKER" && ! -L "$BOOTSTRAP_MARKER" \
     chmod 0600 "$EXTRACTED/deploy/release-bootstrap-evidence"
 else
     API_CID="$(live_container_id api)"
+    LIVE_API_ENV="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$API_CID")" \
+        || die "could not inspect the live Accord API environment"
+    LIVE_APP_VERSION="$(printf '%s\n' "$LIVE_API_ENV" | awk -F= '$1 == "APP_VERSION" {print substr($0, 13)}')"
+    [[ -n "$LIVE_APP_VERSION" && "$LIVE_APP_VERSION" != *$'\n'* ]] \
+        || die "expected exactly one APP_VERSION on the live Accord API"
+    LIVE_RELEASE_SHA="-"
+    if [[ -e "$LIVE_ROOT/release-source-sha" || -L "$LIVE_ROOT/release-source-sha" ]]; then
+        [[ -f "$LIVE_ROOT/release-source-sha" && ! -L "$LIVE_ROOT/release-source-sha" \
+            && "$(stat -c '%u:%g' "$LIVE_ROOT/release-source-sha")" == "0:0" ]] \
+            || die "live release identity is unsafe"
+        LIVE_RELEASE_MODE="$(stat -c '%a' "$LIVE_ROOT/release-source-sha")"
+        [[ "$LIVE_RELEASE_MODE" =~ ^[0-7]{3,4}$ ]] \
+            || die "live release identity mode is invalid"
+        (( (8#$LIVE_RELEASE_MODE & 8#022) == 0 )) \
+            || die "live release identity must not be group/world-writable"
+        LIVE_RELEASE_SHA="$(cat "$LIVE_ROOT/release-source-sha")"
+    fi
+    /usr/bin/python3 "$EXTRACTED/deploy/verify-release-baseline.py" \
+        "$REHEARSED_FROM_SHA" "$LIVE_APP_VERSION" "$LIVE_RELEASE_SHA" \
+        || die "release migration baseline does not match the live Accord release"
     WORKER_CID="$(live_container_id worker)"
     WEB_CID="$(live_container_id web)"
     MINIO_CID="$(live_container_id minio)"

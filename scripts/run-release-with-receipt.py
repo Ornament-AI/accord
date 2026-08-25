@@ -17,34 +17,36 @@ def fail(message: str) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        return fail("usage: run-release-with-receipt.py <ssh-target> <sha> <staged-root>")
-    ssh_target, sha, staged_root = sys.argv[1:]
+    repair = len(sys.argv) == 4 and sys.argv[1] == "--repair"
+    if repair:
+        _, ssh_target, sha = sys.argv[1:]
+        staged_root = ""
+    elif len(sys.argv) == 4:
+        ssh_target, sha, staged_root = sys.argv[1:]
+    else:
+        return fail(
+            "usage: run-release-with-receipt.py <ssh-target> <sha> <staged-root> "
+            "or --repair <ssh-target> <sha>"
+        )
     if not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*", ssh_target):
         return fail("invalid SSH target")
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         return fail("invalid release SHA")
-    if not re.fullmatch(rf"/tmp/accord-release-{sha}-[0-9]+-[0-9]+", staged_root):
+    if not repair and not re.fullmatch(rf"/tmp/accord-release-{sha}-[0-9]+-[0-9]+", staged_root):
         return fail("invalid staged release root")
 
     username = os.environ.get("ACCORD_GHCR_USERNAME", "")
     token = os.environ.get("ACCORD_GHCR_READ_TOKEN", "")
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", username):
+    if not repair and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", username):
         return fail("invalid registry username")
-    if not 20 <= len(token) <= 512 or "\n" in token or "\r" in token:
+    if not repair and (not 20 <= len(token) <= 512 or "\n" in token or "\r" in token):
         return fail("invalid registry token")
 
     nonce = secrets.token_hex(32)
+    remote_arguments = ("--repair-receipt", sha, nonce) if repair else (sha, staged_root, nonce)
     remote_command = " ".join(
         shlex.quote(part)
-        for part in (
-            "sudo",
-            "-n",
-            "/usr/local/bin/deploy-accord",
-            sha,
-            staged_root,
-            nonce,
-        )
+        for part in ("sudo", "-n", "/usr/local/bin/deploy-accord", *remote_arguments)
     )
     process = subprocess.Popen(
         ["ssh", ssh_target, remote_command],
@@ -59,8 +61,9 @@ def main() -> int:
     acknowledgement = f"ACCORD_RELEASE_RECEIPT={sha}:{nonce}"
     marker_seen = False
     try:
-        process.stdin.write(f"{username}\n{token}\n")
-        process.stdin.flush()
+        if not repair:
+            process.stdin.write(f"{username}\n{token}\n")
+            process.stdin.flush()
         for line in process.stdout:
             print(line, end="", flush=True)
             if line.rstrip("\n") != marker:
@@ -92,7 +95,7 @@ def main() -> int:
                 process.stdin.close()
                 process.wait()
                 return fail(
-                    f"Accord is live at {sha}, but protected deployed-state evidence could not be updated"
+                    f"Accord is live at {sha}, but protected deployed-state evidence could not be updated; run scripts/repair-release-receipt.sh {sha}"
                 )
             process.stdin.write(f"{acknowledgement}\n")
             process.stdin.flush()
