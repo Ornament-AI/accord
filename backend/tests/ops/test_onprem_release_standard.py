@@ -157,10 +157,15 @@ def test_release_workflow_is_exact_main_signed_and_durable() -> None:
     assert "No successful main CI run exists for exact SHA" in workflow
     assert "SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}" in workflow
     assert "name: Rehearse deployed-schema upgrade" in workflow
-    assert "git worktree add --detach ../accord-previous" in workflow
-    assert 'candidate" =~ ^onprem-sha-([0-9a-f]{40})$' in workflow
-    assert "rollback_fallback" in workflow
-    assert "repos/${GITHUB_REPOSITORY}/releases?per_page=100" in workflow
+    assert "PREVIOUS_DEPLOYED_SHA: ${{ secrets.ONPREM_DEPLOYED_SHA }}" in workflow
+    assert "Protected ONPREM_DEPLOYED_SHA evidence is missing or invalid" in workflow
+    assert 'git merge-base --is-ancestor "$PREVIOUS_DEPLOYED_SHA" "$SOURCE_SHA"' in workflow
+    assert (
+        'git worktree add --detach ../accord-previous "${{ steps.previous.outputs.sha }}"'
+        in workflow
+    )
+    assert "candidate_sha=" not in workflow
+    assert "rollback_fallback=" not in workflow
     assert "python -m alembic check" in workflow
     assert "migrations-release-upgrade" in workflow
     assert "group: onprem-release-main" in workflow
@@ -189,7 +194,25 @@ def test_fixed_live_rollback_is_backfilled_from_reviewed_main_tooling() -> None:
     assert "actions/workflows/ci.yml/runs?head_sha=${TOOLING_SHA}&status=success" in workflow
     assert "fetch-depth: 0" in workflow
     assert "group: onprem-release-main" in workflow
-    assert "docker buildx imagetools inspect" in workflow
+    assert "docker buildx imagetools inspect" not in workflow
+    assert 'ROLLBACK_BUILD_RUN_ID: "32671105169"' in workflow
+    assert 'ROLLBACK_BACKEND_ARTIFACT_ID: "9501399945"' in workflow
+    assert 'ROLLBACK_WEB_ARTIFACT_ID: "9501403873"' in workflow
+    assert "actions/runs/${ROLLBACK_BUILD_RUN_ID}" in workflow
+    assert "actions/artifacts/${artifact_id}/zip" in workflow
+    assert 'tar -tzf "$build_record"' in workflow
+    assert (
+        "ROLLBACK_BACKEND_DIGEST: sha256:51c9dd7315bdfa1b81821ecef83b8e435a5df6ab0ff232165a123d2d444fd2ef"
+        in workflow
+    )
+    assert (
+        "ROLLBACK_WEB_DIGEST: sha256:7c223d7c91cdad07ee9786c8212f555d8ed9d3b1165faf3b6696512254f3b2ac"
+        in workflow
+    )
+    assert 'reference="ghcr.io/ornament-ai/accord/${component}@${digest}"' in workflow
+    assert "docker pull --platform linux/amd64" in workflow
+    assert "org.opencontainers.image.revision" in workflow
+    assert ":sha-${ROLLBACK_SHA}" not in workflow
     assert 'gh release create "$release_tag"' in workflow
     assert rollback_sha in package
     assert "release-tooling-source-sha" in package
@@ -204,6 +227,7 @@ def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     assert "ACCORD_GHCR_READ_TOKEN" in deploy
     assert "ornament-ai-accord-ghcr-read" in deploy
     assert "manifest inspect" in (ROOT / "scripts/stage-accord-release.sh").read_text()
+    assert "gh secret set ONPREM_DEPLOYED_SHA" in deploy
     assert "ACCORD_RELEASE_GHCR_TOKEN" in wrapper
     assert "ephemeral GHCR credentials" in (ROOT / "deploy/setup.sh").read_text()
     assert "GHCR_TOKEN=" not in (ROOT / "deploy/.env.example").read_text()
@@ -221,6 +245,8 @@ def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     assert "fcntl.LOCK_EX | fcntl.LOCK_NB" in wrapper
     assert "accord-release-install.lock" in wrapper
     assert "exec 8>/run/lock" not in wrapper
+    assert 'os.mkdir("accord-release", 0o700, dir_fd=parent)' in wrapper
+    assert "writable /run/lock must have the sticky bit" in wrapper
     assert wrapper.index("release signature verification failed") < wrapper.index(
         'docker stop "${APP_CONTAINER_IDS[@]}"'
     )
@@ -322,7 +348,8 @@ def test_fresh_host_bootstrap_is_separate_authenticated_and_empty_only() -> None
     bootstrap = (ROOT / "scripts/bootstrap-release-host.sh").read_text()
     wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
     assert "ACCORD_BOOTSTRAP_ENV_FILE" in bootstrap
-    assert "mode 0600" in bootstrap
+    assert "stat.S_IMODE(before.st_mode) != 0o600" in bootstrap
+    assert "stat -f" not in bootstrap
     assert "repos/Ornament-AI/accord/git/ref/heads/main" in bootstrap
     assert "actions/workflows/ci.yml/runs?head_sha=" in bootstrap
     assert "exact current Ornament-AI/accord main SHA" in bootstrap
@@ -365,6 +392,14 @@ def test_migration_marker_precedes_compose_mutation() -> None:
     assert "FINAL_OBJECTS_CHECKSUM" in backup
     assert "release MinIO backup checksum verification failed" in deploy
     assert "Verified paired PostgreSQL and MinIO" in deploy
+    operations = (ROOT / "docs/operations.md").read_text()
+    assert "Never restore only one member of the pair" in operations
+    assert "restore the PostgreSQL dump and its matching" in operations
+    assert "`.minio.tar.gz` archive to `accord_minio-data`" in operations
+    assert 'WEB_BINDING="$(docker port "$WEB_CID" 80/tcp)"' in deploy
+    assert '"http://127.0.0.1:$WEB_PORT/api/healthz"' in deploy
+    assert '"http://127.0.0.1:$WEB_PORT/api/readyz"' in deploy
+    assert "http://127.0.0.1:8085/api/healthz" not in deploy
 
 
 def test_backup_uses_the_running_non_default_database_identity(tmp_path: Path) -> None:

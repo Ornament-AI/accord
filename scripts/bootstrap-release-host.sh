@@ -14,8 +14,6 @@ STAGER="$ROOT/scripts/stage-accord-release.sh"
 [[ $# -le 1 ]] || die "usage: ACCORD_BOOTSTRAP_ENV_FILE=/secure/path/.env $0 [main-sha]"
 [[ -n "$ENV_FILE" && "$ENV_FILE" == /* && -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] \
     || die "ACCORD_BOOTSTRAP_ENV_FILE must be an absolute regular non-symlink file"
-[[ "$(stat -f '%u:%Lp' "$ENV_FILE")" == "$(id -u):600" ]] \
-    || die "bootstrap environment must be owned by the operator with mode 0600"
 [[ "$SSH_TARGET" =~ ^([A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
     || die "MSIDC_SSH_TARGET has an invalid format"
 [[ "$OPERATOR" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "ACCORD_VM_OPERATOR has an invalid format"

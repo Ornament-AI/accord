@@ -98,4 +98,8 @@ printf '%s\n%s\n' "$ACCORD_GHCR_USERNAME" "$ACCORD_GHCR_READ_TOKEN" \
     | ssh "$MSIDC_SSH_TARGET" \
         "sudo -n /usr/local/bin/deploy-accord '$TARGET_SHA' '$REMOTE_RELEASE_ROOT'"
 unset ACCORD_GHCR_READ_TOKEN
+printf '%s' "$TARGET_SHA" \
+    | gh secret set ONPREM_DEPLOYED_SHA \
+        --repo Ornament-AI/accord --env onprem-release \
+    || die "Accord is live at $TARGET_SHA, but protected deployed-state evidence could not be updated"
 info "Accord sha-$TARGET_SHA deploy finished"

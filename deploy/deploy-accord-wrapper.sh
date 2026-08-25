@@ -21,11 +21,31 @@ import stat
 import sys
 
 script, *arguments = sys.argv[1:]
-directory = os.open("/run/lock/accord-release", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+parent = os.open("/run/lock", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    parent_details = os.fstat(parent)
+    parent_mode = stat.S_IMODE(parent_details.st_mode)
+    if parent_details.st_uid != 0 or parent_details.st_gid != 0:
+        raise SystemExit("deploy-accord-wrapper: /run/lock is not owned by root:root")
+    if parent_mode & 0o022 and not parent_mode & stat.S_ISVTX:
+        raise SystemExit("deploy-accord-wrapper: writable /run/lock must have the sticky bit")
+    try:
+        os.mkdir("accord-release", 0o700, dir_fd=parent)
+        os.fsync(parent)
+    except FileExistsError:
+        pass
+    directory = os.open(
+        "accord-release",
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        dir_fd=parent,
+    )
+finally:
+    os.close(parent)
 try:
     details = os.fstat(directory)
     if details.st_uid != 0 or details.st_gid != 0 or stat.S_IMODE(details.st_mode) & 0o022:
         raise SystemExit("deploy-accord-wrapper: /run/lock/accord-release is not a trusted root directory")
+    os.fchmod(directory, 0o700)
     descriptor = os.open(
         "accord-release-install.lock",
         os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,

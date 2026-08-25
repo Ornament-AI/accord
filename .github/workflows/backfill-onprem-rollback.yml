@@ -19,6 +19,13 @@ jobs:
       packages: read
     env:
       ROLLBACK_SHA: 8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d
+      ROLLBACK_BUILD_RUN_ID: "32671105169"
+      ROLLBACK_BACKEND_DIGEST: sha256:51c9dd7315bdfa1b81821ecef83b8e435a5df6ab0ff232165a123d2d444fd2ef
+      ROLLBACK_BACKEND_ARTIFACT_ID: "9501399945"
+      ROLLBACK_BACKEND_ARTIFACT_SHA256: 1c2bcf5c15d603dbd3ee99c3aab0ba7792be90e186a4ec587205286003e96e33
+      ROLLBACK_WEB_DIGEST: sha256:7c223d7c91cdad07ee9786c8212f555d8ed9d3b1165faf3b6696512254f3b2ac
+      ROLLBACK_WEB_ARTIFACT_ID: "9501403873"
+      ROLLBACK_WEB_ARTIFACT_SHA256: cc2d430001d718ad220718ad26418724b6bae7e57d5a78eff9a09dcebf169c24
       TOOLING_SHA: ${{ github.sha }}
     steps:
       - name: Check out reviewed release tooling
@@ -51,31 +58,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Resolve immutable rollback image digests
-        id: images
+      - name: Verify retained build provenance, image digests, and revisions
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          for component in backend web; do
-            reference="ghcr.io/ornament-ai/accord/${component}:sha-${ROLLBACK_SHA}"
-            digest="$(
-              docker buildx imagetools inspect "$reference" --format '{{json .Manifest}}' \
-                | jq -er '.digest'
-            )"
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-              echo "Could not resolve an immutable digest for $reference" >&2
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ROLLBACK_BUILD_RUN_ID}")"
+          jq -e \
+            --arg sha "$ROLLBACK_SHA" \
+            '.name == "Deploy" and .event == "push" and .status == "completed" and
+             .conclusion == "success" and .head_sha == $sha' \
+            <<<"$run_json" >/dev/null || {
+              echo "Pinned rollback build run is not a successful Deploy run for $ROLLBACK_SHA" >&2
               exit 1
             }
-            echo "${component}_digest=$digest" >> "$GITHUB_OUTPUT"
+          for component in backend web; do
+            if [[ "$component" == backend ]]; then
+              digest="$ROLLBACK_BACKEND_DIGEST"
+              artifact_id="$ROLLBACK_BACKEND_ARTIFACT_ID"
+              artifact_sha256="$ROLLBACK_BACKEND_ARTIFACT_SHA256"
+            else
+              digest="$ROLLBACK_WEB_DIGEST"
+              artifact_id="$ROLLBACK_WEB_ARTIFACT_ID"
+              artifact_sha256="$ROLLBACK_WEB_ARTIFACT_SHA256"
+            fi
+            build_record="${RUNNER_TEMP}/${component}.dockerbuild"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" >"$build_record"
+            printf '%s  %s\n' "$artifact_sha256" "$build_record" | sha256sum --check --status || {
+              echo "Pinned $component build record failed its retained artifact checksum" >&2
+              exit 1
+            }
+            tar -tzf "$build_record" | grep -Fx "blobs/sha256/${digest#sha256:}" >/dev/null || {
+              echo "Pinned $component build record does not prove digest $digest" >&2
+              exit 1
+            }
+            reference="ghcr.io/ornament-ai/accord/${component}@${digest}"
+            docker pull --platform linux/amd64 "$reference"
+            revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$reference")"
+            [[ "$revision" == "$ROLLBACK_SHA" ]] || {
+              echo "$reference has revision $revision instead of $ROLLBACK_SHA" >&2
+              exit 1
+            }
           done
 
       - name: Build and validate signed rollback bundle inputs
         env:
           SOURCE_SHA: ${{ env.TOOLING_SHA }}
           ACCORD_RELEASE_SHA: ${{ env.ROLLBACK_SHA }}
-          ACCORD_BACKEND_DIGEST: ${{ steps.images.outputs.backend_digest }}
-          ACCORD_WEB_DIGEST: ${{ steps.images.outputs.web_digest }}
+          ACCORD_BACKEND_DIGEST: ${{ env.ROLLBACK_BACKEND_DIGEST }}
+          ACCORD_WEB_DIGEST: ${{ env.ROLLBACK_WEB_DIGEST }}
         run: bash deploy/package-release.sh "${RUNNER_TEMP}/release"
 
       - name: Sign rollback release
