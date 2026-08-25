@@ -337,7 +337,10 @@ tags as signing inputs.
    After those live proofs succeed, the command records the deployed full SHA
    in the protected `onprem-release` environment for the next migration
    rehearsal. Failure to update that evidence is reported as an incomplete
-   deployment operation even though the live proof already succeeded.
+   deployment operation even though the live proof already succeeded. The
+   root deployment lock remains held through this evidence write and is
+   released only after the wrapper receives the matching nonce-bound receipt,
+   so concurrent operators cannot overwrite the live SHA with stale evidence.
 
 The normal signed updater is deliberately not an empty-host bootstrapper: it
 requires the existing root-owned `.env`, live Accord stack, PostgreSQL volume,

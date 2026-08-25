@@ -72,12 +72,14 @@ fi
 [[ "${ACCORD_RELEASE_LOCK_FD:-}" =~ ^[0-9]+$ ]] \
     || die "release lock descriptor is missing"
 
-[[ $# -eq 2 ]] || die "usage: deploy-accord <40-character-sha> <staged-release-root>"
+[[ $# -eq 3 ]] || die "usage: deploy-accord <40-character-sha> <staged-release-root> <receipt-nonce>"
 SHA="$1"
 STAGED_ROOT="$2"
+RECEIPT_NONCE="$3"
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die "SHA must be 40 lowercase hexadecimal characters"
 [[ "$STAGED_ROOT" =~ ^/tmp/accord-release-${SHA}-[0-9]+-[0-9]+$ ]] \
     || die "staged release path has an invalid format"
+[[ "$RECEIPT_NONCE" =~ ^[0-9a-f]{64}$ ]] || die "receipt nonce must be 64 lowercase hexadecimal characters"
 [[ -d "$STAGED_ROOT" && ! -L "$STAGED_ROOT" ]] \
     || die "staged release must be a real directory"
 [[ "$ACCORD_RELEASE_GHCR_USERNAME" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] \
@@ -463,6 +465,11 @@ if ACCORD_RELEASE_BACKUP_DIR=/opt/accord/backups/releases \
     [[ "$BOOTSTRAP_MODE" != "true" ]] || rm -f -- "$BOOTSTRAP_MARKER"
     rm -f -- "$MIGRATION_STATE_FILE"
     rm -rf "$BACKUP_ROOT" "$CANDIDATE_ROOT" "$STAGED_ROOT"
+    printf 'ACCORD_RELEASE_LIVE_PROOF=%s:%s\n' "$SHA" "$RECEIPT_NONCE"
+    IFS= read -r RECEIPT_ACKNOWLEDGEMENT \
+        || die "live proof passed, but protected deployed-state evidence was not acknowledged"
+    [[ "$RECEIPT_ACKNOWLEDGEMENT" == "ACCORD_RELEASE_RECEIPT=$SHA:$RECEIPT_NONCE" ]] \
+        || die "protected deployed-state evidence acknowledgement is invalid"
     exit 0
 fi
 

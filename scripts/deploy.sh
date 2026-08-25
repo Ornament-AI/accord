@@ -13,6 +13,7 @@ die()  { echo -e "${R}✗${N} $1" >&2; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WRAPPER_SOURCE="$ROOT/deploy/deploy-accord-wrapper.sh"
 RELEASE_STAGER="${ACCORD_RELEASE_STAGER:-$ROOT/scripts/stage-accord-release.sh}"
+RECEIPT_CLIENT="$ROOT/scripts/run-release-with-receipt.py"
 
 usage() {
     cat <<'EOF'
@@ -35,7 +36,9 @@ fi
 
 command -v ssh >/dev/null 2>&1 || die "Missing required command: ssh"
 command -v gh >/dev/null 2>&1 || die "Missing required command: gh"
+command -v python3 >/dev/null 2>&1 || die "Missing required command: python3"
 [[ -x "$RELEASE_STAGER" ]] || die "Missing executable release stager: $RELEASE_STAGER"
+[[ -x "$RECEIPT_CLIENT" ]] || die "Missing executable release receipt client: $RECEIPT_CLIENT"
 
 ACCORD_GHCR_USERNAME="${ACCORD_GHCR_USERNAME:-$(gh api user --jq .login)}"
 ACCORD_GHCR_READ_TOKEN="${ACCORD_GHCR_READ_TOKEN:-}"
@@ -94,12 +97,6 @@ REMOTE_RELEASE_ROOT="$(
 [[ "$REMOTE_RELEASE_ROOT" =~ ^/tmp/accord-release-${TARGET_SHA}-[0-9]+-[0-9]+$ ]] \
     || die "Release stager returned an invalid remote path"
 info "Deploying Accord sha-$TARGET_SHA to $MSIDC_SSH_TARGET..."
-printf '%s\n%s\n' "$ACCORD_GHCR_USERNAME" "$ACCORD_GHCR_READ_TOKEN" \
-    | ssh "$MSIDC_SSH_TARGET" \
-        "sudo -n /usr/local/bin/deploy-accord '$TARGET_SHA' '$REMOTE_RELEASE_ROOT'"
+python3 "$RECEIPT_CLIENT" "$MSIDC_SSH_TARGET" "$TARGET_SHA" "$REMOTE_RELEASE_ROOT"
 unset ACCORD_GHCR_READ_TOKEN
-printf '%s' "$TARGET_SHA" \
-    | gh secret set ONPREM_DEPLOYED_SHA \
-        --repo Ornament-AI/accord --env onprem-release \
-    || die "Accord is live at $TARGET_SHA, but protected deployed-state evidence could not be updated"
 info "Accord sha-$TARGET_SHA deploy finished"

@@ -225,13 +225,15 @@ def test_fixed_live_rollback_is_backfilled_from_reviewed_main_tooling() -> None:
 def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     deploy = (ROOT / "scripts/deploy.sh").read_text()
     installer = (ROOT / "scripts/install-release-wrapper.sh").read_text()
+    receipt = (ROOT / "scripts/run-release-with-receipt.py").read_text()
     wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
-    assert "sudo -n /usr/local/bin/deploy-accord" in deploy
+    assert '"/usr/local/bin/deploy-accord"' in receipt
     assert "gh auth token" not in deploy
     assert "ACCORD_GHCR_READ_TOKEN" in deploy
     assert "ornament-ai-accord-ghcr-read" in deploy
     assert "manifest inspect" in (ROOT / "scripts/stage-accord-release.sh").read_text()
-    assert "gh secret set ONPREM_DEPLOYED_SHA" in deploy
+    assert 'RECEIPT_CLIENT="$ROOT/scripts/run-release-with-receipt.py"' in deploy
+    assert 'python3 "$RECEIPT_CLIENT"' in deploy
     assert "ACCORD_RELEASE_GHCR_TOKEN" in wrapper
     assert "ephemeral GHCR credentials" in (ROOT / "deploy/setup.sh").read_text()
     assert "GHCR_TOKEN=" not in (ROOT / "deploy/.env.example").read_text()
@@ -251,6 +253,9 @@ def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     assert "exec 8>/run/lock" not in wrapper
     assert 'os.mkdir("accord-release", 0o700, dir_fd=parent)' in wrapper
     assert "writable /run/lock must have the sticky bit" in wrapper
+    assert "ACCORD_RELEASE_LIVE_PROOF=" in wrapper
+    assert "ACCORD_RELEASE_RECEIPT=" in wrapper
+    assert wrapper.index("ACCORD_RELEASE_LIVE_PROOF=") < wrapper.index("ACCORD_RELEASE_RECEIPT=")
     assert wrapper.index("release signature verification failed") < wrapper.index(
         'docker stop "${APP_CONTAINER_IDS[@]}"'
     )
@@ -371,10 +376,9 @@ def test_fresh_host_bootstrap_is_separate_authenticated_and_empty_only() -> None
     assert "/usr/local/bin/.deploy-accord.new" in bootstrap
     assert "sha256sum --check --status" in bootstrap
     assert ".allow-first-release-$SHA" in bootstrap
-    assert "sudo -n /usr/local/bin/deploy-accord" in bootstrap
+    assert 'python3 "$RECEIPT_CLIENT"' in bootstrap
     assert "ACCORD_CONFIRMED_FRESH_INSTALL" not in bootstrap
-    assert "gh secret set ONPREM_DEPLOYED_SHA" in bootstrap
-    assert "protected deployed-state evidence could not be initialized" in bootstrap
+    assert "scripts/run-release-with-receipt.py" in bootstrap
     assert "release-bootstrap-evidence" in wrapper
     assert ".first-release-attempted-$SHA" in wrapper
     assert "accord_pgdata accord_minio-data deploy_pgdata deploy_minio-data" in wrapper
@@ -408,6 +412,80 @@ def test_migration_marker_precedes_compose_mutation() -> None:
     assert '"http://127.0.0.1:$WEB_PORT/api/healthz"' in deploy
     assert '"http://127.0.0.1:$WEB_PORT/api/readyz"' in deploy
     assert "http://127.0.0.1:8085/api/healthz" not in deploy
+
+
+def test_release_receipt_update_is_serialized_by_remote_lock(tmp_path: Path) -> None:
+    helper = ROOT / "scripts/run-release-with-receipt.py"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    event_log = tmp_path / "events.log"
+    lock_file = tmp_path / "remote.lock"
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        "#!/usr/bin/env python3\n"
+        "import fcntl, os, shlex, sys\n"
+        "command = shlex.split(sys.argv[2])\n"
+        "sha, nonce = command[-3], command[-1]\n"
+        "with open(os.environ['FAKE_REMOTE_LOCK'], 'w') as lock:\n"
+        "    fcntl.flock(lock, fcntl.LOCK_EX)\n"
+        "    username = sys.stdin.readline().rstrip('\\n')\n"
+        "    token = sys.stdin.readline().rstrip('\\n')\n"
+        "    assert username == 'release-user' and token == 't' * 24\n"
+        "    with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "        events.write(f'acquired:{sha}\\n'); events.flush()\n"
+        "    print(f'ACCORD_RELEASE_LIVE_PROOF={sha}:{nonce}', flush=True)\n"
+        "    acknowledgement = sys.stdin.readline().rstrip('\\n')\n"
+        "    assert acknowledgement == f'ACCORD_RELEASE_RECEIPT={sha}:{nonce}'\n"
+        "    with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "        events.write(f'ack:{sha}\\n'); events.flush()\n"
+    )
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys, time\n"
+        "sha = sys.stdin.read()\n"
+        "with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "    events.write(f'gh-start:{sha}\\n'); events.flush()\n"
+        "time.sleep(0.2)\n"
+        "with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "    events.write(f'gh-end:{sha}\\n'); events.flush()\n"
+    )
+    fake_ssh.chmod(0o755)
+    fake_gh.chmod(0o755)
+    first_sha = "a" * 40
+    second_sha = "b" * 40
+    environment = os.environ | {
+        "ACCORD_GHCR_USERNAME": "release-user",
+        "ACCORD_GHCR_READ_TOKEN": "t" * 24,
+        "FAKE_EVENT_LOG": str(event_log),
+        "FAKE_REMOTE_LOCK": str(lock_file),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+    processes = [
+        subprocess.Popen(
+            [
+                str(helper),
+                "accord-host",
+                sha,
+                f"/tmp/accord-release-{sha}-1-1",
+            ],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for sha in (first_sha, second_sha)
+    ]
+    results = [process.communicate(timeout=10) for process in processes]
+    assert [process.returncode for process in processes] == [0, 0], results
+
+    events = event_log.read_text().splitlines()
+    first_positions = [index for index, event in enumerate(events) if first_sha in event]
+    second_positions = [index for index, event in enumerate(events) if second_sha in event]
+    assert len(first_positions) == 4 and len(second_positions) == 4
+    assert max(first_positions) < min(second_positions) or max(second_positions) < min(
+        first_positions
+    )
 
 
 def test_backup_uses_the_running_non_default_database_identity(tmp_path: Path) -> None:

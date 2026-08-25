@@ -89,12 +89,14 @@ def test_setup_requires_immutable_images_and_production_auth() -> None:
 def test_deploy_bundle_never_uploads_the_host_env() -> None:
     deploy = (ROOT / "scripts/deploy.sh").read_text()
     stage = (ROOT / "scripts/stage-accord-release.sh").read_text()
+    receipt = (ROOT / "scripts/run-release-with-receipt.py").read_text()
 
     assert 'gh release download "onprem-sha-$SHA"' in stage
     assert "onprem-signature-$SHA.sig" in stage
     assert "release signature verification failed" in stage
     assert "deploy/.env" not in stage
-    assert "sudo -n /usr/local/bin/deploy-accord" in deploy
+    assert 'python3 "$RECEIPT_CLIENT"' in deploy
+    assert '"/usr/local/bin/deploy-accord"' in receipt
     assert "ls-remote --exit-code origin refs/heads/main" in deploy
 
 
