@@ -420,14 +420,25 @@ def test_release_receipt_update_is_serialized_by_remote_lock(tmp_path: Path) -> 
     fake_bin.mkdir()
     event_log = tmp_path / "events.log"
     lock_file = tmp_path / "remote.lock"
+    barrier_dir = tmp_path / "barrier"
+    barrier_dir.mkdir()
     fake_ssh = fake_bin / "ssh"
     fake_ssh.write_text(
         "#!/usr/bin/env python3\n"
-        "import fcntl, os, shlex, sys\n"
+        "import fcntl, os, pathlib, shlex, sys, time\n"
         "command = shlex.split(sys.argv[2])\n"
         "sha, nonce = command[-3], command[-1]\n"
+        "barrier = pathlib.Path(os.environ['FAKE_BARRIER_DIR'])\n"
+        "(barrier / str(os.getpid())).touch()\n"
+        "deadline = time.monotonic() + 5\n"
+        "while len(list(barrier.iterdir())) < 2:\n"
+        "    assert time.monotonic() < deadline\n"
+        "    time.sleep(0.01)\n"
         "with open(os.environ['FAKE_REMOTE_LOCK'], 'w') as lock:\n"
-        "    fcntl.flock(lock, fcntl.LOCK_EX)\n"
+        "    try:\n"
+        "        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+        "    except BlockingIOError:\n"
+        "        raise SystemExit(75)\n"
         "    username = sys.stdin.readline().rstrip('\\n')\n"
         "    token = sys.stdin.readline().rstrip('\\n')\n"
         "    assert username == 'release-user' and token == 't' * 24\n"
@@ -459,6 +470,7 @@ def test_release_receipt_update_is_serialized_by_remote_lock(tmp_path: Path) -> 
         "ACCORD_GHCR_READ_TOKEN": "t" * 24,
         "FAKE_EVENT_LOG": str(event_log),
         "FAKE_REMOTE_LOCK": str(lock_file),
+        "FAKE_BARRIER_DIR": str(barrier_dir),
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
     }
     processes = [
@@ -477,15 +489,12 @@ def test_release_receipt_update_is_serialized_by_remote_lock(tmp_path: Path) -> 
         for sha in (first_sha, second_sha)
     ]
     results = [process.communicate(timeout=10) for process in processes]
-    assert [process.returncode for process in processes] == [0, 0], results
+    assert sorted(process.returncode for process in processes) == [0, 1], results
 
     events = event_log.read_text().splitlines()
     first_positions = [index for index, event in enumerate(events) if first_sha in event]
     second_positions = [index for index, event in enumerate(events) if second_sha in event]
-    assert len(first_positions) == 4 and len(second_positions) == 4
-    assert max(first_positions) < min(second_positions) or max(second_positions) < min(
-        first_positions
-    )
+    assert sorted((len(first_positions), len(second_positions))) == [0, 4]
 
 
 def test_backup_uses_the_running_non_default_database_identity(tmp_path: Path) -> None:
