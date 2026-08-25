@@ -16,7 +16,7 @@ name: accord
 
 services:
   postgres:
-    image: postgres:18.4-alpine
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${ACCORD_DB_NAME:-accord}
@@ -29,7 +29,7 @@ services:
       # mounting …/data breaks init (docker-library/postgres#1259).
       - pgdata:/var/lib/postgresql
       # ADR-0001 role bootstrap (runs once on empty volume).
-      - ../backend/scripts/create_roles.sql:/roles/create_roles.sql:ro
+      - ./create_roles.sql:/roles/create_roles.sql:ro
       - ./object-storage/postgres-init-roles.sh:/docker-entrypoint-initdb.d/10-create-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
@@ -56,7 +56,7 @@ services:
         max-file: "3"
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -88,7 +88,7 @@ services:
   # Idempotent bucket bootstrap (OBJECT_STORAGE_BUCKET, default accord-artifacts).
   # See deploy/object-storage/create-bucket.sh.
   minio-init:
-    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3
     depends_on:
       minio:
         condition: service_healthy

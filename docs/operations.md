@@ -258,57 +258,97 @@ including `payroll_unit_id NOT NULL`.
 
 ## Release / rollback (`.github/workflows/deploy.yml`)
 
-The release pipeline is tag-triggered (a `push` of a `v*` tag) and uses these
-jobs:
+After CI succeeds on `main`, the release workflow builds the backend and web
+images for that exact commit. It records their registry digests, packages the
+self-contained Compose deployment, validates the shared on-prem contract,
+and signs its checksums with the protected `onprem-release` environment key.
+The four immutable assets are stored in the durable GitHub Release
+`onprem-sha-<full-sha>`.
 
-1. **build-and-push-backend** — builds and pushes the backend image.
-2. **build-and-push-web** — builds and pushes the web image. Both image jobs
-   publish:
-   `ghcr.io/ornament-ai/accord/{backend,web}` with tags:
-   - `${{ github.ref_name }}` (for example `v1.2.3`)
-   - `sha-<full-git-sha>`
-3. **migrations-release-upgrade** — on a scratch Postgres, upgrade from the
-   previous `v*` tag to the current tag with Alembic, then run
-   `alembic check` and confirm the head matches. The first release (no
-   prior `v*`) skips the replay; images still publish.
-4. **deployment-summary** — writes the image, tag, and sha to the job
-   summary.
+Publishing a release never changes the VM. A human must explicitly run the
+operator command below.
+
+### One-time host installation
+
+Install the fixed root-owned wrapper and narrow sudo rule once:
+
+```bash
+MSIDC_SSH_TARGET=msidc ./scripts/install-release-wrapper.sh
+```
+
+This is the last routine password prompt. It grants password-free sudo only to
+`/usr/local/bin/deploy-accord`; the wrapper accepts only a full SHA and a
+strictly shaped staging directory, then authenticates all release assets before
+running bundled code. Re-run the installer only when the reviewed wrapper
+itself changes. The installer snapshots the wrapper and environment validator
+from authenticated canonical `Ornament-AI/accord` main, requires successful CI
+for that exact SHA, and removes obsolete persisted GHCR keys while rejecting
+unsupported process-control variables before the environment becomes
+root-owned.
+
+Routine releases also need a GitHub Packages token with `read:packages`. Keep
+it in a secret manager and expose it as `ACCORD_GHCR_READ_TOKEN`, or install it
+once in the macOS Keychain service `ornament-ai-accord-ghcr-read` under the
+GitHub username used by `gh`. The scripts never prompt for it, store it in the
+repository, copy it into `.env`, or write Docker credentials outside a temporary
+directory. Before staging, they prove that it can read both exact image digests
+from the signed manifest.
+
+Before the first cutover, run the manual `Backfill On-Prem Rollback Release`
+workflow on `main` and verify that
+`onprem-sha-8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d` contains all four signed
+assets. This one-time backfill preserves the currently deployed release as a
+verified rollback target.
 
 ### Release steps (operator)
 
-1. Make sure CI is green on the commit you want to ship.
-2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. Wait for the Deploy workflow to succeed (images + migration replay).
-4. On the host, set `ACCORD_TAG=sha-<full-sha>` in `deploy/.env`.
-5. Deploy the exact release commit from a trusted checkout:
+1. Confirm CI and the On-Prem Release workflow are green for the same full SHA.
+2. Deploy that published SHA:
 
    ```bash
-   MSIDC_SSH_TARGET=msidcadmin@msidcacct ./scripts/deploy.sh <full-sha>
+   MSIDC_SSH_TARGET=msidc ./scripts/deploy.sh <full-sha>
    ```
 
-   The script syncs only the deploy bundle (never `.env`). Then `setup.sh`
-   on the host validates the production/WorkOS settings, pulls the immutable
-   images, starts them with `--no-build`, checks each image's revision
-   label, and runs a VM-local smoke proof.
-6. Route `accord.innovastra.app` through the MSIDC Cloudflare Tunnel to
-   `http://localhost:8085`, then run the public smoke checks.
+   The command downloads the four durable assets, verifies their Ed25519
+   signature and checksums locally, stages them, and invokes only the fixed VM
+   wrapper. It streams the operator's GitHub Packages credential over standard
+   input for this invocation only; the wrapper uses a temporary Docker config
+   and never writes the credential into `.env` or the VM user's home. The
+   wrapper repeats verification, preserves the root-owned `.env`,
+   quiesces API, worker, and web, creates and verifies SHA-bound PostgreSQL and
+   MinIO-volume backups, atomically promotes the release, then proves image digests,
+   `APP_VERSION`, migrations, health, readiness, auth, worker startup, and the
+   public endpoint.
 
-On a first shared-host install, `setup.sh` refuses to proceed when legacy
-`deploy_pgdata` or `deploy_minio-data` volumes exist but Accord's isolated
-volumes do not. Migrate them if they belong to an earlier Accord install.
-Set `ACCORD_CONFIRMED_FRESH_INSTALL=true` on the one deploy command only
-after proving they belong to another application; do not store this
-acknowledgment in `.env` (setup.sh ignores it there). The MSIDC first
-install was audited on that basis.
+The normal signed updater is deliberately not an empty-host bootstrapper: it
+requires the existing root-owned `.env`, live Accord stack, PostgreSQL volume,
+and MinIO volume so it can take a paired backup. Use the separate, one-time
+bootstrap only on a host with no Accord containers, current volumes, or legacy
+`deploy_*` volumes:
+
+```bash
+ACCORD_BOOTSTRAP_ENV_FILE=/absolute/operator-owned/accord.env \
+  MSIDC_SSH_TARGET=msidc \
+  ./scripts/bootstrap-release-host.sh <current-main-full-sha>
+```
+
+The environment file must be a non-symlink owned by the operator with mode
+`0600`. The bootstrap authenticates the signed release before asking for sudo,
+then refuses a non-empty host. It installs the fixed wrapper and root-only
+environment, records a one-shot fresh-host marker, and uses the same digest,
+version, migration, auth, worker, readiness, and public proofs as updates. An
+empty host has no user data to back up; the wrapper records SHA-bound bootstrap
+evidence instead. After first success, all releases use `scripts/deploy.sh` and
+the paired PostgreSQL and MinIO backup path. Neither path accepts the legacy
+`ACCORD_CONFIRMED_FRESH_INSTALL` bypass.
 
 ### Rollback
 
 1. Identify the previous known-good full Git SHA. Review migration
    compatibility before changing the running app.
-2. Set `ACCORD_TAG=sha-<previous-full-sha>` in the host `.env`, then run
-   `./scripts/deploy.sh <previous-full-sha>` from a trusted checkout. This
-   keeps rollback on the same pull, no-build, revision-label, and
-   smoke-proof path.
+2. Run `./scripts/deploy.sh <previous-full-sha>`. The previous SHA must have a
+   signed durable `onprem-sha-<sha>` release; rollback uses the same verified
+   installer and proof path as forward deployment.
 3. **Do not** auto-downgrade Alembic. If the new release's migrations
    already applied and are incompatible with the old app, restore the
    database from backup/PITR to a pre-migration point, then start the old
