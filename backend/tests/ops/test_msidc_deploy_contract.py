@@ -47,6 +47,15 @@ def _valid_env_lines() -> list[str]:
     ]
 
 
+def _setup_environment(fake_bin: Path, docker_log: Path) -> dict[str, str]:
+    return {
+        "ACCORD_RELEASE_GHCR_USERNAME": "accord-release-operator",
+        "ACCORD_RELEASE_GHCR_TOKEN": "x" * 40,
+        "FAKE_DOCKER_LOG": str(docker_log),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+
+
 def test_compose_is_isolated_and_does_not_publish_minio() -> None:
     compose = (ROOT / "deploy/docker-compose.yml").read_text()
 
@@ -72,17 +81,21 @@ def test_setup_requires_immutable_images_and_production_auth() -> None:
     assert "contains unsafe shell metacharacters" not in setup
     assert "for _ in $(seq 1 15)" in setup
     assert '$WORKER_READY || die "Worker startup proof is missing"' in setup
+    assert "unsupported variable $key" in setup
+    for dangerous in ("PATH", "LD_PRELOAD", "BASH_ENV", "DOCKER_HOST", "DOCKER_CONFIG"):
+        assert f"|{dangerous}|" not in setup
 
 
 def test_deploy_bundle_never_uploads_the_host_env() -> None:
     deploy = (ROOT / "scripts/deploy.sh").read_text()
+    stage = (ROOT / "scripts/stage-accord-release.sh").read_text()
 
-    assert 'REMOTE_ROOT="${ACCORD_REMOTE_ROOT:-/opt/accord}"' in deploy
-    assert 'git -C "$ROOT" archive' in deploy
-    assert "+refs/heads/main:refs/remotes/origin/main" in deploy
-    assert "merge-base --is-ancestor" in deploy
-    assert "ls-tree -r --name-only" in deploy
-    assert "ACCORD_EXPECTED_SHA" in deploy
+    assert 'gh release download "onprem-sha-$SHA"' in stage
+    assert "onprem-signature-$SHA.sig" in stage
+    assert "release signature verification failed" in stage
+    assert "deploy/.env" not in stage
+    assert "sudo -n /usr/local/bin/deploy-accord" in deploy
+    assert "ls-remote --exit-code origin refs/heads/main" in deploy
 
 
 def test_provisioning_scripts_can_import_the_container_app() -> None:
@@ -108,10 +121,9 @@ def test_setup_reports_missing_public_url_before_docker_mutation(tmp_path: Path)
         ["bash", str(deploy_dir / "setup.sh")],
         capture_output=True,
         check=False,
-        env={
-            "ACCORD_CONFIRMED_FRESH_INSTALL": "true",
-            "FAKE_DOCKER_LOG": str(docker_log),
-            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        env=_setup_environment(fake_bin, docker_log)
+        | {
+            "FAKE_LEGACY_VOLUMES": "false",
         },
         text=True,
     )
@@ -139,10 +151,9 @@ def test_setup_accepts_default_web_port_when_env_omits_it(tmp_path: Path) -> Non
         ["bash", str(deploy_dir / "setup.sh")],
         capture_output=True,
         check=False,
-        env={
-            "ACCORD_CONFIRMED_FRESH_INSTALL": "true",
-            "FAKE_DOCKER_LOG": str(docker_log),
-            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        env=_setup_environment(fake_bin, docker_log)
+        | {
+            "FAKE_LEGACY_VOLUMES": "false",
         },
         text=True,
     )
@@ -165,10 +176,9 @@ def test_fresh_install_without_legacy_volumes_reaches_image_pull(tmp_path: Path)
         ["bash", str(deploy_dir / "setup.sh")],
         capture_output=True,
         check=False,
-        env={
-            "FAKE_DOCKER_LOG": str(docker_log),
+        env=_setup_environment(fake_bin, docker_log)
+        | {
             "FAKE_LEGACY_VOLUMES": "false",
-            "PATH": f"{fake_bin}:{os.environ['PATH']}",
         },
         text=True,
     )
@@ -178,14 +188,12 @@ def test_fresh_install_without_legacy_volumes_reaches_image_pull(tmp_path: Path)
 
 
 @pytest.mark.parametrize(
-    ("persisted_value", "invocation_value", "expect_pull"),
-    [("false", "true", True), ("true", "false", False)],
+    ("persisted_value", "invocation_value"), [("false", "true"), ("true", "false")]
 )
-def test_fresh_install_acknowledgement_is_invocation_only(
+def test_legacy_volume_bypass_is_obsolete(
     tmp_path: Path,
     persisted_value: str,
     invocation_value: str,
-    expect_pull: bool,
 ) -> None:
     deploy_dir = tmp_path / "deploy"
     fake_bin = tmp_path / "bin"
@@ -202,16 +210,73 @@ def test_fresh_install_acknowledgement_is_invocation_only(
         ["bash", str(deploy_dir / "setup.sh")],
         capture_output=True,
         check=False,
-        env={
+        env=_setup_environment(fake_bin, docker_log)
+        | {
             "ACCORD_CONFIRMED_FRESH_INSTALL": invocation_value,
-            "FAKE_DOCKER_LOG": str(docker_log),
-            "PATH": f"{fake_bin}:{os.environ['PATH']}",
         },
         text=True,
     )
 
     assert result.returncode == 1
     docker_calls = docker_log.read_text()
-    assert ("compose --env-file .env pull --quiet" in docker_calls) is expect_pull
-    if not expect_pull:
-        assert "Legacy deploy_* volumes exist" in result.stderr
+    assert "compose --env-file .env pull --quiet" not in docker_calls
+    assert "Legacy deploy_* volumes exist" in result.stderr
+
+
+def test_persisted_registry_credentials_are_ignored(tmp_path: Path) -> None:
+    deploy_dir = tmp_path / "deploy"
+    fake_bin = tmp_path / "bin"
+    docker_log = tmp_path / "docker.log"
+    deploy_dir.mkdir()
+    fake_bin.mkdir()
+    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _write_fake_docker(fake_bin, docker_log)
+    (deploy_dir / ".env").write_text(
+        "\n".join(
+            [
+                *_valid_env_lines(),
+                "GHCR_TOKEN=persisted-legacy-token",
+                "ACCORD_RELEASE_GHCR_TOKEN=persisted-release-token",
+            ]
+        )
+    )
+
+    result = subprocess.run(
+        ["bash", str(deploy_dir / "setup.sh")],
+        capture_output=True,
+        check=False,
+        env=_setup_environment(fake_bin, docker_log) | {"FAKE_LEGACY_VOLUMES": "false"},
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Ignoring registry credential GHCR_TOKEN" in result.stdout
+    assert "Ignoring registry credential ACCORD_RELEASE_GHCR_TOKEN" in result.stdout
+    assert "compose --env-file .env pull --quiet" in docker_log.read_text()
+
+
+def test_process_control_environment_is_rejected_before_docker_mutation(tmp_path: Path) -> None:
+    deploy_dir = tmp_path / "deploy"
+    fake_bin = tmp_path / "bin"
+    docker_log = tmp_path / "docker.log"
+    deploy_dir.mkdir()
+    fake_bin.mkdir()
+    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _write_fake_docker(fake_bin, docker_log)
+    (deploy_dir / ".env").write_text(
+        "\n".join([*_valid_env_lines(), "DOCKER_HOST=tcp://attacker:2375"])
+    )
+
+    result = subprocess.run(
+        ["bash", str(deploy_dir / "setup.sh")],
+        capture_output=True,
+        check=False,
+        env=_setup_environment(fake_bin, docker_log),
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "unsupported variable DOCKER_HOST" in result.stderr
+    calls = docker_log.read_text()
+    assert "login ghcr.io" not in calls
+    assert "compose --env-file" not in calls

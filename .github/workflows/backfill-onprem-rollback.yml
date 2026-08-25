@@ -1,0 +1,164 @@
+name: Backfill On-Prem Rollback Release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: onprem-release-main
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish signed pre-contract rollback release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: onprem-release
+    permissions:
+      actions: read
+      contents: write
+      packages: read
+    env:
+      ROLLBACK_SHA: 8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d
+      TOOLING_SHA: ${{ github.sha }}
+    steps:
+      - name: Check out reviewed release tooling
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify fixed rollback source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$ROLLBACK_SHA" == "8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d" ]]
+          [[ "$(git rev-parse HEAD)" == "$TOOLING_SHA" ]]
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          [[ "$(git rev-parse origin/main)" == "$TOOLING_SHA" ]]
+          successful="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${TOOLING_SHA}&status=success&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main" and .head_sha == env.TOOLING_SHA)] | length')"
+          [[ "$successful" =~ ^[1-9][0-9]*$ ]] || {
+            echo "No successful main CI run exists for exact tooling SHA $TOOLING_SHA" >&2
+            exit 1
+          }
+          git cat-file -e "${ROLLBACK_SHA}^{commit}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Resolve immutable rollback image digests
+        id: images
+        run: |
+          for component in backend web; do
+            reference="ghcr.io/ornament-ai/accord/${component}:sha-${ROLLBACK_SHA}"
+            digest="$(
+              docker buildx imagetools inspect "$reference" --format '{{json .Manifest}}' \
+                | jq -er '.digest'
+            )"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "Could not resolve an immutable digest for $reference" >&2
+              exit 1
+            }
+            echo "${component}_digest=$digest" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Build and validate signed rollback bundle inputs
+        env:
+          SOURCE_SHA: ${{ env.TOOLING_SHA }}
+          ACCORD_RELEASE_SHA: ${{ env.ROLLBACK_SHA }}
+          ACCORD_BACKEND_DIGEST: ${{ steps.images.outputs.backend_digest }}
+          ACCORD_WEB_DIGEST: ${{ steps.images.outputs.web_digest }}
+        run: bash deploy/package-release.sh "${RUNNER_TEMP}/release"
+
+      - name: Sign rollback release
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.ONPREM_RELEASE_SIGNING_KEY }}
+        run: |
+          [[ -n "$RELEASE_SIGNING_KEY" ]] || {
+            echo "ONPREM_RELEASE_SIGNING_KEY is required" >&2
+            exit 1
+          }
+          umask 077
+          signing_key="${RUNNER_TEMP}/accord-release-signing-key.pem"
+          printf '%s' "$RELEASE_SIGNING_KEY" > "$signing_key"
+          cd "${RUNNER_TEMP}/release"
+          sha256sum \
+            "accord-deploy-sha-${ROLLBACK_SHA}.tar.gz" \
+            "onprem-release-${ROLLBACK_SHA}.json" \
+            > "onprem-checksums-${ROLLBACK_SHA}.txt"
+          openssl pkeyutl -sign -rawin \
+            -inkey "$signing_key" \
+            -in "onprem-checksums-${ROLLBACK_SHA}.txt" \
+            -out "onprem-signature-${ROLLBACK_SHA}.sig"
+          openssl pkeyutl -verify -pubin -rawin \
+            -inkey "${GITHUB_WORKSPACE}/deploy/onprem-release-signing-public.pem" \
+            -in "onprem-checksums-${ROLLBACK_SHA}.txt" \
+            -sigfile "onprem-signature-${ROLLBACK_SHA}.sig" \
+            || {
+              rm -f "$signing_key"
+              echo "ONPREM_RELEASE_SIGNING_KEY does not match the pinned public key" >&2
+              exit 1
+            }
+          rm -f "$signing_key"
+
+      - name: Upload immutable rollback bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: accord-deploy-sha-${{ env.ROLLBACK_SHA }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ${{ runner.temp }}/release/accord-deploy-sha-${{ env.ROLLBACK_SHA }}.tar.gz
+            ${{ runner.temp }}/release/onprem-release-${{ env.ROLLBACK_SHA }}.json
+            ${{ runner.temp }}/release/onprem-checksums-${{ env.ROLLBACK_SHA }}.txt
+            ${{ runner.temp }}/release/onprem-signature-${{ env.ROLLBACK_SHA }}.sig
+
+      - name: Publish durable rollback release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_tag="onprem-sha-${ROLLBACK_SHA}"
+          release_record="$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$release_tag\") | [.id, .draft, .target_commitish] | @tsv"
+          )"
+          if [[ "$release_record" == *$'\n'* ]]; then
+            echo "Refusing ambiguous duplicate release records for $release_tag" >&2
+            exit 1
+          fi
+          if [[ -n "$release_record" ]]; then
+            IFS=$'\t' read -r release_id release_is_draft release_target <<<"$release_record"
+            if [[ "$release_is_draft" != "true" ]]; then
+              echo "Refusing to overwrite published durable release $release_tag" >&2
+              exit 1
+            fi
+            if [[ "$release_target" != "$ROLLBACK_SHA" ]]; then
+              echo "Refusing incomplete draft $release_tag for unexpected target $release_target" >&2
+              exit 1
+            fi
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/$release_id"
+          fi
+          existing_tag="$(git ls-remote --tags origin "refs/tags/$release_tag" | awk 'NR == 1 { print $1}')"
+          if [[ -n "$existing_tag" ]]; then
+            if [[ "$existing_tag" != "$ROLLBACK_SHA" ]]; then
+              echo "Refusing to replace $release_tag at unexpected commit $existing_tag" >&2
+              exit 1
+            fi
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/$release_tag"
+          fi
+          gh release create "$release_tag" \
+            --target "$ROLLBACK_SHA" \
+            --title "Accord pre-contract rollback $ROLLBACK_SHA" \
+            --notes "One-time signed rollback bundle for application commit $ROLLBACK_SHA, assembled by reviewed release tooling $TOOLING_SHA." \
+            "${RUNNER_TEMP}/release/accord-deploy-sha-${ROLLBACK_SHA}.tar.gz" \
+            "${RUNNER_TEMP}/release/onprem-release-${ROLLBACK_SHA}.json" \
+            "${RUNNER_TEMP}/release/onprem-checksums-${ROLLBACK_SHA}.txt" \
+            "${RUNNER_TEMP}/release/onprem-signature-${ROLLBACK_SHA}.sig"

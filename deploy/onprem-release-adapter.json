@@ -1,0 +1,21 @@
+{
+  "adapter_version": 2,
+  "application": "accord",
+  "compose_file": "deploy/docker-compose.yml",
+  "contract_version": 2,
+  "deploy_root": "deploy",
+  "migration": {
+    "backup_required": true,
+    "mode": "required",
+    "service": "migrations"
+  },
+  "probes": [
+    {"expected_status": 200, "kind": "health", "name": "health", "target": "local", "url": "http://127.0.0.1:8085/api/healthz"},
+    {"expected_status": 200, "kind": "readiness", "name": "readiness", "target": "local", "url": "http://127.0.0.1:8085/api/readyz"},
+    {"expected_status": 401, "kind": "auth", "name": "auth", "target": "local", "url": "http://127.0.0.1:8085/api/auth/me"},
+    {"expected_status": 200, "kind": "public", "name": "public", "target": "public", "url": "https://accord.innovastra.app/api/readyz"}
+  ],
+  "repository": "Ornament-AI/accord",
+  "runtime_services": ["api", "migrations", "minio", "minio-init", "postgres", "web", "worker"],
+  "singleton_services": ["api", "web", "worker"]
+}

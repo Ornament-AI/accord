@@ -1,130 +1,141 @@
-name: Deploy
-
-# Tag-triggered release pipeline for Accord.
-# Builds/pushes ghcr.io/ornament-ai/accord images and runs cross-release
-# Alembic upgrade replay.
-#
-# First-release behavior: when this is the first v* tag on the repo (no prior
-# v* tag exists), the migrations-release-upgrade job resolves has_previous=false
-# and skips the previous-tag → current-tag upgrade path gracefully. Image build
-# and push still run. Subsequent releases require a successful previous→current
-# alembic upgrade + alembic check + heads match.
+name: On-Prem Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  REGISTRY: ghcr.io/ornament-ai/accord
-  PYTHON_VERSION: "3.14"
-  POSTGRES_IMAGE: postgres:18-alpine
+  group: onprem-release-main
+  cancel-in-progress: false
 
 jobs:
+  release-gate:
+    name: Prove exact reviewed main SHA
+    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out selected source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+
+      - name: Prove main ancestry and exact CI
+        id: source
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]] || {
+              echo "Manual publication must select the current main head" >&2
+              exit 1
+            }
+            successful="$({ gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SOURCE_SHA}&status=success&per_page=100" \
+              --jq '[.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main" and .head_sha == env.SOURCE_SHA)] | length'; } 2>/dev/null)"
+            [[ "$successful" =~ ^[1-9][0-9]*$ ]] || {
+              echo "No successful main CI run exists for exact SHA $SOURCE_SHA" >&2
+              exit 1
+            }
+          fi
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
   build-and-push-backend:
     name: Build and push backend image
+    needs: release-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    env:
+      REGISTRY: ghcr.io/ornament-ai/accord
+      SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker metadata (backend)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/backend
-          tags: |
-            type=ref,event=tag
-            type=sha,prefix=sha-,format=long
-          labels: |
-            org.opencontainers.image.title=accord-backend
-            org.opencontainers.image.description=Accord FastAPI backend
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: backend
-          file: backend/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.REGISTRY }}/backend:sha-${{ env.SOURCE_SHA }}
+          labels: org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   build-and-push-web:
     name: Build and push web image
+    needs: release-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    env:
+      REGISTRY: ghcr.io/ornament-ai/accord
+      SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker metadata (web)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/web
-          tags: |
-            type=ref,event=tag
-            type=sha,prefix=sha-,format=long
-          labels: |
-            org.opencontainers.image.title=accord-web
-            org.opencontainers.image.description=Accord nginx + frontend static
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Build and push web image
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/Dockerfile.web
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.REGISTRY }}/web:sha-${{ env.SOURCE_SHA }}
+          labels: org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Cross-release Alembic upgrade path (previous v* → current tag).
-  # Accord migrations create RLS policies for cluster roles that are
-  # provisioned out of band, so the scratch database must mirror CI and
-  # bootstrap those roles first.
   migrations-release-upgrade:
-    name: Migrations release upgrade
+    name: Rehearse deployed-schema upgrade
+    needs: release-gate
     runs-on: ubuntu-latest
-    continue-on-error: false
     services:
       postgres:
         image: postgres:18-alpine
@@ -142,107 +153,202 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/release_upgrade
       MIGRATIONS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/release_upgrade
+      SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: Check out exact reviewed source and release history
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          ref: ${{ env.SOURCE_SHA }}
           fetch-depth: 0
           fetch-tags: true
 
-      # First release: no prior v* tag → skip replay (images still published).
-      - name: Resolve previous release tag
-        id: prev
+      - name: Resolve prior deployed release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          current="${GITHUB_REF_NAME}"
-          prev="$(git tag -l 'v*' --sort=-v:refname | grep -vxF "$current" | head -n 1 || true)"
-          if [[ -z "$prev" ]]; then
-            echo "has_previous=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::First release ($current): no previous v* tag — skipping migration replay."
+          previous=""
+          rollback_fallback=""
+          while IFS= read -r candidate; do
+            [[ "$candidate" =~ ^onprem-sha-([0-9a-f]{40})$ ]] || continue
+            candidate_sha="${BASH_REMATCH[1]}"
+            [[ "$candidate_sha" != "$SOURCE_SHA" ]] || continue
+            git merge-base --is-ancestor "$candidate_sha" "$SOURCE_SHA" || continue
+            if [[ "$candidate_sha" == "8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d" ]]; then
+              rollback_fallback="$candidate"
+              continue
+            fi
+            previous="$candidate"
+            break
+          done < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')
+          previous="${previous:-$rollback_fallback}"
+          if [[ -z "$previous" ]]; then
+            previous="$(git tag -l 'v*' --sort=-v:refname | head -n 1 || true)"
+          fi
+          if [[ -z "$previous" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No prior deployed release exists; fresh migration CI remains the initial-release gate."
           else
-            echo "has_previous=true" >> "$GITHUB_OUTPUT"
-            echo "previous_tag=$prev" >> "$GITHUB_OUTPUT"
-            echo "Previous release tag: $prev → current: $current"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$previous" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-python@v5
-        if: steps.prev.outputs.has_previous == 'true'
+      - name: Set up Python
+        if: steps.previous.outputs.available == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-dev.txt
 
-      - name: Install backend dependencies (from current tag)
-        if: steps.prev.outputs.has_previous == 'true'
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Install current backend dependencies
+        if: steps.previous.outputs.available == 'true'
+        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 
-      - name: Create scratch database
-        if: steps.prev.outputs.has_previous == 'true'
-        run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE DATABASE release_upgrade;
-          SQL
-
-      - name: Bootstrap ADR-0001 database roles
-        if: steps.prev.outputs.has_previous == 'true'
+      - name: Create rehearsal database and roles
+        if: steps.previous.outputs.available == 'true'
         env:
           PGPASSWORD: postgres
-        run: psql -v ON_ERROR_STOP=1 -h localhost -p 5432 -U postgres -d release_upgrade -f backend/scripts/create_roles.sql
-
-      - name: Upgrade to previous release migration head
-        if: steps.prev.outputs.has_previous == 'true'
-        # Worktree so alembic script_location sees only migrations that shipped
-        # with the previous tag — applying current's tree would defeat the test.
         run: |
-          set -euo pipefail
-          prev="${{ steps.prev.outputs.previous_tag }}"
-          git worktree add --detach ../accord-prev "$prev"
-          cd ../accord-prev/backend
-          test -d migrations/versions || {
-            echo "::error::Previous tag $prev has no backend/migrations/versions"
-            exit 1
-          }
+          createdb -h localhost -U postgres release_upgrade
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d release_upgrade \
+            -f backend/scripts/create_roles.sql
+
+      - name: Apply previous release migrations
+        if: steps.previous.outputs.available == 'true'
+        run: |
+          git worktree add --detach ../accord-previous "${{ steps.previous.outputs.tag }}"
+          test -d ../accord-previous/backend/migrations/versions
+          cd ../accord-previous/backend
           python -m alembic upgrade head
 
-      - name: Upgrade to current tag migration head
-        if: steps.prev.outputs.has_previous == 'true'
-        working-directory: backend
-        run: python -m alembic upgrade head
-
-      - name: alembic check (no undetected model drift)
-        if: steps.prev.outputs.has_previous == 'true'
-        working-directory: backend
-        run: python -m alembic check
-
-      - name: Verify alembic heads match DB version
-        if: steps.prev.outputs.has_previous == 'true'
+      - name: Upgrade previous schema to exact reviewed source
+        if: steps.previous.outputs.available == 'true'
         working-directory: backend
         run: |
-          set -euo pipefail
+          python -m alembic upgrade head
+          python -m alembic check
           expected="$(python -m alembic heads 2>&1 | head -1 | awk '{print $1}')"
-          actual="$(PGPASSWORD=postgres psql -h localhost -U postgres -d release_upgrade -tAc "SELECT version_num FROM alembic_version")"
-          echo "expected=$expected actual=$actual"
-          test "$expected" = "$actual" || {
-            echo "::error::alembic HEAD mismatch after release upgrade"
-            exit 1
-          }
+          actual="$(PGPASSWORD=postgres psql -h localhost -U postgres -d release_upgrade -tAc 'SELECT version_num FROM alembic_version')"
+          [[ "$actual" == "$expected" ]]
 
-  deployment-summary:
-    name: Deployment summary
-    needs: [build-and-push-backend, build-and-push-web, migrations-release-upgrade]
+  publish-release-evidence:
+    name: Publish standard release evidence
+    needs: [release-gate, build-and-push-backend, build-and-push-web, migrations-release-upgrade]
     runs-on: ubuntu-latest
+    environment: onprem-release
+    permissions:
+      contents: write
+    env:
+      REGISTRY: ghcr.io/ornament-ai/accord
+      SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}
+      SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
     steps:
-      - name: Deployment summary
+      - name: Check out reviewed source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+
+      - name: Build and validate release evidence
+        env:
+          ACCORD_BACKEND_DIGEST: ${{ needs.build-and-push-backend.outputs.digest }}
+          ACCORD_WEB_DIGEST: ${{ needs.build-and-push-web.outputs.digest }}
+        run: bash deploy/package-release.sh "${{ runner.temp }}/release"
+
+      - name: Sign immutable VM release
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.ONPREM_RELEASE_SIGNING_KEY }}
         run: |
-          echo "## Images Pushed :package:" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image | Tags |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **backend** | \`${{ env.REGISTRY }}/backend:${{ github.ref_name }}\`, \`${{ env.REGISTRY }}/backend:sha-${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **web** | \`${{ env.REGISTRY }}/web:${{ github.ref_name }}\`, \`${{ env.REGISTRY }}/web:sha-${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Tag** | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          [[ -n "$RELEASE_SIGNING_KEY" ]] || { echo "ONPREM_RELEASE_SIGNING_KEY is required" >&2; exit 1; }
+          umask 077
+          signing_key="${RUNNER_TEMP}/accord-release-signing-key.pem"
+          printf '%s' "$RELEASE_SIGNING_KEY" > "$signing_key"
+          cd "${RUNNER_TEMP}/release"
+          sha256sum \
+            "accord-deploy-sha-${SOURCE_SHA}.tar.gz" \
+            "onprem-release-${SOURCE_SHA}.json" \
+            > "onprem-checksums-${SOURCE_SHA}.txt"
+          openssl pkeyutl -sign -rawin \
+            -inkey "$signing_key" \
+            -in "onprem-checksums-${SOURCE_SHA}.txt" \
+            -out "onprem-signature-${SOURCE_SHA}.sig"
+          if ! openssl pkeyutl -verify -pubin -rawin \
+            -inkey "${GITHUB_WORKSPACE}/deploy/onprem-release-signing-public.pem" \
+            -in "onprem-checksums-${SOURCE_SHA}.txt" \
+            -sigfile "onprem-signature-${SOURCE_SHA}.sig"; then
+            rm -f "$signing_key"
+            echo "ONPREM_RELEASE_SIGNING_KEY does not match the pinned public key" >&2
+            exit 1
+          fi
+          rm -f "$signing_key"
+
+      - name: Upload immutable VM release
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: accord-deploy-sha-${{ env.SOURCE_SHA }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ${{ runner.temp }}/release/accord-deploy-sha-${{ env.SOURCE_SHA }}.tar.gz
+            ${{ runner.temp }}/release/onprem-release-${{ env.SOURCE_SHA }}.json
+            ${{ runner.temp }}/release/onprem-checksums-${{ env.SOURCE_SHA }}.txt
+            ${{ runner.temp }}/release/onprem-signature-${{ env.SOURCE_SHA }}.sig
+
+      - name: Publish durable commit-specific release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_tag="onprem-sha-${SOURCE_SHA}"
+          release_record="$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$release_tag\") | [.id, .draft, .target_commitish] | @tsv"
+          )"
+          if [[ "$release_record" == *$'\n'* ]]; then
+            echo "Refusing ambiguous duplicate release records for $release_tag" >&2
+            exit 1
+          fi
+          if [[ -n "$release_record" ]]; then
+            IFS=$'\t' read -r release_id release_is_draft release_target <<<"$release_record"
+            if [[ "$release_is_draft" != "true" ]]; then
+              echo "Refusing to overwrite published durable release $release_tag" >&2
+              exit 1
+            fi
+            if [[ "$release_target" != "$SOURCE_SHA" ]]; then
+              echo "Refusing incomplete draft $release_tag for unexpected target $release_target" >&2
+              exit 1
+            fi
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/$release_id"
+          fi
+          existing_tag="$(git ls-remote --tags origin "refs/tags/$release_tag" | awk 'NR == 1 { print $1 }')"
+          if [[ -n "$existing_tag" ]]; then
+            if [[ "$existing_tag" != "$SOURCE_SHA" ]]; then
+              echo "Refusing to replace $release_tag at unexpected commit $existing_tag" >&2
+              exit 1
+            fi
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/$release_tag"
+          fi
+          gh release create "$release_tag" \
+            --target "$SOURCE_SHA" \
+            --title "Accord on-prem release $SOURCE_SHA" \
+            --notes "Immutable on-prem deployment bundle and standard release evidence for commit $SOURCE_SHA." \
+            "${RUNNER_TEMP}/release/accord-deploy-sha-${SOURCE_SHA}.tar.gz" \
+            "${RUNNER_TEMP}/release/onprem-release-${SOURCE_SHA}.json" \
+            "${RUNNER_TEMP}/release/onprem-checksums-${SOURCE_SHA}.txt" \
+            "${RUNNER_TEMP}/release/onprem-signature-${SOURCE_SHA}.sig"
+
+      - name: Release summary
+        run: |
+          {
+            echo "## Images Pushed :package:"
+            echo ""
+            echo "| Image | Tags |"
+            echo "|---|---|"
+            echo "| **backend** | \`${{ env.REGISTRY }}/backend:sha-${{ env.SOURCE_SHA }}\` |"
+            echo "| **web** | \`${{ env.REGISTRY }}/web:sha-${{ env.SOURCE_SHA }}\` |"
+            echo "| **Branch** | \`${{ env.SOURCE_BRANCH }}\` |"
+            echo "| **Commit** | \`${{ env.SOURCE_SHA }}\` |"
+            echo "| **Release evidence** | \`onprem-release-${{ env.SOURCE_SHA }}.json\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

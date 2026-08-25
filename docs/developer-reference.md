@@ -123,7 +123,8 @@ adapter by default and writes selected ports and logs under `.accord-dev/`.
 | `./scripts/generate-api-types.sh` | Export OpenAPI and regenerate the TypeScript client schema |
 | `./scripts/smoke-test.sh [base-url]` | Probe a running Compose deployment |
 | `./scripts/backup-restore.sh` | Create a logical backup and rehearse a scratch restore |
-| `./scripts/deploy.sh <full-git-sha>` | Pull and prove immutable production images for an exact revision |
+| `./scripts/deploy.sh <full-git-sha>` | Download, authenticate, install, and prove one signed exact-SHA release |
+| `./scripts/install-release-wrapper.sh` | One-time installation of the fixed root deploy wrapper and narrow sudo rule |
 | `./scripts/provision_organization.py` | Create the singleton organization through the privileged CLI |
 | `./scripts/provision_member.py` | Add or change local organization access through the privileged CLI |
 | `./scripts/reset_e2e_db.sh` | Destructively reset only allowlisted local test databases after explicit confirmation |
@@ -137,9 +138,9 @@ Pull requests into `main` run `.github/workflows/ci.yml`. Backend-related
 changes run Ruff, pytest, fresh Alembic replay/check, and backend image build.
 Frontend-related changes run Biome, TypeScript, Playwright test discovery, Vitest, the production build, and web image build. The unconditional API-type job regenerates the OpenAPI client and fails on drift; `./scripts/verify.sh` enforces the same contract locally.
 
-Tags matching `v*` run `.github/workflows/deploy.yml`. The backend-image,
-web-image, and migration-replay jobs run independently; image publication can
-therefore finish before a migration-replay failure is known. Only the summary
-job waits for all three. Operators must require the complete workflow to
-succeed before accepting or deploying the tag. Host deployment remains the
-separate action described in [operations.md](operations.md).
+After green CI on `main`, `.github/workflows/deploy.yml` builds exact-SHA
+backend and web images, records their registry digests, validates the shared
+on-prem release contract, signs the release in the protected environment, and
+publishes four durable `onprem-sha-<sha>` assets. The workflow never changes the
+VM. Host deployment remains the explicit operator action in
+[operations.md](operations.md).

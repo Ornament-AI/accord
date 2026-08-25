@@ -27,9 +27,25 @@ safe_source_env() {
 		[[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
 			|| die ".env line $lineno has an invalid variable name"
 		if [[ "$key" == "ACCORD_CONFIRMED_FRESH_INSTALL" ]]; then
-			warn "Ignoring ACCORD_CONFIRMED_FRESH_INSTALL in .env; pass it for one deploy invocation only"
+			warn "Ignoring obsolete ACCORD_CONFIRMED_FRESH_INSTALL in .env"
 			continue
 		fi
+		if [[ "$key" == "GHCR_USERNAME" || "$key" == "GHCR_TOKEN" \
+			|| "$key" == "ACCORD_RELEASE_GHCR_USERNAME" \
+			|| "$key" == "ACCORD_RELEASE_GHCR_TOKEN" ]]; then
+			warn "Ignoring registry credential $key in .env; credentials are invocation-only"
+			continue
+		fi
+		case "$key" in
+			ACCORD_DB_PASSWORD|ACCORD_DB_USER|ACCORD_DB_NAME|ACCORD_TAG|ACCORD_WEB_PORT|\
+			DATABASE_URL|MIGRATIONS_DATABASE_URL|WORKER_DATABASE_URL|WORKOS_CLIENT_ID|\
+			WORKOS_API_KEY|WORKOS_REDIRECT_URI|WORKOS_WEBHOOK_SECRET|SESSION_SECRET_KEY|\
+			SESSION_COOKIE_NAME|ENVIRONMENT|CORS_ORIGINS|PUBLIC_APP_URL|BASE_URL|LOG_LEVEL|\
+			DEV_AUTH_BYPASS|DB_POOL_SIZE|DB_STATEMENT_TIMEOUT_MS|OBJECT_STORAGE_ENDPOINT|\
+			OBJECT_STORAGE_BUCKET|OBJECT_STORAGE_ACCESS_KEY|OBJECT_STORAGE_SECRET_KEY)
+				;;
+			*) die ".env line $lineno uses unsupported variable $key" ;;
+		esac
 		if [[ ${#value} -ge 2 ]]; then
 			local first="${value:0:1}" last="${value: -1}"
 			if [[ "$first" == "$last" && ( "$first" == '"' || "$first" == "'" ) ]]; then
@@ -49,6 +65,7 @@ cd "$SCRIPT_DIR"
 
 PREVIOUS_API_IMAGE=""
 PREVIOUS_WEB_IMAGE=""
+REGISTRY_CONFIG=""
 DEPLOY_MUTATED=false
 DEPLOY_SUCCEEDED=false
 diagnose_failure() {
@@ -62,6 +79,7 @@ diagnose_failure() {
 		[[ -z "$PREVIOUS_WEB_IMAGE" ]] || warn "Previous web image: $PREVIOUS_WEB_IMAGE"
 		warn "Do not downgrade Alembic automatically. Restore the prior tag only after checking migration compatibility."
 	fi
+	[[ -z "$REGISTRY_CONFIG" ]] || rm -rf -- "$REGISTRY_CONFIG"
 	exit "$code"
 }
 trap diagnose_failure EXIT
@@ -77,10 +95,9 @@ guard_persistent_volume_ownership() {
 	for volume in deploy_pgdata deploy_minio-data; do
 		docker volume inspect "$volume" >/dev/null 2>&1 && legacy_found=true
 	done
-	if $legacy_found && [[ "${ACCORD_CONFIRMED_FRESH_INSTALL:-false}" != "true" ]]; then
-		die "Legacy deploy_* volumes exist while Accord volumes do not. Migrate a prior Accord install, or set ACCORD_CONFIRMED_FRESH_INSTALL=true only after proving those volumes belong to another app."
+	if $legacy_found; then
+		die "Legacy deploy_* volumes exist while Accord volumes do not. Migrate the prior Accord install or remove only separately proved unrelated volumes before using the authenticated fresh-host bootstrap."
 	fi
-	$legacy_found && warn "Leaving unrelated legacy deploy_* volumes untouched for this confirmed fresh install"
 	return 0
 }
 
@@ -88,14 +105,17 @@ command -v docker >/dev/null 2>&1 || die "Docker is not installed"
 command -v curl >/dev/null 2>&1 || die "curl is not installed"
 docker compose version >/dev/null 2>&1 || die "Docker Compose is not installed"
 
-if [[ ! -f .env ]]; then
-	cp .env.example .env
-	chmod 600 .env
-	warn "Created $SCRIPT_DIR/.env. Fill the production secrets, then rerun setup.sh."
-	exit 1
-fi
-chmod 600 .env
+REQUESTED_SHA="${ACCORD_EXPECTED_SHA:-}"
+EPHEMERAL_GHCR_USERNAME="${ACCORD_RELEASE_GHCR_USERNAME:-}"
+EPHEMERAL_GHCR_TOKEN="${ACCORD_RELEASE_GHCR_TOKEN:-}"
+[[ -f .env && ! -L .env ]] || die "$SCRIPT_DIR/.env must be a regular non-symlink file"
 safe_source_env .env
+unset GHCR_USERNAME GHCR_TOKEN ACCORD_RELEASE_GHCR_USERNAME ACCORD_RELEASE_GHCR_TOKEN
+if [[ -n "$REQUESTED_SHA" ]]; then
+	[[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || die "ACCORD_EXPECTED_SHA is invalid"
+	export ACCORD_EXPECTED_SHA="$REQUESTED_SHA"
+	export ACCORD_TAG="sha-$REQUESTED_SHA"
+fi
 ACCORD_WEB_PORT_VALUE="${ACCORD_WEB_PORT:-8085}"
 
 [[ "${ACCORD_TAG:-}" =~ ^sha-[0-9a-f]{40}$ ]] \
@@ -136,13 +156,16 @@ BASE_URL="${BASE_URL%/}"
 [[ "$WORKOS_REDIRECT_URI" == "$PUBLIC_APP_URL/api/auth/callback" ]] \
 	|| die "WORKOS_REDIRECT_URI must be PUBLIC_APP_URL/api/auth/callback"
 
-if [[ -n "${GHCR_TOKEN:-}" ]]; then
-	printf '%s' "$GHCR_TOKEN" | docker login ghcr.io \
-		-u "${GHCR_USERNAME:-deploy}" --password-stdin >/dev/null \
+if [[ -n "$EPHEMERAL_GHCR_TOKEN" ]]; then
+	REGISTRY_CONFIG="$(mktemp -d /tmp/accord-docker-config.XXXXXXXXXX)"
+	chmod 0700 "$REGISTRY_CONFIG"
+	export DOCKER_CONFIG="$REGISTRY_CONFIG"
+	printf '%s' "$EPHEMERAL_GHCR_TOKEN" | docker login ghcr.io \
+		-u "$EPHEMERAL_GHCR_USERNAME" --password-stdin >/dev/null \
 		|| die "GHCR login failed"
 	info "GHCR login ready"
 else
-	warn "GHCR_TOKEN is unset; using the deploy user's existing Docker login"
+	die "ephemeral GHCR credentials were not provided by the operator command"
 fi
 
 docker compose --env-file .env config -q
@@ -159,8 +182,14 @@ PREVIOUS_WEB_CID="$(docker compose --env-file .env ps -q web 2>/dev/null || true
 info "Pulling Accord $ACCORD_TAG images"
 docker compose --env-file .env pull --quiet
 
-for image in backend web; do
-	ref="ghcr.io/ornament-ai/accord/$image:$ACCORD_TAG"
+compose_image() {
+	docker compose --env-file .env config --format json \
+		| python3 -c 'import json,sys; print(json.load(sys.stdin)["services"][sys.argv[1]]["image"])' "$1"
+}
+for service in api worker web; do
+	ref="$(compose_image "$service")"
+	[[ "$ref" =~ ^ghcr\.io/ornament-ai/accord/(backend|web)@sha256:[0-9a-f]{64}$ ]] \
+		|| die "$service is not pinned to an Accord image digest"
 	revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ref")"
 	[[ "$revision" == "${ACCORD_TAG#sha-}" ]] \
 		|| die "$ref has revision $revision instead of ${ACCORD_TAG#sha-}; production was not changed"
@@ -169,6 +198,7 @@ info "Pulled images have the expected revision label"
 
 info "Starting Accord"
 DEPLOY_MUTATED=true
+[[ -z "${ACCORD_MIGRATION_STATE_FILE:-}" ]] || : >"$ACCORD_MIGRATION_STATE_FILE"
 docker compose --env-file .env up -d --no-build
 
 for _ in $(seq 1 60); do
@@ -186,10 +216,7 @@ for service in api worker web; do
 	cid="$(docker compose --env-file .env ps -q "$service")"
 	[[ -n "$cid" ]] || die "$service container is missing"
 	actual="$(docker inspect --format '{{.Config.Image}}' "$cid")"
-	case "$service" in
-		api|worker) expected="ghcr.io/ornament-ai/accord/backend:$ACCORD_TAG" ;;
-		web) expected="ghcr.io/ornament-ai/accord/web:$ACCORD_TAG" ;;
-	esac
+	expected="$(compose_image "$service")"
 	[[ "$actual" == "$expected" ]] \
 		|| die "$service is running $actual instead of $expected"
 	revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$cid")"
@@ -212,8 +239,26 @@ done
 $WORKER_READY || die "Worker startup proof is missing"
 
 ACCORD_SMOKE_REQUIRE_DOCKER=true \
-	bash "$ROOT/scripts/smoke-test.sh" "http://127.0.0.1:${ACCORD_WEB_PORT:-8085}"
+	bash "$SCRIPT_DIR/smoke-test.sh" "http://127.0.0.1:${ACCORD_WEB_PORT:-8085}"
+
+READY_BODY="$(curl -fsS --max-time 10 "http://127.0.0.1:${ACCORD_WEB_PORT:-8085}/api/readyz")"
+python3 - "$READY_BODY" <<'PY'
+import json
+import sys
+
+ready = json.loads(sys.argv[1])
+for key in ("status", "database", "auth", "jobs", "storage", "reports"):
+    expected = "ok"
+    if ready.get(key) != expected:
+        raise SystemExit(f"readiness field {key} is {ready.get(key)!r}, expected {expected!r}")
+PY
+AUTH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+	"http://127.0.0.1:${ACCORD_WEB_PORT:-8085}/api/auth/me")"
+[[ "$AUTH_STATUS" == "401" ]] || die "unauthenticated auth probe returned $AUTH_STATUS instead of 401"
+curl -fsS --max-time 15 "$PUBLIC_APP_URL/api/readyz" >/dev/null \
+	|| die "public readiness probe failed"
 
 info "Accord is healthy at $PUBLIC_APP_URL ($ACCORD_TAG)"
 DEPLOY_SUCCEEDED=true
+[[ -z "$REGISTRY_CONFIG" ]] || rm -rf -- "$REGISTRY_CONFIG"
 trap - EXIT
