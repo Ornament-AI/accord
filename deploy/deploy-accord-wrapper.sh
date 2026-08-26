@@ -30,6 +30,10 @@ if [[ "${ACCORD_RELEASE_LOCK_HELD:-}" != "1" ]]; then
             || die "ephemeral registry token was not provided on standard input"
         export ACCORD_RELEASE_GHCR_USERNAME ACCORD_RELEASE_GHCR_TOKEN
     fi
+    # Python reads the lock helper from standard input below. Preserve the
+    # operator stream so the re-executed wrapper can receive the live-proof
+    # acknowledgement after the deployment finishes.
+    exec 3<&0
     exec /usr/bin/python3 - "${BASH_SOURCE[0]}" "$@" <<'PY'
 import fcntl
 import os
@@ -82,6 +86,8 @@ os.set_inheritable(descriptor, True)
 environment = os.environ.copy()
 environment["ACCORD_RELEASE_LOCK_HELD"] = "1"
 environment["ACCORD_RELEASE_LOCK_FD"] = str(descriptor)
+os.dup2(3, 0, inheritable=True)
+os.close(3)
 os.execve(script, [script, *arguments], environment)
 PY
 fi
