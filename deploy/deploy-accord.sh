@@ -205,9 +205,14 @@ for cid in "$API_CID" "$WORKER_CID"; do
 done
 info "Verified API, worker, web, and APP_VERSION at $TARGET_TAG"
 
-curl -fsS --max-time 10 http://127.0.0.1:8085/api/healthz >/dev/null \
+WEB_BINDING="$(docker port "$WEB_CID" 80/tcp)" \
+    || die "could not resolve the running Accord web port"
+[[ "$WEB_BINDING" =~ ^127\.0\.0\.1:([0-9]+)$ ]] \
+    || die "Accord web must publish exactly one loopback port, found: $WEB_BINDING"
+WEB_PORT="${BASH_REMATCH[1]}"
+curl -fsS --max-time 10 "http://127.0.0.1:$WEB_PORT/api/healthz" >/dev/null \
     || die "Accord health check failed"
-curl -fsS --max-time 10 http://127.0.0.1:8085/api/readyz >/dev/null \
+curl -fsS --max-time 10 "http://127.0.0.1:$WEB_PORT/api/readyz" >/dev/null \
     || die "Accord readiness check failed"
 
 docker compose ps

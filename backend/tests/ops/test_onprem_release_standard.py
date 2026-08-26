@@ -81,6 +81,7 @@ def test_package_builds_self_contained_digest_release(tmp_path: Path) -> None:
     ).stdout.strip()
     environment = os.environ | {
         "ACCORD_BACKEND_DIGEST": f"sha256:{'a' * 64}",
+        "ACCORD_PREVIOUS_DEPLOYED_SHA": "c" * 40,
         "ACCORD_WEB_DIGEST": f"sha256:{'b' * 64}",
         "GITHUB_RUN_ID": "12345",
         "SOURCE_SHA": sha,
@@ -108,11 +109,13 @@ def test_package_builds_self_contained_digest_release(tmp_path: Path) -> None:
         names = set(bundle.getnames())
         assert "deploy/.env" not in names
         assert "deploy/create_roles.sql" in names
+        assert "deploy/release-rehearsed-from-sha" in names
         assert "deploy/release-source-sha" in names
         assert all(".." not in Path(name).parts for name in names)
 
         extracted = tmp_path / "extracted"
         bundle.extractall(extracted, filter="data")
+        assert (extracted / "deploy/release-rehearsed-from-sha").read_text() == f"{'c' * 40}\n"
 
     manifest_path = tmp_path / f"onprem-release-{sha}.json"
     (extracted / "deploy/setup.sh").write_text("tampered\n")
@@ -157,12 +160,24 @@ def test_release_workflow_is_exact_main_signed_and_durable() -> None:
     assert "No successful main CI run exists for exact SHA" in workflow
     assert "SOURCE_SHA: ${{ needs.release-gate.outputs.source_sha }}" in workflow
     assert "name: Rehearse deployed-schema upgrade" in workflow
-    assert "git worktree add --detach ../accord-previous" in workflow
-    assert 'candidate" =~ ^onprem-sha-([0-9a-f]{40})$' in workflow
-    assert "rollback_fallback" in workflow
-    assert "repos/${GITHUB_REPOSITORY}/releases?per_page=100" in workflow
+    assert "PREVIOUS_DEPLOYED_SHA: ${{ secrets.ONPREM_DEPLOYED_SHA }}" in workflow
+    assert "Protected ONPREM_DEPLOYED_SHA evidence is missing or invalid" in workflow
+    assert 'git merge-base --is-ancestor "$PREVIOUS_DEPLOYED_SHA" "$SOURCE_SHA"' in workflow
+    assert (
+        'git worktree add --detach ../accord-previous "${{ steps.previous.outputs.sha }}"'
+        in workflow
+    )
+    assert "candidate_sha=" not in workflow
+    assert "rollback_fallback=" not in workflow
     assert "python -m alembic check" in workflow
     assert "migrations-release-upgrade" in workflow
+    assert "Rehearse paired database restore to previous release" in workflow
+    assert "previous-release.dump" in workflow
+    assert "Record exact rehearsed deployed source" in workflow
+    assert "accord-rehearsed-from-${{ env.SOURCE_SHA }}" in workflow
+    assert "ACCORD_PREVIOUS_DEPLOYED_SHA=" in workflow
+    assert "deploy/package-transition-rollback.sh" in workflow
+    assert "rollback-from-${SOURCE_SHA}-to-${previous_sha}-" in workflow
     assert "group: onprem-release-main" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "/backend:latest" not in workflow
@@ -174,6 +189,12 @@ def test_release_workflow_is_exact_main_signed_and_durable() -> None:
     assert "openssl pkeyutl -sign -rawin" in workflow
     assert 'release_tag="onprem-sha-${SOURCE_SHA}"' in workflow
     assert "gh release create" in workflow
+    assert "--draft" in workflow
+    assert (
+        "Draft release does not contain the complete forward and rollback evidence set" in workflow
+    )
+    assert "-F draft=false" in workflow
+    assert workflow.index("--draft") < workflow.index("-F draft=false")
     assert "deploy-accord" not in workflow
 
 
@@ -189,21 +210,47 @@ def test_fixed_live_rollback_is_backfilled_from_reviewed_main_tooling() -> None:
     assert "actions/workflows/ci.yml/runs?head_sha=${TOOLING_SHA}&status=success" in workflow
     assert "fetch-depth: 0" in workflow
     assert "group: onprem-release-main" in workflow
-    assert "docker buildx imagetools inspect" in workflow
+    assert "docker buildx imagetools inspect" not in workflow
+    assert 'ROLLBACK_BUILD_RUN_ID: "32671105169"' in workflow
+    assert "ACCORD_PREVIOUS_DEPLOYED_SHA: ${{ env.TOOLING_SHA }}" in workflow
+    assert 'ROLLBACK_BACKEND_ARTIFACT_ID: "9501399945"' in workflow
+    assert 'ROLLBACK_WEB_ARTIFACT_ID: "9501403873"' in workflow
+    assert "actions/runs/${ROLLBACK_BUILD_RUN_ID}" in workflow
+    assert "actions/artifacts/${artifact_id}" in workflow
+    assert ".workflow_run.id == $run_id" in workflow
+    assert ".workflow_run.head_sha == $sha" in workflow
+    assert ".expired == false" in workflow
+    assert "actions/artifacts/${artifact_id}/zip" in workflow
+    assert 'tar -tzf "$build_record"' in workflow
+    assert (
+        "ROLLBACK_BACKEND_DIGEST: sha256:51c9dd7315bdfa1b81821ecef83b8e435a5df6ab0ff232165a123d2d444fd2ef"
+        in workflow
+    )
+    assert (
+        "ROLLBACK_WEB_DIGEST: sha256:7c223d7c91cdad07ee9786c8212f555d8ed9d3b1165faf3b6696512254f3b2ac"
+        in workflow
+    )
+    assert 'reference="ghcr.io/ornament-ai/accord/${component}@${digest}"' in workflow
+    assert "docker pull --platform linux/amd64" in workflow
+    assert "org.opencontainers.image.revision" in workflow
+    assert ":sha-${ROLLBACK_SHA}" not in workflow
     assert 'gh release create "$release_tag"' in workflow
-    assert rollback_sha in package
+    assert "a rollback target must be an ancestor of its release tooling" in package
     assert "release-tooling-source-sha" in package
 
 
 def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     deploy = (ROOT / "scripts/deploy.sh").read_text()
     installer = (ROOT / "scripts/install-release-wrapper.sh").read_text()
+    receipt = (ROOT / "scripts/run-release-with-receipt.py").read_text()
     wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
-    assert "sudo -n /usr/local/bin/deploy-accord" in deploy
+    assert '"/usr/local/bin/deploy-accord"' in receipt
     assert "gh auth token" not in deploy
     assert "ACCORD_GHCR_READ_TOKEN" in deploy
     assert "ornament-ai-accord-ghcr-read" in deploy
     assert "manifest inspect" in (ROOT / "scripts/stage-accord-release.sh").read_text()
+    assert 'RECEIPT_CLIENT="$ROOT/scripts/run-release-with-receipt.py"' in deploy
+    assert 'python3 "$RECEIPT_CLIENT"' in deploy
     assert "ACCORD_RELEASE_GHCR_TOKEN" in wrapper
     assert "ephemeral GHCR credentials" in (ROOT / "deploy/setup.sh").read_text()
     assert "GHCR_TOKEN=" not in (ROOT / "deploy/.env.example").read_text()
@@ -221,7 +268,15 @@ def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     assert "fcntl.LOCK_EX | fcntl.LOCK_NB" in wrapper
     assert "accord-release-install.lock" in wrapper
     assert "exec 8>/run/lock" not in wrapper
+    assert 'os.mkdir("accord-release", 0o700, dir_fd=parent)' in wrapper
+    assert "writable /run/lock must have the sticky bit" in wrapper
+    assert "ACCORD_RELEASE_LIVE_PROOF=" in wrapper
+    assert "ACCORD_RELEASE_RECEIPT=" in wrapper
+    assert wrapper.index("ACCORD_RELEASE_LIVE_PROOF=") < wrapper.index("ACCORD_RELEASE_RECEIPT=")
     assert wrapper.index("release signature verification failed") < wrapper.index(
+        'docker stop "${APP_CONTAINER_IDS[@]}"'
+    )
+    assert wrapper.index("verify-release-baseline.py") < wrapper.index(
         'docker stop "${APP_CONTAINER_IDS[@]}"'
     )
     assert 'APP_CONTAINER_IDS=("$API_CID" "$WORKER_CID" "$WEB_CID" "$MINIO_CID")' in wrapper
@@ -231,6 +286,56 @@ def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     restore_previous = wrapper.rindex('mv "$BACKUP_ROOT" "$LIVE_ROOT"')
     assert migration_failure < restore_previous
     assert "the authenticated release files remain active" in wrapper
+
+
+def test_live_release_baseline_accepts_rehearsed_a_and_rejects_stale_after_b() -> None:
+    verifier = ROOT / "deploy/verify-release-baseline.py"
+    release_a = "a" * 40
+    release_b = "b" * 40
+
+    accepted = subprocess.run(
+        ["python3", str(verifier), release_a, f"sha-{release_a}", release_a],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    # Release B carries a separately signed B -> A rollback bundle. Once B is
+    # live, that transition-specific bundle is accepted under the same gate.
+    rollback_accepted = subprocess.run(
+        ["python3", str(verifier), release_b, f"sha-{release_b}", release_b],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert rollback_accepted.returncode == 0, rollback_accepted.stderr
+
+    # A concurrent A -> B deployment completes before stale A -> C acquires the
+    # host flock. The same runtime gate must now reject C before quiescing A/B.
+    rejected = subprocess.run(
+        ["python3", str(verifier), release_a, f"sha-{release_b}", release_b],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "rehearsed from a different deployed SHA" in rejected.stderr
+
+    inconsistent = subprocess.run(
+        ["python3", str(verifier), release_a, f"sha-{release_a}", release_b],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert inconsistent.returncode != 0
+    assert "APP_VERSION and release identity disagree" in inconsistent.stderr
+
+    stager = (ROOT / "scripts/stage-accord-release.sh").read_text()
+    assert "rollback-from-${LIVE_SHA}-to-${SHA}-" in stager
+    assert 'RELEASE_TAG="onprem-sha-$LIVE_SHA"' in stager
+    wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
+    assert "--current-sha" in wrapper
 
 
 def test_wrapper_installer_ignores_substituted_origin(tmp_path: Path) -> None:
@@ -322,7 +427,8 @@ def test_fresh_host_bootstrap_is_separate_authenticated_and_empty_only() -> None
     bootstrap = (ROOT / "scripts/bootstrap-release-host.sh").read_text()
     wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
     assert "ACCORD_BOOTSTRAP_ENV_FILE" in bootstrap
-    assert "mode 0600" in bootstrap
+    assert "stat.S_IMODE(before.st_mode) != 0o600" in bootstrap
+    assert "stat -f" not in bootstrap
     assert "repos/Ornament-AI/accord/git/ref/heads/main" in bootstrap
     assert "actions/workflows/ci.yml/runs?head_sha=" in bootstrap
     assert "exact current Ornament-AI/accord main SHA" in bootstrap
@@ -340,8 +446,9 @@ def test_fresh_host_bootstrap_is_separate_authenticated_and_empty_only() -> None
     assert "/usr/local/bin/.deploy-accord.new" in bootstrap
     assert "sha256sum --check --status" in bootstrap
     assert ".allow-first-release-$SHA" in bootstrap
-    assert "sudo -n /usr/local/bin/deploy-accord" in bootstrap
+    assert 'python3 "$RECEIPT_CLIENT"' in bootstrap
     assert "ACCORD_CONFIRMED_FRESH_INSTALL" not in bootstrap
+    assert "scripts/run-release-with-receipt.py" in bootstrap
     assert "release-bootstrap-evidence" in wrapper
     assert ".first-release-attempted-$SHA" in wrapper
     assert "accord_pgdata accord_minio-data deploy_pgdata deploy_minio-data" in wrapper
@@ -357,6 +464,7 @@ def test_migration_marker_precedes_compose_mutation() -> None:
     assert "$PUBLIC_APP_URL/api/readyz" in setup
     backup = (ROOT / "deploy/backup-before-migrate.sh").read_text()
     deploy = (ROOT / "deploy/deploy-accord.sh").read_text()
+    wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
     assert 'MINIO_VOLUME="accord_minio-data"' in backup
     assert "POSTGRES_USER" in backup and "POSTGRES_DB" in backup
     assert 'pg_dump -U "$DB_USER" -d "$DB_NAME"' in backup
@@ -365,6 +473,143 @@ def test_migration_marker_precedes_compose_mutation() -> None:
     assert "FINAL_OBJECTS_CHECKSUM" in backup
     assert "release MinIO backup checksum verification failed" in deploy
     assert "Verified paired PostgreSQL and MinIO" in deploy
+    operations = (ROOT / "docs/operations.md").read_text()
+    assert "Never restore only one member of the pair" in operations
+    assert "restore the PostgreSQL dump and its matching" in operations
+    assert "`.minio.tar.gz` archive to `accord_minio-data`" in operations
+    assert "stop api worker web minio" in wrapper
+    assert 'WEB_BINDING="$(docker port "$WEB_CID" 80/tcp)"' in deploy
+    assert '"http://127.0.0.1:$WEB_PORT/api/healthz"' in deploy
+    assert '"http://127.0.0.1:$WEB_PORT/api/readyz"' in deploy
+    assert "http://127.0.0.1:8085/api/healthz" not in deploy
+
+
+def test_release_receipt_update_is_serialized_by_remote_lock(tmp_path: Path) -> None:
+    helper = ROOT / "scripts/run-release-with-receipt.py"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    event_log = tmp_path / "events.log"
+    lock_file = tmp_path / "remote.lock"
+    barrier_dir = tmp_path / "barrier"
+    barrier_dir.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        "#!/usr/bin/env python3\n"
+        "import fcntl, os, pathlib, shlex, sys, time\n"
+        "command = shlex.split(sys.argv[2])\n"
+        "sha, nonce = command[-3], command[-1]\n"
+        "barrier = pathlib.Path(os.environ['FAKE_BARRIER_DIR'])\n"
+        "(barrier / str(os.getpid())).touch()\n"
+        "deadline = time.monotonic() + 5\n"
+        "while len(list(barrier.iterdir())) < 2:\n"
+        "    assert time.monotonic() < deadline\n"
+        "    time.sleep(0.01)\n"
+        "with open(os.environ['FAKE_REMOTE_LOCK'], 'w') as lock:\n"
+        "    try:\n"
+        "        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+        "    except BlockingIOError:\n"
+        "        raise SystemExit(75)\n"
+        "    username = sys.stdin.readline().rstrip('\\n')\n"
+        "    token = sys.stdin.readline().rstrip('\\n')\n"
+        "    assert username == 'release-user' and token == 't' * 24\n"
+        "    with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "        events.write(f'acquired:{sha}\\n'); events.flush()\n"
+        "    print(f'ACCORD_RELEASE_LIVE_PROOF={sha}:{nonce}', flush=True)\n"
+        "    acknowledgement = sys.stdin.readline().rstrip('\\n')\n"
+        "    assert acknowledgement == f'ACCORD_RELEASE_RECEIPT={sha}:{nonce}'\n"
+        "    with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "        events.write(f'ack:{sha}\\n'); events.flush()\n"
+    )
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys, time\n"
+        "sha = sys.stdin.read()\n"
+        "with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "    events.write(f'gh-start:{sha}\\n'); events.flush()\n"
+        "time.sleep(0.2)\n"
+        "with open(os.environ['FAKE_EVENT_LOG'], 'a') as events:\n"
+        "    events.write(f'gh-end:{sha}\\n'); events.flush()\n"
+    )
+    fake_ssh.chmod(0o755)
+    fake_gh.chmod(0o755)
+    first_sha = "a" * 40
+    second_sha = "b" * 40
+    environment = os.environ | {
+        "ACCORD_GHCR_USERNAME": "release-user",
+        "ACCORD_GHCR_READ_TOKEN": "t" * 24,
+        "FAKE_EVENT_LOG": str(event_log),
+        "FAKE_REMOTE_LOCK": str(lock_file),
+        "FAKE_BARRIER_DIR": str(barrier_dir),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+    processes = [
+        subprocess.Popen(
+            [
+                str(helper),
+                "accord-host",
+                sha,
+                f"/tmp/accord-release-{sha}-1-1",
+            ],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for sha in (first_sha, second_sha)
+    ]
+    results = [process.communicate(timeout=10) for process in processes]
+    assert sorted(process.returncode for process in processes) == [0, 1], results
+
+    events = event_log.read_text().splitlines()
+    first_positions = [index for index, event in enumerate(events) if first_sha in event]
+    second_positions = [index for index, event in enumerate(events) if second_sha in event]
+    assert sorted((len(first_positions), len(second_positions))) == [0, 4]
+
+
+def test_release_receipt_can_be_repaired_without_redeploy(tmp_path: Path) -> None:
+    helper = ROOT / "scripts/run-release-with-receipt.py"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    command_log = tmp_path / "command.log"
+    sha = "d" * 40
+    (fake_bin / "ssh").write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, shlex, sys\n"
+        "parts = shlex.split(sys.argv[2])\n"
+        "assert parts[-3:-1] == ['--repair-receipt', os.environ['EXPECTED_SHA']]\n"
+        "nonce = parts[-1]\n"
+        "print(f\"ACCORD_RELEASE_LIVE_PROOF={os.environ['EXPECTED_SHA']}:{nonce}\", flush=True)\n"
+        "assert sys.stdin.readline().rstrip('\\n') == "
+        "f\"ACCORD_RELEASE_RECEIPT={os.environ['EXPECTED_SHA']}:{nonce}\"\n"
+    )
+    (fake_bin / "gh").write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        "value = sys.stdin.read()\n"
+        "assert value == os.environ['EXPECTED_SHA']\n"
+        "open(os.environ['COMMAND_LOG'], 'w').write(value)\n"
+    )
+    for command in ("ssh", "gh"):
+        (fake_bin / command).chmod(0o755)
+    result = subprocess.run(
+        [str(helper), "--repair", "accord-host", sha],
+        capture_output=True,
+        check=False,
+        env=os.environ
+        | {
+            "COMMAND_LOG": str(command_log),
+            "EXPECTED_SHA": sha,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        },
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert command_log.read_text() == sha
+    wrapper = (ROOT / "deploy/deploy-accord-wrapper.sh").read_text()
+    assert "--repair-receipt" in wrapper
+    assert wrapper.index("fcntl.flock") < wrapper.index('if [[ "${1:-}" == "--repair-receipt" ]]')
+    assert "receipt repair SHA does not match the live Accord release" in wrapper
 
 
 def test_backup_uses_the_running_non_default_database_identity(tmp_path: Path) -> None:

@@ -10,16 +10,16 @@ SSH_TARGET="${MSIDC_SSH_TARGET:-msidc}"
 OPERATOR="${ACCORD_VM_OPERATOR:-msidcadmin}"
 ENV_FILE="${ACCORD_BOOTSTRAP_ENV_FILE:-}"
 STAGER="$ROOT/scripts/stage-accord-release.sh"
+RECEIPT_CLIENT="$ROOT/scripts/run-release-with-receipt.py"
 
 [[ $# -le 1 ]] || die "usage: ACCORD_BOOTSTRAP_ENV_FILE=/secure/path/.env $0 [main-sha]"
+[[ -x "$RECEIPT_CLIENT" ]] || die "release receipt client is missing or not executable"
 [[ -n "$ENV_FILE" && "$ENV_FILE" == /* && -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] \
     || die "ACCORD_BOOTSTRAP_ENV_FILE must be an absolute regular non-symlink file"
-[[ "$(stat -f '%u:%Lp' "$ENV_FILE")" == "$(id -u):600" ]] \
-    || die "bootstrap environment must be owned by the operator with mode 0600"
 [[ "$SSH_TARGET" =~ ^([A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
     || die "MSIDC_SSH_TARGET has an invalid format"
 [[ "$OPERATOR" =~ ^[a-z_][a-z0-9_-]*$ ]] || die "ACCORD_VM_OPERATOR has an invalid format"
-for command_name in gh git scp shasum ssh; do
+for command_name in gh git python3 scp shasum ssh; do
     command -v "$command_name" >/dev/null 2>&1 || die "missing command: $command_name"
 done
 
@@ -48,6 +48,7 @@ SHA="${1:-$MAIN_SHA}"
     || die "run bootstrap only from the exact reviewed Ornament-AI/accord main checkout"
 [[ -z "$(git -C "$ROOT" status --short --untracked-files=no -- \
     scripts/bootstrap-release-host.sh scripts/stage-accord-release.sh \
+    scripts/run-release-with-receipt.py \
     deploy/deploy-accord-wrapper.sh deploy/onprem-release-signing-public.pem \
     scripts/vendor/onprem_release.py)" ]] \
     || die "refusing modified bootstrap trust-path files"
@@ -175,8 +176,7 @@ ssh -t "$SSH_TARGET" "set -e;
   sudo chown root:root '/opt/accord/.allow-first-release-$SHA';
   sudo chmod 0600 '/opt/accord/.allow-first-release-$SHA'"
 
-printf '%s\n%s\n' "$ACCORD_GHCR_USERNAME" "$ACCORD_GHCR_READ_TOKEN" \
-    | ssh "$SSH_TARGET" "sudo -n /usr/local/bin/deploy-accord '$SHA' '$REMOTE_RELEASE_ROOT'"
+python3 "$RECEIPT_CLIENT" "$SSH_TARGET" "$SHA" "$REMOTE_RELEASE_ROOT"
 unset ACCORD_GHCR_READ_TOKEN
 ssh "$SSH_TARGET" "rm -f '$REMOTE_WRAPPER' '$REMOTE_ENV'"
 REMOTE_WRAPPER=""

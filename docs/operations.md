@@ -200,8 +200,11 @@ branching). Practice:
 4. Keep object-storage versioning or cross-region replication if artifacts
    must rewind with the database.
 
-Compose MinIO is **not** PITR; use volume snapshots plus the logical dump
-above.
+Compose MinIO is **not** PITR. Release updates therefore stop MinIO together
+with the application writers and create one SHA-bound recovery pair: the
+PostgreSQL custom dump and the matching `accord_minio-data` volume archive.
+Both checksum files and both readback listings must verify before migrations
+can start.
 
 ### Object storage persistence
 
@@ -263,7 +266,25 @@ images for that exact commit. It records their registry digests, packages the
 self-contained Compose deployment, validates the shared on-prem contract,
 and signs its checksums with the protected `onprem-release` environment key.
 The four immutable assets are stored in the durable GitHub Release
-`onprem-sha-<full-sha>`.
+`onprem-sha-<full-sha>`. The same release also carries four separately signed,
+collision-free assets for the exact `new -> previous` rollback transition.
+Publication authenticates the previous release, rehearses `previous -> new`,
+restores the verified previous database snapshot, and validates the previous
+schema again before signing either direction.
+
+The protected `onprem-release` environment stores `ONPREM_DEPLOYED_SHA`, which
+is authoritative deployment evidence for migration rehearsal. Publication
+fails closed when this value is absent, invalid, or not an ancestor of the
+candidate. A successful operator deployment updates it only after all live
+proofs pass, so skipped published releases are never mistaken for the schema
+currently on the VM.
+
+The successful rehearsal also writes its exact starting SHA into the signed
+release bundle. Under the root deployment lock, the VM compares that SHA with
+the running API's `APP_VERSION` and the current release identity before it
+stops any service or takes a backup. If another deployment or rollback changed
+the live baseline after publication, the stale bundle fails closed; publish a
+new candidate from the current live SHA instead.
 
 Publishing a release never changes the VM. A human must explicitly run the
 operator command below.
@@ -298,7 +319,12 @@ Before the first cutover, run the manual `Backfill On-Prem Rollback Release`
 workflow on `main` and verify that
 `onprem-sha-8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d` contains all four signed
 assets. This one-time backfill preserves the currently deployed release as a
-verified rollback target.
+verified rollback target. Its backend and web digests are fixed from the
+read-only live-container evidence recorded on 2026-08-25. The workflow also
+verifies the retained, checksum-pinned Docker build records from successful
+Deploy run `32671105169`, then pulls the immutable references and verifies their
+OCI revision labels before signing. It never resolves the mutable `sha-...`
+tags as signing inputs.
 
 ### Release steps (operator)
 
@@ -319,6 +345,17 @@ verified rollback target.
    MinIO-volume backups, atomically promotes the release, then proves image digests,
    `APP_VERSION`, migrations, health, readiness, auth, worker startup, and the
    public endpoint.
+   After those live proofs succeed, the command records the deployed full SHA
+   in the protected `onprem-release` environment for the next migration
+   rehearsal. Failure to update that evidence is reported as an incomplete
+   deployment operation even though the live proof already succeeded. The
+   root deployment lock remains held through this evidence write and is
+   released only after the wrapper receives the matching nonce-bound receipt,
+   so concurrent operators cannot overwrite the live SHA with stale evidence.
+   If that protected write fails after live proof, run
+   `MSIDC_SSH_TARGET=msidc ./scripts/repair-release-receipt.sh <exact-live-sha>`.
+   The repair reacquires the same root lock, proves the running `APP_VERSION`,
+   and completes the nonce-bound receipt without rerunning deployment.
 
 The normal signed updater is deliberately not an empty-host bootstrapper: it
 requires the existing root-owned `.env`, live Accord stack, PostgreSQL volume,
@@ -347,12 +384,18 @@ the paired PostgreSQL and MinIO backup path. Neither path accepts the legacy
 1. Identify the previous known-good full Git SHA. Review migration
    compatibility before changing the running app.
 2. Run `./scripts/deploy.sh <previous-full-sha>`. The previous SHA must have a
-   signed durable `onprem-sha-<sha>` release; rollback uses the same verified
-   installer and proof path as forward deployment.
+   transition-specific rollback bundle signed into the currently running
+   release. The operator stages that exact `current -> previous` evidence;
+   rollback uses the same verified installer and proof path as forward
+   deployment. Chained rollbacks proceed one release at a time.
 3. **Do not** auto-downgrade Alembic. If the new release's migrations
-   already applied and are incompatible with the old app, restore the
-   database from backup/PITR to a pre-migration point, then start the old
-   images — or forward fix with a new tag.
+   already applied and are incompatible with the old app, keep API, worker,
+   web, and MinIO stopped. Verify both checksum files in the SHA-bound release
+   evidence, then restore the PostgreSQL dump and its matching
+   `.minio.tar.gz` archive to `accord_minio-data` as one recovery point before
+   starting the old images. Never restore only one member of the pair. Use a
+   declared maintenance window and root-only host access for this recovery,
+   or forward fix with a new signed release.
 4. Re-run the smoke checks (`/api/readyz`, web root, worker logs).
 
 ## Smoke-test checklist

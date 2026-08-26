@@ -10,7 +10,7 @@ SSH_TARGET="$2"
 [[ "$SSH_TARGET" =~ ^([A-Za-z0-9][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
     || die "SSH target has an invalid format"
 
-for command in docker gh openssl python3 scp; do
+for command in docker gh git openssl python3 scp ssh; do
     command -v "$command" >/dev/null 2>&1 || die "missing required command: $command"
 done
 GHCR_READ_TOKEN="${ACCORD_GHCR_READ_TOKEN:-}"
@@ -29,13 +29,33 @@ trap cleanup EXIT
 DOWNLOAD_ROOT="$LOCAL_ROOT/download"
 EXTRACTED="$LOCAL_ROOT/extracted"
 mkdir "$DOWNLOAD_ROOT" "$EXTRACTED"
-gh release download "onprem-sha-$SHA" \
+LIVE_SHA="$(ssh "$SSH_TARGET" 'sudo -n /usr/local/bin/deploy-accord --current-sha' 2>/dev/null || true)"
+[[ -z "$LIVE_SHA" || "$LIVE_SHA" =~ ^[0-9a-f]{40}$ ]] \
+    || die "VM returned an invalid live release SHA"
+RELEASE_TAG="onprem-sha-$SHA"
+ASSET_PREFIX=""
+if [[ -n "$LIVE_SHA" && "$LIVE_SHA" != "$SHA" ]]; then
+    transition_prefix="rollback-from-${LIVE_SHA}-to-${SHA}-"
+    transition_count="$(gh release view "onprem-sha-$LIVE_SHA" --repo Ornament-AI/accord \
+        --json assets --jq "[.assets[].name | select(startswith(\"$transition_prefix\"))] | length" 2>/dev/null || true)"
+    if [[ "$transition_count" == "4" ]]; then
+        RELEASE_TAG="onprem-sha-$LIVE_SHA"
+        ASSET_PREFIX="$transition_prefix"
+    fi
+fi
+gh release download "$RELEASE_TAG" \
     --repo Ornament-AI/accord \
-    --pattern "accord-deploy-sha-$SHA.tar.gz" \
-    --pattern "onprem-release-$SHA.json" \
-    --pattern "onprem-checksums-$SHA.txt" \
-    --pattern "onprem-signature-$SHA.sig" \
+    --pattern "${ASSET_PREFIX}accord-deploy-sha-$SHA.tar.gz" \
+    --pattern "${ASSET_PREFIX}onprem-release-$SHA.json" \
+    --pattern "${ASSET_PREFIX}onprem-checksums-$SHA.txt" \
+    --pattern "${ASSET_PREFIX}onprem-signature-$SHA.sig" \
     --dir "$DOWNLOAD_ROOT"
+if [[ -n "$ASSET_PREFIX" ]]; then
+    for name in "accord-deploy-sha-$SHA.tar.gz" "onprem-release-$SHA.json" \
+        "onprem-checksums-$SHA.txt" "onprem-signature-$SHA.sig"; do
+        mv "$DOWNLOAD_ROOT/${ASSET_PREFIX}${name}" "$DOWNLOAD_ROOT/$name"
+    done
+fi
 
 ARCHIVE="$DOWNLOAD_ROOT/accord-deploy-sha-$SHA.tar.gz"
 MANIFEST="$DOWNLOAD_ROOT/onprem-release-$SHA.json"
@@ -92,10 +112,10 @@ python3 "$ROOT/scripts/vendor/onprem_release.py" validate \
     || die "release tooling identity is missing"
 TOOLING_SHA="$(cat "$EXTRACTED/deploy/release-tooling-source-sha")"
 [[ "$TOOLING_SHA" =~ ^[0-9a-f]{40}$ ]] || die "release tooling identity is invalid"
-LEGACY_ROLLBACK_SHA="8cc2f95d00d35ab6eb9d4ace31b2f605af10d10d"
-if [[ "$TOOLING_SHA" != "$SHA" && "$SHA" != "$LEGACY_ROLLBACK_SHA" ]]; then
-    die "release tooling may differ only for the fixed pre-contract production rollback"
-fi
+git -C "$ROOT" cat-file -e "${TOOLING_SHA}^{commit}" 2>/dev/null \
+    || die "release tooling commit is unavailable locally"
+git -C "$ROOT" merge-base --is-ancestor "$SHA" "$TOOLING_SHA" \
+    || die "rollback target is not an ancestor of its release tooling"
 cmp -s "$ROOT/deploy/onprem-release-signing-public.pem" \
     "$EXTRACTED/deploy/onprem-release-signing-public.pem" \
     || die "release bundle contains an unexpected signing key"
