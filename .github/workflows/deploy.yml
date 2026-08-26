@@ -202,13 +202,28 @@ jobs:
           psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d release_upgrade \
             -f backend/scripts/create_roles.sql
 
+      - name: Resolve PostgreSQL 18 service container
+        id: postgres-service
+        run: |
+          mapfile -t container_ids < <(
+            docker ps --filter ancestor=postgres:18-alpine --format '{{.ID}}'
+          )
+          if [[ ${#container_ids[@]} -ne 1 ]]; then
+            echo "Expected exactly one running PostgreSQL 18 service container; found ${#container_ids[@]}" >&2
+            exit 1
+          fi
+          container_id="${container_ids[0]}"
+          [[ "$(docker inspect --format '{{.Config.Image}}' "$container_id")" == "postgres:18-alpine" ]]
+          echo "container-id=$container_id" >> "$GITHUB_OUTPUT"
+
       - name: Apply previous release migrations
         run: |
           git worktree add --detach ../accord-previous "${{ steps.previous.outputs.sha }}"
           test -d ../accord-previous/backend/migrations/versions
           cd ../accord-previous/backend
           python -m alembic upgrade head
-          PGPASSWORD=postgres pg_dump -h localhost -U postgres -d release_upgrade -Fc \
+          docker exec -e PGPASSWORD=postgres "${{ steps.postgres-service.outputs.container-id }}" \
+            pg_dump -U postgres -d release_upgrade -Fc \
             > "${RUNNER_TEMP}/previous-release.dump"
 
       - name: Upgrade previous schema to exact reviewed source
@@ -228,8 +243,13 @@ jobs:
           createdb -h localhost -U postgres release_upgrade
           psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d release_upgrade \
             -f backend/scripts/create_roles.sql
-          pg_restore -h localhost -U postgres -d release_upgrade \
-            "${RUNNER_TEMP}/previous-release.dump"
+          docker exec -i -e PGPASSWORD=postgres \
+            "${{ steps.postgres-service.outputs.container-id }}" \
+            pg_restore --list < "${RUNNER_TEMP}/previous-release.dump" >/dev/null
+          docker exec -i -e PGPASSWORD=postgres \
+            "${{ steps.postgres-service.outputs.container-id }}" \
+            pg_restore -U postgres -d release_upgrade \
+            < "${RUNNER_TEMP}/previous-release.dump"
           cd ../accord-previous/backend
           python -m alembic upgrade head
           python -m alembic check

@@ -245,6 +245,20 @@ def test_fixed_live_rollback_is_backfilled_from_reviewed_main_tooling() -> None:
     assert "release-tooling-source-sha" in package
 
 
+def test_release_rehearsal_uses_exact_postgres_18_service_tooling() -> None:
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+    assert "mapfile -t container_ids" in workflow
+    assert "docker ps --filter ancestor=postgres:18-alpine" in workflow
+    assert "Expected exactly one running PostgreSQL 18 service container" in workflow
+    assert "[[ ${#container_ids[@]} -ne 1 ]]" in workflow
+    assert "steps.postgres-service.outputs.container-id" in workflow
+    assert "pg_dump -U postgres -d release_upgrade -Fc" in workflow
+    assert 'pg_restore --list < "${RUNNER_TEMP}/previous-release.dump"' in workflow
+    assert "pg_restore -U postgres -d release_upgrade" in workflow
+    assert "PGPASSWORD=postgres pg_dump -h localhost" not in workflow
+    assert "pg_restore -h localhost" not in workflow
+
+
 def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     deploy = (ROOT / "scripts/deploy.sh").read_text()
     installer = (ROOT / "scripts/install-release-wrapper.sh").read_text()
