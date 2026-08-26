@@ -287,6 +287,9 @@ def test_operator_path_uses_only_fixed_nopasswd_wrapper() -> None:
     assert "os.O_NOFOLLOW" in wrapper
     assert "fcntl.LOCK_EX | fcntl.LOCK_NB" in wrapper
     assert "accord-release-install.lock" in wrapper
+    assert wrapper.index("exec 3<&0") < wrapper.index("<<'PY'")
+    assert wrapper.index("os.dup2(3, 0, inheritable=True)") < wrapper.index("os.execve(")
+    assert wrapper.index("os.close(3)") < wrapper.index("os.execve(")
     assert "exec 8>/run/lock" not in wrapper
     assert 'os.mkdir("accord-release", 0o700, dir_fd=parent)' in wrapper
     assert "writable /run/lock must have the sticky bit" in wrapper
