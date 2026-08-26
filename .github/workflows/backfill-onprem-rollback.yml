@@ -194,9 +194,20 @@ jobs:
               echo "Refusing to replace $release_tag at unexpected commit $existing_tag" >&2
               exit 1
             fi
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/$release_tag"
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/$release_tag" \
+              -f sha="$ROLLBACK_SHA" >/dev/null
+          fi
+          verified_tag="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$release_tag" --jq .object.sha
+          )"
+          if [[ "$verified_tag" != "$ROLLBACK_SHA" ]]; then
+            echo "Refusing release for unverified tag $release_tag at $verified_tag" >&2
+            exit 1
           fi
           gh release create "$release_tag" \
+            --verify-tag \
             --target "$ROLLBACK_SHA" \
             --title "Accord pre-contract rollback $ROLLBACK_SHA" \
             --notes "One-time signed rollback bundle for application commit $ROLLBACK_SHA, assembled by reviewed release tooling $TOOLING_SHA." \
