@@ -234,7 +234,13 @@ def test_fixed_live_rollback_is_backfilled_from_reviewed_main_tooling() -> None:
     assert "docker pull --platform linux/amd64" in workflow
     assert "org.opencontainers.image.revision" in workflow
     assert ":sha-${ROLLBACK_SHA}" not in workflow
+    assert '-f ref="refs/tags/$release_tag"' in workflow
+    assert '-f sha="$ROLLBACK_SHA"' in workflow
+    assert 'git/ref/tags/$release_tag" --jq .object.sha' in workflow
+    assert 'if [[ "$verified_tag" != "$ROLLBACK_SHA" ]]' in workflow
+    assert "git/refs/tags/$release_tag" not in workflow
     assert 'gh release create "$release_tag"' in workflow
+    assert "--verify-tag" in workflow
     assert "a rollback target must be an ancestor of its release tooling" in package
     assert "release-tooling-source-sha" in package
 
