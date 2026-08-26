@@ -30,7 +30,7 @@ jobs:
   # not-yet-landed lane reports "skipped" (satisfies required checks) rather
   # than leaving the check stuck "Pending".
   detect:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       backend: ${{ steps.detect.outputs.backend }}
       frontend: ${{ steps.detect.outputs.frontend }}
@@ -83,7 +83,7 @@ jobs:
     if: >-
       needs.detect.outputs.backend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     services:
       postgres:
         image: postgres:18-alpine
@@ -137,7 +137,7 @@ jobs:
     if: >-
       needs.detect.outputs.backend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     services:
       postgres:
         image: postgres:18-alpine
@@ -188,7 +188,7 @@ jobs:
 
   api-type-drift:
     name: API type drift check
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -222,7 +222,7 @@ jobs:
     if: >-
       needs.detect.outputs.frontend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.frontend_changed == 'true')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       # pnpm/action-setup installs pnpm to a standalone location that survives
@@ -260,7 +260,7 @@ jobs:
     if: >-
       needs.detect.outputs.backend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -280,7 +280,7 @@ jobs:
     if: >-
       needs.detect.outputs.frontend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.frontend_changed == 'true')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
