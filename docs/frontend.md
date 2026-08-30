@@ -70,10 +70,11 @@ the `stableRouteTransition` route handle.
 Primary navigation is data-driven. `frontend/src/lib/nav-registry.ts` maps
 paths to capabilities, and its Reports children come from
 `frontend/src/lib/reports/report-registry.ts`. The backend report catalog is
-canonical. Frontend tests keep the navigation, product-sheet registry, and
-mocked report catalog internally consistent, but the mock catalog is generated
-from that same frontend registry. Those tests do not prove that the frontend
-and backend catalogs agree; verify both sides when changing report membership.
+canonical. `scripts/generate-report-catalog.py` writes its product-sheet
+membership, order, and titles to a checked-in frontend input. Backend tests and
+the CI drift check fail if that generated input becomes stale; frontend tests
+then verify that every backend-defined sheet has a stable route and navigation
+entry.
 
 ## API and server state
 

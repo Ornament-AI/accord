@@ -110,15 +110,11 @@ describe("Reports page", () => {
 		expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "pay_bill.xlsx");
 	});
 
-	it("FE product sheet keys are a subset of catalog product sheets", () => {
+	it("mock catalog exposes every registered product sheet", () => {
 		const catalog = defaultReportCatalog();
-		const productTypes = new Set(
-			catalog.filter((item) => item.product_sheet).map((item) => item.report_type),
+		expect(catalog.filter((item) => item.product_sheet).map((item) => item.report_type)).toEqual(
+			PRODUCT_REPORT_SHEETS.map((sheet) => sheet.reportType),
 		);
-		for (const sheet of PRODUCT_REPORT_SHEETS) {
-			expect(productTypes.has(sheet.reportType)).toBe(true);
-		}
-		expect(PRODUCT_REPORT_SHEETS).toHaveLength(18);
 	});
 
 	it("nav children match product sheet slugs", () => {
@@ -166,7 +162,7 @@ describe("Reports page", () => {
 			const { handlers: payHandlers } = seedPostedRuns();
 			let exportCount = 0;
 			let exportRequest: unknown;
-			const { handlers: reportHandlers } = createReportHandlers({
+			const { handlers: reportHandlers, jobs } = createReportHandlers({
 				jobStatusSequence: ["queued", "running", "succeeded"],
 				onExport: (body) => {
 					exportCount += 1;
@@ -195,10 +191,19 @@ describe("Reports page", () => {
 						posted_run_id: "run-a",
 						template_version: "v3",
 					});
-					expect(downloadBlob).toHaveBeenCalled();
+					expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "consolidated_xlsx.xlsx");
 				},
 				{ timeout: PAGE_TIMEOUT },
 			);
+			const [job] = jobs.values();
+			expect(job).toMatchObject({
+				pollCount: 3,
+				kind: "export",
+				request: {
+					posted_run_id: "run-a",
+					template_version: "v3",
+				},
+			});
 		},
 		PAGE_TIMEOUT,
 	);

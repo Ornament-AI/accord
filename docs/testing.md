@@ -216,6 +216,11 @@ There is no `backend/tests/security/` directory. Current coverage:
 - Vitest component and unit tests: `frontend/src/**/*.test.ts(x)`, run with
   `pnpm --filter frontend test:run`. API mocking uses MSW handlers under
   `frontend/src/test/msw/` (server in `frontend/src/test/msw-server.ts`).
+- Backend/frontend report-catalog parity:
+  `backend/tests/reports/test_frontend_catalog_contract.py` compares the
+  checked-in frontend catalog input with the canonical backend allowlist,
+  including order and titles. `python scripts/generate-report-catalog.py
+  --check` is also part of the always-on API drift CI lane.
 - Playwright critical paths against the real local stack (see
   `frontend/e2e/README.md` for setup and the `accord_e2e` database):
   `frontend/e2e/auth-and-org.spec.ts`, `frontend/e2e/master-data.spec.ts`,
