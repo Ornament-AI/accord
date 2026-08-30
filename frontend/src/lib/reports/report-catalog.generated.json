@@ -1,0 +1,74 @@
+[
+	{
+		"report_type": "pay_bill",
+		"title": "Pay Bill"
+	},
+	{
+		"report_type": "treasury_face",
+		"title": "Treasury Face"
+	},
+	{
+		"report_type": "bank_rtgs_advice",
+		"title": "Bank RTGS Advice"
+	},
+	{
+		"report_type": "payslips",
+		"title": "Payslips"
+	},
+	{
+		"report_type": "gpf_mumbai_schedule",
+		"title": "GPF Mumbai Schedule"
+	},
+	{
+		"report_type": "gpf_nagpur_schedule",
+		"title": "GPF Nagpur Schedule"
+	},
+	{
+		"report_type": "nps_contribution_schedule",
+		"title": "NPS Contribution Schedule"
+	},
+	{
+		"report_type": "income_tax_schedule",
+		"title": "Income Tax Schedule"
+	},
+	{
+		"report_type": "professional_tax_schedule",
+		"title": "Professional Tax Schedule"
+	},
+	{
+		"report_type": "gis_schedule",
+		"title": "GIS Schedule"
+	},
+	{
+		"report_type": "hba_schedule",
+		"title": "HBA Schedule"
+	},
+	{
+		"report_type": "gpf_advance_schedule",
+		"title": "GPF Advance Schedule"
+	},
+	{
+		"report_type": "motor_car_advance_schedule",
+		"title": "Motor Car Advance Schedule"
+	},
+	{
+		"report_type": "motorcycle_advance_schedule",
+		"title": "Motorcycle Advance Schedule"
+	},
+	{
+		"report_type": "festival_advance_schedule",
+		"title": "Festival Advance Schedule"
+	},
+	{
+		"report_type": "accommodation_mumbai_schedule",
+		"title": "Accommodation Mumbai Schedule"
+	},
+	{
+		"report_type": "accommodation_worli_schedule",
+		"title": "Accommodation Worli Schedule"
+	},
+	{
+		"report_type": "approval_note",
+		"title": "Approval Note"
+	}
+]

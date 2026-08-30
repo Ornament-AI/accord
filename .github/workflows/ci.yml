@@ -215,6 +215,8 @@ jobs:
         run: |
           ./scripts/generate-api-types.sh
           git diff --exit-code -- frontend/src/types/api.generated.ts
+      - name: Check frontend report catalog against backend authority
+        run: python scripts/generate-report-catalog.py --check
 
   frontend:
     name: Frontend lint + typecheck + test + build

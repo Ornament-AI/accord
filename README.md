@@ -306,6 +306,7 @@ there is no gate G). Evidence for the current tree is in
 | Doc | Description |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Runtime components, workflow, tenancy, report pipeline |
+| [docs/frontend.md](docs/frontend.md) | Browser app structure, routes, API state, components, verification |
 | [docs/developer-reference.md](docs/developer-reference.md) | API, frontend routes, config, scripts, CI map |
 | [docs/testing.md](docs/testing.md) | Test strategy and gate → suite mapping |
 | [AGENTS.md](AGENTS.md) | Local/VM gotchas (Postgres, pytest DSN, org bootstrap) |
