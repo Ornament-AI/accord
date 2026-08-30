@@ -53,7 +53,8 @@ def main() -> int:
             actual = ""
         if actual != expected:
             print(
-                f"{output} is stale; run scripts/generate-report-catalog.py",
+                f"{output} is stale; run "
+                "backend/.venv/bin/python scripts/generate-report-catalog.py",
                 file=sys.stderr,
             )
             return 1
