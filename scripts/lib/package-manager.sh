@@ -8,6 +8,7 @@ fi
 ACCORD_PACKAGE_MANAGER_LOADED=1
 
 PNPM_CMD=()
+PNPM_REQUIRED_VERSION="12.1.0"
 
 resolve_pnpm() {
 	if [[ -n "${PNPM:-}" ]]; then
@@ -33,6 +34,18 @@ resolve_pnpm() {
 			die "pnpm not found. Enable Corepack or set PNPM=/path/to/pnpm."
 		fi
 		echo "pnpm not found. Enable Corepack or set PNPM=/path/to/pnpm." >&2
+		return 1
+	fi
+
+	local pnpm_version
+	pnpm_version="$(COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "${PNPM_CMD[@]}" --version 2>/dev/null || true)"
+	if [[ "$pnpm_version" != "$PNPM_REQUIRED_VERSION" ]]; then
+		local message="pnpm $PNPM_REQUIRED_VERSION is required; resolved ${pnpm_version:-an unusable command}. Enable Corepack or set PNPM to the pinned pnpm executable."
+		if declare -F die >/dev/null 2>&1; then
+			die "$message"
+			return 1
+		fi
+		echo "$message" >&2
 		return 1
 	fi
 }
