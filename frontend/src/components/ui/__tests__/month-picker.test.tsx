@@ -25,7 +25,7 @@ describe("MonthPicker", () => {
 	it("allows callers to content-fit the trigger width", () => {
 		render(<MonthPicker value="" onChange={vi.fn()} style={{ width: "calc(17ch)" }} />);
 
-		expect(screen.getByRole("button")).toHaveStyle({ width: "calc(17ch)" });
+		expect(screen.getByRole("button").style.width).toBe("calc(17ch)");
 	});
 
 	it("does not apply the default width when callers provide a width class", () => {
