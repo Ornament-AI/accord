@@ -9,15 +9,29 @@ ACCORD_PACKAGE_MANAGER_LOADED=1
 
 PNPM_CMD=()
 PNPM_REQUIRED_VERSION="12.1.0"
+PNPM_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+PNPM_COREPACK_BIN=""
+
+run_corepack_pnpm_from_project() {
+	local caller_dir
+	caller_dir="$(pwd -P)"
+	local pnpm_dir="$PNPM_PROJECT_ROOT"
+	if [[ "$caller_dir" == "$PNPM_PROJECT_ROOT" || "$caller_dir" == "$PNPM_PROJECT_ROOT/"* ]]; then
+		pnpm_dir="$caller_dir"
+	fi
+	(
+		cd "$PNPM_PROJECT_ROOT"
+		COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$PNPM_COREPACK_BIN" pnpm --dir "$pnpm_dir" "$@"
+	)
+}
 
 resolve_pnpm() {
 	if [[ -n "${PNPM:-}" ]]; then
 		PNPM_CMD=("$PNPM")
 	elif command -v corepack >/dev/null 2>&1; then
-		local corepack_bin
-		corepack_bin="$(command -v corepack)"
-		if COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$corepack_bin" pnpm --version >/dev/null 2>&1; then
-			PNPM_CMD=("$corepack_bin" "pnpm")
+		PNPM_COREPACK_BIN="$(command -v corepack)"
+		if run_corepack_pnpm_from_project --version >/dev/null 2>&1; then
+			PNPM_CMD=(run_corepack_pnpm_from_project)
 		elif command -v pnpm >/dev/null 2>&1; then
 			PNPM_CMD=("$(command -v pnpm)")
 		else
