@@ -5,6 +5,9 @@ the authoritative release boundaries.
 
 ## Unreleased
 
+- Move the workspace, CI, and web image build to pnpm 12.1.0, upgrade Motion
+  to 13.1.1 and the jsdom test stack to jest-dom 7.0.1 with jsdom 30.0.1,
+  and update the backend WorkOS SDK to 10.2.0.
 - Upgrade the frontend compiler to TypeScript 7.0.2 while isolating the OpenAPI
   generator on its compatible TypeScript runtime.
 

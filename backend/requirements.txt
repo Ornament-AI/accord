@@ -18,7 +18,7 @@ structlog==26.1.0
 slowapi==0.1.10
 
 # Auth (WorkOS identity + signed session cookies)
-workos==9.1.0
+workos==10.2.0
 itsdangerous==2.2.0
 
 # Object storage (S3-compatible)
