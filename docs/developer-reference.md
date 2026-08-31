@@ -18,8 +18,8 @@ must be corrected.
 | Compose/production defaults | `deploy/.env.example`, `deploy/docker-compose.yml` |
 | CI and release automation | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml` |
 
-CI uses Node 24, pnpm 10, Python 3.14, and PostgreSQL 18. The frontend
-manifest accepts Node 22.22 or newer, but using the CI version removes a
+CI uses Node 24, pnpm 12.1.0, Python 3.14, and PostgreSQL 18. The frontend
+manifest accepts supported Node 22, 24, and 26+ releases, but using the CI version removes a
 toolchain variable.
 
 ## HTTP API
