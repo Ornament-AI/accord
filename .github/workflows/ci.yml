@@ -21,7 +21,7 @@ env:
   ACCORD_WEB_IMAGE: ghcr.io/ornament-ai/accord/web
   POSTGRES_IMAGE: postgres:18-alpine
   NODE_VERSION: "24.18.0"
-  PNPM_VERSION: "10.34.3"
+  PNPM_VERSION: "12.1.0"
   PYTHON_VERSION: "3.14"
 
 jobs:
@@ -230,7 +230,7 @@ jobs:
       # resolve `pnpm store path`. (Corepack shims live in Node's bin dir and are
       # lost when setup-node swaps the Node version, which breaks cache:pnpm.)
       # Version comes from the `packageManager` field in package.json
-      # (pnpm@10.34.3); passing `version:` here as well would error with
+      # (pnpm@12.1.0); passing `version:` here as well would error with
       # "Multiple versions of pnpm specified".
       - name: Install pnpm
         uses: pnpm/action-setup@v4

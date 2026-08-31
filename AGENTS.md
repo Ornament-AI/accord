@@ -22,8 +22,8 @@ run/verify commands live in `README.md`, root `package.json` scripts, and `scrip
 
 - **Node/pnpm PATH shadowing:** `/exec-daemon/node` is an older Node 22.14 that is
   earlier in `PATH`. It is overridden by symlinks in `/usr/local/cargo/bin` (first in
-  `PATH`) pointing at Node 24.18.0, plus a corepack-managed `pnpm` 10.34.3. So `node`
-  and `pnpm` already resolve to the correct versions — do not "fix" this with nvm.
+  `PATH`) pointing at Node 24.18.0. Corepack resolves the repository's pinned pnpm
+  12.1.0. Do not "fix" this with nvm.
 - **Backend venv is Python 3.14** at `backend/.venv` (deadsnakes `python3.14`). The
   repo's `dev-setup.sh`/`start.sh` fall back to `python3 -m venv`, which would be the
   system 3.12 — the venv is intentionally created with `python3.14` instead.
