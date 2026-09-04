@@ -57,10 +57,6 @@ def verify_workos_webhook(
     return payload
 
 
-def _event_field(event: dict[str, Any], name: str) -> Any:
-    return event.get(name)
-
-
 async def handle_workos_event(
     db: AsyncSession,
     event: dict[str, Any],
@@ -73,8 +69,8 @@ async def handle_workos_event(
     rolls back the claim so redelivery can retry; success commits with
     ``processed_at`` set.
     """
-    event_id = _event_field(event, "id")
-    event_type = _event_field(event, "event") or _event_field(event, "type")
+    event_id = event.get("id")
+    event_type = event.get("event") or event.get("type")
     if not event_id:
         logger.warning("workos_webhook_missing_event_id", event_type=event_type)
         return True
@@ -108,7 +104,7 @@ async def handle_workos_event(
     webhook_row_id = claimed.id
 
     if event_type == "user.updated":
-        data = _event_field(event, "data") or {}
+        data = event.get("data") or {}
         if not isinstance(data, dict):
             data = {}
         workos_user_id = data.get("id")

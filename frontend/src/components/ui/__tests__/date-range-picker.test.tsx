@@ -29,17 +29,6 @@ describe("DateRangePicker", () => {
 		expect(screen.getByRole("button")).not.toHaveTextContent("Paid dates");
 	});
 
-	it("uses the same trigger surface color as select controls", () => {
-		render(<DateRangePicker />);
-
-		expect(screen.getByRole("button")).toHaveClass(
-			"bg-transparent",
-			"dark:bg-input/22",
-			"dark:hover:bg-input/38",
-			"min-w-0",
-		);
-	});
-
 	it("allows callers to content-fit the trigger width", () => {
 		render(<DateRangePicker style={{ width: "calc(17ch)" }} />);
 

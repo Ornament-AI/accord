@@ -88,10 +88,6 @@ async def _rebind_tenant(
     )
 
 
-def _to_response(row: ExportArtifact) -> ArtifactResponse:
-    return ArtifactResponse.model_validate(row)
-
-
 async def create_artifact(
     session: AsyncSession,
     storage: ObjectStorage,
@@ -223,7 +219,7 @@ async def list_artifacts(
     )
     rows = (await session.execute(page_stmt)).scalars().all()
     return ArtifactListPage(
-        items=[_to_response(row) for row in rows],
+        items=[ArtifactResponse.model_validate(row) for row in rows],
         total=total,
         page=page,
         page_size=page_size,
