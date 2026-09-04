@@ -7,7 +7,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
 import DeploymentNotReadyPage from "@/pages/DeploymentNotReadyPage";
 import NotProvisionedPage from "@/pages/NotProvisionedPage";
-import { OfficesPage, OrgSetupIndexRedirect, PostsPage } from "@/pages/org-setup/OrgSetupPage";
 
 const ProtectedShell = lazy(() =>
 	import("@/components/protected-shell").then((mod) => ({ default: mod.ProtectedShell })),
@@ -103,7 +102,15 @@ export const PayComponentsPage = lazy(() => import("@/pages/pay-components/PayCo
 export const PayComponentDetailPage = lazy(
 	() => import("@/pages/pay-components/PayComponentDetailPage"),
 );
-export { OfficesPage, OrgSetupIndexRedirect, PostsPage };
+export const OfficesPage = lazy(() =>
+	import("@/pages/org-setup/OrgSetupPage").then((mod) => ({ default: mod.OfficesPage })),
+);
+export const OrgSetupIndexRedirect = lazy(() =>
+	import("@/pages/org-setup/OrgSetupPage").then((mod) => ({ default: mod.OrgSetupIndexRedirect })),
+);
+export const PostsPage = lazy(() =>
+	import("@/pages/org-setup/OrgSetupPage").then((mod) => ({ default: mod.PostsPage })),
+);
 export const PayRunsPage = lazy(() => import("@/pages/pay-runs/PayRunsPage"));
 export const PayRunDetailPage = lazy(() => import("@/pages/pay-runs/PayRunDetailPage"));
 export const ReportsLayout = lazy(() => import("@/pages/reports/ReportsLayout"));
