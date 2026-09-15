@@ -204,9 +204,11 @@ def wipe_org_master_data(org_id: str, *, dsn_env: dict[str, str]) -> None:
         "payroll_run_inputs",
         "payroll_run_employees",
         "payroll_run_versions",
+        # export_artifacts.payroll_run_id → payroll_runs; it must be deleted
+        # before the run rows it references.
+        "export_artifacts",
         "payroll_runs",
         "payroll_periods",
-        "export_artifacts",
         "report_configurations",
         "accommodation_charge_versions",
         "accommodation_assignments",
@@ -613,7 +615,9 @@ def seed(base_url: str, xlsx: Path, *, pg: dict[str, str]) -> None:
             client.get("/api/employees", params={"page_size": 100}),
             context="verify",
         )
-        print(f"Done. {listed.get('total')} real employees loaded into {org['name']}.")
+        print(
+            f"SEED_OK employees={listed.get('total')} org={org['slug']}"
+        )
 
 
 def main() -> int:
@@ -625,9 +629,10 @@ def main() -> int:
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--pghost", default=os.environ.get("PGHOST", "127.0.0.1"))
-    parser.add_argument("--pgport", default=os.environ.get("PGPORT", "5433"))
+    parser.add_argument("--pgport", default=os.environ.get("PGPORT", "5432"))
     parser.add_argument("--pguser", default=os.environ.get("PGUSER", "accord"))
-    parser.add_argument("--pgpassword", default=os.environ.get("PGPASSWORD", "accord"))
+    # No --pgpassword flag: passwords on argv leak into shell history and
+    # process listings. Set PGPASSWORD in the environment instead.
     parser.add_argument("--pgdatabase", default=os.environ.get("PGDATABASE", "accord"))
     args = parser.parse_args()
     if not args.xlsx.is_file():
@@ -637,7 +642,7 @@ def main() -> int:
         "PGHOST": args.pghost,
         "PGPORT": str(args.pgport),
         "PGUSER": args.pguser,
-        "PGPASSWORD": args.pgpassword,
+        "PGPASSWORD": os.environ.get("PGPASSWORD", ""),
         "PGDATABASE": args.pgdatabase,
     }
     try:

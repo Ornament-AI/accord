@@ -134,6 +134,9 @@ while IFS= read -r line; do
   esac
 done <<< "$DISB_OUT"
 [[ $DISB_RC -eq 2 ]] && fail "could not import the payroll engine"
+if [[ $DISB_RC -ne 0 && "$DISB_OUT" != *BAD* && "$DISB_OUT" != *IMPORT_ERROR* ]]; then
+  fail "disbursement recompute exited $DISB_RC without producing check output"
+fi
 
 # --- 2b. catalog-driven (service) path ---------------------------------------
 # The engine only knows a line is an employer transfer if the pay-component

@@ -53,9 +53,9 @@ run/verify commands live in `README.md`, root `package.json` scripts, and `scrip
   `test:run` / `build` (see `.github/workflows/ci.yml`). `./scripts/verify.sh` runs the
   combined lanes.
 - **Backend:** from `backend/`, `.venv/bin/ruff check app tests`,
-  `.venv/bin/ruff format --check app tests`, and pytest. pytest's `conftest.py` defaults
-  `TEST_DATABASE_URL` to a stale developer DSN, so set it explicitly to a db whose name
-  contains `test`:
+  `.venv/bin/ruff format --check app tests`, and pytest. The test conftests
+  default `TEST_DATABASE_URL` to the local `accord_test` DSN; the database name
+  must contain `test`. Set it explicitly when in doubt:
   ```bash
   cd backend
   TEST_DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:5432/accord_test" \

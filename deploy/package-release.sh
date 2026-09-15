@@ -82,7 +82,7 @@ trap cleanup EXIT
 DEPLOY_FILES=(
     deploy/docker-compose.yml
     deploy/.env.example
-    deploy/create_roles.sql
+    backend/scripts/create_roles.sql
     deploy/setup.sh
     deploy/deploy-accord.sh
     deploy/deploy-accord-wrapper.sh
@@ -91,7 +91,10 @@ DEPLOY_FILES=(
     deploy/onprem-release-signing-public.pem
     deploy/nginx
     deploy/object-storage
+    deploy/provision.sh
     scripts/smoke-test.sh
+    scripts/provision_organization.py
+    scripts/provision_member.py
     scripts/vendor/onprem_release.py
 )
 git -C "$REPO_ROOT" archive --format=tar "$TOOLING_SHA" "${DEPLOY_FILES[@]}" \
@@ -107,7 +110,13 @@ replace_exact_line \
 mv "$STAGE_ROOT/scripts/vendor/onprem_release.py" \
     "$STAGE_ROOT/deploy/onprem_release.py"
 mv "$STAGE_ROOT/scripts/smoke-test.sh" "$STAGE_ROOT/deploy/smoke-test.sh"
-rmdir "$STAGE_ROOT/scripts/vendor" "$STAGE_ROOT/scripts"
+# Single source of truth: backend/scripts/create_roles.sql is staged at the
+# bundle path docker-compose mounts (./create_roles.sql → /roles/...).
+mv "$STAGE_ROOT/backend/scripts/create_roles.sql" \
+    "$STAGE_ROOT/deploy/create_roles.sql"
+rmdir "$STAGE_ROOT/backend/scripts" "$STAGE_ROOT/backend"
+# scripts/provision_*.py must stay at scripts/ — provision.sh mounts $ROOT/scripts.
+rmdir "$STAGE_ROOT/scripts/vendor"
 
 BACKEND_REF="ghcr.io/ornament-ai/accord/backend@$BACKEND_DIGEST"
 WEB_REF="ghcr.io/ornament-ai/accord/web@$WEB_DIGEST"

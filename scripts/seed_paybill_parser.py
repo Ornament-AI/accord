@@ -55,9 +55,21 @@ def money_str(value: int | Decimal) -> str:
     return f"{Decimal(value).quantize(Decimal('0.01'))}"
 
 
+_HONORIFICS = frozenset(
+    {"shri", "smt", "sou", "kumari", "kum", "dr", "mr", "mrs", "ms", "miss"}
+)
+_STRUCTURAL_LABEL = re.compile(
+    r"(?i)^\s*(post\s+of|total\b|grand\s+total|page\s+total)"
+)
+
+
 def norm_name(value: str) -> str:
     text = value.lower()
-    for prefix in ("shri.", "shri ", "smt.", "smt ", "mr.", "mrs.", "ms."):
+    for prefix in (
+        "shri.", "shri ", "smt.", "smt ", "sou.", "sou ",
+        "kumari.", "kumari ", "kum.", "kum ",
+        "dr.", "dr ", "mr.", "mr ", "mrs.", "mrs ", "ms.", "ms ", "miss ",
+    ):
         if text.startswith(prefix):
             text = text[len(prefix) :]
             break
@@ -269,7 +281,23 @@ def parse_paybill(path: Path) -> list[EmployeeRow]:
             current_group = _parse_pay_bill_group(b, order=group_count)
             if isinstance(a, int):
                 pending_sr = a
-        looks_like_name = isinstance(b, str) and b.lower().startswith(("shri", "smt"))
+        # Employee rows carry a serial number in column A and a name in B.
+        # Accept common honorifics as the first word, and fail loudly — rather
+        # than silently dropping an employee — when a serial sits beside text
+        # that is neither a structural label nor a recognized name.
+        first_word = b.split()[0].rstrip(".").lower() if b else ""
+        looks_like_name = isinstance(b, str) and first_word in _HONORIFICS
+        if (
+            not looks_like_name
+            and isinstance(a, int)
+            and isinstance(b, str)
+            and b
+            and not _STRUCTURAL_LABEL.match(b)
+        ):
+            raise SeedError(
+                f"row {r}: serial {a} carries unrecognized name {b!r}; "
+                "expected an honorific (Shri/Smt/Kum/Dr/...)"
+            )
         if looks_like_name:
             rr = r + 1
             while rr <= ws.max_row:

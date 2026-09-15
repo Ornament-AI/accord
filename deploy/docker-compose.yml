@@ -22,8 +22,12 @@ services:
       POSTGRES_DB: ${ACCORD_DB_NAME:-accord}
       POSTGRES_USER: ${ACCORD_DB_USER:-accord}
       POSTGRES_PASSWORD: ${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}
-      # Password applied to ADR roles on first boot (see postgres-init-roles.sh).
-      ACCORD_ROLE_PASSWORD: ${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}
+      # Passwords applied to ADR roles on first boot (see postgres-init-roles.sh).
+      # Per-role values win; ACCORD_ROLE_PASSWORD is the shared fallback.
+      ACCORD_ROLE_PASSWORD: ${ACCORD_ROLE_PASSWORD:-$ACCORD_DB_PASSWORD}
+      ACCORD_APP_PASSWORD: ${ACCORD_APP_PASSWORD:-}
+      ACCORD_WORKER_PASSWORD: ${ACCORD_WORKER_PASSWORD:-}
+      ACCORD_MIGRATOR_PASSWORD: ${ACCORD_MIGRATOR_PASSWORD:-}
     volumes:
       # Postgres 18+ images store data under /var/lib/postgresql/<major>/…;
       # mounting …/data breaks init (docker-library/postgres#1259).
@@ -60,8 +64,8 @@ services:
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}
     volumes:
       - minio-data:/data
     healthcheck:
@@ -95,8 +99,8 @@ services:
     environment:
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
-      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
-      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}
       # cap_drop:ALL blocks writes under /root; keep mc config in /tmp.
       MC_CONFIG_DIR: /tmp/mc
       HOME: /tmp
@@ -123,8 +127,8 @@ services:
         condition: service_healthy
     environment:
       # Defaults use ADR-0001 roles created by postgres-init-roles.sh on first boot.
-      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_MIGRATOR_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_APP_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
     command: ["alembic", "upgrade", "head"]
     restart: "no"
     security_opt:
@@ -151,8 +155,9 @@ services:
       minio-init:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
-      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      # Runtime uses only DATABASE_URL; the migrator DSN is intentionally not
+      # injected here so the BYPASSRLS migrator credential stays out of the API.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_APP_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}
@@ -166,15 +171,12 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
-      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
-      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}
       DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-false}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
       DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-60000}
       APP_VERSION: ${ACCORD_TAG:-latest}
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
     healthcheck:
       # Probe readiness (/api/readyz), not just liveness, so auth/database
       # startup failures keep the container out of rotation (ADR 0003 §6).
@@ -214,8 +216,7 @@ services:
         condition: service_completed_successfully
     command: ["python", "worker.py"]
     environment:
-      DATABASE_URL: ${WORKER_DATABASE_URL:-postgresql+asyncpg://accord_worker:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
-      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      DATABASE_URL: ${WORKER_DATABASE_URL:-postgresql+asyncpg://accord_worker:${ACCORD_WORKER_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}
@@ -229,8 +230,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-accord-artifacts}
-      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
-      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}
       DEV_AUTH_BYPASS: ${DEV_AUTH_BYPASS:-false}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
       DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-60000}
@@ -281,8 +282,15 @@ services:
 networks:
   backend-net:
     driver: bridge
+    ipam:
+      config:
+        # Pinned so nginx's set_real_ip_from can trust exactly this range.
+        - subnet: 172.30.0.0/24
   frontend-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.1.0/24
 
 volumes:
   pgdata:

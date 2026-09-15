@@ -66,7 +66,29 @@ echo "About to DROP and recreate database:"
 echo "  host=$HOST port=$PORT user=$USER_NAME dbname=$DB_NAME"
 echo "This permanently deletes all data in that database."
 
+# This tool destroys data; it must never be aimed at a remote server.
+case "$HOST" in
+  127.0.0.1|localhost|::1) ;;
+  *) echo "Refusing non-local PGHOST '$HOST'." >&2; exit 2 ;;
+esac
+
 dropdb --if-exists -h "$HOST" -p "$PORT" -U "$USER_NAME" "$DB_NAME"
 createdb -h "$HOST" -p "$PORT" -U "$USER_NAME" "$DB_NAME"
+
+# Recreate the ADR runtime roles' grants — they live on the database, so a
+# drop+recreate loses them and the app/test suites would fail permissions.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../backend/scripts/create_roles.sql" ]]; then
+  psql -h "$HOST" -p "$PORT" -U "$USER_NAME" -d "$DB_NAME" \
+    -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/../backend/scripts/create_roles.sql" >/dev/null
+  psql -h "$HOST" -p "$PORT" -U "$USER_NAME" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+    -v db_name="$DB_NAME" <<'SQL' >/dev/null
+GRANT ALL ON SCHEMA public TO accord_migrator;
+GRANT USAGE ON SCHEMA public TO accord_app, accord_worker;
+GRANT CONNECT ON DATABASE :"db_name" TO accord_app, accord_migrator, accord_worker;
+ALTER DATABASE :"db_name" OWNER TO accord_migrator;
+SQL
+fi
+
 echo "Recreated $DB_NAME. Run migrations (e.g. scripts/start.sh or alembic upgrade head),"
 echo "then: backend/.venv/bin/python scripts/provision_organization.py --name ... --slug ... --admin-email ..."

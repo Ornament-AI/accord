@@ -76,6 +76,15 @@ done
 [[ -n "$DB_USER" ]] || die "--user is required"
 [[ -n "$DB_PASSWORD" ]] || die "--password (or ACCORD_DB_PASSWORD) is required"
 
+# These values are interpolated into SQL; restrict them to plain identifiers.
+IDENT_RE='^[A-Za-z_][A-Za-z0-9_]{0,62}$'
+[[ "$DB_NAME" =~ $IDENT_RE ]] || die "--db is not a valid SQL identifier"
+[[ "$DB_USER" =~ $IDENT_RE ]] || die "--user is not a valid SQL identifier"
+[[ "$SCRATCH_DB" =~ $IDENT_RE ]] || die "--scratch is not a valid SQL identifier"
+if [[ -n "$VERIFY_TABLE" ]]; then
+  [[ "$VERIFY_TABLE" =~ $IDENT_RE ]] || die "--verify-table is not a valid SQL identifier"
+fi
+
 docker inspect "$CONTAINER" >/dev/null 2>&1 || die "container not found: $CONTAINER"
 
 pg_exec() {
@@ -118,6 +127,11 @@ case "$COMMAND" in
     [[ -n "$DUMP_PATH" ]] || die "--dump is required for restore-scratch"
     [[ -f "$DUMP_PATH" ]] || die "dump not found: $DUMP_PATH"
     [[ "$SCRATCH_DB" != "$DB_NAME" ]] || die "--scratch must differ from --db"
+    # The scratch database is dropped unconditionally; require the naming
+    # convention and refuse known primary names regardless of --db.
+    [[ "$SCRATCH_DB" == *_scratch ]] || die "--scratch name must end in _scratch"
+    [[ "$SCRATCH_DB" != "accord" && "$SCRATCH_DB" != "postgres" ]] \
+      || die "refusing scratch name '$SCRATCH_DB'"
 
     before=""
     if [[ -n "$VERIFY_TABLE" ]]; then
@@ -133,11 +147,16 @@ case "$COMMAND" in
     echo "[restore] pg_restore → ${SCRATCH_DB}"
     # Copy dump into the container so pg_restore can read it locally.
     remote_dump="/tmp/accord-restore-$$.dump"
+    cleanup_remote_dump() {
+      docker exec "$CONTAINER" rm -f "$remote_dump" >/dev/null 2>&1 || true
+    }
+    trap cleanup_remote_dump EXIT
     docker cp "$DUMP_PATH" "${CONTAINER}:${remote_dump}"
     docker exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER" \
       pg_restore -U "$DB_USER" -d "$SCRATCH_DB" --no-owner --no-acl --clean --if-exists \
       "$remote_dump"
-    docker exec "$CONTAINER" rm -f "$remote_dump"
+    cleanup_remote_dump
+    trap - EXIT
 
     if [[ -n "$VERIFY_TABLE" ]]; then
       after="$(count_rows "$SCRATCH_DB" "$VERIFY_TABLE")"

@@ -25,8 +25,14 @@ _accord_port_cache_path() {
 
 port_is_listening() {
 	local port="$1"
-	command -v lsof >/dev/null 2>&1 || return 1
-	lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+	if command -v lsof >/dev/null 2>&1; then
+		lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+	elif command -v ss >/dev/null 2>&1; then
+		ss -ltnH "sport = :$port" 2>/dev/null | grep -q .
+	else
+		# bash built-in probe — a refused connect means nothing is listening.
+		(echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1
+	fi
 }
 
 read_cached_port() {

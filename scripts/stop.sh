@@ -77,21 +77,33 @@ stop_pidfile() {
 }
 
 stop_port() {
-	local port="$1" name="$2" pid
+	local port="$1" name="$2" match="$3" pid cmd
 	local pids
-	# Only free a port when it still matches our (now-removed) pidfile ownership
-	# pattern, or when the caller passed an explicit override. Default stop path
-	# relies on pidfiles; this is a safety net for orphan listeners on the
-	# *cached* Accord port only.
-	pids="$(lsof -ti:"$port" 2>/dev/null || true)"
+	# Safety net for orphan listeners on the *cached* Accord port only. Match
+	# LISTEN sockets (never client connections) and require the listener's
+	# command to contain <match>, so a stale or poisoned cache port can never
+	# kill an unrelated service (e.g. Postgres if a port cache went wrong).
+	pids="$(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
 	if [[ -z "$pids" ]]; then
 		return 0
 	fi
+	local matched=0
 	for pid in $pids; do
+		cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+		if [[ "$cmd" != *"$match"* ]]; then
+			warn "port $port listener (pid $pid) is not $name; leaving it alone"
+			continue
+		fi
+		matched=1
 		stop_pid "$pid" "$name"
 	done
-	pids="$(lsof -ti:"$port" 2>/dev/null || true)"
-	[[ -z "$pids" ]] || die "failed to stop $name on port $port"
+	if [[ "$matched" -eq 0 ]]; then
+		return 0
+	fi
+	for pid in $(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true); do
+		cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+		[[ "$cmd" != *"$match"* ]] || die "failed to stop $name on port $port"
+	done
 	info "freed port $port ($name)"
 	stopped=1
 }
@@ -101,10 +113,10 @@ stop_pidfile frontend
 # Only reclaim cached Accord ports, never the hard-coded defaults when the
 # cache pointed elsewhere (avoids killing unrelated processes on 5173/8000).
 if cached="$(read_cached_port backend)" && [[ "$BACKEND_PORT" == "$cached" ]]; then
-	stop_port "$BACKEND_PORT" "backend"
+	stop_port "$BACKEND_PORT" "backend" "uvicorn"
 fi
 if cached="$(read_cached_port frontend)" && [[ "$FRONTEND_PORT" == "$cached" ]]; then
-	stop_port "$FRONTEND_PORT" "frontend (vite)"
+	stop_port "$FRONTEND_PORT" "frontend (vite)" "vite"
 fi
 
 if [[ "$stopped" -eq 1 ]]; then

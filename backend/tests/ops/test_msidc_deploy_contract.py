@@ -109,6 +109,23 @@ def test_provisioning_scripts_can_import_the_container_app() -> None:
     assert provision.count('-v "$ROOT/scripts:/provision/scripts:ro"') == 2
 
 
+def test_release_bundle_ships_provisioning_files() -> None:
+    """provision.sh mounts $ROOT/scripts — the bundle must contain it."""
+    package = (ROOT / "deploy/package-release.sh").read_text()
+    deploy_files_block = package.split("DEPLOY_FILES=(", 1)[1].split(")", 1)[0]
+
+    for entry in (
+        "deploy/provision.sh",
+        "scripts/provision_organization.py",
+        "scripts/provision_member.py",
+    ):
+        assert entry in deploy_files_block
+        assert (ROOT / entry).exists(), entry
+
+    # scripts/ must survive cleanup — provision.sh mounts it at $ROOT/scripts.
+    assert 'rmdir "$STAGE_ROOT/scripts"' not in package
+
+
 def test_setup_reports_missing_public_url_before_docker_mutation(tmp_path: Path) -> None:
     deploy_dir = tmp_path / "deploy"
     fake_bin = tmp_path / "bin"

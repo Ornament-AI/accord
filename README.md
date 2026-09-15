@@ -11,7 +11,7 @@ PDF files the office already files.
   <img src="docs/images/login.jpg" alt="Accord login screen" width="820" />
 </p>
 
-Latest release: [`v0.4.5`](https://github.com/Ornament-AI/accord/releases/tag/v0.4.5) ·
+Releases: [github.com/Ornament-AI/accord/releases](https://github.com/Ornament-AI/accord/releases) ·
 License: [Apache-2.0](LICENSE)
 
 ---

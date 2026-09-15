@@ -8,8 +8,8 @@ set -eu
 
 : "${OBJECT_STORAGE_ENDPOINT:=http://minio:9000}"
 : "${OBJECT_STORAGE_BUCKET:=accord-artifacts}"
-: "${OBJECT_STORAGE_ACCESS_KEY:=minioadmin}"
-: "${OBJECT_STORAGE_SECRET_KEY:=minioadmin}"
+: "${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}"
+: "${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}"
 
 echo "[minio-init] configuring mc alias for $OBJECT_STORAGE_ENDPOINT"
 mc alias set accord-minio "$OBJECT_STORAGE_ENDPOINT" "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY"
@@ -23,7 +23,8 @@ fi
 
 # Private bucket only — application credentials access via OBJECT_STORAGE_*;
 # no public/anonymous policy is ever applied (ADR 0010 §4: "Bucket is
-# private; application credentials only").
-mc anonymous set none "accord-minio/$OBJECT_STORAGE_BUCKET" || true
+# private; application credentials only"). Failing to lock the bucket down is
+# a security failure, not a soft error — do not swallow it.
+mc anonymous set none "accord-minio/$OBJECT_STORAGE_BUCKET"
 
 echo "[minio-init] bucket '$OBJECT_STORAGE_BUCKET' ready"
