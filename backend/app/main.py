@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import structlog
+from asyncpg.exceptions import DataError
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from app.api.responses import problem_content, problem_response
 from app.jobs.postgres import PostgresJobQueue
@@ -37,14 +39,17 @@ from app.config import Settings, get_settings
 from app.db import dispose_engine, session_context
 from app.exceptions import AccordError
 from app.logging_config import configure_logging
+from app.middleware.csrf import CsrfMiddleware
 from app.middleware.rate_limit import limiter
-from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware, build_security_headers
 from app.observability import setup_observability
+from app.services.db_errors import integrity_is
 from app.reports.registry_setup import build_report_registry
 
 logger = structlog.get_logger()
 
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}")
+UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 def _auth_provider_ready(settings: Settings) -> bool:
@@ -225,19 +230,56 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
     )
 
 
+def _cors_origin_echo_headers(request: Request, settings: Settings) -> dict[str, str]:
+    """Narrow CORS echo for error responses produced outside CORSMiddleware."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    allowed = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
+    if origin not in allowed:
+        return {}
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Vary": "Origin",
+    }
+
+
+async def handle_dbapi_error(request: Request, exc: DBAPIError):
+    """Map unrepresentable DB values (asyncpg DataError family) to a 422 problem."""
+    if integrity_is(exc, DataError):
+        body = _build_problem_detail(
+            request=request,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Request contains a value the database cannot represent.",
+            error="DatabaseDataError",
+        )
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content=body,
+            headers=_request_id_headers(request),
+        )
+    return await handle_unhandled(request, exc)
+
+
 async def handle_unhandled(request: Request, exc: Exception):
     """Log unexpected failures and return a stable 500 response."""
-    logger.exception("unhandled_error", path=str(request.url))
+    # Path only — the full URL can carry query secrets (OAuth code/state).
+    logger.exception("unhandled_error", path=str(request.url.path))
     body = _build_problem_detail(
         request=request,
         status_code=500,
         detail="An unexpected error occurred.",
         error="InternalServerError",
     )
+    # This handler runs in ServerErrorMiddleware — outside every user
+    # middleware — so security headers and the CORS echo must be merged here.
+    headers = _request_id_headers(request, build_security_headers())
+    headers.update(_cors_origin_echo_headers(request, get_settings()))
     return JSONResponse(
         status_code=500,
         content=body,
-        headers=_request_id_headers(request),
+        headers=headers,
     )
 
 
@@ -249,6 +291,17 @@ async def request_context_middleware(request: Request, call_next):
     structlog.contextvars.bind_contextvars(request_id=request_id)
     try:
         content_length_raw = request.headers.get("content-length")
+        if content_length_raw is None and request.method in UNSAFE_METHODS:
+            # Chunked bodies have no Content-Length to bound — reject them so
+            # the max_request_body_bytes cap cannot be bypassed.
+            transfer_encoding = request.headers.get("transfer-encoding", "")
+            if "chunked" in transfer_encoding.lower():
+                return _problem_json_response(
+                    request,
+                    status_code=status.HTTP_411_LENGTH_REQUIRED,
+                    detail="Content-Length header required",
+                    request_id=request_id,
+                )
         if content_length_raw is not None:
             try:
                 content_length = int(content_length_raw)
@@ -291,6 +344,9 @@ def create_app() -> FastAPI:
 
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
+    # Runs inside CORSMiddleware (registered next) so preflights are not
+    # blocked and 403s still carry CORS + security headers.
+    app.add_middleware(CsrfMiddleware)
 
     cors_origins = [o for o in (s.strip() for s in settings.cors_origins.split(",")) if o]
     app.add_middleware(
@@ -303,6 +359,7 @@ def create_app() -> FastAPI:
             "Accept",
             "X-Request-ID",
             "Idempotency-Key",
+            "X-CSRF-Token",
         ],
         allow_credentials=True,
     )
@@ -314,6 +371,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(AccordError, handle_accord_error)
     app.add_exception_handler(HTTPException, handle_http_exception)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
+    app.add_exception_handler(DBAPIError, handle_dbapi_error)
     app.add_exception_handler(Exception, handle_unhandled)
 
     app.include_router(health.router, prefix="/api")

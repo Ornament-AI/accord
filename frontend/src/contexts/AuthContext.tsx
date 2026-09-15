@@ -33,6 +33,8 @@ interface AuthContextType {
 	isLoading: boolean;
 	shellEpoch: number;
 	hasCapability: (capability: Capability) => boolean;
+	/** True when the active organization grants at least one of `capabilities`. */
+	hasAnyCapability: (capabilities: readonly Capability[]) => boolean;
 	logout: () => Promise<void>;
 	refetch: () => void;
 }
@@ -192,6 +194,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[activeOrganization],
 	);
 
+	const hasAnyCapability = useCallback(
+		(capabilities: readonly Capability[]) => {
+			const granted = activeOrganization?.capabilities;
+			if (!granted) return false;
+			return capabilities.some((capability) => granted.includes(capability));
+		},
+		[activeOrganization],
+	);
+
 	const remountShell = useCallback(() => {
 		queryClient.clear();
 		setShellEpoch((epoch) => epoch + 1);
@@ -218,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			isLoading,
 			shellEpoch,
 			hasCapability,
+			hasAnyCapability,
 			logout,
 			refetch,
 		}),
@@ -230,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			isLoading,
 			shellEpoch,
 			hasCapability,
+			hasAnyCapability,
 			logout,
 			refetch,
 		],
@@ -240,7 +253,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function AuthShellBoundary({ children }: { children: ReactNode }) {
 	const { shellEpoch } = useAuth();
-	return <div key={shellEpoch}>{children}</div>;
+	// `contents` keeps the keyed remount without introducing a layout box —
+	// a plain div here would sit between the app root and routed flex layouts.
+	return (
+		<div key={shellEpoch} className="contents">
+			{children}
+		</div>
+	);
 }
 
 export function useAuth() {

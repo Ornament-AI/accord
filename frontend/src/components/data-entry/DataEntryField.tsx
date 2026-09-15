@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 
 import { DataEntryFieldError } from "@/components/data-entry/DataEntryFieldError";
 import { DataEntryFieldLabel } from "@/components/data-entry/DataEntryFieldLabel";
@@ -42,6 +42,17 @@ export function DataEntryField({
 	const inlineAccessory = labelAccessoryPlacement === "inline" ? labelAccessory : null;
 	const endAccessory = labelAccessoryPlacement === "end" ? labelAccessory : null;
 
+	// The label paints a `*`, but the a11y required state lives on the control:
+	// when the field wraps a single control element, inject aria-required onto it.
+	// Native `required` is intentionally NOT set — these dialogs save via button
+	// handlers, not form submission, so native validation would never run anyway.
+	const control =
+		required && isValidElement(children)
+			? cloneElement(children as ReactElement<{ "aria-required"?: boolean }>, {
+					"aria-required": true,
+				})
+			: children;
+
 	return (
 		<div className={cn("row-span-2 grid grid-rows-subgrid gap-y-2", className)}>
 			<div className="flex min-w-0 items-end justify-between gap-2 self-end">
@@ -58,7 +69,7 @@ export function DataEntryField({
 				{endAccessory ? <div className="shrink-0">{endAccessory}</div> : null}
 			</div>
 			<div className="flex min-w-0 flex-col gap-1.5">
-				<div className="min-w-0">{children}</div>
+				<div className="min-w-0">{control}</div>
 				<DataEntryFieldError id={errorId}>{error}</DataEntryFieldError>
 			</div>
 		</div>

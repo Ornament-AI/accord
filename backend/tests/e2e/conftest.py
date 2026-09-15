@@ -7,7 +7,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import create_app
-from tests.identity_helpers import (  # noqa: F401
+from tests.identity_helpers import (
+    attach_csrf_echo,  # noqa: F401
     clear_settings_cache,
     patch_get_settings,
     settings,
@@ -48,4 +49,5 @@ async def client(dev_settings):
     application = _e2e_app()
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac

@@ -14,8 +14,9 @@ type RouteTransitionHandle = {
 };
 
 function RouteScrollReset() {
-	const location = useLocation();
-	const routeKey = `${location.pathname}${location.search}`;
+	// Pathname only: in-page search-param updates (filters, tabs) must not
+	// yank the user's scroll position back to the top.
+	const routeKey = useLocation().pathname;
 
 	useEffect(() => {
 		if (!routeKey) {

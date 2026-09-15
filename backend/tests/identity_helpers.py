@@ -6,13 +6,50 @@ from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+import hashlib
+
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.auth import OAUTH_STATE_COOKIE
 from app.auth.adapters import DevAuthAdapter
 from app.config import Settings, get_settings
 from app.models.base import utcnow
 from app.models.identity import Organization, OrganizationMembership, User
 from app.models.identity import Session as SessionRow
+
+_CSRF_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def attach_csrf_echo(client: httpx.AsyncClient) -> httpx.AsyncClient:
+    """Echo the ``accord_csrf`` cookie as ``X-CSRF-Token`` on unsafe methods.
+
+    Mirrors the browser client's contract (frontend ``http.ts`` reads the
+    non-HttpOnly cookie and sends the header). Tests that need to exercise the
+    403 path can still set ``x-csrf-token`` explicitly or clear the cookie.
+    """
+
+    async def _echo(request: httpx.Request) -> None:
+        if request.method not in _CSRF_UNSAFE_METHODS:
+            return
+        if "x-csrf-token" in request.headers:
+            return
+        token = client.cookies.get("accord_csrf")
+        if token:
+            request.headers["x-csrf-token"] = token
+
+    client.event_hooks["request"].append(_echo)
+    return client
+
+
+def apply_oauth_state_cookie(client: httpx.AsyncClient, state: str) -> None:
+    """Set the browser-bound ``accord_oauth_state`` cookie for a signed state.
+
+    The OAuth callback requires the HttpOnly cookie to carry SHA-256(state)
+    (M-sec-3 login-CSRF binding); tests that synthesize state via
+    ``sign_oauth_state`` must set it just like the real /login redirect does.
+    """
+    client.cookies.set(OAUTH_STATE_COOKIE, hashlib.sha256(state.encode("utf-8")).hexdigest())
 
 
 def settings(**overrides: Any) -> Settings:
@@ -45,6 +82,10 @@ def patch_get_settings(monkeypatch, value: Settings) -> None:
     monkeypatch.setattr("app.api.routes.auth.get_settings", lambda: value)
     monkeypatch.setattr("app.api.deps.get_settings", lambda: value)
     monkeypatch.setattr("app.config.get_settings", lambda: value)
+    # The CSRF middleware resolves settings per-request via its own import —
+    # unpached it would verify tokens against env SESSION_SECRET_KEY (CI
+    # exports a different one) while tests mint with `settings()` secrets.
+    monkeypatch.setattr("app.middleware.csrf.get_settings", lambda: value)
 
 
 def clear_settings_cache() -> None:

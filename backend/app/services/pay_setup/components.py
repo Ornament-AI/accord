@@ -20,6 +20,7 @@ from app.schemas.pay_setup import (
     PayComponentUpdate,
 )
 from app.services import versioning
+from app.services.audit_events import entity_snapshot, row_snapshot, write_mutation_event
 from app.services.db_errors import raise_integrity_error
 from app.services.pay_setup._shared import get_pay_component, serialize_version_row
 
@@ -102,6 +103,7 @@ async def create_pay_component(
     db: AsyncSession,
     *,
     organization_id: UUID,
+    actor_user_id: UUID,
     body: PayComponentCreate,
 ) -> dict[str, Any]:
     await _validate_employer_transfer_metadata(
@@ -129,6 +131,22 @@ async def create_pay_component(
     db.add(component)
     try:
         await db.flush()
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="pay_component.create",
+            entity_type="pay_component",
+            entity_id=component.id,
+            entity_label=f"{component.code} — {component.name}",
+            before_state={},
+            after_state=entity_snapshot(component),
+            summary={
+                "code": component.code,
+                "name": component.name,
+                "classification": component.classification,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -160,11 +178,13 @@ async def update_pay_component(
     *,
     organization_id: UUID,
     component_id: UUID,
+    actor_user_id: UUID,
     body: PayComponentUpdate,
 ) -> dict[str, Any]:
     component = await get_pay_component(
         db, organization_id=organization_id, component_id=component_id
     )
+    before_state = entity_snapshot(component)
     if body.name is not None:
         component.name = body.name.strip()
     if body.display_order is not None:
@@ -216,6 +236,21 @@ async def update_pay_component(
     component.updated_at = datetime.now(timezone.utc)
     try:
         await db.flush()
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="pay_component.update",
+            entity_type="pay_component",
+            entity_id=component.id,
+            entity_label=f"{component.code} — {component.name}",
+            before_state=before_state,
+            after_state=entity_snapshot(component),
+            summary={
+                "code": component.code,
+                "updated_fields": sorted(body.model_fields_set),
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -231,7 +266,9 @@ async def create_component_rate_version(
     created_by: UUID,
     body: ComponentRateVersionCreate,
 ) -> dict[str, Any]:
-    await get_pay_component(db, organization_id=organization_id, component_id=component_id)
+    component = await get_pay_component(
+        db, organization_id=organization_id, component_id=component_id
+    )
     if body.basis:
         await _validate_basis_codes(db, organization_id=organization_id, basis_codes=body.basis)
     payload: dict[str, Any] = {
@@ -241,6 +278,12 @@ async def create_component_rate_version(
         "amount": body.amount,
         "basis": body.basis,
     }
+    open_row = await versioning.get_open_version(
+        db,
+        component_rate_versions,
+        organization_id=organization_id,
+        header_id=component_id,
+    )
     row = await versioning.insert_version(
         db,
         component_rate_versions,
@@ -252,6 +295,24 @@ async def create_component_rate_version(
         created_by=created_by,
     )
     try:
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=created_by,
+            command="pay_component.rate_version.append",
+            entity_type="pay_component",
+            entity_id=component.id,
+            entity_label=f"{component.code} — {component.name}",
+            before_state=row_snapshot(open_row) if open_row is not None else {},
+            after_state=row_snapshot(row),
+            summary={
+                "code": component.code,
+                "version_id": row["id"],
+                "effective_from": body.effective_from,
+                "calc_kind": body.calc_kind.value,
+                "change_reason": body.change_reason,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()

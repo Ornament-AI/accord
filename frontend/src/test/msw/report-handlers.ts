@@ -25,8 +25,10 @@ export type ReportHandlersOptions = {
 	jobError?: string;
 	generateError?: { status: number; body: Record<string, unknown> };
 	exportError?: { status: number; body: Record<string, unknown> };
+	/** When set, GET /api/artifacts/:id/download returns this error. */
+	downloadError?: { status: number; body: Record<string, unknown> };
 	onGenerate?: (body: GenerateReportRequest) => void;
-	onExport?: (body: ExportReportsRequest) => void;
+	onExport?: (body: ExportReportsRequest, request: Request) => void;
 };
 
 export function buildCatalogEntry(
@@ -175,7 +177,7 @@ export function createReportHandlers(options: ReportHandlersOptions = {}) {
 					});
 				}
 				const body = (await request.json()) as ExportReportsRequest;
-				options.onExport?.(body);
+				options.onExport?.(body, request);
 				jobCounter += 1;
 				const jobId = `job-${jobCounter}`;
 				jobs.set(jobId, { pollCount: 0, kind: "export", request: body });
@@ -274,6 +276,11 @@ export function createReportHandlers(options: ReportHandlersOptions = {}) {
 						{ detail: "Artifact not found", error: "NotFound" },
 						{ status: 404 },
 					);
+				}
+				if (options.downloadError) {
+					return HttpResponse.json(options.downloadError.body, {
+						status: options.downloadError.status,
+					});
 				}
 				const body = new Uint8Array([80, 75, 3, 4]); // ZIP/XLSX magic-ish
 				const ext = artifact.content_type === "application/pdf" ? "pdf" : "xlsx";

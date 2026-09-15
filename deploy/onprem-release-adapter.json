@@ -16,6 +16,6 @@
     {"expected_status": 200, "kind": "public", "name": "public", "target": "public", "url": "https://accord.innovastra.app/api/readyz"}
   ],
   "repository": "Ornament-AI/accord",
-  "runtime_services": ["api", "migrations", "minio", "minio-init", "postgres", "web", "worker"],
+  "runtime_services": ["api", "migrations", "minio", "minio-init", "postgres", "role-sync", "web", "worker"],
   "singleton_services": ["api", "web", "worker"]
 }

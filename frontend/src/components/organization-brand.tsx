@@ -17,7 +17,12 @@ export function OrganizationBrand() {
 	return (
 		<SidebarMenu>
 			<SidebarMenuItem>
-				<SidebarMenuButton size="lg" className="pointer-events-none cursor-default">
+				{/* Inert brand: render a div so it isn't focusable like a real button. */}
+				<SidebarMenuButton
+					render={<div />}
+					size="lg"
+					className="pointer-events-none cursor-default"
+				>
 					{isCompactSidebar ? (
 						<span className="flex h-full w-full items-center justify-center text-base font-semibold leading-none tracking-tight">
 							{compactInitial}

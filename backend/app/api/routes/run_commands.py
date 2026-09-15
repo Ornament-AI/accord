@@ -8,10 +8,11 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.auth.principal import AuthPrincipal
+from app.middleware.rate_limit import limiter
 from app.schemas.run_results import CalculateResponse
 from app.services import run_calculation as run_calculation_service
 
@@ -22,7 +23,9 @@ router = APIRouter(tags=["payroll-run-commands"])
     "/payroll-runs/{run_id}/calculate",
     response_model=CalculateResponse,
 )
+@limiter.limit("10/minute")
 async def calculate_payroll_run(
+    request: Request,
     run_id: UUID,
     tenant: TenantCtx,
     db: Session,

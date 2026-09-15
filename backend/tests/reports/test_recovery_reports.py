@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -26,6 +27,7 @@ from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
     payroll_employee_results,
+    payroll_report_snapshots,
     payroll_result_lines,
 )
 from app.models.platform import PayrollApproval
@@ -216,6 +218,8 @@ async def _seed_posted_june_recovery_world(
             assert emp.accommodation is not None
             foregone = line_amount(emp, "FOREGONE_HRA")
             quarters_location = map_quarters_location(emp.accommodation.location)
+            if accommodation_breakdown == "unknown_location" and emp.fixture_id == "E001":
+                quarters_location = "other"
             assignment = AccommodationAssignment(
                 organization_id=org.id,
                 employee_id=header.id,
@@ -240,7 +244,7 @@ async def _seed_posted_june_recovery_world(
                 if quarters_location == "worli":
                     charge_values["parking_charge"] = None
                     charge_values["additional_parking_charge"] = None
-            elif accommodation_breakdown != "valid":
+            elif accommodation_breakdown not in {"valid", "unknown_location"}:
                 raise AssertionError(f"Unknown breakdown mode: {accommodation_breakdown}")
             if foregone is not None:
                 charge_values["informational_hra_foregone"] = _dec(foregone)
@@ -715,4 +719,98 @@ async def test_unposted_run_raises_conflict_error(session):
     with pytest.raises(ConflictError, match="must be posted"):
         await build_accommodation_schedule(
             session, ctx, location="mumbai", report_type=REPORT_TYPE_ACCOMMODATION_MUMBAI
+        )
+
+
+@pytest.mark.asyncio
+async def test_accommodation_unknown_location_fails_reconciliation_and_readiness(session):
+    """An unmapped quarters location drops posted money unless reconciliation fires."""
+    await _truncate_identity_with_retry()
+    world = await _seed_posted_june_recovery_world(
+        session,
+        accommodation_breakdown="unknown_location",
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+
+    # v1 (no snapshot): the "other" location is neither emitted nor a valid
+    # other-location exclusion, so posted license-fee money is dropped.
+    ctx = _ctx(org_id=world["org_id"], run_id=world["run_id"])
+    for location, report_type in (
+        ("mumbai", REPORT_TYPE_ACCOMMODATION_MUMBAI),
+        ("worli", REPORT_TYPE_ACCOMMODATION_WORLI),
+    ):
+        with pytest.raises(ConflictError, match="do not reconcile"):
+            await build_accommodation_schedule(
+                session, ctx, location=location, report_type=report_type
+            )
+
+    issues = await v3_report_readiness_issues(
+        session,
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+    )
+    unknown = [
+        issue for issue in issues if issue["code"] == "employee_accommodation_location_unknown"
+    ]
+    assert {issue["report_type"] for issue in unknown} == {
+        REPORT_TYPE_ACCOMMODATION_MUMBAI,
+        REPORT_TYPE_ACCOMMODATION_WORLI,
+    }
+
+    v3_ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v3",
+        generated_at=datetime.now(timezone.utc),
+        engine_version="test",
+    )
+    with pytest.raises(ConflictError, match="do not reconcile"):
+        await build_accommodation_schedule(
+            session,
+            v3_ctx,
+            location="mumbai",
+            report_type=REPORT_TYPE_ACCOMMODATION_MUMBAI,
+        )
+
+
+@pytest.mark.asyncio
+async def test_advance_schedule_fails_closed_when_snapshot_source_drops_line(
+    session, posted_june_recovery, monkeypatch
+):
+    """A snapshot advance source of the wrong type must not silently drop money."""
+    world = posted_june_recovery
+    await _bind(session, world["org_id"], world["user_id"])
+
+    snapshot_row = (
+        (
+            await session.execute(
+                sa.select(payroll_report_snapshots.c.snapshot).where(
+                    payroll_report_snapshots.c.organization_id == world["org_id"],
+                    payroll_report_snapshots.c.run_version_id == world["version_id"],
+                )
+            )
+        )
+        .mappings()
+        .one()
+    )
+    snapshot = copy.deepcopy(dict(snapshot_row["snapshot"]))
+    advances = snapshot["recovery_sources"]["advance_installments"]
+    first_key = next(iter(advances))
+    assert advances[first_key]["advance_type"] == "hba"
+    advances[first_key]["advance_type"] = "festival"
+
+    async def load_mutated(*_args, **_kwargs):
+        return snapshot
+
+    monkeypatch.setattr("app.reports.families.recovery.load_report_snapshot", load_mutated)
+    v2_ctx = ReportContext(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        template_version="v2",
+        generated_at=datetime.now(timezone.utc),
+        engine_version="test",
+    )
+    with pytest.raises(ConflictError, match="do not reconcile"):
+        await build_advance_schedule(
+            session, v2_ctx, advance_type="hba", report_type=REPORT_TYPE_HBA_SCHEDULE
         )

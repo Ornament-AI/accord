@@ -31,6 +31,10 @@ export type PayrollSetupHandlersOptions = {
 	) => void;
 	onCreateInstruction?: (body: RecurringInstructionCreate) => void;
 	onCreateAdvance?: (body: AdvanceCreate) => void;
+	onCreateAdvanceInstallmentVersion?: (
+		advanceId: string,
+		body: AdvanceInstallmentVersionCreate,
+	) => void;
 	onCreateAccommodation?: (body: AccommodationCreate) => void;
 	onUpdateAccommodation?: (assignmentId: string, body: AccommodationUpdate) => void;
 	onCreateAccommodationChargeVersion?: (
@@ -308,6 +312,7 @@ export function createPayrollSetupHandlers(options: PayrollSetupHandlersOptions 
 		http.post("/api/advances/:advanceId/installment-versions", async ({ params, request }) => {
 			const body = (await request.json()) as AdvanceInstallmentVersionCreate;
 			const advanceId = String(params.advanceId);
+			options.onCreateAdvanceInstallmentVersion?.(advanceId, body);
 			const existing = advanceStore.get(advanceId);
 			if (!existing) {
 				return HttpResponse.json({ detail: "Not found" }, { status: 404 });

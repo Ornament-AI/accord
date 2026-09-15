@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.api.deps import Session, TenantCtx, require_capability
+from app.api.deps import Session, TenantCtx, require_capability, tenant_user_id
 from app.auth.principal import AuthPrincipal
 from app.schemas.org_structure import (
     OfficeCreate,
@@ -40,6 +40,7 @@ async def create_office_route(
     return await create_office(
         db,
         UUID(ctx.organization_id),
+        actor_user_id=tenant_user_id(ctx),
         name=body.name,
         jurisdiction=body.jurisdiction,
     )
@@ -66,6 +67,7 @@ async def update_office_route(
         db,
         UUID(ctx.organization_id),
         office_id,
+        actor_user_id=tenant_user_id(ctx),
         name=body.name,
         jurisdiction=body.jurisdiction,
     )
@@ -81,6 +83,7 @@ async def create_post_route(
     post = await create_post(
         db,
         UUID(ctx.organization_id),
+        actor_user_id=tenant_user_id(ctx),
         designation=body.designation,
         class_name=body.class_name,
         pay_bill_heading=body.pay_bill_heading,
@@ -114,6 +117,7 @@ async def update_post_route(
         db,
         UUID(ctx.organization_id),
         post_id,
+        actor_user_id=tenant_user_id(ctx),
         body=body,
     )
     return post_to_response(post)

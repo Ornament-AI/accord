@@ -10,10 +10,11 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import NotFoundError
+from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.recurring_instructions import RecurringInstruction, recurring_instruction_versions
 from app.schemas.pay_setup import RecurringInstructionCreate, RecurringInstructionVersionCreate
 from app.services import versioning
+from app.services.audit_events import entity_snapshot, row_snapshot, write_mutation_event
 from app.services.db_errors import raise_integrity_error
 from app.services.pay_setup._shared import get_employee, get_pay_component, serialize_version_row
 
@@ -54,8 +55,35 @@ async def create_recurring_instruction(
     created_by: UUID,
     body: RecurringInstructionCreate,
 ) -> dict[str, Any]:
-    await get_employee(db, organization_id=organization_id, employee_id=employee_id)
-    await get_pay_component(db, organization_id=organization_id, component_id=body.component_id)
+    employee = await get_employee(db, organization_id=organization_id, employee_id=employee_id)
+    component = await get_pay_component(
+        db, organization_id=organization_id, component_id=body.component_id
+    )
+    # M-data-7: two instructions for the same (employee, component) whose
+    # versions overlap resolve to duplicate component codes at calculate time.
+    # Reject at write time when an existing series' validity overlaps
+    # [effective_from, infinity).
+    overlap_stmt = (
+        sa.select(recurring_instruction_versions.c.id)
+        .join(
+            RecurringInstruction,
+            recurring_instruction_versions.c.header_id == RecurringInstruction.id,
+        )
+        .where(RecurringInstruction.organization_id == organization_id)
+        .where(RecurringInstruction.employee_id == employee_id)
+        .where(RecurringInstruction.component_id == body.component_id)
+        .where(
+            sa.or_(
+                sa.func.upper_inf(recurring_instruction_versions.c.validity),
+                sa.func.upper(recurring_instruction_versions.c.validity) > body.effective_from,
+            )
+        )
+    )
+    if (await db.execute(overlap_stmt)).first() is not None:
+        raise ConflictError(
+            "An active recurring instruction already exists for this employee "
+            "and component; end the existing series first."
+        )
     header = RecurringInstruction(
         organization_id=organization_id,
         employee_id=employee_id,
@@ -79,6 +107,26 @@ async def create_recurring_instruction(
         created_by=created_by,
     )
     try:
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=created_by,
+            command="recurring_instruction.create",
+            entity_type="recurring_instruction",
+            entity_id=header.id,
+            entity_label=(f"{component.code} recurring instruction for {employee.employee_number}"),
+            before_state={},
+            after_state={
+                "instruction": entity_snapshot(header),
+                "version": row_snapshot(version_row),
+            },
+            summary={
+                "employee_id": employee.id,
+                "component_code": component.code,
+                "version_id": version_row["id"],
+                "effective_from": body.effective_from,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -125,10 +173,17 @@ async def create_recurring_instruction_version(
     created_by: UUID,
     body: RecurringInstructionVersionCreate,
 ) -> dict[str, Any]:
-    await _get_recurring_instruction(
+    instruction = await _get_recurring_instruction(
         db, organization_id=organization_id, instruction_id=instruction_id
     )
-    if body.end_on is not None:
+    open_row = await versioning.get_open_version(
+        db,
+        recurring_instruction_versions,
+        organization_id=organization_id,
+        header_id=instruction_id,
+    )
+    terminating = body.end_on is not None
+    if terminating:
         row = await versioning.terminate_open_version(
             db,
             recurring_instruction_versions,
@@ -137,7 +192,8 @@ async def create_recurring_instruction_version(
             end_on=body.end_on,
         )
     else:
-        assert body.effective_from is not None
+        if body.effective_from is None:
+            raise ValidationError("effective_from is required for a new version.")
         payload = {
             "amount": body.amount,
             "rate": body.rate,
@@ -154,6 +210,27 @@ async def create_recurring_instruction_version(
             created_by=created_by,
         )
     try:
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=created_by,
+            command=(
+                "recurring_instruction.version.terminate"
+                if terminating
+                else "recurring_instruction.version.append"
+            ),
+            entity_type="recurring_instruction",
+            entity_id=instruction.id,
+            entity_label=f"Recurring instruction for employee {instruction.employee_id}",
+            before_state=row_snapshot(open_row) if open_row is not None else {},
+            after_state=row_snapshot(row),
+            summary={
+                "version_id": row["id"],
+                "effective_from": body.effective_from,
+                "end_on": body.end_on,
+                "change_reason": body.change_reason,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()

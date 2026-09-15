@@ -1,14 +1,29 @@
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-function Collapsible({ open, ...props }: ComponentProps<typeof CollapsiblePrimitive.Root>) {
+function Collapsible({
+	open,
+	defaultOpen,
+	onOpenChange,
+	...props
+}: ComponentProps<typeof CollapsiblePrimitive.Root>) {
+	// `open` is undefined in uncontrolled usage, so mirror the state Base UI
+	// reports through onOpenChange — data-state must reflect the real state.
+	const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen ?? false);
+	const isOpen = open ?? uncontrolledOpen;
+
 	return (
 		<CollapsiblePrimitive.Root
 			data-slot="collapsible"
-			data-state={open ? "open" : "closed"}
+			data-state={isOpen ? "open" : "closed"}
 			open={open}
+			defaultOpen={defaultOpen}
+			onOpenChange={(nextOpen, eventDetails) => {
+				setUncontrolledOpen(nextOpen);
+				onOpenChange?.(nextOpen, eventDetails);
+			}}
 			{...props}
 		/>
 	);

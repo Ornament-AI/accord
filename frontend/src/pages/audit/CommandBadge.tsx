@@ -1,6 +1,5 @@
 import type { VariantProps } from "class-variance-authority";
 
-import { Badge } from "@/components/ui/badge";
 import type { badgeVariants } from "@/components/ui/badge-variants";
 
 type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
@@ -18,8 +17,4 @@ export function commandBadgeVariant(command: string): BadgeVariant {
 		return "review";
 	}
 	return "secondary";
-}
-
-export function CommandBadge({ command }: { command: string }) {
-	return <Badge variant={commandBadgeVariant(command)}>{command}</Badge>;
 }

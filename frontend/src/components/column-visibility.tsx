@@ -1,6 +1,6 @@
 import { ColumnsIcon as Columns3 } from "@phosphor-icons/react/dist/csr/Columns";
 import type { RowData, Table as TanstackTable, VisibilityState } from "@tanstack/react-table";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { toolbarOutlineClassName } from "@/components/ui/button-variants";
@@ -22,21 +22,41 @@ declare module "@tanstack/react-table" {
 /* ------------------------------------------------------------------ */
 /*  Hook: localStorage-persisted column visibility state               */
 /* ------------------------------------------------------------------ */
+function readPersistedVisibility(key: string, fallback: VisibilityState): VisibilityState {
+	try {
+		const stored = localStorage.getItem(key);
+		if (stored) {
+			const parsed: unknown = JSON.parse(stored);
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+				return parsed as VisibilityState;
+			}
+		}
+	} catch (error) {
+		console.warn("Failed to read persisted column visibility.", { key, error });
+	}
+	return fallback;
+}
+
 export function usePersistedColumnVisibility(
 	key: string,
 	defaultVisibility: VisibilityState,
 ): [VisibilityState, React.Dispatch<React.SetStateAction<VisibilityState>>] {
-	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
-		try {
-			const stored = localStorage.getItem(key);
-			if (stored) return JSON.parse(stored) as VisibilityState;
-		} catch (error) {
-			console.warn("Failed to read persisted column visibility.", { key, error });
-		}
-		return defaultVisibility;
-	});
+	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
+		readPersistedVisibility(key, defaultVisibility),
+	);
+	const keyRef = useRef(key);
+	// Callers pass `defaultVisibility` inline; a ref keeps it out of deps so the
+	// effect doesn't rewrite storage on every render.
+	const defaultVisibilityRef = useRef(defaultVisibility);
 
 	useEffect(() => {
+		// A key change means this instance now belongs to a different table:
+		// load that key's stored state instead of writing the old one over it.
+		if (keyRef.current !== key) {
+			keyRef.current = key;
+			setColumnVisibility(readPersistedVisibility(key, defaultVisibilityRef.current));
+			return;
+		}
 		try {
 			localStorage.setItem(key, JSON.stringify(columnVisibility));
 		} catch (error) {

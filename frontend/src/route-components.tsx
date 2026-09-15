@@ -4,6 +4,7 @@ import { Navigate, useLocation, useRouteError } from "react-router";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { AppShellProvider } from "@/contexts/AppShellContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { PAY_RUN_READ_CAPABILITIES } from "@/lib/capabilities";
 import { getErrorMessage } from "@/lib/errors";
 import DeploymentNotReadyPage from "@/pages/DeploymentNotReadyPage";
 import NotProvisionedPage from "@/pages/NotProvisionedPage";
@@ -51,13 +52,13 @@ export function ProtectedLayout() {
 }
 
 export function AuthenticatedIndexRedirect() {
-	const { accessState, hasCapability } = useAuth();
+	const { accessState, hasCapability, hasAnyCapability } = useAuth();
 
 	if (accessState !== "active") {
 		return <Navigate to="/" replace />;
 	}
 
-	if (hasCapability("create_run")) {
+	if (hasAnyCapability(PAY_RUN_READ_CAPABILITIES)) {
 		return <Navigate to="/pay-runs" replace />;
 	}
 	if (hasCapability("view_master_data")) {

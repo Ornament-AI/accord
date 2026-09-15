@@ -22,12 +22,7 @@ import {
 } from "@/components/ui/select";
 import { useEmployeesList } from "@/lib/api/employees";
 import { usePayComponentsList } from "@/lib/api/pay-setup";
-import {
-	INPUT_KINDS,
-	type InputKind,
-	type PayrollRunInputResponse,
-	useUpsertPayrollRunInput,
-} from "@/lib/api/payroll-runs";
+import { INPUT_KINDS, type InputKind, useUpsertPayrollRunInput } from "@/lib/api/payroll-runs";
 import { parseApiDate, toApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { employeeEntityLabel, payComponentEntityLabel } from "@/lib/entity-labels";
@@ -37,7 +32,6 @@ type UpsertInputDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	runId: string;
-	editing?: PayrollRunInputResponse | null;
 };
 
 type FormState = {
@@ -64,29 +58,7 @@ const emptyForm = (): FormState => ({
 	employee_search: "",
 });
 
-function formFromInput(input: PayrollRunInputResponse): FormState {
-	const inputKind = (
-		INPUT_KINDS.includes(input.input_kind as InputKind) ? input.input_kind : "exception"
-	) as InputKind;
-	return {
-		employee_id: input.employee_id,
-		component_code: input.component_code,
-		input_kind: inputKind,
-		amount: input.amount ?? "",
-		rate: inputKind === "override" ? (input.rate ?? "") : "",
-		service_period_start: input.service_period_start ?? "",
-		service_period_end: input.service_period_end ?? "",
-		reason: input.reason,
-		employee_search: "",
-	};
-}
-
-export function UpsertInputDialog({
-	open,
-	onOpenChange,
-	runId,
-	editing = null,
-}: UpsertInputDialogProps) {
+export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDialogProps) {
 	const upsertInput = useUpsertPayrollRunInput(runId);
 	const componentsQuery = usePayComponentsList();
 	const [form, setForm] = useState<FormState>(emptyForm);
@@ -100,17 +72,14 @@ export function UpsertInputDialog({
 	const employees = employeesQuery.data?.items ?? [];
 	const components = (componentsQuery.data ?? []).filter((component) => component.is_active);
 
-	const isEdit = Boolean(editing);
-
 	useEffect(() => {
 		if (!open) {
-			setForm(emptyForm());
 			setFormError(null);
 			return;
 		}
-		setForm(editing ? formFromInput(editing) : emptyForm());
+		setForm(emptyForm());
 		setFormError(null);
-	}, [open, editing]);
+	}, [open]);
 
 	const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
 		setForm((prev) => ({ ...prev, [key]: value }));
@@ -168,7 +137,7 @@ export function UpsertInputDialog({
 					reason: form.reason.trim(),
 					service_period_start: form.service_period_start || null,
 					service_period_end: form.service_period_end || null,
-					expected_version: editing?.version ?? null,
+					expected_version: null,
 				},
 			});
 			onOpenChange(false);
@@ -183,11 +152,9 @@ export function UpsertInputDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>{isEdit ? "Edit Run Input" : "Add Run Input"}</DialogTitle>
+					<DialogTitle>Add Run Input</DialogTitle>
 					<DialogDescription>
-						{isEdit
-							? "Update this draft input. Reason is required."
-							: "Add an exception, override, or one-time input for a draft run."}
+						Add an exception, override, or one-time input for a draft run.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -196,85 +163,69 @@ export function UpsertInputDialog({
 					onSubmit={(event) => void handleSubmit(event)}
 				>
 					<DialogBody className="grid gap-4 pb-8">
-						{!isEdit ? (
-							<>
-								<div className="grid gap-2">
-									<Label htmlFor="upsert-input-employee-search">Search Employees</Label>
-									<Input
-										id="upsert-input-employee-search"
-										value={form.employee_search}
-										onChange={(event) => setField("employee_search", event.target.value)}
-										disabled={isSubmitting}
-										placeholder="Name, number, or Sevarth ID"
-										autoComplete="off"
-									/>
-								</div>
+						<div className="grid gap-2">
+							<Label htmlFor="upsert-input-employee-search">Search Employees</Label>
+							<Input
+								id="upsert-input-employee-search"
+								value={form.employee_search}
+								onChange={(event) => setField("employee_search", event.target.value)}
+								disabled={isSubmitting}
+								placeholder="Name, number, or Sevarth ID"
+								autoComplete="off"
+							/>
+						</div>
 
-								<div className="grid gap-2">
-									<Label htmlFor="upsert-input-employee">Employee</Label>
-									<Select
-										value={form.employee_id || null}
-										onValueChange={(value) => setField("employee_id", value ?? "")}
-										disabled={isSubmitting || employeesQuery.isLoading}
-									>
-										<SelectTrigger id="upsert-input-employee" className="w-full">
-											<SelectValue placeholder="Select employee">
-												{(value: string | null) => {
-													const employee = employees.find((item) => item.id === value);
-													return employee
-														? employeeEntityLabel(employee, "Select employee")
-														: "Select employee";
-												}}
-											</SelectValue>
-										</SelectTrigger>
-										<SelectContent>
-											{employees.map((employee) => (
-												<SelectItem key={employee.id} value={employee.id}>
-													{employeeEntityLabel(employee)}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
+						<div className="grid gap-2">
+							<Label htmlFor="upsert-input-employee">Employee</Label>
+							<Select
+								value={form.employee_id || null}
+								onValueChange={(value) => setField("employee_id", value ?? "")}
+								disabled={isSubmitting || employeesQuery.isLoading}
+							>
+								<SelectTrigger id="upsert-input-employee" className="w-full">
+									<SelectValue placeholder="Select employee">
+										{(value: string | null) => {
+											const employee = employees.find((item) => item.id === value);
+											return employee
+												? employeeEntityLabel(employee, "Select employee")
+												: "Select employee";
+										}}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{employees.map((employee) => (
+										<SelectItem key={employee.id} value={employee.id}>
+											{employeeEntityLabel(employee)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
-								<div className="grid gap-2">
-									<Label htmlFor="upsert-input-component">Component</Label>
-									<Select
-										value={form.component_code || null}
-										onValueChange={(value) => setField("component_code", value ?? "")}
-										disabled={isSubmitting || componentsQuery.isLoading}
-									>
-										<SelectTrigger id="upsert-input-component" className="w-full">
-											<SelectValue placeholder="Select component">
-												{(value: string | null) => {
-													const component = components.find((item) => item.code === value);
-													return component
-														? payComponentEntityLabel(component)
-														: "Select component";
-												}}
-											</SelectValue>
-										</SelectTrigger>
-										<SelectContent>
-											{components.map((component) => (
-												<SelectItem key={component.id} value={component.code}>
-													{payComponentEntityLabel(component)}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-							</>
-						) : (
-							<div className="grid gap-1 text-sm">
-								<p>
-									<span className="text-muted-foreground">Employee:</span> {editing?.employee_id}
-								</p>
-								<p>
-									<span className="text-muted-foreground">Component:</span>{" "}
-									{editing?.component_code}
-								</p>
-							</div>
-						)}
+						<div className="grid gap-2">
+							<Label htmlFor="upsert-input-component">Component</Label>
+							<Select
+								value={form.component_code || null}
+								onValueChange={(value) => setField("component_code", value ?? "")}
+								disabled={isSubmitting || componentsQuery.isLoading}
+							>
+								<SelectTrigger id="upsert-input-component" className="w-full">
+									<SelectValue placeholder="Select component">
+										{(value: string | null) => {
+											const component = components.find((item) => item.code === value);
+											return component ? payComponentEntityLabel(component) : "Select component";
+										}}
+									</SelectValue>
+								</SelectTrigger>
+								<SelectContent>
+									{components.map((component) => (
+										<SelectItem key={component.id} value={component.code}>
+											{payComponentEntityLabel(component)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 
 						<div className="grid gap-2">
 							<Label htmlFor="upsert-input-kind">Input Kind</Label>
@@ -406,7 +357,7 @@ export function UpsertInputDialog({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : isEdit ? "Save Changes" : "Add"}
+							{isSubmitting ? "Saving…" : "Add"}
 						</Button>
 					</DialogFooter>
 				</form>

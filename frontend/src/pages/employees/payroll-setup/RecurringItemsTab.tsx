@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
@@ -405,6 +405,7 @@ type VersionForm = {
 	effective_from: string;
 	amount: string;
 	rate: string;
+	reason: string;
 	change_reason: string;
 };
 
@@ -412,6 +413,7 @@ const emptyVersionForm = (): VersionForm => ({
 	effective_from: "",
 	amount: "",
 	rate: "",
+	reason: "",
 	change_reason: "",
 });
 
@@ -432,14 +434,23 @@ function NewVersionDialog({
 	const [form, setForm] = useState<VersionForm>(emptyVersionForm);
 	const [overlapError, setOverlapError] = useState<string | null>(null);
 	const [formError, setFormError] = useState<string | null>(null);
+	// Seed once per open so a mid-edit instruction prop refresh cannot wipe edits.
+	const seededRef = useRef(false);
 
 	useEffect(() => {
 		if (!open) {
+			seededRef.current = false;
 			setForm(emptyVersionForm());
 			setOverlapError(null);
 			setFormError(null);
+			return;
 		}
-	}, [open]);
+		if (seededRef.current) return;
+		seededRef.current = true;
+		setForm({ ...emptyVersionForm(), reason: instruction?.reason ?? "" });
+		setOverlapError(null);
+		setFormError(null);
+	}, [open, instruction]);
 
 	const handleSubmit = async (event: FormEvent) => {
 		event.preventDefault();
@@ -481,6 +492,7 @@ function NewVersionDialog({
 					effective_from: form.effective_from,
 					amount: hasAmount ? form.amount.trim() : null,
 					rate: hasRate ? form.rate.trim() : null,
+					reason: form.reason.trim() || null,
 					change_reason: form.change_reason.trim() || null,
 				},
 			});
@@ -553,6 +565,17 @@ function NewVersionDialog({
 								}
 								disabled={isSubmitting || form.amount.trim().length > 0}
 								placeholder="0.00"
+							/>
+						</div>
+
+						<div className="grid gap-2">
+							<Label htmlFor="nv-ri-reason">Reason (Optional)</Label>
+							<Textarea
+								id="nv-ri-reason"
+								value={form.reason}
+								onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))}
+								disabled={isSubmitting}
+								rows={2}
 							/>
 						</div>
 

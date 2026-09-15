@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.auth.adapters import AuthenticatedIdentity, DevAuthAdapter
 from app.auth.errors import AuthMisconfiguredError, InvalidAuthenticationError
 from app.auth.session import DatabaseSessionStore, sign_oauth_state
+from tests.identity_helpers import apply_oauth_state_cookie
 from app.models.base import utcnow
 from app.models.identity import OrganizationInvitation, Session as SessionRow
 from app.models.identity import User
@@ -19,6 +20,7 @@ from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import (
     DEV_SUBJECT,
+    attach_csrf_echo,
     clear_settings_cache,
     login_dev,
     patch_get_settings,
@@ -107,6 +109,7 @@ async def test_logout_clears_cookie_revokes_session_and_me_401(client, dev_setti
 @pytest.mark.asyncio
 async def test_callback_happy_path_with_dev_adapter(client, dev_settings):
     state = sign_oauth_state(dev_settings)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "dev-login", "state": state},
@@ -146,6 +149,7 @@ async def test_callback_happy_path_with_mocked_workos_exchange(client, monkeypat
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "auth-code", "state": state},
@@ -292,6 +296,7 @@ async def test_magic_code_request_rejects_unregistered_email(client, monkeypatch
 @pytest.mark.asyncio
 async def test_callback_invalid_state_redirects_with_error(client, dev_settings):
     state = sign_oauth_state(dev_settings)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "dev-login", "state": state + "tampered"},
@@ -315,6 +320,7 @@ async def test_callback_missing_state_redirects_with_error(client, dev_settings)
 @pytest.mark.asyncio
 async def test_callback_missing_code_redirects_auth_failed(client, dev_settings):
     state = sign_oauth_state(dev_settings)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"state": state},
@@ -492,6 +498,7 @@ async def test_return_to_round_trip_via_callback_state(client, monkeypatch):
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value, redirect_to="/pay-runs")
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
@@ -529,6 +536,7 @@ async def test_callback_drops_evil_return_to_in_state(client, monkeypatch):
         salt="accord-oauth-state-v1",
     )
     state = serializer.dumps({"n": "nonce", "r": "https://evil.com"})
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
@@ -586,6 +594,7 @@ async def test_callback_upsert_creates_user_and_updates_existing(client, monkeyp
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     await client.get(
         "/api/auth/callback",
         params={"code": "c1", "state": state},
@@ -603,6 +612,7 @@ async def test_callback_upsert_creates_user_and_updates_existing(client, monkeyp
         )
     )
     state2 = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state2)
     await client.get(
         "/api/auth/callback",
         params={"code": "c2", "state": state2},
@@ -645,6 +655,7 @@ async def test_callback_claims_invite_and_activates(client, monkeypatch, session
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
@@ -683,6 +694,7 @@ async def test_callback_unprovisioned_when_org_exists_without_invite(client, mon
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
@@ -740,3 +752,52 @@ async def test_me_401_when_session_revoked(client, dev_settings, session):
 
     resp = await client.get("/api/auth/me")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_401_on_user_agent_mismatch(client, dev_settings, session):
+    # Sessions bind to the login-time User-Agent fingerprint; a changed UA
+    # must fail /me the same way protected endpoints reject it (otherwise the
+    # SPA ping-pongs: /me says authed, every API call 401s).
+    _, cookie = await login_dev(client)
+    assert cookie
+
+    resp = await client.get("/api/auth/me", headers={"User-Agent": "Other-Browser/9.9"})
+    assert resp.status_code == 401
+
+    # Same UA as the login request still resolves.
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_bootstraps_csrf_cookie(client, dev_settings, session):
+    # Sessions minted before the CSRF rollout have a session cookie but no
+    # accord_csrf. Safe requests must re-mint the bound token so the browser
+    # can mutate again instead of being locked out until session expiry.
+    _, cookie = await login_dev(client)
+    assert cookie
+    client.cookies.delete("accord_csrf")
+
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 200
+    assert "accord_csrf" in resp.cookies
+
+    # The freshly minted token now satisfies unsafe requests.
+    attach_csrf_echo(client)
+    resp = await client.post("/api/auth/logout")
+    assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_rejected_mutation_still_mints_csrf_cookie(client, dev_settings, session):
+    # A legacy session's first-ever mutation is rejected (nothing to verify
+    # against), but the 403 attaches a fresh bound token so the next attempt
+    # works — self-healing instead of a permanent lockout.
+    _, cookie = await login_dev(client)
+    assert cookie
+    client.cookies.delete("accord_csrf")
+
+    resp = await client.post("/api/auth/logout")
+    assert resp.status_code == 403
+    assert "accord_csrf" in resp.cookies

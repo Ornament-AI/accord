@@ -191,8 +191,44 @@ describe("Pay Components list page", () => {
 			).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 			expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
-			fireEvent.click(screen.getByText("Basic Pay"));
+			expect(screen.queryByRole("button", { name: /Edit Pay Component/ })).not.toBeInTheDocument();
+			// The name is a navigation link — read-only roles reach the detail page
+			// without tripping the (hidden) row-edit affordance.
+			fireEvent.click(screen.getByRole("link", { name: "Basic Pay" }));
+			expect(
+				await screen.findByTestId("pay-component-detail-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
 			expect(screen.queryByRole("heading", { name: "Edit Pay Component" })).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"links list names to the routed detail page",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayComponentHandlers();
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRoutes("/pay-components");
+
+			const link = await screen.findByRole(
+				"link",
+				{ name: "Basic Pay" },
+				{ timeout: PAGE_TIMEOUT },
+			);
+			expect(link).toHaveAttribute("href", "/pay-components/pc-1");
+			fireEvent.click(link);
+			const page = await screen.findByTestId(
+				"pay-component-detail-page",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			expect(
+				await within(page).findByRole("heading", { name: "BASIC" }, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
 	);
@@ -213,7 +249,9 @@ describe("Pay Components list page", () => {
 			).toBeInTheDocument();
 			expect(screen.getByRole("button", { name: /^Add$/i })).toBeInTheDocument();
 			expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
-			fireEvent.click(screen.getByText("Basic Pay"));
+			// The name cell is a detail link, so row-edit is triggered via the row's
+			// sr-only action button (or a click anywhere else on the row).
+			fireEvent.click(screen.getByRole("button", { name: "Edit Pay Component BASIC" }));
 			expect(
 				await screen.findByRole("heading", { name: "Edit Pay Component" }),
 			).toBeInTheDocument();
@@ -430,6 +468,31 @@ describe("Report Profile dialog", () => {
 				},
 			],
 		});
+	});
+
+	it("shows a load error and disables Save instead of risking an empty overwrite", async () => {
+		const onUpdateReportProfile = vi.fn();
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: payHandlers } = createPayComponentHandlers({
+			reportProfile: { legal_name: "MSIDC" },
+			reportProfileError: { status: 403, body: { detail: "Forbidden" } },
+			onUpdateReportProfile,
+		});
+		server.use(...authHandlers, ...payHandlers);
+
+		renderDialog(<ReportProfileDialog open onOpenChange={vi.fn()} />);
+
+		expect(await screen.findByRole("heading", { name: "Report Defaults" })).toBeInTheDocument();
+		expect(await screen.findByText("Forbidden", {}, { timeout: PAGE_TIMEOUT })).toBeInTheDocument();
+		// The empty form must not render — its Save would PUT nulls over the
+		// stored profile — and the button stays disabled regardless.
+		expect(screen.queryByLabelText("Legal name")).not.toBeInTheDocument();
+		const saveButton = screen.getByRole("button", { name: "Save" });
+		expect(saveButton).toBeDisabled();
+		fireEvent.click(saveButton);
+		expect(onUpdateReportProfile).not.toHaveBeenCalled();
 	});
 });
 

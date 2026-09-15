@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/contexts/AuthContext";
 import {
 	isDraftStatus,
 	type PayrollRunEmployeeResponse,
@@ -381,10 +382,16 @@ export const PayrollRunRosterTable = forwardRef<
 	{ runId, runStatus, editable, editing, periodYear, periodMonth, onDirtyChange },
 	ref,
 ) {
+	const { hasCapability } = useAuth();
 	const rosterQuery = usePayrollRunRoster(runId);
 	const replaceRoster = useReplacePayrollRunRoster(runId);
 	const showCalculatedTotals = !isDraftStatus(runStatus);
-	const resultsQuery = usePayrollRunResults(runId, showCalculatedTotals);
+	// The results endpoint requires `view_master_data`; run-lifecycle roles
+	// without it (approver/releaser) must not fire a guaranteed 403.
+	const resultsQuery = usePayrollRunResults(
+		runId,
+		showCalculatedTotals && hasCapability("view_master_data"),
+	);
 	const [rows, setRows] = useState<EditableRosterRow[]>([]);
 	const [search, setSearch] = useState("");
 	const [dirty, setDirty] = useState(false);

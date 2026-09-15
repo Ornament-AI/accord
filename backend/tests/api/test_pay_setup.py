@@ -17,6 +17,7 @@ from app.tenancy import bind_tenant_context
 from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
+    attach_csrf_echo,
     login_dev,
     seed_membership,
     seed_user,
@@ -35,6 +36,7 @@ async def client(dev_settings):
     application = _pay_setup_app()
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac
 
 
@@ -447,6 +449,268 @@ async def test_accommodation_rejects_partial_breakdown_even_when_it_sums(client,
     assert resp.status_code == 422, resp.text
 
 
+# --- M-data-7: duplicate active series rejected at write time -----------------
+
+
+@pytest.mark.asyncio
+async def test_duplicate_active_recurring_instruction_rejected(client, session):
+    """A second overlapping series for the same (employee, component) is a
+    409; after terminating the open version a later series is accepted."""
+    ctx = await _admin_context(client, session)
+    component = await _create_component(client, code="DUP_CHECK")
+    employee_id = ctx["employee_id"]
+
+    first = await client.post(
+        f"/api/employees/{employee_id}/recurring-instructions",
+        json={
+            "component_id": component["id"],
+            "effective_from": "2026-01-01",
+            "amount": "100.00",
+        },
+    )
+    assert first.status_code == 201, first.text
+    instruction_id = first.json()["id"]
+
+    duplicate = await client.post(
+        f"/api/employees/{employee_id}/recurring-instructions",
+        json={
+            "component_id": component["id"],
+            "effective_from": "2026-02-01",
+            "amount": "200.00",
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
+
+    ended = await client.post(
+        f"/api/recurring-instructions/{instruction_id}/versions",
+        json={"end_on": "2026-03-01"},
+    )
+    assert ended.status_code == 201, ended.text
+    assert ended.json()["effective_to"] == "2026-03-01"
+
+    second = await client.post(
+        f"/api/employees/{employee_id}/recurring-instructions",
+        json={
+            "component_id": component["id"],
+            "effective_from": "2026-04-01",
+            "amount": "300.00",
+        },
+    )
+    assert second.status_code == 201, second.text
+
+
+@pytest.mark.asyncio
+async def test_duplicate_active_advance_rejected_and_endable(client, session):
+    """Two advances of the same type with overlapping installment versions
+    resolve to duplicate recovery codes; the second create is a 409."""
+    ctx = await _admin_context(client, session)
+    employee_id = ctx["employee_id"]
+    payload = {
+        "advance_type": "festival",
+        "principal": "10000.00",
+        "sanctioned_on": "2026-01-15",
+        "installment": {
+            "installment_amount": "1000.00",
+            "installments_total": 10,
+            "installments_recovered_opening": 0,
+            "effective_from": "2026-02-01",
+        },
+    }
+
+    first = await client.post(f"/api/employees/{employee_id}/advances", json=payload)
+    assert first.status_code == 201, first.text
+    advance_id = first.json()["id"]
+
+    duplicate = await client.post(
+        f"/api/employees/{employee_id}/advances",
+        json={**payload, "reference": "FEST-2026-002"},
+    )
+    assert duplicate.status_code == 409, duplicate.text
+
+    # A different advance type is unaffected.
+    other = await client.post(
+        f"/api/employees/{employee_id}/advances",
+        json={
+            "advance_type": "hba",
+            "principal": "5000.00",
+            "sanctioned_on": "2026-01-15",
+            "installment": {
+                "installment_amount": "500.00",
+                "installments_total": 10,
+                "installments_recovered_opening": 0,
+                "effective_from": "2026-02-01",
+            },
+        },
+    )
+    assert other.status_code == 201, other.text
+
+    ended = await client.post(
+        f"/api/advances/{advance_id}/installment-versions",
+        json={"end_on": "2026-06-01"},
+    )
+    assert ended.status_code == 201, ended.text
+    assert ended.json()["effective_to"] == "2026-06-01"
+
+    second = await client.post(
+        f"/api/employees/{employee_id}/advances",
+        json={
+            **payload,
+            "reference": "FEST-2026-003",
+            "installment": {**payload["installment"], "effective_from": "2026-07-01"},
+        },
+    )
+    assert second.status_code == 201, second.text
+
+
+@pytest.mark.asyncio
+async def test_advance_remaining_recovery_bounded_by_principal(client, session):
+    """T1.6: scheduled remaining recovery may not exceed principal."""
+    ctx = await _admin_context(client, session)
+    employee_id = ctx["employee_id"]
+
+    resp = await client.post(
+        f"/api/employees/{employee_id}/advances",
+        json={
+            "advance_type": "festival",
+            "principal": "5000.00",
+            "sanctioned_on": "2026-01-15",
+            "installment": {
+                "installment_amount": "1000.00",
+                # 12 installments * 1000 = 12000 > 5000 principal.
+                "installments_total": 12,
+                "installments_recovered_opening": 0,
+                "effective_from": "2026-02-01",
+            },
+        },
+    )
+    assert resp.status_code == 422, resp.text
+
+    recovered_beyond_total = await client.post(
+        f"/api/employees/{employee_id}/advances",
+        json={
+            "advance_type": "festival",
+            "principal": "5000.00",
+            "sanctioned_on": "2026-01-15",
+            "installment": {
+                "installment_amount": "1000.00",
+                "installments_total": 5,
+                "installments_recovered_opening": 6,
+                "effective_from": "2026-02-01",
+            },
+        },
+    )
+    assert recovered_beyond_total.status_code == 422, recovered_beyond_total.text
+
+
+@pytest.mark.asyncio
+async def test_duplicate_active_accommodation_rejected_and_endable(client, session):
+    """Two assignments for one employee resolve to a duplicate
+    ACCOMMODATION_LICENSE_FEE code; the second create is a 409."""
+    ctx = await _admin_context(client, session)
+    employee_id = ctx["employee_id"]
+    payload = {
+        "quarters_location": "mumbai",
+        "quarters_identifier": "Block-C-1",
+        "quarters_address": "1 Example Road, Mumbai",
+        "charge": {
+            "license_fee": "1000.00",
+            "house_rent": "700.00",
+            "service_charge": "200.00",
+            "parking_charge": "75.00",
+            "additional_parking_charge": "25.00",
+            "informational_hra_foregone": "2500.00",
+            "effective_from": "2026-01-01",
+        },
+    }
+
+    first = await client.post(f"/api/employees/{employee_id}/accommodation", json=payload)
+    assert first.status_code == 201, first.text
+    assignment_id = first.json()["id"]
+
+    duplicate = await client.post(
+        f"/api/employees/{employee_id}/accommodation",
+        json={**payload, "quarters_identifier": "Block-C-2"},
+    )
+    assert duplicate.status_code == 409, duplicate.text
+
+    ended = await client.post(
+        f"/api/accommodation/{assignment_id}/charge-versions",
+        json={"end_on": "2026-05-01"},
+    )
+    assert ended.status_code == 201, ended.text
+    assert ended.json()["effective_to"] == "2026-05-01"
+
+    second = await client.post(
+        f"/api/employees/{employee_id}/accommodation",
+        json={
+            **payload,
+            "quarters_identifier": "Block-C-3",
+            "charge": {**payload["charge"], "effective_from": "2026-06-01"},
+        },
+    )
+    assert second.status_code == 201, second.text
+
+
+@pytest.mark.asyncio
+async def test_money_bounds_rejected_at_schema(client, session):
+    """T1.4: values beyond Numeric(12, 2) are 422s, not silent overflows."""
+    ctx = await _admin_context(client, session)
+    component = await _create_component(client, code="BOUND_CHECK")
+    employee_id = ctx["employee_id"]
+
+    too_large = await client.post(
+        f"/api/employees/{employee_id}/recurring-instructions",
+        json={
+            "component_id": component["id"],
+            "effective_from": "2026-01-01",
+            "amount": "100000000.00",
+        },
+    )
+    assert too_large.status_code == 422, too_large.text
+
+    negative_rate = await client.post(
+        f"/api/employees/{employee_id}/recurring-instructions",
+        json={
+            "component_id": component["id"],
+            "effective_from": "2026-01-01",
+            "rate": "-0.01",
+        },
+    )
+    assert negative_rate.status_code == 422, negative_rate.text
+
+    negative_license_fee = await client.post(
+        f"/api/employees/{employee_id}/accommodation",
+        json={
+            "quarters_location": "mumbai",
+            "quarters_identifier": "Block-D-1",
+            "charge": {
+                "license_fee": "-1.00",
+                "effective_from": "2026-01-01",
+            },
+        },
+    )
+    assert negative_license_fee.status_code == 422, negative_license_fee.text
+
+
+@pytest.mark.asyncio
+async def test_component_code_must_be_url_safe_slug(client, session):
+    """M-data-5: component codes appear in paths/joins; punctuation is 422."""
+    await _admin_context(client, session)
+
+    for bad_code in ("HAS SLASH/", "white space", "x" * 65, "trail."):
+        resp = await client.post(
+            "/api/pay-components",
+            json={"code": bad_code, "name": "Bad", "classification": "earning"},
+        )
+        assert resp.status_code == 422, (bad_code, resp.text)
+
+    ok = await client.post(
+        "/api/pay-components",
+        json={"code": "VALID_CODE-2", "name": "Good", "classification": "earning"},
+    )
+    assert ok.status_code == 201, ok.text
+
+
 @pytest.mark.asyncio
 async def test_report_configuration_upsert_and_list(client, session):
     await _admin_context(client, session)
@@ -670,17 +934,33 @@ async def test_standard_component_transfer_rules_are_immutable(client, session):
             {"rate": "0.1200", "basis": ["BASIS_A"]},
             201,
         ),
-        ("employer_employee_contribution", {"rate": "0.1200"}, 201),
-        ("loan_installment_recovery", {}, 201),
-        ("accommodation_charge", {}, 201),
-        ("one_time_adjustment", {}, 201),
+        (
+            "employer_employee_contribution",
+            {"rate": "0.1200", "basis": ["BASIS_A"]},
+            201,
+        ),
+        ("loan_installment_recovery", {"amount": "1500.00"}, 201),
+        ("accommodation_charge", {"amount": "800.00"}, 201),
+        ("one_time_adjustment", {"amount": "500.00"}, 201),
+        # Deliberate carve-out: one_time_adjustment may carry negative money.
+        ("one_time_adjustment", {"amount": "-500.00"}, 201),
         ("fixed_recurring_amount", {}, 422),
         ("fixed_recurring_amount", {"amount": "1000.00", "rate": "0.0100"}, 422),
+        ("fixed_recurring_amount", {"amount": "-100.00"}, 422),
         ("direct_monthly_amount", {"rate": "0.0100"}, 422),
+        ("direct_monthly_amount", {}, 422),
         ("percentage_of_component_bases", {"basis": ["BASIS_A"]}, 422),
+        ("percentage_of_component_bases", {"rate": "0.1200"}, 422),
         ("percentage_of_component_bases", {"rate": "0.1200", "basis": ["UNKNOWN"]}, 400),
+        ("percentage_of_component_bases", {"rate": "0.1200", "basis": ["BAD/CODE"]}, 422),
+        ("employer_employee_contribution", {"rate": "0.1200"}, 422),
         ("employer_employee_contribution", {"amount": "100.00", "rate": "0.1200"}, 422),
         ("employer_employee_contribution", {}, 422),
+        ("loan_installment_recovery", {}, 422),
+        ("accommodation_charge", {}, 422),
+        ("one_time_adjustment", {}, 422),
+        ("one_time_adjustment", {"amount": "10.00", "rate": "0.0100"}, 422),
+        ("loan_installment_recovery", {"amount": "10.00", "basis": ["BASIS_A"]}, 422),
     ],
 )
 async def test_component_rate_calc_kind_matrix(

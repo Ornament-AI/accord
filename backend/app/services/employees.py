@@ -21,6 +21,7 @@ from app.models.employees import (
 )
 from app.models.org_structure import Office, Post
 from app.schemas.employees import (
+    SENSITIVE_PROFILE_FIELDS,
     BankInput,
     CreateEmployeeRequest,
     EmployeeDetail,
@@ -36,7 +37,13 @@ from app.schemas.employees import (
     profile_from_row,
 )
 from app.schemas.pagination import page_count, page_offset
-from app.services.versioning import get_active_version, insert_version, list_versions
+from app.services.audit_events import entity_snapshot, row_snapshot, write_mutation_event
+from app.services.versioning import (
+    get_active_version,
+    get_open_version,
+    insert_version,
+    list_versions,
+)
 from app.services.db_errors import integrity_is
 
 VERSION_TABLES: dict[VersionKind, sa.Table] = {
@@ -85,7 +92,11 @@ def _pay_values(pay: PayInput) -> dict[str, Any]:
 
 def _bank_values(bank: BankInput) -> dict[str, Any]:
     return {
-        "account_number": bank.account_number.strip(),
+        # ``None`` here means "preserve" — the service substitutes the open
+        # version's account number after this call.
+        "account_number": (
+            bank.account_number.strip() if bank.account_number is not None else None
+        ),
         "ifsc": bank.ifsc.strip(),
         "bank_name": bank.bank_name.strip(),
         "branch": bank.branch.strip() if bank.branch is not None else None,
@@ -172,7 +183,8 @@ async def create_employee(
         raise ConflictError("Could not create employee.") from exc
 
     try:
-        await insert_version(
+        version_rows: dict[str, Any] = {}
+        version_rows["profile"] = await insert_version(
             db,
             employee_profile_versions,
             organization_id=organization_id,
@@ -183,7 +195,7 @@ async def create_employee(
             created_by=created_by,
         )
         if body.posting is not None:
-            await insert_version(
+            version_rows["posting"] = await insert_version(
                 db,
                 employee_posting_versions,
                 organization_id=organization_id,
@@ -194,7 +206,7 @@ async def create_employee(
                 created_by=created_by,
             )
         if body.pay is not None:
-            await insert_version(
+            version_rows["pay"] = await insert_version(
                 db,
                 employee_pay_versions,
                 organization_id=organization_id,
@@ -205,7 +217,7 @@ async def create_employee(
                 created_by=created_by,
             )
         if body.bank is not None:
-            await insert_version(
+            version_rows["bank"] = await insert_version(
                 db,
                 employee_bank_account_versions,
                 organization_id=organization_id,
@@ -215,6 +227,25 @@ async def create_employee(
                 change_reason=body.change_reason,
                 created_by=created_by,
             )
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=created_by,
+            command="employee.create",
+            entity_type="employee",
+            entity_id=employee.id,
+            entity_label=f"Employee {employee.employee_number}",
+            before_state={},
+            after_state={
+                "employee": entity_snapshot(employee),
+                "versions": {kind: row_snapshot(row) for kind, row in version_rows.items()},
+            },
+            summary={
+                "employee_number": employee.employee_number,
+                "effective_from": body.effective_from,
+                "version_kinds": sorted(version_rows),
+            },
+        )
         detail = await get_employee_detail(
             db,
             organization_id=organization_id,
@@ -395,14 +426,28 @@ async def create_employee_version(
     pay: PayInput | None = None,
     bank: BankInput | None = None,
 ) -> Any:
-    await _get_employee(db, organization_id=organization_id, employee_id=employee_id)
+    employee = await _get_employee(db, organization_id=organization_id, employee_id=employee_id)
     parsed = _parse_kind(kind)
     table = VERSION_TABLES[parsed]
+
+    open_row = await get_open_version(
+        db,
+        table,
+        organization_id=organization_id,
+        header_id=employee_id,
+    )
 
     if parsed == "profile":
         if profile is None:
             raise ValidationError("profile fields are required for kind=profile")
         values = _profile_values(profile)
+        # Sensitive fields the client never received in clear (masked) are
+        # omitted from the request; omission carries the open version's value
+        # forward, while an explicit null still clears it.
+        if open_row is not None:
+            for field in SENSITIVE_PROFILE_FIELDS:
+                if field not in profile.model_fields_set:
+                    values[field] = open_row[field]
     elif parsed == "posting":
         if posting is None:
             raise ValidationError("posting fields are required for kind=posting")
@@ -415,7 +460,13 @@ async def create_employee_version(
     else:
         if bank is None:
             raise ValidationError("bank fields are required for kind=bank")
-        values = _bank_values(bank)
+        if bank.account_number is None:
+            if open_row is None:
+                raise ValidationError("bank.account_number is required when no bank version exists")
+            values = _bank_values(bank)
+            values["account_number"] = open_row["account_number"]
+        else:
+            values = _bank_values(bank)
 
     try:
         row = await insert_version(
@@ -427,6 +478,23 @@ async def create_employee_version(
             values=values,
             change_reason=change_reason,
             created_by=created_by,
+        )
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=created_by,
+            command=f"employee.{parsed}_version.append",
+            entity_type="employee",
+            entity_id=employee.id,
+            entity_label=f"Employee {employee.employee_number}",
+            before_state=row_snapshot(open_row) if open_row is not None else {},
+            after_state=row_snapshot(row),
+            summary={
+                "kind": parsed,
+                "version_id": row["id"],
+                "effective_from": effective_from,
+                "change_reason": change_reason,
+            },
         )
         await db.commit()
     except ConflictError:

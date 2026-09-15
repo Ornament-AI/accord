@@ -48,7 +48,12 @@ from app.domain.payroll import calculators
 from app.domain.payroll.calculators import CalculatorContext
 from app.domain.payroll.inputs import ComponentInput, EmployeeCalcInput, RunCalcInput
 from app.domain.payroll.money import Money
-from app.domain.payroll.results import CalculationTrace, EmployeeResult, RunResult
+from app.domain.payroll.results import (
+    CalculationTrace,
+    EmployeeResult,
+    RunResult,
+    canonical_unrounded_str,
+)
 
 ENGINE_VERSION: str = "accord-engine/1.2.0"
 
@@ -192,6 +197,7 @@ def _offbill_employer_remittance(
         if not comp.is_excluded_from_aggregates() and comp.classification == "employer_contribution"
     }
     offbill: list[Money] = []
+    paired_transfer_sums: dict[str, list[Money]] = {}
     for comp in components:
         if comp.is_excluded_from_aggregates():
             continue
@@ -209,17 +215,31 @@ def _offbill_employer_remittance(
         if comp.transfer_of is None:
             offbill.append(transfer_amount)
             continue
-        paired_amount = contributions.get(comp.transfer_of)
-        if paired_amount is None:
+        if comp.transfer_of not in contributions:
             raise ValueError(
                 f"employer-transfer component {comp.component_code!r} references missing "
                 f"employer contribution {comp.transfer_of!r}"
             )
-        if paired_amount != transfer_amount:
+        paired_transfer_sums.setdefault(comp.transfer_of, []).append(transfer_amount)
+
+    # Pairing is sum-based, both directions: every non-excluded employer
+    # contribution must be exactly covered by the transfer lines targeting it
+    # (docs/payroll-domain.md "Resolved" — an unpaired addition pays the
+    # employee employer money; a shortfall/surplus is a defect).
+    for code, contribution_amount in contributions.items():
+        transfers = paired_transfer_sums.get(code)
+        if not transfers:
+            if contribution_amount == Money.zero():
+                continue
             raise ValueError(
-                f"employer-transfer component {comp.component_code!r} amount "
-                f"{transfer_amount.to_canonical_str()} does not match {comp.transfer_of!r} "
-                f"amount {paired_amount.to_canonical_str()}"
+                f"employer contribution {code!r} has no paired employer-transfer deduction line"
+            )
+        paired_total = _money_sum(transfers)
+        if paired_total != contribution_amount:
+            raise ValueError(
+                f"employer-transfer lines for {code!r} total "
+                f"{paired_total.to_canonical_str()} which does not match "
+                f"contribution amount {contribution_amount.to_canonical_str()}"
             )
     return _money_sum(offbill)
 
@@ -244,7 +264,7 @@ def calculate_employee(input: EmployeeCalcInput) -> EmployeeResult:
             basis=comp.basis,
             basis_total=result.basis_total,
             rate=result.rate,
-            unrounded_value=str(result.unrounded_value),
+            unrounded_value=canonical_unrounded_str(result.unrounded_value),
             rounding_rule=comp.rounding_rule,
             rounded_value=result.rounded_value,
             source_version_ids=comp.source_version_ids,

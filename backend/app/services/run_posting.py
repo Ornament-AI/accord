@@ -9,29 +9,31 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
+from asyncpg.exceptions import UniqueViolationError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.payroll.money import Money
-from app.domain.payroll.rates import Rate
-from app.domain.payroll.results import CalculationTrace, EmployeeResult, RunResult
+from app.domain.payroll.results import (
+    RunResult,
+)
 from app.domain.payroll.validation import has_blocking, validate_run_result
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
-    payroll_employee_results,
     payroll_report_snapshots,
-    payroll_result_lines,
     payroll_run_versions,
 )
 from app.models.identity import Organization
 from app.models.platform import OutboxEvent, PayrollApproval
 from app.services.audit_events import entity_snapshot, write_mutation_event
+from app.services.db_errors import integrity_is
+from app.services.run_reconstruction import load_run_result
+from app.services.run_workflow import URN_STALE_VERSION
 from app.schemas.payroll_runs import PayrollRunReportMetadata
 
 # ADR 0008 §4: maker/checker SoD is submitter ≠ approver only. Poster may equal
@@ -43,103 +45,6 @@ def _period_label(year: int, month: int) -> str:
     return f"{year:04d}-{month:02d}"
 
 
-def _money_from_db(value: Decimal | str | None) -> Money:
-    if value is None:
-        return Money.zero()
-    if isinstance(value, Decimal):
-        return Money.from_decimal(value)
-    return Money.from_str(str(value))
-
-
-def _optional_money_from_canonical(value: Any) -> Money | None:
-    if value is None:
-        return None
-    return Money.from_str(str(value))
-
-
-def _optional_rate_from_canonical(value: Any) -> Rate | None:
-    if value is None:
-        return None
-    return Rate.from_fraction(str(value))
-
-
-def _trace_from_row(row: Any) -> CalculationTrace:
-    payload = row["trace"] or {}
-    classification = payload.get("classification")
-    if classification is None:
-        # Fallback if trace omitted domain classification.
-        db_class = row["classification"]
-        classification = "AG_deduction" if db_class == "ag_deduction" else db_class
-    basis_raw = payload.get("basis") or []
-    source_ids = payload.get("source_version_ids") or []
-    return CalculationTrace(
-        component=payload.get("component") or row["component_code"],
-        classification=str(classification),
-        basis=tuple(str(item) for item in basis_raw),
-        basis_total=_optional_money_from_canonical(payload.get("basis_total")),
-        rate=_optional_rate_from_canonical(payload.get("rate")),
-        unrounded_value=str(payload.get("unrounded_value", "0")),
-        rounding_rule=str(payload.get("rounding_rule") or "ROUND_NONE"),
-        rounded_value=_money_from_db(row["amount"]),
-        source_version_ids=tuple(str(item) for item in source_ids),
-        calculator_kind=str(payload.get("calculator_kind") or row["calc_kind"]),
-        engine_version=str(payload.get("engine_version") or ""),
-        employer_transfer=bool(payload.get("employer_transfer", False)),
-        transfer_of=(None if payload.get("transfer_of") is None else str(payload["transfer_of"])),
-        service_period=(
-            None if payload.get("service_period") is None else str(payload["service_period"])
-        ),
-        reason=(None if payload.get("reason") is None else str(payload["reason"])),
-    )
-
-
-def _aggregate_from_traces(
-    traces: tuple[CalculationTrace, ...],
-) -> tuple[Money, Money, Money, Money, Money, Money, Money, Money, Money]:
-    earnings: list[Money] = []
-    employer_contrib: list[Money] = []
-    gross_adj: list[Money] = []
-    ag: list[Money] = []
-    treasury: list[Money] = []
-    external: list[Money] = []
-
-    for trace in traces:
-        # Informational / non-bucket classifications are excluded from aggregates.
-        if trace.classification == "earning":
-            earnings.append(trace.rounded_value)
-        elif trace.classification == "employer_contribution":
-            employer_contrib.append(trace.rounded_value)
-        elif trace.classification == "gross_adjustment":
-            gross_adj.append(trace.rounded_value)
-        elif trace.classification == "AG_deduction":
-            ag.append(trace.rounded_value)
-        elif trace.classification == "treasury_deduction":
-            treasury.append(trace.rounded_value)
-        elif trace.classification == "external_recovery":
-            external.append(trace.rounded_value)
-
-    earnings_total = Money.sum(earnings) if earnings else Money.zero()
-    employer_contribution_total = Money.sum(employer_contrib) if employer_contrib else Money.zero()
-    gross_adjustment_total = Money.sum(gross_adj) if gross_adj else Money.zero()
-    gross_total = earnings_total + employer_contribution_total + gross_adjustment_total
-    ag_deduction_total = Money.sum(ag) if ag else Money.zero()
-    treasury_deduction_total = Money.sum(treasury) if treasury else Money.zero()
-    external_recovery_total = Money.sum(external) if external else Money.zero()
-    deductions_total = ag_deduction_total + treasury_deduction_total + external_recovery_total
-    net_payable = gross_total - deductions_total
-    return (
-        earnings_total,
-        employer_contribution_total,
-        gross_adjustment_total,
-        gross_total,
-        ag_deduction_total,
-        treasury_deduction_total,
-        external_recovery_total,
-        deductions_total,
-        net_payable,
-    )
-
-
 async def _load_run_result(
     db: AsyncSession,
     *,
@@ -147,109 +52,8 @@ async def _load_run_result(
     period: PayrollPeriod,
     version: Any,
 ) -> RunResult:
-    emp_rows = (
-        (
-            await db.execute(
-                sa.select(payroll_employee_results)
-                .where(payroll_employee_results.c.organization_id == organization_id)
-                .where(payroll_employee_results.c.run_version_id == version["id"])
-                .order_by(payroll_employee_results.c.employee_number)
-            )
-        )
-        .mappings()
-        .all()
-    )
-
-    employees: list[EmployeeResult] = []
-    for emp in emp_rows:
-        line_rows = (
-            (
-                await db.execute(
-                    sa.select(payroll_result_lines)
-                    .where(payroll_result_lines.c.organization_id == organization_id)
-                    .where(payroll_result_lines.c.employee_result_id == emp["id"])
-                    .order_by(payroll_result_lines.c.sequence)
-                )
-            )
-            .mappings()
-            .all()
-        )
-        traces = tuple(_trace_from_row(row) for row in line_rows)
-        (
-            earnings_total,
-            employer_contribution_total,
-            gross_adjustment_total,
-            gross_total,
-            ag_deduction_total,
-            treasury_deduction_total,
-            external_recovery_total,
-            deductions_total,
-            net_payable,
-        ) = _aggregate_from_traces(traces)
-        employees.append(
-            EmployeeResult(
-                employee_ref=str(emp["employee_id"]),
-                lines=traces,
-                earnings_total=earnings_total,
-                employer_contribution_total=employer_contribution_total,
-                gross_adjustment_total=gross_adjustment_total,
-                gross_total=gross_total,
-                ag_deduction_total=ag_deduction_total,
-                treasury_deduction_total=treasury_deduction_total,
-                external_recovery_total=external_recovery_total,
-                deductions_total=deductions_total,
-                net_payable=net_payable,
-                # Off-bill remittance is not derivable from trace lines (the
-                # transfer metadata is not part of the hashed trace), so it is
-                # read from the persisted snapshot columns.
-                offbill_employer_remittance=_money_from_db(emp["offbill_employer_remittance"]),
-                disbursement=_money_from_db(emp["disbursement"]),
-            )
-        )
-
-    employee_tuple = tuple(sorted(employees, key=lambda e: e.employee_ref))
-    if employee_tuple:
-        run_earnings = Money.sum([e.earnings_total for e in employee_tuple])
-        run_employer = Money.sum([e.employer_contribution_total for e in employee_tuple])
-        run_gross_adj = Money.sum([e.gross_adjustment_total for e in employee_tuple])
-        run_gross = Money.sum([e.gross_total for e in employee_tuple])
-        run_ag = Money.sum([e.ag_deduction_total for e in employee_tuple])
-        run_treasury = Money.sum([e.treasury_deduction_total for e in employee_tuple])
-        run_external = Money.sum([e.external_recovery_total for e in employee_tuple])
-        run_deductions = Money.sum([e.deductions_total for e in employee_tuple])
-        run_net = Money.sum([e.net_payable for e in employee_tuple])
-        run_offbill = Money.sum([e.offbill_employer_remittance for e in employee_tuple])
-        run_disbursement = Money.sum([e.disbursement for e in employee_tuple])
-    else:
-        run_earnings = Money.zero()
-        run_employer = Money.zero()
-        run_gross_adj = Money.zero()
-        run_gross = Money.zero()
-        run_ag = Money.zero()
-        run_treasury = Money.zero()
-        run_external = Money.zero()
-        run_deductions = Money.zero()
-        run_net = Money.zero()
-        run_offbill = Money.zero()
-        run_disbursement = Money.zero()
-
-    return RunResult(
-        period=_period_label(period.period_year, period.period_month),
-        org_ref=str(organization_id),
-        engine_version=version["engine_version"],
-        employees=employee_tuple,
-        earnings_total=run_earnings,
-        employer_contribution_total=run_employer,
-        gross_adjustment_total=run_gross_adj,
-        gross_total=run_gross,
-        ag_deduction_total=run_ag,
-        treasury_deduction_total=run_treasury,
-        external_recovery_total=run_external,
-        deductions_total=run_deductions,
-        net_payable=run_net,
-        offbill_employer_remittance=run_offbill,
-        disbursement=run_disbursement,
-        content_hash=version["content_hash"],
+    return await load_run_result(
+        db, organization_id=organization_id, period=period, version=version
     )
 
 
@@ -342,6 +146,14 @@ async def post_run(
         period=period,
         version=version,
     )
+    if result.content_hash != version["content_hash"]:
+        # Recomputed hash disagrees with the persisted digest: the immutable
+        # version rows were tampered with (or predate the canonical shape).
+        stale = ConflictError(
+            "Persisted run version content_hash does not match the reconstructed result."
+        )
+        stale.error_code = URN_STALE_VERSION
+        raise stale
     findings = validate_run_result(result)
     if has_blocking(findings):
         raise ConflictError("Payroll run result has blocking validation findings.")
@@ -385,16 +197,69 @@ async def post_run(
         separators=(",", ":"),
         default=str,
     )
-    await db.execute(
-        sa.insert(payroll_report_snapshots).values(
-            organization_id=organization_id,
-            run_version_id=version_id,
-            snapshot=report_snapshot,
-            provenance="posting",
-            source_checksum=hashlib.sha256(report_snapshot_json.encode("utf-8")).hexdigest(),
-            created_by=user_id,
+    source_checksum = hashlib.sha256(report_snapshot_json.encode("utf-8")).hexdigest()
+
+    # uq_payroll_report_snapshots_org_run_version means a pre-existing row
+    # (e.g. a workbook/current-master backfill, or a concurrent post) would
+    # otherwise brick posting with a 500 on every retry. Adopt an identical
+    # row; conflict on divergent contents.
+    existing_snapshot = (
+        (
+            await db.execute(
+                sa.select(
+                    payroll_report_snapshots.c.source_checksum,
+                    payroll_report_snapshots.c.provenance,
+                ).where(
+                    payroll_report_snapshots.c.organization_id == organization_id,
+                    payroll_report_snapshots.c.run_version_id == version_id,
+                )
+            )
         )
+        .mappings()
+        .one_or_none()
     )
+    if existing_snapshot is None:
+        try:
+            async with db.begin_nested():
+                await db.execute(
+                    sa.insert(payroll_report_snapshots).values(
+                        organization_id=organization_id,
+                        run_version_id=version_id,
+                        snapshot=report_snapshot,
+                        provenance="posting",
+                        source_checksum=source_checksum,
+                        created_by=user_id,
+                    )
+                )
+        except IntegrityError as exc:
+            if not integrity_is(exc, UniqueViolationError):
+                raise
+            # Lost the insert race — the savepoint rolled back; re-select the
+            # winning row and let the checksum comparison below decide.
+            existing_snapshot = (
+                (
+                    await db.execute(
+                        sa.select(
+                            payroll_report_snapshots.c.source_checksum,
+                            payroll_report_snapshots.c.provenance,
+                        ).where(
+                            payroll_report_snapshots.c.organization_id == organization_id,
+                            payroll_report_snapshots.c.run_version_id == version_id,
+                        )
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+    if existing_snapshot is not None and existing_snapshot["source_checksum"] != source_checksum:
+        raise ConflictError(
+            "A payroll report snapshot already exists for this run version with "
+            "different contents.",
+            details={
+                "error_code": "report_snapshot_conflict",
+                "provenance": existing_snapshot["provenance"],
+            },
+        )
 
     db.add(
         PayrollApproval(

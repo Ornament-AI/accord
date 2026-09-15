@@ -39,7 +39,12 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.jobs.handlers import bind_job_session
+from app.exceptions import AccordError
+from app.jobs.handlers import (
+    artifact_maintenance_configured,
+    bind_job_session,
+    maybe_enqueue_maintenance,
+)
 from app.jobs.postgres import PostgresJobQueue
 from app.jobs.protocol import (
     Job,
@@ -62,6 +67,14 @@ _DEFAULT_HEARTBEAT_INTERVAL = 20.0
 _DEFAULT_IDLE_BACKOFF_MIN = 1.0
 _DEFAULT_IDLE_BACKOFF_MAX = 5.0
 _DEFAULT_OUTBOX_BATCH_SIZE = 50
+# Pause after an unhandled cycle error (e.g. a transient DB failure listing
+# orgs) so a persistent fault does not hot-loop the daemon.
+_DEFAULT_ERROR_BACKOFF_SECONDS = 2.0
+# Bounded wait for an in-flight handler once shutdown is requested. There is
+# no drain queue — on timeout the handler task is cancelled and the job row
+# stays ``running`` until its lease expires and the reaper requeues it
+# (ADR 0010 §3) — so this only bounds how long a hung handler delays exit.
+_DEFAULT_SHUTDOWN_GRACE_SECONDS = 30.0
 _ERROR_EXCERPT_CHARS = 2000
 
 
@@ -101,6 +114,8 @@ class WorkerLoop:
         idle_backoff_min: float = _DEFAULT_IDLE_BACKOFF_MIN,
         idle_backoff_max: float = _DEFAULT_IDLE_BACKOFF_MAX,
         outbox_batch_size: int = _DEFAULT_OUTBOX_BATCH_SIZE,
+        error_backoff_seconds: float = _DEFAULT_ERROR_BACKOFF_SECONDS,
+        shutdown_grace_seconds: float = _DEFAULT_SHUTDOWN_GRACE_SECONDS,
         queue_factory: Callable[[UUID], JobQueue] | None = None,
     ) -> None:
         if lease_seconds < 1:
@@ -111,6 +126,10 @@ class WorkerLoop:
             raise ValueError("idle backoff bounds are invalid")
         if outbox_batch_size < 1:
             raise ValueError("outbox_batch_size must be >= 1")
+        if error_backoff_seconds <= 0:
+            raise ValueError("error_backoff_seconds must be > 0")
+        if shutdown_grace_seconds <= 0:
+            raise ValueError("shutdown_grace_seconds must be > 0")
 
         self._session_factory = session_factory
         self._registry = registry
@@ -120,6 +139,8 @@ class WorkerLoop:
         self._idle_backoff_min = idle_backoff_min
         self._idle_backoff_max = idle_backoff_max
         self._outbox_batch_size = outbox_batch_size
+        self._error_backoff_seconds = error_backoff_seconds
+        self._shutdown_grace_seconds = shutdown_grace_seconds
         self._shutdown = asyncio.Event()
         # Job-queue interactions go through the JobQueue protocol; the default
         # factory yields org-scoped Postgres queues (RLS-bound, ADR 0010).
@@ -141,7 +162,18 @@ class WorkerLoop:
         logger.info("worker_started", worker_id=self.worker_id)
         try:
             while not self._shutdown.is_set():
-                claimed_any = await self.run_once()
+                try:
+                    claimed_any = await self.run_once()
+                except Exception:
+                    # A cycle-level failure (e.g. a transient DB error listing
+                    # orgs) must not kill the daemon: log and retry after a
+                    # short shutdown-aware error backoff.
+                    logger.exception(
+                        "worker_cycle_failed",
+                        worker_id=self.worker_id,
+                    )
+                    await self._idle_wait(self._error_backoff_seconds)
+                    continue
                 if self._shutdown.is_set():
                     break
                 if claimed_any:
@@ -171,8 +203,10 @@ class WorkerLoop:
             outbox_processed += outbox_counts.get("processed", 0)
             outbox_failed += outbox_counts.get("failed", 0)
 
-            queue = self._queue_factory(org_id)
+            await self._maybe_enqueue_maintenance(org_id)
+
             try:
+                queue = self._queue_factory(org_id)
                 job = await queue.claim(
                     self.worker_id,
                     lease_seconds=self._lease_seconds,
@@ -242,6 +276,33 @@ class WorkerLoop:
             )
             return {"processed": 0, "failed": 0}
 
+    async def _maybe_enqueue_maintenance(self, organization_id: UUID) -> None:
+        """Enqueue this org's hourly ``artifacts.maintenance`` job (M-data-12).
+
+        No-ops when the maintenance lane is unconfigured (no object storage).
+        Failures are logged per-org so scheduling never stalls the cycle.
+        """
+        if not artifact_maintenance_configured():
+            return
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    await bind_tenant_context(
+                        session,
+                        organization_id=organization_id,
+                    )
+                    await maybe_enqueue_maintenance(
+                        session,
+                        self._queue_factory(organization_id),
+                        organization_id,
+                    )
+        except Exception:
+            logger.exception(
+                "maintenance_enqueue_failed",
+                worker_id=self.worker_id,
+                organization_id=str(organization_id),
+            )
+
     async def _execute_claimed_job(
         self,
         queue: JobQueue,
@@ -273,6 +334,16 @@ class WorkerLoop:
                 retryable=False,
             )
             return
+        except Exception as exc:
+            # Handler resolution itself failed (registry/factory fault): fail
+            # the job as retryable rather than crashing the loop.
+            await self._safe_fail(
+                queue,
+                job,
+                error=_error_excerpt(exc),
+                retryable=True,
+            )
+            return
 
         handler_task = asyncio.create_task(
             self._run_handler_with_tenant(job, handler),
@@ -283,7 +354,7 @@ class WorkerLoop:
             name=f"job-heartbeat-{job.id}",
         )
         try:
-            await asyncio.wait({handler_task}, return_when=asyncio.ALL_COMPLETED)
+            await self._wait_for_handler(handler_task)
         finally:
             hb_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -295,16 +366,61 @@ class WorkerLoop:
 
         exc = handler_task.exception()
         if exc is not None:
+            # Permanent domain errors (AccordError < 500) dead-letter on the
+            # first attempt; 5xx and unknown exceptions stay retryable.
+            retryable = not (isinstance(exc, AccordError) and exc.status_code < 500)
             await self._safe_fail(
                 queue,
                 job,
                 error=_error_excerpt(exc),
-                retryable=True,
+                retryable=retryable,
             )
             return
 
         result = handler_task.result()
         await self._safe_complete(queue, job, result)
+
+    async def _wait_for_handler(
+        self,
+        handler_task: asyncio.Task[dict | None],
+    ) -> None:
+        """Wait for ``handler_task`` to finish.
+
+        Once shutdown is requested, the remaining wait is bounded by
+        ``shutdown_grace_seconds``; on timeout the task is cancelled so a hung
+        handler cannot block worker exit forever (T1.16). The job row stays
+        ``running`` until its lease expires and the reaper requeues it.
+        """
+        shutdown_waiter = asyncio.create_task(
+            self._shutdown.wait(),
+            name=f"job-shutdown-wait-{self.worker_id}",
+        )
+        try:
+            await asyncio.wait(
+                {handler_task, shutdown_waiter},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            shutdown_waiter.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await shutdown_waiter
+        if handler_task.done():
+            return
+        done, _pending = await asyncio.wait(
+            {handler_task},
+            timeout=self._shutdown_grace_seconds,
+        )
+        if handler_task in done:
+            return
+        logger.warning(
+            "job_handler_cancelled_on_shutdown",
+            worker_id=self.worker_id,
+            task_name=handler_task.get_name(),
+            grace_seconds=self._shutdown_grace_seconds,
+        )
+        handler_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await handler_task
 
     async def _run_handler_with_tenant(
         self,

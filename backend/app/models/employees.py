@@ -220,6 +220,10 @@ employee_pay_versions = Table(
     Column("created_by", PG_UUID(as_uuid=True), nullable=False),
     Column("change_reason", Text, nullable=True),
     CheckConstraint("NOT isempty(validity)", name="ck_employee_pay_versions_validity_not_empty"),
+    CheckConstraint(
+        "basic_pay >= 0 AND basic_pay <= 99999999.99",
+        name="ck_employee_pay_versions_basic_pay_nonneg",
+    ),
     ExcludeConstraint(
         ("organization_id", "="),
         ("header_id", "="),

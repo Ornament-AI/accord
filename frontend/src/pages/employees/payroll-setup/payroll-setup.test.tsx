@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RecurringInstructionVersionCreate } from "@/lib/api/employee-payroll-setup";
+import type {
+	AdvanceInstallmentVersionCreate,
+	RecurringInstructionVersionCreate,
+} from "@/lib/api/employee-payroll-setup";
 import { queryClient } from "@/lib/query-client";
 import { buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
@@ -215,6 +218,9 @@ describe("Employee payroll-setup tabs", () => {
 			fireEvent.click(screen.getByRole("button", { name: "End" }));
 			expect(await screen.findByRole("heading", { name: "End Instruction" })).toBeInTheDocument();
 			pickDateByLabel("End On", "2026-06-30");
+			fireEvent.change(screen.getByLabelText("Change Reason (Optional)"), {
+				target: { value: "No longer applicable" },
+			});
 			fireEvent.click(screen.getByRole("button", { name: "End Instruction" }));
 
 			await waitFor(() => {
@@ -222,11 +228,63 @@ describe("Employee payroll-setup tabs", () => {
 			});
 			expect(captured.body).toMatchObject({
 				end_on: "2026-06-30",
-				change_reason: null,
+				change_reason: "No longer applicable",
 			});
 			expect(captured.body).not.toHaveProperty("effective_from");
 			expect(captured.body?.amount).toBeUndefined();
 			expect(captured.body?.rate).toBeUndefined();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"sends the version reason from the new-version dialog",
+		async () => {
+			const captured: { body?: RecurringInstructionVersionCreate } = {};
+			setupEmployeePage("organization_administrator", {
+				recurringInstructions: [
+					buildRecurringInstruction({
+						id: "ri-1",
+						employee_id: EMPLOYEE_ID,
+						amount: "2500.00",
+						reason: "Original HRA grant",
+					}),
+				],
+				onCreateInstructionVersion: (_id, body) => {
+					captured.body = body;
+				},
+			});
+
+			await openEmployeeTab("Recurring Items");
+			fireEvent.click(
+				await screen.findByRole("button", { name: "New Version" }, { timeout: PAGE_TIMEOUT }),
+			);
+			expect(await screen.findByRole("heading", { name: "New Version" })).toBeInTheDocument();
+			const versionDialog = screen.getByRole("dialog");
+
+			// The existing version note is prefilled so it is not silently nulled.
+			const reasonField = within(versionDialog).getByLabelText("Reason (Optional)");
+			expect(reasonField).toHaveValue("Original HRA grant");
+			fireEvent.change(reasonField, { target: { value: "Revised HRA grant" } });
+			pickDateByLabel("Effective From", "2026-08-01");
+			fireEvent.change(within(versionDialog).getByLabelText("Amount"), {
+				target: { value: "3000.00" },
+			});
+			fireEvent.change(within(versionDialog).getByLabelText("Change Reason (Optional)"), {
+				target: { value: "Annual revision" },
+			});
+			fireEvent.click(within(versionDialog).getByRole("button", { name: "Create Version" }));
+
+			await waitFor(() => {
+				expect(captured.body).toBeDefined();
+			});
+			expect(captured.body).toMatchObject({
+				effective_from: "2026-08-01",
+				amount: "3000.00",
+				rate: null,
+				reason: "Revised HRA grant",
+				change_reason: "Annual revision",
+			});
 		},
 		PAGE_TIMEOUT,
 	);
@@ -273,6 +331,64 @@ describe("Employee payroll-setup tabs", () => {
 			expect(await screen.findByText("50000.00")).toBeInTheDocument();
 			expect(screen.getByText("5000.00")).toBeInTheDocument();
 			expect(screen.getByText("0/10")).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"prefills the current schedule in the new-installment-version dialog",
+		async () => {
+			const captured: { advanceId?: string; body?: AdvanceInstallmentVersionCreate } = {};
+			setupEmployeePage("organization_administrator", {
+				advances: [
+					buildAdvance({
+						id: "adv-1",
+						employee_id: EMPLOYEE_ID,
+						principal: "100000.00",
+						installment_amount: "5000.00",
+						installments_recovered_opening: 7,
+						installments_total: 20,
+					}),
+				],
+				onCreateAdvanceInstallmentVersion: (advanceId, body) => {
+					captured.advanceId = advanceId;
+					captured.body = body;
+				},
+			});
+
+			await openEmployeeTab("Advances");
+			fireEvent.click(
+				await screen.findByRole(
+					"button",
+					{ name: "Update Installment" },
+					{ timeout: PAGE_TIMEOUT },
+				),
+			);
+			expect(
+				await screen.findByRole("heading", { name: "New Installment Version" }),
+			).toBeInTheDocument();
+			const versionDialog = screen.getByRole("dialog");
+
+			expect(within(versionDialog).getByLabelText("Installment Amount")).toHaveValue("5000.00");
+			expect(within(versionDialog).getByLabelText("Installments Recovered (Opening)")).toHaveValue(
+				7,
+			);
+			expect(within(versionDialog).getByLabelText("Installments Total")).toHaveValue(20);
+
+			pickDateByLabel("Effective From", "2026-08-01");
+			fireEvent.click(within(versionDialog).getByRole("button", { name: "Create Version" }));
+
+			await waitFor(() => {
+				expect(captured.body).toBeDefined();
+			});
+			expect(captured.advanceId).toBe("adv-1");
+			expect(captured.body).toMatchObject({
+				effective_from: "2026-08-01",
+				installment_amount: "5000.00",
+				installments_recovered_opening: 7,
+				installments_total: 20,
+				change_reason: null,
+			});
 		},
 		PAGE_TIMEOUT,
 	);

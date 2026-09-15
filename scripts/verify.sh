@@ -66,6 +66,13 @@ else
 	skip_step "backend tests — backend/.venv or backend/tests not found"
 fi
 
+step "Check report catalog against backend authority"
+if [[ -x "$PYTHON_BIN" && -f "$ROOT/scripts/generate-report-catalog.py" ]]; then
+	run_step "report catalog --check" "$PYTHON_BIN" "$ROOT/scripts/generate-report-catalog.py" --check
+else
+	skip_step "report catalog check — backend/.venv or scripts/generate-report-catalog.py not found"
+fi
+
 step "Check generated API types"
 if [[ -x "$ROOT/scripts/generate-api-types.sh" ]]; then
 	PYTHON_BIN="$PYTHON_BIN" "$ROOT/scripts/generate-api-types.sh" || die_step "generate-api-types.sh failed"

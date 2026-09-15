@@ -6,6 +6,7 @@ internal network, or mesh). Do **not** expose it on the public internet.
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 
@@ -21,7 +22,12 @@ from prometheus_client import (
 from sqlalchemy import func, select
 
 from app.db import session_context
+from app.exceptions import ConflictError
 from app.models.platform import ExportArtifact, Job, OutboxEvent
+from app.services.bootstrap import get_singleton_organization
+from app.tenancy import bind_tenant_context
+
+logger = logging.getLogger(__name__)
 
 # Dedicated registry avoids Counter/Gauge double-registration when tests recreate apps.
 REGISTRY = CollectorRegistry(auto_describe=True)
@@ -112,14 +118,43 @@ def matched_route_template(request: Request) -> str:
     return prefix + route_path
 
 
+def _zero_platform_gauges() -> None:
+    for status in _JOB_STATUSES:
+        accord_jobs.labels(status=status).set(0)
+    for status in _ARTIFACT_STATUSES:
+        accord_artifacts.labels(status=status).set(0)
+    accord_outbox_pending.set(0)
+    accord_outbox_oldest_age_seconds.set(0)
+
+
 async def refresh_platform_gauges() -> None:
     """Refresh scrape-time gauges with a short DB query.
 
     Cost: one session and a handful of aggregated ``COUNT`` / ``MIN`` queries
     over ``jobs``, ``outbox_events``, and ``export_artifacts``. Acceptable at
     Accord's current scale when scrapes are infrequent (e.g. 15–60s).
+
+    All three tables are forced-RLS protected, so the aggregate queries must
+    run with the singleton organization's tenant context bound — without it,
+    every row is invisible and the gauges silently report zero.
     """
     async with session_context() as session:
+        try:
+            org = await get_singleton_organization(session)
+        except ConflictError:
+            # Matches the codebase's singleton-org invariant everywhere else;
+            # keep /metrics from 500ing and surface the violation in logs.
+            logger.error("platform_gauges_skipped_multi_org")
+            return
+        if org is None:
+            # Fresh install before organization bootstrap: report honest zeros.
+            _zero_platform_gauges()
+            return
+
+        # get_singleton_organization already autobegan this transaction, so the
+        # transaction-local GUC below lives until the session closes.
+        await bind_tenant_context(session, organization_id=org.id)
+
         for status in _JOB_STATUSES:
             accord_jobs.labels(status=status).set(0)
         job_rows = await session.execute(select(Job.status, func.count()).group_by(Job.status))
@@ -163,10 +198,21 @@ async def metrics_endpoint() -> Response:
 async def prometheus_http_middleware(request: Request, call_next):
     """Record request count and latency using matched route templates."""
     start = time.perf_counter()
-    response = await call_next(request)
+    method = request.method
+    try:
+        response = await call_next(request)
+    except Exception:
+        # Unhandled errors are turned into responses by ServerErrorMiddleware,
+        # which wraps all user middleware — record the 500 here so the metric
+        # is not silently dropped. scope["route"] is set by the router before
+        # the endpoint raised, so the template still resolves here.
+        elapsed = time.perf_counter() - start
+        route = matched_route_template(request)
+        http_requests_total.labels(method=method, route=route, status="500").inc()
+        http_request_duration_seconds.labels(route=route).observe(elapsed)
+        raise
     elapsed = time.perf_counter() - start
     route = matched_route_template(request)
-    method = request.method
     status = str(response.status_code)
     http_requests_total.labels(method=method, route=route, status=status).inc()
     http_request_duration_seconds.labels(route=route).observe(elapsed)

@@ -33,7 +33,7 @@ CREATE_ROLES_SQL = BACKEND_ROOT / "scripts" / "create_roles.sql"
 # connection parameters (user, password, host, port) but swapping the database.
 _BASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://darshan@127.0.0.1:5432/accord_test",
+    "postgresql+asyncpg://accord:accord@127.0.0.1:5432/accord_test",
 )
 
 

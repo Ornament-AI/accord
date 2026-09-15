@@ -5,6 +5,9 @@ from functools import lru_cache
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+MIN_SESSION_SECRET_LENGTH = 16
+_ALLOWED_ENVIRONMENTS = frozenset({"development", "staging", "production"})
+
 
 class Settings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
@@ -37,6 +40,7 @@ class Settings(BaseSettings):
     # Signed opaque cookie + database-backed session.
     session_secret_key: str = Field(default="", alias="SESSION_SECRET_KEY")
     session_cookie_name: str = Field(default="accord_session", alias="SESSION_COOKIE_NAME")
+    csrf_cookie_name: str = Field(default="accord_csrf", alias="CSRF_COOKIE_NAME")
     session_idle_timeout_seconds: int = Field(default=7200, alias="SESSION_IDLE_TIMEOUT_SECONDS")
     workos_webhook_tolerance_seconds: int = Field(
         default=300,
@@ -95,9 +99,27 @@ class Settings(BaseSettings):
     def _clamp_db_statement_timeout(cls, v: int) -> int:
         return max(0, min(3_600_000, v))
 
+    @field_validator("environment", mode="after")
+    @classmethod
+    def _validate_environment(cls, v: str) -> str:
+        normalized = v.strip().lower()
+        if normalized not in _ALLOWED_ENVIRONMENTS:
+            raise ValueError(
+                f"ENVIRONMENT must be one of {sorted(_ALLOWED_ENVIRONMENTS)}, got {v!r}."
+            )
+        return normalized
+
+    @property
+    def is_development(self) -> bool:
+        return self.environment == "development"
+
     @property
     def is_production(self) -> bool:
-        return self.environment.lower() == "production"
+        # Everything except an explicit development environment gets
+        # production-class invariants (required secrets, Secure cookies, no
+        # dev auth bypass). A mistyped ENVIRONMENT fails loudly via the
+        # allowlist above rather than silently degrading to dev behavior.
+        return not self.is_development
 
     @property
     def effective_public_app_url(self) -> str:
@@ -107,6 +129,8 @@ class Settings(BaseSettings):
     def _validate_production_invariants(self) -> "Settings":
         if self.is_production and self.dev_auth_bypass:
             raise ValueError("DEV_AUTH_BYPASS cannot be enabled in production.")
+        if self.is_production and self.accord_allow_weak_secrets:
+            raise ValueError("ACCORD_ALLOW_WEAK_SECRETS cannot be enabled in production.")
         if self.is_production:
             required = {
                 "WORKOS_CLIENT_ID": self.workos_client_id,
@@ -114,11 +138,19 @@ class Settings(BaseSettings):
                 "WORKOS_REDIRECT_URI": self.workos_redirect_uri,
                 "WORKOS_WEBHOOK_SECRET": self.workos_webhook_secret,
                 "SESSION_SECRET_KEY": self.session_secret_key,
-                "MIGRATIONS_DATABASE_URL": self.migrations_database_url,
             }
+            # MIGRATIONS_DATABASE_URL is intentionally absent: only the
+            # one-shot migrate task consumes it (alembic env.py raises when
+            # unset), and injecting the privileged migrator DSN into
+            # long-lived api/worker env widens its blast radius.
             missing = [name for name, value in required.items() if not value]
             if missing:
                 raise ValueError("Missing required production settings: " + ", ".join(missing))
+            if len(self.session_secret_key) < MIN_SESSION_SECRET_LENGTH:
+                raise ValueError(
+                    f"SESSION_SECRET_KEY must be at least {MIN_SESSION_SECRET_LENGTH} "
+                    "characters in production."
+                )
         return self
 
 

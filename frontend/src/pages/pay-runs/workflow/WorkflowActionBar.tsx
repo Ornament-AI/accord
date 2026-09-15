@@ -9,6 +9,7 @@ import {
 	useApprovePayrollRun,
 	usePostPayrollRun,
 	useRejectPayrollRun,
+	useReopenPayrollRun,
 	useReversePayrollRun,
 	useSubmitPayrollRun,
 	useValidatePayrollRun,
@@ -57,6 +58,7 @@ export function WorkflowActionBar({
 	const withdrawMutation = useWithdrawPayrollRun(run.id);
 	const approveMutation = useApprovePayrollRun(run.id);
 	const rejectMutation = useRejectPayrollRun(run.id);
+	const reopenMutation = useReopenPayrollRun(run.id);
 	const postMutation = usePostPayrollRun(run.id);
 	const reverseMutation = useReversePayrollRun(run.id);
 
@@ -66,6 +68,7 @@ export function WorkflowActionBar({
 		withdrawMutation.isPending ||
 		approveMutation.isPending ||
 		rejectMutation.isPending ||
+		reopenMutation.isPending ||
 		postMutation.isPending ||
 		reverseMutation.isPending;
 
@@ -144,6 +147,10 @@ export function WorkflowActionBar({
 				case "reject":
 					await rejectMutation.mutateAsync({ idempotencyKey, reason });
 					toast.success("Pay run rejected");
+					break;
+				case "reopen":
+					await reopenMutation.mutateAsync({ idempotencyKey, reason });
+					toast.success("Pay run reopened");
 					break;
 				case "post":
 					await postMutation.mutateAsync(idempotencyKey);

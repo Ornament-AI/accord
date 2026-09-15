@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { toAuditDayBound } from "@/lib/api/audit";
 import { queryClient } from "@/lib/query-client";
 import { buildAuthMe, buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
@@ -140,6 +141,70 @@ describe("audit history", () => {
 		});
 	});
 
+	it("holds the query while entity ID is not UUID-shaped, then queries once valid", async () => {
+		const audit = useAuditor(createAuditHandlers());
+		renderAuditPage();
+		await screen.findByText("2026-07 payroll run 1", {}, { timeout: PAGE_TIMEOUT });
+
+		const partial = "22222222-2222";
+		fireEvent.change(screen.getByLabelText("Filter by Entity ID"), {
+			target: { value: partial },
+		});
+		expect(
+			await screen.findByTestId("entity-id-invalid", {}, { timeout: PAGE_TIMEOUT }),
+		).toHaveTextContent(/UUID/);
+		// Past the 300ms debounce, the partial id must never reach the backend —
+		// it would 422 and clear the workspace. Previous results stay (dimmed
+		// placeholder) while the hint explains why nothing new is loading.
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		expect(audit.capturedListRequests.some((request) => request.entity_id === partial)).toBe(false);
+		expect(screen.getByText("2026-07 payroll run 1")).toBeInTheDocument();
+
+		const full = "22222222-2222-2222-2222-000000000001";
+		fireEvent.change(screen.getByLabelText("Filter by Entity ID"), {
+			target: { value: full },
+		});
+		await waitFor(() =>
+			expect(audit.capturedListRequests.some((request) => request.entity_id === full)).toBe(true),
+		);
+		expect(screen.queryByTestId("entity-id-invalid")).not.toBeInTheDocument();
+	});
+
+	it("sends IST day bounds for the picked date range", async () => {
+		const audit = useAuditor(createAuditHandlers());
+		renderAuditPage();
+		await screen.findByText("2026-07 payroll run 1", {}, { timeout: PAGE_TIMEOUT });
+
+		fireEvent.click(screen.getByLabelText("Filter by Date Range"));
+		const now = new Date();
+		let cursorIndex = now.getFullYear() * 12 + now.getMonth();
+		const pickRangeDay = (iso: string) => {
+			const [year, month, day] = iso.split("-").map(Number);
+			const dataDay = new Date(year, month - 1, day).toLocaleDateString();
+			const targetIndex = year * 12 + (month - 1);
+			while (cursorIndex !== targetIndex) {
+				if (cursorIndex > targetIndex) {
+					fireEvent.click(screen.getByRole("button", { name: "Go to the Previous Month" }));
+					cursorIndex -= 1;
+				} else {
+					fireEvent.click(screen.getByRole("button", { name: "Go to the Next Month" }));
+					cursorIndex += 1;
+				}
+			}
+			const dayButton = document.querySelector(`[data-day="${dataDay}"]`);
+			if (!dayButton) throw new Error(`Calendar day not found for ${iso} (${dataDay})`);
+			fireEvent.click(dayButton);
+		};
+		pickRangeDay("2026-08-01");
+		pickRangeDay("2026-08-05");
+
+		await waitFor(() => {
+			const last = audit.capturedListRequests.at(-1);
+			expect(last?.from).toBe("2026-08-01T00:00:00+05:30");
+			expect(last?.to).toBe("2026-08-05T23:59:59.999999+05:30");
+		});
+	});
+
 	it("renders one empty state without a detail pane", async () => {
 		useAuditor(createAuditHandlers({ empty: true }));
 		renderAuditPage();
@@ -186,5 +251,12 @@ describe("audit history", () => {
 		expect(
 			await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 		).toBeInTheDocument();
+	});
+});
+
+describe("toAuditDayBound", () => {
+	it("emits ACCORD-timezone-aware day bounds instead of naive local times", () => {
+		expect(toAuditDayBound(new Date(2026, 7, 1), "start")).toBe("2026-08-01T00:00:00+05:30");
+		expect(toAuditDayBound(new Date(2026, 7, 1), "end")).toBe("2026-08-01T23:59:59.999999+05:30");
 	});
 });

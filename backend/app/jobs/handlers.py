@@ -163,6 +163,83 @@ async def handle_consolidated_xlsx(job: Job) -> dict[str, Any] | None:
     )
 
 
+# --- artifacts.maintenance --------------------------------------------------
+#
+# One scheduled job per org per hour (dedupe bucket ``<date>T<HH>``) reconciles
+# stuck ``pending`` artifact rows against object storage and expires artifacts
+# past retention (M-data-12). Enqueueing is status-agnostic — a succeeded job
+# for the current hour also suppresses re-enqueue, so a fast cycle cannot run
+# maintenance twice in the same hour.
+
+
+def artifact_maintenance_configured() -> bool:
+    """True when object storage is configured (maintenance is a no-op without it)."""
+    return _generate_report_storage is not None
+
+
+def _maintenance_dedupe_key(now: Any) -> str:
+    return f"artifacts.maintenance:{now.strftime('%Y-%m-%dT%H')}"
+
+
+async def maybe_enqueue_maintenance(
+    session: AsyncSession,
+    queue: Any,
+    organization_id: Any,
+) -> bool:
+    """Enqueue this org's hourly ``artifacts.maintenance`` job if absent.
+
+    ``session`` must already be tenant-bound (``bind_tenant_context``); it is
+    used only for the existence check. ``queue`` performs the enqueue on its
+    own session. Returns True when a job was enqueued.
+    """
+    import sqlalchemy as sa
+
+    from app.models.platform import Job as JobRow
+
+    from datetime import UTC, datetime
+
+    dedupe_key = _maintenance_dedupe_key(datetime.now(UTC))
+    exists = await session.execute(
+        sa.select(JobRow.id).where(
+            JobRow.organization_id == organization_id,
+            JobRow.job_type == "artifacts.maintenance",
+            JobRow.dedupe_key == dedupe_key,
+        )
+    )
+    if exists.first() is not None:
+        return False
+    await queue.enqueue(
+        organization_id,
+        "artifacts.maintenance",
+        {},
+        dedupe_key=dedupe_key,
+        max_attempts=3,
+    )
+    return True
+
+
+async def handle_artifact_maintenance(job: Job) -> dict[str, Any] | None:
+    """Reconcile orphaned artifacts and expire artifacts past retention."""
+    from datetime import UTC, datetime
+
+    from app.services.artifacts import expire_artifacts, reconcile_orphans
+
+    session = current_job_session()
+    storage, _registry, _engine_version = _require_generate_report_deps()
+    counts = await reconcile_orphans(session, storage, organization_id=job.organization_id)
+    expired = await expire_artifacts(
+        session, organization_id=job.organization_id, now=datetime.now(UTC)
+    )
+    return {
+        "reconciled": {
+            "finalized": counts.finalized,
+            "deleted": counts.deleted,
+            "checksum_mismatch": counts.checksum_mismatch,
+        },
+        "expired": expired,
+    }
+
+
 def register_handlers(target: JobHandlerRegistry) -> JobHandlerRegistry:
     """Register built-in worker handlers onto ``target``.
 
@@ -173,6 +250,7 @@ def register_handlers(target: JobHandlerRegistry) -> JobHandlerRegistry:
     target.register("noop")(handle_noop)
     target.register("generate_report")(handle_generate_report)
     target.register("consolidated_xlsx")(handle_consolidated_xlsx)
+    target.register("artifacts.maintenance")(handle_artifact_maintenance)
     return target
 
 

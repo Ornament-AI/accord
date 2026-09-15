@@ -101,6 +101,17 @@ recurring_instruction_versions = Table(
         "NOT isempty(validity)",
         name="ck_recurring_instruction_versions_validity_not_empty",
     ),
+    # amount stays signed: the calc kind is resolved via the linked
+    # component's rate version, so the one_time_adjustment carve-out is
+    # enforced by validate_run_inputs at calculate time, not on this row.
+    CheckConstraint(
+        "amount IS NULL OR (amount >= -99999999.99 AND amount <= 99999999.99)",
+        name="ck_recurring_instruction_versions_amount",
+    ),
+    CheckConstraint(
+        "rate IS NULL OR (rate >= 0 AND rate <= 99999.9999)",
+        name="ck_recurring_instruction_versions_rate",
+    ),
     ExcludeConstraint(
         ("organization_id", "="),
         ("header_id", "="),

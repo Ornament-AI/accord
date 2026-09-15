@@ -19,7 +19,29 @@ from app.schemas.audit import (
     AuditEventListPage,
     AuditFilterOptionsResponse,
 )
+from app.schemas.employees import SENSITIVE_PROFILE_FIELDS, mask_value
 from app.schemas.pagination import page_count, page_offset
+
+_SENSITIVE_STATE_KEYS = frozenset(SENSITIVE_PROFILE_FIELDS) | {"account_number"}
+
+
+def mask_sensitive_state(value: Any) -> Any:
+    """Recursively mask sensitive key values in a stored audit state payload.
+
+    Read-time masking keeps full write-time fidelity in the stored row (the
+    forensic record) while ``view_audit`` — granted to every org role — sees
+    masked values unless the caller also holds ``reveal_sensitive_fields``.
+    """
+    if isinstance(value, dict):
+        return {
+            key: mask_value(item)
+            if key in _SENSITIVE_STATE_KEYS and isinstance(item, str)
+            else mask_sensitive_state(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [mask_sensitive_state(item) for item in value]
+    return value
 
 
 def _actor(row: sa.RowMapping) -> AuditActor | None:
@@ -141,6 +163,7 @@ async def get_audit_event(
     *,
     organization_id: UUID,
     event_id: UUID,
+    reveal: bool = False,
 ) -> AuditEventDetailResponse:
     row = (
         (
@@ -158,11 +181,17 @@ async def get_audit_event(
     item = _list_item(row)
     metadata = dict(row["metadata"] or {})
     resource = metadata.pop("resource", None)
+    before_state = row["before_state"]
+    after_state = row["after_state"]
+    if not reveal:
+        before_state = mask_sensitive_state(before_state)
+        after_state = mask_sensitive_state(after_state)
+        resource = mask_sensitive_state(resource)
     return AuditEventDetailResponse(
         **item.model_dump(),
         request_id=row["request_id"],
-        before_state=row["before_state"],
-        after_state=row["after_state"],
+        before_state=before_state,
+        after_state=after_state,
         resource_state=resource,
         access_details=metadata,
     )

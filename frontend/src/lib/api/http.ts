@@ -28,9 +28,29 @@ function appendHeaders(target: HeaderMap, source: HeadersInit | undefined): void
 	}
 }
 
-function mergeRequestHeaders(initHeaders: HeadersInit | undefined): HeaderMap {
+const CSRF_COOKIE_NAME = "accord_csrf";
+const CSRF_HEADER_NAME = "x-csrf-token";
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function readCookie(name: string): string | null {
+	if (typeof document === "undefined" || !document.cookie) return null;
+	for (const part of document.cookie.split(";")) {
+		const [key, ...rest] = part.trim().split("=");
+		if (key === name) return decodeURIComponent(rest.join("="));
+	}
+	return null;
+}
+
+function mergeRequestHeaders(initHeaders: HeadersInit | undefined, method?: string): HeaderMap {
 	const headers: HeaderMap = {};
 	appendHeaders(headers, initHeaders);
+	// Synchronizer-token CSRF contract: echo the signed accord_csrf cookie on
+	// cookie-authenticated mutations (the backend middleware verifies the
+	// header matches the session-bound cookie).
+	if (method && UNSAFE_METHODS.has(method.toUpperCase()) && !(CSRF_HEADER_NAME in headers)) {
+		const token = readCookie(CSRF_COOKIE_NAME);
+		if (token) headers[CSRF_HEADER_NAME] = token;
+	}
 	return headers;
 }
 
@@ -132,7 +152,7 @@ async function fetchApiResponse(
 		response = await fetch(resolveApiUrl(url), {
 			...rest,
 			credentials,
-			headers: mergeRequestHeaders(headers),
+			headers: mergeRequestHeaders(headers, rest.method),
 		});
 	} catch (error) {
 		throw new ApiError("Unable to reach the server. Check your connection.", 0, {

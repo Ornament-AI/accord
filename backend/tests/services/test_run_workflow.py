@@ -10,6 +10,8 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.payroll.engine import content_hash_for
+from app.domain.payroll.money import Money
 from app.exceptions import ConflictError, ForbiddenError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
@@ -36,6 +38,7 @@ from app.services.run_workflow import (
     URN_WITHDRAW_FORBIDDEN,
     approve_run,
     reject_run,
+    reopen_run,
     submit_run,
     validate_run,
     withdraw_run,
@@ -324,7 +327,11 @@ async def test_happy_path_validate_submit_approve(session):
     assert validated["current_version_number"] == 1
     assert validated["content_hash"] == calc["content_hash"]
     assert await _count_approvals(session, run_id=world["run_id"]) == 0
-    assert await _count_audits(session, run_id=world["run_id"]) == 0
+    # validate_run is a read; the only event so far is the calculate mutation.
+    assert (
+        await _count_audits(session, run_id=world["run_id"], command="payroll_run.calculate") == 1
+    )
+    assert await _count_audits(session, run_id=world["run_id"]) == 1
 
     await _bind(session, world["org_id"], world["user_id"])
     submitted = await submit_run(
@@ -597,7 +604,28 @@ async def test_blocking_validation_prevents_submit(session):
     )
 
     # Point the run at an empty calculated version (blocking empty_run finding).
+    # The content_hash must match reconstruction from stored lines — validation
+    # recomputes it and rejects inconsistent versions (the table is immutable,
+    # so the correct hash goes in at insert time).
     empty_version_id = uuid4()
+    zero = Money.zero()
+    empty_hash = content_hash_for(
+        period="2026-06",
+        org_ref=str(world["org_id"]),
+        engine_version="test",
+        employees=(),
+        earnings_total=zero,
+        employer_contribution_total=zero,
+        gross_adjustment_total=zero,
+        gross_total=zero,
+        ag_deduction_total=zero,
+        treasury_deduction_total=zero,
+        external_recovery_total=zero,
+        deductions_total=zero,
+        net_payable=zero,
+        offbill_employer_remittance=zero,
+        disbursement=zero,
+    )
     await _bind(session, world["org_id"], world["user_id"])
     await session.execute(
         sa.insert(payroll_run_versions).values(
@@ -606,7 +634,7 @@ async def test_blocking_validation_prevents_submit(session):
             run_id=world["run_id"],
             version_number=99,
             engine_version="test",
-            content_hash="a" * 64,
+            content_hash=empty_hash,
             calculated_at=datetime.now(timezone.utc),
             calculated_by=world["user_id"],
             inputs_snapshot={"period": "2026-06", "org_ref": str(world["org_id"]), "employees": []},
@@ -686,3 +714,108 @@ async def test_reject_writes_approval_and_audit(session):
     assert rejected["status"] == "rejected"
     assert await _count_approvals(session, run_id=world["run_id"], action="reject") == 1
     assert await _count_audits(session, run_id=world["run_id"], command="reject") == 1
+
+
+@pytest.mark.asyncio
+async def test_reopen_rejected_run_returns_to_draft(session):
+    world = await _seed_world(session)
+    approver = await seed_user(session, workos_user_id=f"wf_rp_{uuid4().hex[:10]}")
+    approver_id = approver.id
+    await seed_membership(
+        session,
+        organization_id=world["org_id"],
+        user_id=approver_id,
+        role="payroll_approver",
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    calc = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+    await submit_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    await _bind(session, world["org_id"], approver_id)
+    rejected = await reject_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=approver_id,
+        reason="fix inputs",
+    )
+    assert rejected["status"] == "rejected"
+
+    await _bind(session, world["org_id"], world["user_id"])
+    reopened = await reopen_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+        reason="correction",
+    )
+    assert reopened["status"] == "draft"
+    # The calculated version pointer and approval/audit history are preserved.
+    assert reopened["content_hash"] == calc["content_hash"]
+    assert await _count_approvals(session, run_id=world["run_id"], action="reopen") == 1
+    assert await _count_audits(session, run_id=world["run_id"], command="reopen") == 1
+    assert await _count_approvals(session, run_id=world["run_id"], action="reject") == 1
+
+
+@pytest.mark.asyncio
+async def test_reopen_calculated_run_returns_to_draft(session):
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+    reopened = await reopen_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    assert reopened["status"] == "draft"
+    assert await _count_approvals(session, run_id=world["run_id"], action="reopen") == 1
+
+
+@pytest.mark.asyncio
+async def test_reopen_illegal_statuses(session):
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError) as exc:
+        await reopen_run(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )
+    assert exc.value.error_code == URN_ILLEGAL_TRANSITION
+
+
+def test_trace_from_row_preserves_legacy_unrounded_value():
+    # Versions written before canonical formatting can store raw repr strings
+    # like "1E-8". The hash covers the string verbatim, so reconstruction must
+    # not canonicalize it or pre-canonical versions stop reproducing their hash.
+    from app.services.run_reconstruction import trace_from_row
+
+    row = {
+        "trace": {"unrounded_value": "1E-8"},
+        "classification": "earning",
+        "component_code": "BASIC",
+        "calc_kind": "fixed",
+        "amount": Decimal("0.00"),
+    }
+    trace = trace_from_row(row)
+    assert trace.unrounded_value == "1E-8"

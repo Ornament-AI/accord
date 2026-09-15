@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 
 from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -20,7 +21,15 @@ from app.auth.errors import (
     AuthMisconfiguredError,
     WeakSessionSecretError,
 )
-from app.auth.session import get_session_store, sign_oauth_state, verify_oauth_state
+from app.auth.session import (
+    OAUTH_STATE_MAX_AGE_SECONDS,
+    apply_csrf_cookie,
+    clear_csrf_cookie,
+    get_session_store,
+    hash_user_agent,
+    sign_oauth_state,
+    verify_oauth_state,
+)
 from app.auth.webhooks import handle_workos_event, verify_workos_webhook
 from app.config import get_settings
 from app.models.identity import OrganizationInvitation, OrganizationMembership, User
@@ -29,12 +38,14 @@ from app.schemas.identity import MagicCodeLoginRequest, MagicCodeRequest, Passwo
 from app.services.identity import (
     build_me_payload,
     establish_session_for_identity,
+    session_matches_user_agent,
 )
 from app.services.bootstrap import get_singleton_organization
 from app.tenancy import bind_tenant_context
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 EMAIL_NOT_REGISTERED_DETAIL = "This email is not registered with us."
+OAUTH_STATE_COOKIE = "accord_oauth_state"
 
 
 def _request_id(request: Request) -> str | None:
@@ -91,10 +102,38 @@ def _redirect_after_auth(return_to: str | None) -> str:
 
 
 def _user_agent_hash(request: Request) -> str | None:
-    ua = request.headers.get("user-agent")
-    if not ua:
-        return None
-    return hashlib.sha256(ua.encode("utf-8")).hexdigest()
+    return hash_user_agent(request.headers.get("user-agent"))
+
+
+def _oauth_state_hash(state: str) -> str:
+    return hashlib.sha256(state.encode("utf-8")).hexdigest()
+
+
+def _apply_oauth_state_cookie(
+    settings,
+    response: Response,
+    state: str,
+) -> None:
+    """Bind the OAuth state to this browser via an HttpOnly hash cookie."""
+    response.set_cookie(
+        key=OAUTH_STATE_COOKIE,
+        value=_oauth_state_hash(state),
+        max_age=OAUTH_STATE_MAX_AGE_SECONDS,
+        path="/api/auth",
+        httponly=True,
+        secure=settings.is_production,
+        samesite="lax",
+    )
+
+
+def _clear_oauth_state_cookie(settings, response: Response) -> None:
+    response.delete_cookie(
+        key=OAUTH_STATE_COOKIE,
+        path="/api/auth",
+        httponly=True,
+        secure=settings.is_production,
+        samesite="lax",
+    )
 
 
 async def _complete_headless_login(
@@ -111,6 +150,7 @@ async def _complete_headless_login(
     )
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     get_session_store(settings, db).apply_session_cookie(response, cookie_value)
+    apply_csrf_cookie(settings, response, cookie_value)
     return response
 
 
@@ -187,6 +227,7 @@ async def login(
             status_code=status.HTTP_302_FOUND,
         )
         get_session_store(settings, db).apply_session_cookie(response, cookie_value)
+        apply_csrf_cookie(settings, response, cookie_value)
         return response
 
     state = sign_oauth_state(settings, redirect_to=validated_return_to)
@@ -194,7 +235,11 @@ async def login(
         state=state,
         redirect_uri=settings.workos_redirect_uri,
     )
-    return RedirectResponse(url=authorization_url, status_code=status.HTTP_302_FOUND)
+    response = RedirectResponse(url=authorization_url, status_code=status.HTTP_302_FOUND)
+    # Bind the state to this browser so a callback carrying a foreign (but
+    # validly signed) state cannot donate a session — M-sec-3.
+    _apply_oauth_state_cookie(settings, response, state)
+    return response
 
 
 @router.post("/login/password", status_code=status.HTTP_204_NO_CONTENT)
@@ -297,6 +342,16 @@ async def callback(
     if state_payload is None:
         return _login_error_redirect("invalid_state")
 
+    # The signed state must also be bound to this browser (login CSRF /
+    # session-donation guard — M-sec-3).
+    state_cookie = request.cookies.get(OAUTH_STATE_COOKIE)
+    if (
+        not state
+        or not state_cookie
+        or not hmac.compare_digest(state_cookie, _oauth_state_hash(state))
+    ):
+        return _login_error_redirect("invalid_state")
+
     if not code:
         return _login_error_redirect("auth_failed")
 
@@ -330,6 +385,8 @@ async def callback(
         status_code=status.HTTP_302_FOUND,
     )
     get_session_store(settings, db).apply_session_cookie(response, cookie_value)
+    apply_csrf_cookie(settings, response, cookie_value)
+    _clear_oauth_state_cookie(settings, response)
     return response
 
 
@@ -351,6 +408,7 @@ async def logout(request: Request, db: Session) -> Response:
             await db.commit()
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     store.clear_session_cookie(response)
+    clear_csrf_cookie(settings, response)
     return response
 
 
@@ -382,6 +440,13 @@ async def me(request: Request, db: Session) -> Response:
         store = get_session_store(settings, db)
         session_row = await store.read_session(cookie_value)
     except WeakSessionSecretError:
+        session_row = None
+
+    if session_row is not None and not await session_matches_user_agent(
+        db,
+        session_row,
+        hash_user_agent(request.headers.get("user-agent")),
+    ):
         session_row = None
 
     if session_row is None:
@@ -425,6 +490,14 @@ async def workos_webhook(request: Request, db: Session) -> Response:
         )
 
     body = await request.body()
+    if len(body) > settings.max_request_body_bytes:
+        # Chunked bodies bypass the Content-Length cap in
+        # request_context_middleware — enforce the bound after read.
+        return _problem(
+            request,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Request body too large",
+        )
     try:
         event = verify_workos_webhook(
             body=body,

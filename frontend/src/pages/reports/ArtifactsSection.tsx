@@ -8,6 +8,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { useMemo } from "react";
+import { toast } from "sonner";
 
 import {
 	ColumnVisibilityToggle,
@@ -52,7 +53,13 @@ function DownloadArtifactButton({ artifactId }: { artifactId: string }) {
 			variant="ghost"
 			aria-label={`Download artifact ${artifactId}`}
 			disabled={downloadMutation.isPending}
-			onClick={() => void downloadMutation.mutateAsync(artifactId)}
+			onClick={() => {
+				downloadMutation.mutate(artifactId, {
+					onError: (error) => {
+						toast.error(getErrorMessage(error, "Failed to download artifact."));
+					},
+				});
+			}}
 		>
 			{downloadMutation.isPending ? (
 				<Loader2 className="size-4 animate-spin" aria-hidden="true" />

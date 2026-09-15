@@ -47,6 +47,7 @@ from app.models.reports import ReportConfiguration
 from app.reports.amount_in_words import amount_in_words
 from app.reports.base import ReportContext, ReportDTO, TableSection
 from app.reports.excel import MONEY_FORMAT
+from app.reports.families import payroll_register as payroll_register_module
 from app.reports.families.payroll_register import (
     REPORT_TYPE_PAY_BILL,
     REPORT_TYPE_TREASURY_FACE,
@@ -1339,3 +1340,37 @@ async def test_unposted_run_raises_conflict(session):
     await _bind(session, world["org_id"], world["user_id"])
     with pytest.raises(ConflictError, match="must be posted"):
         await treasury_face_builder.build(session, _ctx(world, run_id=draft_id))
+
+
+@pytest.mark.asyncio
+async def test_pay_bill_v1_rejects_unmapped_posted_component(session, monkeypatch):
+    """M-data-22: a nonzero posted component outside the fixed v1 columns must
+    fail the build rather than render a row whose cells do not foot to totals."""
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+
+    real_loader = payroll_register_module.load_result_rows
+
+    async def loaded_with_unmapped(*args, **kwargs):
+        packed = await real_loader(*args, **kwargs)
+        first = packed[0]
+        lines = [
+            *first["lines"],
+            {
+                "component_code": "CLA",
+                "amount": Decimal("100.00"),
+                "classification": "earning",
+                "trace": {},
+            },
+        ]
+        result = dict(first["result"])
+        result["earnings_total"] = result["earnings_total"] + Decimal("100.00")
+        return [{"result": result, "lines": lines}, *packed[1:]]
+
+    monkeypatch.setattr(payroll_register_module, "load_result_rows", loaded_with_unmapped)
+
+    with pytest.raises(ConflictError, match="do not cover all posted components") as exc:
+        await pay_bill_builder.build(session, _ctx(world))
+    details = exc.value.details or {}
+    assert details["error_code"] == "pay_bill_v1_unmapped_components"
+    assert "CLA" in details["unmapped_components"]

@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { isInteractiveRowTarget } from "@/components/table-interactions";
 import { Button } from "@/components/ui/button";
@@ -495,13 +495,31 @@ function NewInstallmentVersionDialog({
 	const createVersion = useCreateAdvanceInstallmentVersion(employeeId);
 	const [form, setForm] = useState<InstallmentVersionForm>(emptyVersionForm);
 	const [formError, setFormError] = useState<string | null>(null);
+	// Seed once per open: prefill the current schedule so a new version that only
+	// changes effective_from doesn't silently reset recovered progress to 0.
+	const seededRef = useRef(false);
 
 	useEffect(() => {
 		if (!open) {
+			seededRef.current = false;
 			setForm(emptyVersionForm());
 			setFormError(null);
+			return;
 		}
-	}, [open]);
+		if (seededRef.current) return;
+		seededRef.current = true;
+		setForm({
+			...emptyVersionForm(),
+			installment_amount: advance?.installment_amount ?? "",
+			installments_recovered_opening:
+				advance?.installments_recovered_opening == null
+					? "0"
+					: String(advance.installments_recovered_opening),
+			installments_total:
+				advance?.installments_total == null ? "" : String(advance.installments_total),
+		});
+		setFormError(null);
+	}, [open, advance]);
 
 	const handleSubmit = async (event: FormEvent) => {
 		event.preventDefault();

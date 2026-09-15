@@ -23,6 +23,7 @@ export type WorkflowConfirmCommand =
 	| "withdraw"
 	| "approve"
 	| "reject"
+	| "reopen"
 	| "post"
 	| "reverse";
 
@@ -41,6 +42,7 @@ const TITLES: Record<WorkflowConfirmCommand, string> = {
 	withdraw: "Withdraw pay run?",
 	approve: "Approve pay run?",
 	reject: "Reject pay run?",
+	reopen: "Reopen pay run?",
 	post: "Post pay run?",
 	reverse: "Reverse pay run?",
 };
@@ -50,6 +52,8 @@ const DESCRIPTIONS: Record<WorkflowConfirmCommand, string> = {
 	withdraw: "Withdraw this submission and return the run to calculated status.",
 	approve: "Approve this submitted run so it can be posted.",
 	reject: "Reject this submitted run and return it for correction.",
+	reopen:
+		"Return this run to draft so its inputs can be corrected. The calculated version stays in history.",
 	post: "Posting locks this run permanently. Posted results cannot be edited in place.",
 	reverse: "Reverse this posted payroll. A reason is required for the audit trail.",
 };
@@ -59,6 +63,7 @@ const CONFIRM_LABELS: Record<WorkflowConfirmCommand, string> = {
 	withdraw: "Withdraw",
 	approve: "Approve",
 	reject: "Reject",
+	reopen: "Reopen",
 	post: "Post permanently",
 	reverse: "Reverse",
 };

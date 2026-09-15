@@ -38,8 +38,11 @@ function PreviewSectionTable({ section }: { section: ReportPreviewSection }) {
 								</TableCell>
 							</TableRow>
 						) : (
-							rows.map((row) => (
-								<TableRow key={columns.map((column) => cellText(row[column.key])).join("\u0001")}>
+							// Preview rows are a static server snapshot that never
+							// reorders; identical values legitimately repeat across rows.
+							rows.map((row, rowIndex) => (
+								// biome-ignore lint/suspicious/noArrayIndexKey: static preview snapshot; rows have no stable id
+								<TableRow key={rowIndex}>
 									{columns.map((column) => (
 										<TableCell
 											key={column.key}

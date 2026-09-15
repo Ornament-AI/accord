@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes, useParams } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider, AuthShellBoundary } from "@/contexts/AuthContext";
@@ -21,7 +21,6 @@ import {
 	createPayRunHandlers,
 } from "@/test/msw/pay-run-handlers";
 import { server } from "@/test/msw-server";
-import { CreatePeriodDialog } from "./CreatePeriodDialog";
 import PayRunDetailPage from "./PayRunDetailPage";
 import PayRunsPage from "./PayRunsPage";
 import { UpsertInputDialog } from "./UpsertInputDialog";
@@ -156,35 +155,52 @@ describe("Pay Runs list page", () => {
 		PAGE_TIMEOUT,
 	);
 
-	it("surfaces 409 duplicate period as a friendly form error", async () => {
-		const { handlers: authHandlers } = createAuthHandlers({
-			me: buildRoleAuthMe("organization_administrator"),
-		});
-		const { handlers: payHandlers } = createPayRunHandlers({
-			createPeriodError: {
-				status: 409,
-				body: {
-					detail: "Payroll period already exists for this month",
-					error: "ConflictError",
+	it(
+		"surfaces a duplicate-period conflict when Add creates the period",
+		async () => {
+			const onCreateRun = vi.fn();
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				periods: [buildPeriod({ id: "period-1", period_year: 2026, period_month: 7 })],
+				createPeriodError: {
+					status: 409,
+					body: {
+						detail: "Payroll period already exists for this month",
+						error: "ConflictError",
+					},
 				},
-			},
-		});
-		server.use(...authHandlers, ...payHandlers);
+				onCreateRun,
+			});
+			server.use(...authHandlers, ...payHandlers);
 
-		renderDialog(<CreatePeriodDialog open onOpenChange={vi.fn()} />);
+			renderPayRunRoutes("/pay-runs");
 
-		expect(await screen.findByRole("heading", { name: "New Payroll Period" })).toBeInTheDocument();
-		fireEvent.change(screen.getByLabelText("Year"), { target: { value: "2026" } });
-		fireEvent.change(screen.getByLabelText("Month"), { target: { value: "7" } });
-		fireEvent.click(screen.getByRole("button", { name: "Create Period" }));
+			expect(
+				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Add" }));
+			expect(await screen.findByRole("heading", { name: "Add Pay Run" })).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Payroll Month" }));
+			fireEvent.click(await screen.findByRole("button", { name: "Aug 2026" }));
+			const continueButton = screen.getByRole("button", { name: "Continue" });
+			await waitFor(() => expect(continueButton).toBeEnabled());
+			fireEvent.click(continueButton);
 
-		expect(
-			await screen.findByText("Payroll period already exists for this month"),
-		).toBeInTheDocument();
-	});
+			const { toast } = await import("sonner");
+			await waitFor(() =>
+				expect(toast.error).toHaveBeenCalledWith(
+					expect.stringContaining("Payroll period already exists"),
+				),
+			);
+			expect(onCreateRun).not.toHaveBeenCalled();
+		},
+		PAGE_TIMEOUT,
+	);
 
 	it(
-		"hides create actions without create_run capability",
+		"lets read-capable roles view the list while hiding create actions",
 		async () => {
 			const me = buildAuthMe({
 				organization: {
@@ -204,9 +220,40 @@ describe("Pay Runs list page", () => {
 			renderPayRunRoutes("/pay-runs");
 
 			expect(
-				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
+			expect(await screen.findByText("July 2026")).toBeInTheDocument();
+			expect(screen.getByText("June 2026")).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Period$/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"lets approver view the list without view_master_data",
+		async () => {
+			const me = buildAuthMe({
+				organization: {
+					id: "org-acme",
+					name: "Acme Payroll",
+					slug: "acme-payroll",
+				},
+				membership: {
+					role: "payroll_approver",
+					capabilities: ROLE_CAPABILITIES.payroll_approver,
+				},
+			});
+			const { handlers: authHandlers } = createAuthHandlers({ me });
+			const { handlers: payHandlers } = createPayRunHandlers();
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs");
+
+			expect(
+				await screen.findByTestId("pay-runs-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(await screen.findByText("July 2026")).toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: /^Add$/i })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
@@ -677,7 +724,7 @@ describe("Pay run detail — calculate gating", () => {
 	);
 
 	it(
-		"hides Calculate without create_run capability",
+		"lets read-capable roles view the detail while hiding create actions",
 		async () => {
 			const me = buildAuthMe({
 				organization: {
@@ -697,8 +744,65 @@ describe("Pay run detail — calculate gating", () => {
 			renderPayRunRoutes("/pay-runs/run-1");
 
 			expect(
-				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
+				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
+			expect(
+				await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Calculate Pay Run" })).not.toBeInTheDocument();
+			// Roster/report-metadata writes need create_run — hidden for reviewers.
+			expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Add Input" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Save Details" })).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"approver can open a submitted run and sees approve/reject only",
+		async () => {
+			const me = buildAuthMe({
+				organization: {
+					id: "org-acme",
+					name: "Acme Payroll",
+					slug: "acme-payroll",
+				},
+				membership: {
+					role: "payroll_approver",
+					capabilities: ROLE_CAPABILITIES.payroll_approver,
+				},
+			});
+			const { handlers: authHandlers } = createAuthHandlers({ me });
+			const { handlers: payHandlers } = createPayRunHandlers({
+				runs: [
+					buildRun({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "submitted",
+					}),
+				],
+				details: {
+					"run-1": buildRunDetail({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "submitted",
+					}),
+				},
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+
+			expect(
+				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(await screen.findByTestId("workflow-action-approve")).toBeInTheDocument();
+			expect(screen.getByTestId("workflow-action-reject")).toBeInTheDocument();
+			expect(screen.queryByTestId("workflow-action-submit")).not.toBeInTheDocument();
 			expect(screen.queryByRole("button", { name: "Calculate Pay Run" })).not.toBeInTheDocument();
 		},
 		PAGE_TIMEOUT,
@@ -816,7 +920,7 @@ describe("Pay Runs capability gate", () => {
 	});
 
 	it(
-		"denies direct URL access without create_run",
+		"denies direct URL access without any pay-run capability",
 		async () => {
 			const me = buildAuthMe({
 				organization: {
@@ -825,8 +929,8 @@ describe("Pay Runs capability gate", () => {
 					slug: "acme-payroll",
 				},
 				membership: {
-					role: "report_releaser",
-					capabilities: ROLE_CAPABILITIES.report_releaser,
+					role: "auditor",
+					capabilities: ROLE_CAPABILITIES.auditor,
 				},
 			});
 			const { handlers } = createAuthHandlers({ me });
@@ -837,6 +941,93 @@ describe("Pay Runs capability gate", () => {
 			expect(
 				await screen.findByText("You Don't Have Access", {}, { timeout: PAGE_TIMEOUT }),
 			).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"resets roster edit state when navigating between runs",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				runs: [
+					buildRun({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "draft",
+					}),
+					buildRun({
+						id: "run-2",
+						period_id: "period-2",
+						period_year: 2026,
+						period_month: 6,
+						status: "draft",
+					}),
+				],
+				details: {
+					"run-2": buildRunDetail({
+						id: "run-2",
+						period_id: "period-2",
+						period_year: 2026,
+						period_month: 6,
+						status: "draft",
+					}),
+				},
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			function SwitchRunLink() {
+				const { runId } = useParams();
+				const next = runId === "run-1" ? "run-2" : "run-1";
+				return <Link to={`/pay-runs/${next}`}>Switch Run</Link>;
+			}
+
+			render(
+				<QueryClientProvider client={queryClient}>
+					<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME_TEST">
+						<AuthProvider>
+							<AuthShellBoundary>
+								<MemoryRouter initialEntries={["/pay-runs/run-1"]}>
+									<Routes>
+										<Route
+											path="/pay-runs/:runId"
+											element={
+												<>
+													<PayRunDetailPage />
+													<SwitchRunLink />
+												</>
+											}
+										/>
+									</Routes>
+								</MemoryRouter>
+							</AuthShellBoundary>
+						</AuthProvider>
+					</ThemeProvider>
+				</QueryClientProvider>,
+			);
+
+			expect(
+				await screen.findByTestId("payroll-run-roster", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+			expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+			fireEvent.change(screen.getByLabelText("Paid Days for Employee E-001"), {
+				target: { value: "12" },
+			});
+
+			fireEvent.click(screen.getByRole("link", { name: "Switch Run" }));
+
+			// The keyed remount must drop run-1's editing/dirty state entirely.
+			expect(
+				await screen.findByRole("heading", { name: "June 2026" }, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(await screen.findByRole("button", { name: "Edit" })).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+			expect(screen.getByLabelText("Paid Days for Employee E-001")).toHaveValue("31.00");
 		},
 		PAGE_TIMEOUT,
 	);

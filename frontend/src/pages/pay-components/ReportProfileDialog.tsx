@@ -13,6 +13,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { ErrorWithRetry } from "@/components/ui/error-with-retry";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -339,6 +340,9 @@ export function ReportProfileDialog({
 		setFormError(null);
 	};
 	const save = async () => {
+		// Never PUT an all-empty form over a stored profile: a failed load must
+		// not turn into a destructive save of emptyForm().
+		if (!profileQuery.data) return;
 		const signatoryEntries = [
 			{ role: "maker", label: "Maker", name: form.maker_name, designation: form.maker_designation },
 			{
@@ -437,49 +441,59 @@ export function ReportProfileDialog({
 				</DialogHeader>
 				<form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
 					<DialogBody className="flex flex-col gap-7 py-6">
-						{PROFILE_SECTIONS.map((section, sectionIndex) => (
-							<div className="flex flex-col gap-7" key={section.title}>
-								{sectionIndex > 0 ? <Separator /> : null}
-								<section className="grid gap-5 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:gap-8">
-									<div className="flex flex-col gap-1.5">
-										<h3 className="text-base font-semibold">{section.title}</h3>
-										<p className="text-sm leading-relaxed text-muted-foreground">
-											{section.description}
-										</p>
+						{profileQuery.isError ? (
+							<ErrorWithRetry
+								message={getErrorMessage(profileQuery.error, "Failed to load report defaults.")}
+								onRetry={() => void profileQuery.refetch()}
+							/>
+						) : null}
+						{profileQuery.isError
+							? null
+							: PROFILE_SECTIONS.map((section, sectionIndex) => (
+									<div className="flex flex-col gap-7" key={section.title}>
+										{sectionIndex > 0 ? <Separator /> : null}
+										<section className="grid gap-5 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:gap-8">
+											<div className="flex flex-col gap-1.5">
+												<h3 className="text-base font-semibold">{section.title}</h3>
+												<p className="text-sm leading-relaxed text-muted-foreground">
+													{section.description}
+												</p>
+											</div>
+											<DataEntryFieldGrid columns={2}>
+												{section.fields.map((field) => (
+													<DataEntryField
+														key={field.key}
+														label={field.label}
+														htmlFor={`report-profile-${field.key}`}
+														className={field.wide ? "sm:col-span-2" : undefined}
+													>
+														{field.multiline ? (
+															<Textarea
+																id={`report-profile-${field.key}`}
+																value={form[field.key]}
+																onChange={(event) => set(field.key, event.target.value)}
+																placeholder={
+																	field.key.includes("address")
+																		? "One address line per row"
+																		: undefined
+																}
+																className="min-h-20 resize-y"
+																disabled={profileQuery.isLoading || update.isPending}
+															/>
+														) : (
+															<Input
+																id={`report-profile-${field.key}`}
+																value={form[field.key]}
+																onChange={(event) => set(field.key, event.target.value)}
+																disabled={profileQuery.isLoading || update.isPending}
+															/>
+														)}
+													</DataEntryField>
+												))}
+											</DataEntryFieldGrid>
+										</section>
 									</div>
-									<DataEntryFieldGrid columns={2}>
-										{section.fields.map((field) => (
-											<DataEntryField
-												key={field.key}
-												label={field.label}
-												htmlFor={`report-profile-${field.key}`}
-												className={field.wide ? "sm:col-span-2" : undefined}
-											>
-												{field.multiline ? (
-													<Textarea
-														id={`report-profile-${field.key}`}
-														value={form[field.key]}
-														onChange={(event) => set(field.key, event.target.value)}
-														placeholder={
-															field.key.includes("address") ? "One address line per row" : undefined
-														}
-														className="min-h-20 resize-y"
-														disabled={profileQuery.isLoading || update.isPending}
-													/>
-												) : (
-													<Input
-														id={`report-profile-${field.key}`}
-														value={form[field.key]}
-														onChange={(event) => set(field.key, event.target.value)}
-														disabled={profileQuery.isLoading || update.isPending}
-													/>
-												)}
-											</DataEntryField>
-										))}
-									</DataEntryFieldGrid>
-								</section>
-							</div>
-						))}
+								))}
 						{formError ? (
 							<p className="text-sm text-destructive" role="alert">
 								{formError}
@@ -495,7 +509,10 @@ export function ReportProfileDialog({
 						>
 							Cancel
 						</Button>
-						<Button type="submit" disabled={profileQuery.isLoading || update.isPending}>
+						<Button
+							type="submit"
+							disabled={profileQuery.isLoading || profileQuery.isError || update.isPending}
+						>
 							{update.isPending ? "Saving…" : "Save"}
 						</Button>
 					</DialogFooter>

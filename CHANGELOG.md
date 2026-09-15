@@ -11,6 +11,27 @@ the authoritative release boundaries.
 - Upgrade the frontend compiler to TypeScript 7.0.2 while isolating the OpenAPI
   generator on its compatible TypeScript runtime.
 
+## 0.4.7 — 2026-08-23
+
+- Raise the MinIO memory limit and move the deploy root to /opt; lock the
+  shared-host resource contract with a deploy test.
+
+## 0.4.6 — 2026-08-12
+
+- Remove unused backend accessors, registry introspection, response classes,
+  and frontend helpers/components; rewrite the README as a product and
+  developer guide and clean up remaining Atlas/hackathon leftovers.
+
+## 0.4.5 — 2026-08-06
+
+- Adopt shadcn OTP inputs with upfront registration errors; preserve
+  non-registration 403 responses in auth.
+
+## 0.4.4 — 2026-07-31
+
+- Upgrade the frontend to TypeScript 7.0.2 and reconcile repository
+  documentation with the implementation.
+
 ## 0.4.3 — 2026-07-22
 
 - Add the normalized canonical payroll export and its fixed 18-sheet workbook.

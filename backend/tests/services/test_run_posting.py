@@ -16,6 +16,8 @@ import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.payroll.engine import content_hash_for
+from app.domain.payroll.money import Money
 from app.exceptions import ConflictError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.advances import AdvanceAccount, advance_installment_versions
@@ -445,9 +447,28 @@ async def test_blocking_validation_409(session):
     )
 
     # Replace the calculated snapshot with an empty-employees version so
-    # validate_run_result reports blocking ``empty_run``.
+    # validate_run_result reports blocking ``empty_run``. The content_hash
+    # must match reconstruction from stored lines — post_run verifies it.
     await _bind(session, world["org_id"], world["user_id"])
     empty_version_id = uuid4()
+    zero = Money.zero()
+    empty_hash = content_hash_for(
+        period="2026-06",
+        org_ref=str(world["org_id"]),
+        engine_version="test-empty",
+        employees=(),
+        earnings_total=zero,
+        employer_contribution_total=zero,
+        gross_adjustment_total=zero,
+        gross_total=zero,
+        ag_deduction_total=zero,
+        treasury_deduction_total=zero,
+        external_recovery_total=zero,
+        deductions_total=zero,
+        net_payable=zero,
+        offbill_employer_remittance=zero,
+        disbursement=zero,
+    )
     await session.execute(
         sa.insert(payroll_run_versions).values(
             id=empty_version_id,
@@ -455,7 +476,7 @@ async def test_blocking_validation_409(session):
             run_id=world["run_id"],
             version_number=99,
             engine_version="test-empty",
-            content_hash="empty-run-hash",
+            content_hash=empty_hash,
             calculated_at=datetime.now(timezone.utc),
             calculated_by=world["user_id"],
             inputs_snapshot={"employees": []},
@@ -471,7 +492,7 @@ async def test_blocking_validation_409(session):
             organization_id=world["org_id"],
             run_id=world["run_id"],
             run_version_id=empty_version_id,
-            content_hash="empty-run-hash",
+            content_hash=empty_hash,
             action="approve",
             actor_user_id=world["user_id"],
         )

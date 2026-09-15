@@ -15,4 +15,5 @@ export type RunContext = {
 	employeeName?: string;
 	componentCode?: string;
 	officeCode?: string;
+	officeName?: string;
 };

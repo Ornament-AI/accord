@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DatePicker, HISTORICAL_DATE_CALENDAR_PROPS } from "@/components/ui/date-picker";
@@ -38,6 +38,11 @@ import { namedEntityLabel, postEntityLabel } from "@/lib/entity-labels";
 import { ApiError } from "@/lib/errors";
 
 const SAME_AS_DESIGNATION_POST = "__same_as_designation_post__";
+
+/** Masked sensitive values (e.g. "••••234F") must be omitted from version payloads. */
+function isMaskedSensitiveValue(value: string): boolean {
+	return value.trim().startsWith("••••");
+}
 
 function labelForId(
 	id: string | null | undefined,
@@ -132,8 +137,17 @@ export function ScheduleChangeDialog({
 	const [bankName, setBankName] = useState("");
 	const [branch, setBranch] = useState("");
 
+	// Seed form state once per dialog open. Active-version props are re-read on
+	// each refetch, so keying the effect off them would wipe in-progress edits.
+	const seededKindRef = useRef<EmployeeVersionKind | null>(null);
+
 	useEffect(() => {
-		if (!open) return;
+		if (!open) {
+			seededKindRef.current = null;
+			return;
+		}
+		if (seededKindRef.current === kind) return;
+		seededKindRef.current = kind;
 		setEffectiveFrom(todayApiDate());
 		setChangeReason("");
 		setOverlapError(null);
@@ -187,11 +201,15 @@ export function ScheduleChangeDialog({
 				sevarth_id: sevarthId.trim() || null,
 				retirement_regime: retirementRegime,
 				gpf_jurisdiction: retirementRegime === "gpf" ? gpfJurisdiction : null,
-				pan: pan.trim() || null,
-				pran: pran.trim() || null,
-				pension_account: pensionAccount.trim() || null,
-				gpf_account_number: gpfAccountNumber.trim() || null,
-				epf_number: epfNumber.trim() || null,
+				...(isMaskedSensitiveValue(pan) ? {} : { pan: pan.trim() || null }),
+				...(isMaskedSensitiveValue(pran) ? {} : { pran: pran.trim() || null }),
+				...(isMaskedSensitiveValue(pensionAccount)
+					? {}
+					: { pension_account: pensionAccount.trim() || null }),
+				...(isMaskedSensitiveValue(gpfAccountNumber)
+					? {}
+					: { gpf_account_number: gpfAccountNumber.trim() || null }),
+				...(isMaskedSensitiveValue(epfNumber) ? {} : { epf_number: epfNumber.trim() || null }),
 				date_of_birth: dateOfBirth.trim() || null,
 				date_of_joining: dateOfJoining.trim() || null,
 				payroll_export_remark: payrollExportRemark.trim() || null,
@@ -214,7 +232,7 @@ export function ScheduleChangeDialog({
 		}
 		return {
 			...base,
-			account_number: accountNumber.trim(),
+			...(isMaskedSensitiveValue(accountNumber) ? {} : { account_number: accountNumber.trim() }),
 			ifsc: ifsc.trim(),
 			bank_name: bankName.trim(),
 			branch: branch.trim() || null,

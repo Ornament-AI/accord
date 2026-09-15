@@ -1,4 +1,4 @@
-"""Payroll run workflow command routes (validate / submit / withdraw / approve / reject).
+"""Payroll run workflow command routes (validate / submit / withdraw / approve / reject / reopen).
 
 Register with: ``app.include_router(run_workflow.router, prefix="/api")``.
 """
@@ -150,6 +150,43 @@ async def approve_payroll_run(
 
     async def _execute() -> dict[str, Any]:
         return await run_workflow_service.approve_run(
+            db,
+            organization_id=org_id,
+            run_id=run_id,
+            user_id=user_id,
+            reason=reason,
+            idempotency_key=idempotency_key,
+        )
+
+    return await _maybe_idempotent(
+        db,
+        organization_id=org_id,
+        idempotency_key=idempotency_key,
+        request_payload=payload,
+        executor=_execute,
+    )
+
+
+@router.post("/payroll-runs/{run_id}/reopen")
+async def reopen_payroll_run(
+    run_id: UUID,
+    tenant: TenantCtx,
+    db: Session,
+    body: ReasonBody | None = Body(default=None),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _: AuthPrincipal = Depends(require_capability("create_run")),
+) -> dict[str, Any]:
+    reason = None if body is None else body.reason
+    org_id = tenant_org_id(tenant)
+    user_id = tenant_user_id(tenant)
+    payload = {
+        "command": "reopen",
+        "run_id": str(run_id),
+        "reason": reason,
+    }
+
+    async def _execute() -> dict[str, Any]:
+        return await run_workflow_service.reopen_run(
             db,
             organization_id=org_id,
             run_id=run_id,

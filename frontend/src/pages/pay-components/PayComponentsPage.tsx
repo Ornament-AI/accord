@@ -6,7 +6,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
@@ -48,6 +48,17 @@ const columns: ColumnDef<PayComponentResponse>[] = [
 	{
 		accessorKey: "name",
 		header: "Name",
+		cell: ({ row }) => (
+			// Link target makes the routed detail page (rate versions) reachable
+			// without direct URL entry; the row-click guard skips <a> targets so
+			// this never triggers the edit dialog.
+			<Link
+				to={`/pay-components/${row.original.id}`}
+				className="font-medium text-primary underline-offset-4 hover:underline"
+			>
+				{row.original.name}
+			</Link>
+		),
 	},
 	{
 		accessorKey: "classification",

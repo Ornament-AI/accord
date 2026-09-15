@@ -341,6 +341,13 @@ class IdempotencyKey(
     status: str = Field(
         sa_column=Column(Text, nullable=False),
     )
+    # Ownership token for the in-flight claim. Each claim/reclaim mints a new
+    # token; terminal writes are conditioned on it so a reclaimed row can never
+    # be clobbered by the displaced claimant finishing late.
+    claim_token: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=Column(PG_UUID(as_uuid=True), nullable=True),
+    )
     expires_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )

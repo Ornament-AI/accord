@@ -57,6 +57,7 @@ async def create_pay_component(
     return await pay_setup_service.create_pay_component(
         db,
         organization_id=tenant_org_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
         body=body,
     )
 
@@ -91,6 +92,7 @@ async def update_pay_component(
         db,
         organization_id=tenant_org_id(tenant),
         component_id=component_id,
+        actor_user_id=tenant_user_id(tenant),
         body=update,
     )
 
@@ -327,6 +329,7 @@ async def update_accommodation(
         db,
         organization_id=tenant_org_id(tenant),
         assignment_id=assignment_id,
+        actor_user_id=tenant_user_id(tenant),
         body=body,
     )
 
@@ -381,6 +384,7 @@ async def upsert_report_configuration(
     return await pay_setup_service.upsert_report_configuration(
         db,
         organization_id=tenant_org_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
         key=key,
         value=body.value,
     )
@@ -408,5 +412,6 @@ async def upsert_payroll_export_profile(
     return await pay_setup_service.upsert_payroll_export_profile(
         db,
         organization_id=tenant_org_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
         profile=body,
     )

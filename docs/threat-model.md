@@ -234,7 +234,7 @@ approve it.
 | Threat | Current proof | Gap |
 | --- | --- | --- |
 | Session fixation / hijack | Session/auth and adversarial tests | Staging cookie security remains environment-dependent |
-| CSRF | Signed OAuth-state tests | No synchronizer token for general mutations |
+| CSRF | Signed OAuth-state tests + `CsrfMiddleware` session-bound synchronizer token on mutations | None identified in current contract |
 | WorkOS webhook replay/forgery | WorkOS webhook API suite | None identified in current contract |
 | Org confusion / IDOR | RLS, gate D, tenant-context, and artifact suites | Re-run for the release commit |
 | Privilege escalation | Capability matrix and API dependency suites | Support elevation is intentionally absent |

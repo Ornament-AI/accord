@@ -190,7 +190,6 @@ export function roundingRuleLabel(value: string): string {
 export const paySetupQueryKeys = {
 	all: () => ["pay-setup"] as const,
 	components: () => ["pay-setup", "components"] as const,
-	component: (componentId: string) => ["pay-setup", "components", componentId] as const,
 	rateVersions: (componentId: string) =>
 		["pay-setup", "components", componentId, "rate-versions"] as const,
 	reportProfile: () => ["pay-setup", "report-profile"] as const,
@@ -206,19 +205,6 @@ export function getPayrollExportProfile() {
 
 export function updatePayrollExportProfile(body: PayrollExportProfile) {
 	return fetchJson<PayrollExportProfileResponse>("/api/report-profile", jsonRequest("PUT", body));
-}
-
-/** Resolve a single component from the list endpoint (OpenAPI has no GET-by-id). */
-export async function getPayComponent(componentId: string): Promise<PayComponentResponse> {
-	const components = await listPayComponents();
-	const found = components.find((component) => component.id === componentId);
-	if (!found) {
-		throw new ApiError("Pay component not found", 404, {
-			detail: "Pay component not found",
-			code: "NotFound",
-		});
-	}
-	return found;
 }
 
 export function createPayComponent(body: PayComponentCreate) {
@@ -270,9 +256,22 @@ export function useUpdatePayrollExportProfile() {
 }
 
 export function usePayComponent(componentId: string | undefined) {
+	// Shares the components-list query: the API resolves a component from that
+	// same endpoint, so a dedicated key would refetch the identical list. A
+	// throwing select preserves the "not found" error state for consumers.
 	return useQuery({
-		queryKey: paySetupQueryKeys.component(componentId ?? ""),
-		queryFn: () => getPayComponent(componentId!),
+		queryKey: paySetupQueryKeys.components(),
+		queryFn: listPayComponents,
+		select: (components) => {
+			const found = components.find((component) => component.id === componentId);
+			if (!found) {
+				throw new ApiError("Pay component not found", 404, {
+					detail: "Pay component not found",
+					code: "NotFound",
+				});
+			}
+			return found;
+		},
 		enabled: Boolean(componentId),
 	});
 }
@@ -300,11 +299,8 @@ export function useUpdatePayComponent() {
 	return useMutation({
 		mutationFn: ({ componentId, body }: { componentId: string; body: PayComponentUpdate }) =>
 			updatePayComponent(componentId, body),
-		onSuccess: (_data, variables) => {
+		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: paySetupQueryKeys.components() });
-			void queryClient.invalidateQueries({
-				queryKey: paySetupQueryKeys.component(variables.componentId),
-			});
 		},
 	});
 }

@@ -722,6 +722,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll-runs/{run_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen Payroll Run */
+        post: operations["reopen_payroll_run_api_payroll_runs__run_id__reopen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll-runs/{run_id}/report-metadata": {
         parameters: {
             query?: never;
@@ -1111,44 +1128,46 @@ export interface components {
         /** AccommodationChargeInput */
         AccommodationChargeInput: {
             /** Additional Parking Charge */
-            additional_parking_charge?: number | string | null;
+            additional_parking_charge?: (number | string) | null;
             /**
              * Effective From
              * Format: date
              */
             effective_from: string;
             /** House Rent */
-            house_rent?: number | string | null;
+            house_rent?: (number | string) | null;
             /** Informational Hra Foregone */
-            informational_hra_foregone?: number | string | null;
+            informational_hra_foregone?: (number | string) | null;
             /** License Fee */
             license_fee: number | string;
             /** Parking Charge */
-            parking_charge?: number | string | null;
+            parking_charge?: (number | string) | null;
             /** Service Charge */
-            service_charge?: number | string | null;
+            service_charge?: (number | string) | null;
         };
-        /** AccommodationChargeVersionCreate */
+        /**
+         * AccommodationChargeVersionCreate
+         * @description New-version or terminate mode (mirrors RecurringInstructionVersionCreate).
+         */
         AccommodationChargeVersionCreate: {
             /** Additional Parking Charge */
-            additional_parking_charge?: number | string | null;
+            additional_parking_charge?: (number | string) | null;
             /** Change Reason */
             change_reason?: string | null;
-            /**
-             * Effective From
-             * Format: date
-             */
-            effective_from: string;
+            /** Effective From */
+            effective_from?: string | null;
+            /** End On */
+            end_on?: string | null;
             /** House Rent */
-            house_rent?: number | string | null;
+            house_rent?: (number | string) | null;
             /** Informational Hra Foregone */
-            informational_hra_foregone?: number | string | null;
+            informational_hra_foregone?: (number | string) | null;
             /** License Fee */
-            license_fee: number | string;
+            license_fee?: (number | string) | null;
             /** Parking Charge */
-            parking_charge?: number | string | null;
+            parking_charge?: (number | string) | null;
             /** Service Charge */
-            service_charge?: number | string | null;
+            service_charge?: (number | string) | null;
         };
         /** AccommodationChargeVersionResponse */
         AccommodationChargeVersionResponse: {
@@ -1280,21 +1299,23 @@ export interface components {
             /** Installments Total */
             installments_total: number;
         };
-        /** AdvanceInstallmentVersionCreate */
+        /**
+         * AdvanceInstallmentVersionCreate
+         * @description New-version or terminate mode (mirrors RecurringInstructionVersionCreate).
+         */
         AdvanceInstallmentVersionCreate: {
             /** Change Reason */
             change_reason?: string | null;
-            /**
-             * Effective From
-             * Format: date
-             */
-            effective_from: string;
+            /** Effective From */
+            effective_from?: string | null;
+            /** End On */
+            end_on?: string | null;
             /** Installment Amount */
-            installment_amount: number | string;
+            installment_amount?: (number | string) | null;
             /** Installments Recovered Opening */
-            installments_recovered_opening: number;
+            installments_recovered_opening?: number | null;
             /** Installments Total */
-            installments_total: number;
+            installments_total?: number | null;
         };
         /** AdvanceInstallmentVersionResponse */
         AdvanceInstallmentVersionResponse: {
@@ -1637,7 +1658,7 @@ export interface components {
         /** ComponentRateVersionCreate */
         ComponentRateVersionCreate: {
             /** Amount */
-            amount?: number | string | null;
+            amount?: (number | string) | null;
             /** Basis */
             basis?: string[] | null;
             calc_kind: components["schemas"]["CalcKind"];
@@ -1649,7 +1670,7 @@ export interface components {
              */
             effective_from: string;
             /** Rate */
-            rate?: number | string | null;
+            rate?: (number | string) | null;
             rounding_rule: components["schemas"]["RoundingRule"];
         };
         /** ComponentRateVersionResponse */
@@ -2365,12 +2386,12 @@ export interface components {
         /** PayrollRunInputUpsert */
         PayrollRunInputUpsert: {
             /** Amount */
-            amount?: number | string | null;
+            amount?: (number | string) | null;
             /** Expected Version */
             expected_version?: number | null;
             input_kind: components["schemas"]["InputKind"];
             /** Rate */
-            rate?: number | string | null;
+            rate?: (number | string) | null;
             /** Reason */
             reason: string;
             /** Service Period End */
@@ -2679,7 +2700,7 @@ export interface components {
         /** RecurringInstructionCreate */
         RecurringInstructionCreate: {
             /** Amount */
-            amount?: number | string | null;
+            amount?: (number | string) | null;
             /**
              * Component Id
              * Format: uuid
@@ -2691,7 +2712,7 @@ export interface components {
              */
             effective_from: string;
             /** Rate */
-            rate?: number | string | null;
+            rate?: (number | string) | null;
             /** Reason */
             reason?: string | null;
         };
@@ -2738,7 +2759,7 @@ export interface components {
         /** RecurringInstructionVersionCreate */
         RecurringInstructionVersionCreate: {
             /** Amount */
-            amount?: number | string | null;
+            amount?: (number | string) | null;
             /** Change Reason */
             change_reason?: string | null;
             /** Effective From */
@@ -2746,7 +2767,7 @@ export interface components {
             /** End On */
             end_on?: string | null;
             /** Rate */
-            rate?: number | string | null;
+            rate?: (number | string) | null;
             /** Reason */
             reason?: string | null;
         };
@@ -3229,7 +3250,9 @@ export interface operations {
     };
     get_audit_event_api_audit_events__event_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                reveal?: boolean;
+            };
             header?: never;
             path: {
                 event_id: string;
@@ -4539,6 +4562,45 @@ export interface operations {
         };
     };
     reject_payroll_run_api_payroll_runs__run_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReasonBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_payroll_run_api_payroll_runs__run_id__reopen_post: {
         parameters: {
             query?: never;
             header?: {

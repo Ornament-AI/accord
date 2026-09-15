@@ -163,8 +163,14 @@ class PayrollRunInputUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     input_kind: InputKind
-    amount: MoneyAmount | None = None
-    rate: RateValue | None = None
+    # Bounded to the Numeric(12, 2) storage contract. Negative amounts are a
+    # deliberate one_time carve-out (checked in the model validator below):
+    # exception/override inputs may never carry negative money.
+    amount: MoneyAmount | None = Field(
+        default=None, ge=Decimal("-99999999.99"), le=Decimal("99999999.99")
+    )
+    # Rates are Numeric(9, 4) at rest and are never negative.
+    rate: RateValue | None = Field(default=None, ge=Decimal("0"), le=Decimal("99999.9999"))
     reason: str = Field(min_length=1)
     service_period_start: date | None = None
     service_period_end: date | None = None
@@ -184,6 +190,8 @@ class PayrollRunInputUpsert(BaseModel):
             raise ValueError("exactly one of amount or rate is required")
         if self.rate is not None and self.input_kind != InputKind.OVERRIDE:
             raise ValueError("rate is supported only for override inputs")
+        if self.amount is not None and self.amount < 0 and self.input_kind != InputKind.ONE_TIME:
+            raise ValueError("negative amount is allowed only for one_time inputs")
         if (self.service_period_start is None) != (self.service_period_end is None):
             raise ValueError("service_period_start and service_period_end are required together")
         if (

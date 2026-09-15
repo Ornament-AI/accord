@@ -93,7 +93,8 @@ class PayInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pay_matrix_level: str | None = Field(default=None, min_length=1)
-    basic_pay: MoneyAmount
+    # basic_pay is Numeric(12, 2) at rest and is never negative.
+    basic_pay: MoneyAmount = Field(ge=Decimal("0"), le=Decimal("99999999.99"))
 
 
 class BankInput(BaseModel):
@@ -134,6 +135,11 @@ class CreatePayVersionRequest(PayInput):
 
 
 class CreateBankVersionRequest(BankInput):
+    # Version requests may omit account_number entirely: the client masks it
+    # server-side, so an omitted value means "keep the current one" (merged
+    # from the open version by the service). Initial creation still uses
+    # BankInput directly, where account_number stays required.
+    account_number: str | None = None
     effective_from: date
     change_reason: str | None = None
 

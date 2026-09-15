@@ -6,7 +6,7 @@ import psycopg
 
 from .conftest import as_psycopg_url, diag, run_alembic
 
-HEAD_REVISION = "a7d3e5f9b102"
+HEAD_REVISION = "d7f1a3b5c902"
 PREV_REVISION = "d7a2e4f6b809"
 
 

@@ -89,8 +89,12 @@ class WorkOSAuthAdapter:
 
     async def exchange_code(self, *, code: str) -> AuthenticatedIdentity:
         try:
-            # Synchronous SDK call — isolate and map to identity-only fields.
-            response = self._client.user_management.authenticate_with_code(code=code)
+            # Synchronous SDK call — keep it off the event loop like the other
+            # adapter methods, and map to identity-only fields.
+            response = await asyncio.to_thread(
+                self._client.user_management.authenticate_with_code,
+                code=code,
+            )
         except Exception as exc:  # noqa: BLE001 — normalize any SDK/network failure
             raise AuthExchangeError("Failed to exchange authorization code.") from exc
 

@@ -55,7 +55,7 @@ export function NavUser({
 	const triggerContent = (
 		<>
 			<Avatar className="size-8 rounded-lg">
-				<AvatarImage src={user.avatar} alt={fallbackName} />
+				<AvatarImage src={user.avatar} alt="" />
 				<AvatarFallback className="rounded-lg">{initials || "U"}</AvatarFallback>
 			</Avatar>
 			<div className="grid flex-1 text-left text-sm leading-tight">
@@ -95,7 +95,7 @@ export function NavUser({
 							render={
 								<SidebarMenuButton
 									size="lg"
-									className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+									className="data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
 								/>
 							}
 						>
@@ -127,7 +127,7 @@ export function NavUser({
 							render={
 								<SidebarMenuButton
 									size="lg"
-									className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+									className="data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
 								/>
 							}
 						>

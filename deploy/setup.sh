@@ -37,7 +37,9 @@ safe_source_env() {
 			continue
 		fi
 		case "$key" in
-			ACCORD_DB_PASSWORD|ACCORD_DB_USER|ACCORD_DB_NAME|ACCORD_TAG|ACCORD_WEB_PORT|\
+			ACCORD_DB_PASSWORD|ACCORD_APP_PASSWORD|ACCORD_WORKER_PASSWORD|\
+			ACCORD_MIGRATOR_PASSWORD|ACCORD_ROLE_PASSWORD|\
+			ACCORD_DB_USER|ACCORD_DB_NAME|ACCORD_TAG|ACCORD_WEB_PORT|\
 			DATABASE_URL|MIGRATIONS_DATABASE_URL|WORKER_DATABASE_URL|WORKOS_CLIENT_ID|\
 			WORKOS_API_KEY|WORKOS_REDIRECT_URI|WORKOS_WEBHOOK_SECRET|SESSION_SECRET_KEY|\
 			SESSION_COOKIE_NAME|ENVIRONMENT|CORS_ORIGINS|PUBLIC_APP_URL|BASE_URL|LOG_LEVEL|\
@@ -138,8 +140,14 @@ for var in ACCORD_DB_PASSWORD WORKOS_CLIENT_ID WORKOS_API_KEY \
 done
 [[ -z "$MISSING" ]] || die "Missing required variables:$MISSING"
 
-[[ "$ACCORD_DB_PASSWORD" =~ ^[A-Za-z0-9._~-]+$ ]] \
-	|| die "ACCORD_DB_PASSWORD must use URL-unreserved characters only"
+# Passwords are interpolated into postgres DSNs by compose without
+# percent-encoding, so reserved characters (@, :, /, #, %) would corrupt
+# the URL. Enforce the RFC 3986 unreserved set on every role password.
+for var in ACCORD_DB_PASSWORD ACCORD_ROLE_PASSWORD ACCORD_APP_PASSWORD \
+	ACCORD_WORKER_PASSWORD ACCORD_MIGRATOR_PASSWORD; do
+	[[ -z "${!var:-}" || "${!var}" =~ ^[A-Za-z0-9._~-]+$ ]] \
+		|| die "$var must use URL-unreserved characters only"
+done
 (( ${#SESSION_SECRET_KEY} >= 32 )) || die "SESSION_SECRET_KEY must be at least 32 characters"
 [[ "$OBJECT_STORAGE_ACCESS_KEY" != "minioadmin" \
 	&& "$OBJECT_STORAGE_SECRET_KEY" != "minioadmin" ]] \
@@ -225,12 +233,15 @@ for service in api worker web; do
 done
 info "Backend, worker, and web are pinned to $ACCORD_TAG with matching revision labels"
 
-docker compose --env-file .env run --rm --no-deps migrations alembic current \
-	| grep -q '(head)' || die "Alembic is not at head"
+# Capture-then-grep: a `| grep -q` pipeline can SIGPIPE the producer and
+# false-fail under `set -o pipefail`.
+ALEMBIC_CURRENT="$(docker compose --env-file .env run --rm --no-deps migrations alembic current)"
+grep -q '(head)' <<<"$ALEMBIC_CURRENT" || die "Alembic is not at head"
 info "Waiting for worker startup proof..."
 WORKER_READY=false
 for _ in $(seq 1 15); do
-	if docker compose --env-file .env logs worker 2>&1 | grep -q 'worker_started'; then
+	WORKER_LOGS="$(docker compose --env-file .env logs worker 2>&1 || true)"
+	if grep -q 'worker_started' <<<"$WORKER_LOGS"; then
 		WORKER_READY=true
 		break
 	fi
@@ -255,8 +266,18 @@ PY
 AUTH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
 	"http://127.0.0.1:${ACCORD_WEB_PORT:-8085}/api/auth/me")"
 [[ "$AUTH_STATUS" == "401" ]] || die "unauthenticated auth probe returned $AUTH_STATUS instead of 401"
-curl -fsS --max-time 15 "$PUBLIC_APP_URL/api/readyz" >/dev/null \
-	|| die "public readiness probe failed"
+# Post-commit advisory only: the local readiness gate above already proved
+# the deploy healthy. An external-TLS blip here must not abort (and roll
+# back) an otherwise-successful rollout — retry briefly, then warn.
+PUBLIC_READY=false
+for _ in $(seq 1 5); do
+	if curl -fsS --max-time 15 "$PUBLIC_APP_URL/api/readyz" >/dev/null; then
+		PUBLIC_READY=true
+		break
+	fi
+	sleep 3
+done
+$PUBLIC_READY || warn "public readiness probe failed — check $PUBLIC_APP_URL routing/TLS"
 
 info "Accord is healthy at $PUBLIC_APP_URL ($ACCORD_TAG)"
 DEPLOY_SUCCEEDED=true

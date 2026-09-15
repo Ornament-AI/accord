@@ -47,15 +47,15 @@ function NavFolderItem({
 	item,
 	pathname,
 	isCompactSidebar,
-	hasCapability,
+	hasAnyCapability,
 }: {
 	item: NavRegistryEntry & { children: NonNullable<NavRegistryEntry["children"]> };
 	pathname: string;
 	isCompactSidebar: boolean;
-	hasCapability: (capability: Capability) => boolean;
+	hasAnyCapability: (capabilities: readonly Capability[]) => boolean;
 }) {
 	const visibleChildren = item.children.filter(
-		(child) => child.capability === undefined || hasCapability(child.capability),
+		(child) => child.capabilities === undefined || hasAnyCapability(child.capabilities),
 	);
 	const sectionActive = visibleChildren.some((child) => isPathActive(pathname, child.path));
 	const [open, setOpen] = useState(sectionActive);
@@ -143,7 +143,7 @@ function NavFolderItem({
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const { state, isMobile } = useSidebar();
 	const location = useLocation();
-	const { user, activeOrganization, hasCapability, logout } = useAuth();
+	const { user, activeOrganization, hasAnyCapability, logout } = useAuth();
 
 	const handleSignOut = async () => {
 		try {
@@ -161,7 +161,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const displayName = user?.name?.trim() || user?.email?.split("@")[0] || "User";
 	const isCompactSidebar = state === "collapsed" && !isMobile;
 	const visibleNavItems = NAV_REGISTRY.filter(
-		(item) => item.capability === undefined || hasCapability(item.capability),
+		(item) => item.capabilities === undefined || hasAnyCapability(item.capabilities),
 	);
 
 	return (
@@ -183,7 +183,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 											item={{ ...item, children }}
 											pathname={location.pathname}
 											isCompactSidebar={isCompactSidebar}
-											hasCapability={hasCapability}
+											hasAnyCapability={hasAnyCapability}
 										/>
 									);
 								}

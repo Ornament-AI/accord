@@ -11,7 +11,7 @@ import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
 import { ThemeProvider } from "@/lib/ui/providers/theme-provider";
 import { buildAuthMe, buildRoleAuthMe } from "@/test/auth-fixtures";
 import { createAuthHandlers } from "@/test/auth-handlers";
-import { openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
+import { mockToast, openBaseUiSelect, pickBaseUiOption } from "@/test/helpers";
 import { buildPeriod, buildRun, createPayRunHandlers } from "@/test/msw/pay-run-handlers";
 import {
 	buildArtifact,
@@ -26,6 +26,7 @@ import ReportsLayout from "./ReportsLayout";
 vi.mock("@/lib/download", () => ({
 	downloadBlob: vi.fn(),
 }));
+vi.mock("sonner", () => mockToast());
 
 const PAGE_TIMEOUT = 15_000;
 
@@ -76,7 +77,11 @@ function seedPostedRuns(
 }
 
 async function selectPostedRun(label: RegExp | string) {
-	openBaseUiSelect(screen.getByLabelText("Select Posted Run"));
+	// The select mounts only after the posted-runs query resolves — reports-page
+	// itself renders during the skeleton, so wait for the trigger here.
+	openBaseUiSelect(
+		await screen.findByLabelText("Select Posted Run", {}, { timeout: PAGE_TIMEOUT }),
+	);
 	pickBaseUiOption(label);
 }
 
@@ -162,11 +167,13 @@ describe("Reports page", () => {
 			const { handlers: payHandlers } = seedPostedRuns();
 			let exportCount = 0;
 			let exportRequest: unknown;
+			let exportIdempotencyKey: string | null = null;
 			const { handlers: reportHandlers, jobs } = createReportHandlers({
 				jobStatusSequence: ["queued", "running", "succeeded"],
-				onExport: (body) => {
+				onExport: (body, request) => {
 					exportCount += 1;
 					exportRequest = body;
+					exportIdempotencyKey = request.headers.get("Idempotency-Key");
 				},
 			});
 			server.use(...authHandlers, ...payHandlers, ...reportHandlers);
@@ -191,6 +198,9 @@ describe("Reports page", () => {
 						posted_run_id: "run-a",
 						template_version: "v3",
 					});
+					expect(exportIdempotencyKey).toMatch(
+						/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+					);
 					expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "consolidated_xlsx.xlsx");
 				},
 				{ timeout: PAGE_TIMEOUT },
@@ -203,6 +213,116 @@ describe("Reports page", () => {
 					posted_run_id: "run-a",
 					template_version: "v3",
 				},
+			});
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"surfaces a failure when the post-export artifact download fails",
+		async () => {
+			const { downloadBlob } = await import("@/lib/download");
+			const { toast } = await import("sonner");
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = seedPostedRuns();
+			const { handlers: reportHandlers } = createReportHandlers({
+				jobStatusSequence: ["queued", "succeeded"],
+				downloadError: { status: 500, body: { detail: "Object storage offline" } },
+			});
+			server.use(...authHandlers, ...payHandlers, ...reportHandlers);
+
+			renderReports("/reports/pay-bill");
+			await screen.findByTestId("reports-page", {}, { timeout: PAGE_TIMEOUT });
+			await selectPostedRun(/June 2026/);
+
+			const exportButton = screen.getByRole("button", {
+				name: "Export one Excel workbook with 18 report sheets",
+			});
+			await waitFor(() => expect(exportButton).toBeEnabled());
+			fireEvent.click(exportButton);
+
+			await waitFor(
+				() => {
+					expect(toast.error).toHaveBeenCalledWith(
+						expect.stringContaining("Object storage offline"),
+					);
+				},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			expect(downloadBlob).not.toHaveBeenCalled();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"surfaces a failure when the export request itself fails",
+		async () => {
+			const { downloadBlob } = await import("@/lib/download");
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = seedPostedRuns();
+			const { handlers: reportHandlers } = createReportHandlers({
+				exportError: { status: 500, body: { detail: "Export worker unavailable" } },
+			});
+			server.use(...authHandlers, ...payHandlers, ...reportHandlers);
+
+			renderReports("/reports/pay-bill");
+			await screen.findByTestId("reports-page", {}, { timeout: PAGE_TIMEOUT });
+			await selectPostedRun(/June 2026/);
+
+			const exportButton = screen.getByRole("button", {
+				name: "Export one Excel workbook with 18 report sheets",
+			});
+			await waitFor(() => expect(exportButton).toBeEnabled());
+			fireEvent.click(exportButton);
+
+			const alert = await screen.findByRole("alert", {}, { timeout: PAGE_TIMEOUT });
+			expect(alert).toHaveTextContent("Export worker unavailable");
+			expect(downloadBlob).not.toHaveBeenCalled();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"surfaces a failure when a manual artifact download fails",
+		async () => {
+			const { toast } = await import("sonner");
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = seedPostedRuns();
+			const { handlers: reportHandlers } = createReportHandlers({
+				artifacts: [
+					buildArtifact({
+						id: "art-fail",
+						report_type: "pay_bill",
+						posted_run_id: "run-a",
+					}),
+				],
+				downloadError: { status: 500, body: { detail: "Storage unreachable" } },
+			});
+			server.use(...authHandlers, ...payHandlers, ...reportHandlers);
+
+			renderReports("/reports/pay-bill");
+
+			const artifacts = await screen.findByTestId(
+				"artifacts-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			fireEvent.click(
+				await within(artifacts).findByRole(
+					"button",
+					{ name: "Download artifact art-fail" },
+					{ timeout: PAGE_TIMEOUT },
+				),
+			);
+
+			await waitFor(() => {
+				expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Storage unreachable"));
 			});
 		},
 		PAGE_TIMEOUT,

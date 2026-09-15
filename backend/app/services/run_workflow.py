@@ -1,9 +1,11 @@
-"""Payroll run workflow commands: validate / submit / withdraw / approve / reject.
+"""Payroll run workflow commands: validate / submit / withdraw / approve / reject / reopen.
 
 ADR 0008 transition matrix adapted to persisted statuses
 (``draft|calculating|calculated|submitted|approved|rejected|posted|reversed``):
 there is no separate ``validated`` / ``withdrawn`` status — validate is a read
-against ``calculated``, and withdraw returns ``submitted`` → ``calculated``.
+against ``calculated``, withdraw returns ``submitted`` → ``calculated``, and
+reopen returns ``calculated``|``rejected`` → ``draft`` so the same run can be
+corrected (run versions stay append-only; no ``original_run_id`` supersession).
 
 Editing draft inputs after submit is invalidated in the payroll_runs input
 service (NOT this module); here the content_hash binding at submit/approve
@@ -15,16 +17,13 @@ Post / reverse belong to a parallel lane and are not implemented here.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.payroll.money import Money
-from app.domain.payroll.rates import Rate
-from app.domain.payroll.results import CalculationTrace, EmployeeResult, RunResult
+from app.domain.payroll.results import RunResult
 from app.domain.payroll.validation import (
     ValidationFinding,
     has_blocking,
@@ -35,12 +34,11 @@ from app.models.identity import OrganizationMembership
 from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
-    payroll_employee_results,
-    payroll_result_lines,
     payroll_run_versions,
 )
 from app.models.platform import PayrollApproval
 from app.services.audit_events import entity_snapshot, write_mutation_event
+from app.services.run_reconstruction import load_run_result
 
 # Problem-detail ``error`` URNs for workflow conflicts (ADR 0008 HTTP mapping).
 URN_ILLEGAL_TRANSITION = "urn:accord:workflow:illegal_transition"
@@ -71,68 +69,6 @@ def _finding_dict(finding: ValidationFinding) -> dict[str, Any]:
         "message": finding.message,
         "context": dict(finding.context),
     }
-
-
-def _money_from_db(value: Any) -> Money:
-    return Money.from_decimal(Decimal(value))
-
-
-def _money_from_trace(value: Any) -> Money | None:
-    if value is None:
-        return None
-    return Money.from_str(str(value))
-
-
-def _rate_from_trace(value: Any) -> Rate | None:
-    if value is None:
-        return None
-    return Rate.from_fraction(str(value))
-
-
-def _trace_from_row(row: Any) -> CalculationTrace:
-    trace = row["trace"] or {}
-    classification = str(trace.get("classification") or row["classification"])
-    if classification == "ag_deduction":
-        classification = "AG_deduction"
-    return CalculationTrace(
-        component=str(trace.get("component") or row["component_code"]),
-        classification=classification,
-        basis=tuple(str(b) for b in (trace.get("basis") or ())),
-        basis_total=_money_from_trace(trace.get("basis_total")),
-        rate=_rate_from_trace(trace.get("rate")),
-        unrounded_value=str(trace.get("unrounded_value") or row["amount"]),
-        rounding_rule=str(trace.get("rounding_rule") or "ROUND_NONE"),
-        rounded_value=_money_from_db(row["amount"]),
-        source_version_ids=tuple(str(v) for v in (trace.get("source_version_ids") or ())),
-        calculator_kind=str(trace.get("calculator_kind") or row["calc_kind"]),
-        engine_version=str(trace.get("engine_version") or ""),
-        employer_transfer=bool(trace.get("employer_transfer", False)),
-        transfer_of=(None if trace.get("transfer_of") is None else str(trace["transfer_of"])),
-        service_period=(
-            None if trace.get("service_period") is None else str(trace["service_period"])
-        ),
-        reason=(None if trace.get("reason") is None else str(trace["reason"])),
-    )
-
-
-def _bucket_totals(
-    lines: tuple[CalculationTrace, ...],
-) -> tuple[Money, Money, Money, Money]:
-    """Derive adjustment / deduction buckets from line classifications."""
-    gross_adj = Money.zero()
-    ag = Money.zero()
-    treasury = Money.zero()
-    external = Money.zero()
-    for line in lines:
-        if line.classification == "gross_adjustment":
-            gross_adj = gross_adj + line.rounded_value
-        elif line.classification == "AG_deduction":
-            ag = ag + line.rounded_value
-        elif line.classification == "treasury_deduction":
-            treasury = treasury + line.rounded_value
-        elif line.classification == "external_recovery":
-            external = external + line.rounded_value
-    return gross_adj, ag, treasury, external
 
 
 async def _lock_run(
@@ -179,157 +115,8 @@ async def _reconstruct_run_result(
     period = await db.get(PayrollPeriod, run.period_id)
     if period is None or period.organization_id != organization_id:
         raise NotFoundError("Payroll period not found.")
-
-    emp_rows = (
-        (
-            await db.execute(
-                sa.select(payroll_employee_results)
-                .where(
-                    payroll_employee_results.c.organization_id == organization_id,
-                    payroll_employee_results.c.run_version_id == version["id"],
-                )
-                .order_by(payroll_employee_results.c.employee_number)
-            )
-        )
-        .mappings()
-        .all()
-    )
-
-    employees: list[EmployeeResult] = []
-    for emp in emp_rows:
-        line_rows = (
-            (
-                await db.execute(
-                    sa.select(payroll_result_lines)
-                    .where(
-                        payroll_result_lines.c.organization_id == organization_id,
-                        payroll_result_lines.c.employee_result_id == emp["id"],
-                    )
-                    .order_by(payroll_result_lines.c.sequence)
-                )
-            )
-            .mappings()
-            .all()
-        )
-        lines = tuple(_trace_from_row(row) for row in line_rows)
-        gross_adj, ag, treasury, external = _bucket_totals(lines)
-        employees.append(
-            EmployeeResult(
-                employee_ref=str(emp["employee_id"]),
-                lines=lines,
-                earnings_total=_money_from_db(emp["earnings_total"]),
-                employer_contribution_total=_money_from_db(emp["employer_contribution_total"]),
-                gross_adjustment_total=gross_adj,
-                gross_total=_money_from_db(emp["gross_total"]),
-                ag_deduction_total=ag,
-                treasury_deduction_total=treasury,
-                external_recovery_total=external,
-                deductions_total=_money_from_db(emp["deductions_total"]),
-                net_payable=_money_from_db(emp["net_payable"]),
-                offbill_employer_remittance=_money_from_db(emp["offbill_employer_remittance"]),
-                disbursement=_money_from_db(emp["disbursement"]),
-            )
-        )
-
-    employees_sorted = tuple(sorted(employees, key=lambda e: e.employee_ref))
-    totals = version["totals"] or {}
-
-    def _total(key: str, fallback: Money) -> Money:
-        raw = totals.get(key)
-        if raw is None:
-            return fallback
-        return Money.from_str(str(raw))
-
-    earnings = _total(
-        "earnings_total",
-        Money.sum(e.earnings_total for e in employees_sorted) if employees_sorted else Money.zero(),
-    )
-    employer = _total(
-        "employer_contribution_total",
-        (
-            Money.sum(e.employer_contribution_total for e in employees_sorted)
-            if employees_sorted
-            else Money.zero()
-        ),
-    )
-    gross_adj = _total(
-        "gross_adjustment_total",
-        (
-            Money.sum(e.gross_adjustment_total for e in employees_sorted)
-            if employees_sorted
-            else Money.zero()
-        ),
-    )
-    gross = _total(
-        "gross_total",
-        Money.sum(e.gross_total for e in employees_sorted) if employees_sorted else Money.zero(),
-    )
-    ag = _total(
-        "ag_deduction_total",
-        (
-            Money.sum(e.ag_deduction_total for e in employees_sorted)
-            if employees_sorted
-            else Money.zero()
-        ),
-    )
-    treasury = _total(
-        "treasury_deduction_total",
-        (
-            Money.sum(e.treasury_deduction_total for e in employees_sorted)
-            if employees_sorted
-            else Money.zero()
-        ),
-    )
-    external = _total(
-        "external_recovery_total",
-        (
-            Money.sum(e.external_recovery_total for e in employees_sorted)
-            if employees_sorted
-            else Money.zero()
-        ),
-    )
-    deductions = _total(
-        "deductions_total",
-        (
-            Money.sum(e.deductions_total for e in employees_sorted)
-            if employees_sorted
-            else Money.zero()
-        ),
-    )
-    net = _total(
-        "net_payable",
-        Money.sum(e.net_payable for e in employees_sorted) if employees_sorted else Money.zero(),
-    )
-    offbill = _total(
-        "offbill_employer_remittance",
-        (
-            Money.sum(e.offbill_employer_remittance for e in employees_sorted)
-            if employees_sorted
-            else Money.zero()
-        ),
-    )
-    disbursement = _total(
-        "disbursement",
-        Money.sum(e.disbursement for e in employees_sorted) if employees_sorted else Money.zero(),
-    )
-
-    return RunResult(
-        period=f"{period.period_year:04d}-{period.period_month:02d}",
-        org_ref=str(organization_id),
-        engine_version=str(version["engine_version"]),
-        employees=employees_sorted,
-        earnings_total=earnings,
-        employer_contribution_total=employer,
-        gross_adjustment_total=gross_adj,
-        gross_total=gross,
-        ag_deduction_total=ag,
-        treasury_deduction_total=treasury,
-        external_recovery_total=external,
-        deductions_total=deductions,
-        net_payable=net,
-        offbill_employer_remittance=offbill,
-        disbursement=disbursement,
-        content_hash=str(version["content_hash"]),
+    return await load_run_result(
+        db, organization_id=organization_id, period=period, version=version
     )
 
 
@@ -380,7 +167,8 @@ async def _compute_findings(
         version=version,
     )
     findings = validate_run_result(result)
-    # Basic integrity: persisted hash must match reconstructed result hash field.
+    # Integrity: the hash recomputed from stored lines must equal the persisted
+    # content_hash — a mismatch means the immutable version was tampered with.
     if result.content_hash != str(version["content_hash"]):
         raise _conflict(
             "Persisted run version content_hash is inconsistent.",
@@ -739,6 +527,63 @@ async def approve_run(
     return summary
 
 
+async def reopen_run(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    run_id: UUID,
+    user_id: UUID,
+    reason: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """calculated|rejected → draft; reopen the same run for correction.
+
+    Unlike withdraw there is no submitter check: reopen is a draft-state
+    recovery available to any caller holding the route's ``create_run``
+    capability. No new run_version is created; ``current_version_id`` keeps
+    pointing at the last calculated version until the next calculate.
+    """
+    run = await _lock_run(db, organization_id=organization_id, run_id=run_id)
+    if run.status not in {"calculated", "rejected"}:
+        raise _conflict(
+            f"Payroll run cannot be reopened from status {run.status!r}; "
+            "required status is calculated or rejected.",
+            error_code=URN_ILLEGAL_TRANSITION,
+            details={"from_status": run.status, "command": "reopen"},
+        )
+    if run.current_version_id is None:
+        raise _conflict(
+            "Payroll run cannot be reopened without a current calculated version.",
+            error_code=URN_ILLEGAL_TRANSITION,
+        )
+
+    version = await _load_version(
+        db,
+        organization_id=organization_id,
+        version_id=run.current_version_id,
+    )
+    from_status = run.status
+    before_state = entity_snapshot(run)
+    await _transition(db, run=run, to_status="draft")
+    await _write_approval_and_audit(
+        db,
+        organization_id=organization_id,
+        run=run,
+        user_id=user_id,
+        action="reopen",
+        from_status=from_status,
+        to_status="draft",
+        version=version,
+        reason=reason,
+        before_state=before_state,
+        after_state=entity_snapshot(run),
+        idempotency_key=idempotency_key,
+    )
+    summary = await _run_summary(db, organization_id=organization_id, run=run)
+    await db.commit()
+    return summary
+
+
 async def reject_run(
     db: AsyncSession,
     *,
@@ -750,8 +595,8 @@ async def reject_run(
 ) -> dict[str, Any]:
     """submitted → rejected; approver ≠ submitter (same SoD as approve).
 
-    The current calculate command accepts only draft/calculated runs, so
-    ``rejected`` is a dead-end until an explicit recovery transition is added.
+    ``rejected`` is reopenable: ``reopen_run`` returns the same run to
+    ``draft`` for correction and resubmission.
     """
     run = await _lock_run(db, organization_id=organization_id, run_id=run_id)
     if run.status != "submitted":

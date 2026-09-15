@@ -7,8 +7,11 @@ unit tests that exercise the Phase-1 payload cookie shape.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
+from secrets import token_urlsafe
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -17,7 +20,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.errors import WeakSessionSecretError
-from app.config import Settings
+from app.config import MIN_SESSION_SECRET_LENGTH, Settings
 from app.models.base import utcnow
 from app.models.identity import Session as SessionRow
 
@@ -25,10 +28,10 @@ from app.models.identity import Session as SessionRow
 SESSION_MAX_AGE_SECONDS = 12 * 60 * 60
 LAST_SEEN_THROTTLE_SECONDS = 60
 OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60
-MIN_SESSION_SECRET_LENGTH = 16
 
 _SESSION_SALT = "accord-session-v1"
 _OAUTH_STATE_SALT = "accord-oauth-state-v1"
+_CSRF_SALT = "accord-csrf-v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,3 +274,89 @@ def verify_oauth_state(settings: Settings, state: str) -> dict[str, str] | None:
     if not isinstance(data, dict) or "n" not in data:
         return None
     return {str(k): str(v) for k, v in data.items()}
+
+
+# --- Synchronizer CSRF token (session-bound signed double-submit) ------------
+#
+# The ``accord_csrf`` cookie is a signed token whose payload binds it to the
+# SHA-256 of the session cookie value. A same-site sibling app can plant
+# cookies but cannot mint this binding, so echoing the cookie in a header
+# proves the request came from the real Accord client.
+
+
+def hash_user_agent(user_agent: str | None) -> str | None:
+    """Stable SHA-256 fingerprint of a User-Agent header for session binding."""
+    if not user_agent:
+        return None
+    return hashlib.sha256(user_agent.encode("utf-8")).hexdigest()
+
+
+def _csrf_serializer(settings: Settings) -> URLSafeTimedSerializer:
+    _assert_session_secret_strength(settings)
+    return URLSafeTimedSerializer(
+        secret_key=settings.session_secret_key,
+        salt=_CSRF_SALT,
+    )
+
+
+def _session_cookie_hash(session_cookie_value: str) -> str:
+    return hashlib.sha256(session_cookie_value.encode("utf-8")).hexdigest()
+
+
+def sign_csrf_token(settings: Settings, session_cookie_value: str) -> str:
+    """Mint a CSRF token bound to the current session cookie value."""
+    payload = {
+        "h": _session_cookie_hash(session_cookie_value),
+        "n": token_urlsafe(16),
+    }
+    return _csrf_serializer(settings).dumps(payload)
+
+
+def verify_csrf_token(
+    settings: Settings,
+    session_cookie_value: str,
+    cookie_value: str,
+) -> bool:
+    """Check signature + session binding of an ``accord_csrf`` cookie value."""
+    if not session_cookie_value or not cookie_value:
+        return False
+    try:
+        data = _csrf_serializer(settings).loads(
+            cookie_value,
+            max_age=SESSION_MAX_AGE_SECONDS,
+        )
+    except (BadSignature, SignatureExpired, WeakSessionSecretError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    bound = data.get("h")
+    if not isinstance(bound, str):
+        return False
+    return hmac.compare_digest(bound, _session_cookie_hash(session_cookie_value))
+
+
+def apply_csrf_cookie(
+    settings: Settings,
+    response: Response,
+    session_cookie_value: str,
+) -> None:
+    """Set the non-HttpOnly CSRF cookie alongside the session cookie."""
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=sign_csrf_token(settings, session_cookie_value),
+        max_age=SESSION_MAX_AGE_SECONDS,
+        path="/",
+        httponly=False,
+        secure=settings.is_production,
+        samesite="lax",
+    )
+
+
+def clear_csrf_cookie(settings: Settings, response: Response) -> None:
+    response.delete_cookie(
+        key=settings.csrf_cookie_name,
+        path="/",
+        httponly=False,
+        secure=settings.is_production,
+        samesite="lax",
+    )

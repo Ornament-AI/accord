@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id
 from app.auth.principal import AuthPrincipal
+from app.auth.errors import CapabilityDeniedError
 from app.schemas.audit import (
     COMMAND_NAME_PATTERN,
     AuditEventDetailResponse,
@@ -89,10 +90,14 @@ async def get_audit_event(
     event_id: UUID,
     tenant: TenantCtx,
     db: Session,
-    _: AuthPrincipal = Depends(require_capability("view_audit")),
+    principal: AuthPrincipal = Depends(require_capability("view_audit")),
+    reveal: bool = Query(default=False),
 ) -> AuditEventDetailResponse:
+    if reveal and "reveal_sensitive_fields" not in principal.capabilities:
+        raise CapabilityDeniedError("reveal_sensitive_fields")
     return await audit_read_service.get_audit_event(
         db,
         organization_id=tenant_org_id(tenant),
         event_id=event_id,
+        reveal=reveal,
     )

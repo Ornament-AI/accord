@@ -34,6 +34,7 @@ os.environ.setdefault("MIGRATIONS_DATABASE_URL", _test_db_url)
 from app.db import configure_engine, dispose_engine, get_session_factory  # noqa: E402
 from app.main import app  # noqa: E402
 from app.middleware.rate_limit import limiter  # noqa: E402
+from tests.identity_helpers import attach_csrf_echo  # noqa: E402
 from tests.migrations.conftest import diag, ensure_accord_roles, run_alembic  # noqa: E402
 
 # Force NullPool for tests
@@ -92,4 +93,5 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
 async def client() -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac

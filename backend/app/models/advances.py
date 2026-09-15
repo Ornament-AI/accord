@@ -40,6 +40,10 @@ class AdvanceAccount(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin
             "advance_type IN ('hba','gpf_advance','festival','motor_car','motorcycle','other')",
             name="ck_advance_accounts_advance_type",
         ),
+        CheckConstraint(
+            "principal > 0 AND principal <= 99999999.99",
+            name="ck_advance_accounts_principal_positive",
+        ),
     )
 
     id: uuid.UUID = _id_field()
@@ -99,6 +103,15 @@ advance_installment_versions = Table(
     CheckConstraint(
         "NOT isempty(validity)",
         name="ck_advance_installment_versions_validity_not_empty",
+    ),
+    CheckConstraint(
+        "installment_amount > 0 AND installment_amount <= 99999999.99",
+        name="ck_advance_installment_versions_installment_amount",
+    ),
+    CheckConstraint(
+        "installments_total > 0 AND installments_recovered_opening >= 0 "
+        "AND installments_recovered_opening <= installments_total",
+        name="ck_advance_installment_versions_installments",
     ),
     ExcludeConstraint(
         ("organization_id", "="),

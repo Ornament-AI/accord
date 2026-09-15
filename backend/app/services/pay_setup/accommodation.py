@@ -11,7 +11,7 @@ from asyncpg.exceptions import CheckViolationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import NotFoundError, ValidationError
+from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.accommodation import AccommodationAssignment, accommodation_charge_versions
 from app.models.base import utcnow
 from app.schemas.pay_setup import (
@@ -20,6 +20,7 @@ from app.schemas.pay_setup import (
     AccommodationUpdate,
 )
 from app.services import versioning
+from app.services.audit_events import entity_snapshot, row_snapshot, write_mutation_event
 from app.services.db_errors import raise_integrity_error
 from app.services.pay_setup._shared import get_employee, serialize_version_row
 
@@ -67,8 +68,31 @@ async def create_accommodation(
     created_by: UUID,
     body: AccommodationCreate,
 ) -> dict[str, Any]:
-    await get_employee(db, organization_id=organization_id, employee_id=employee_id)
+    employee = await get_employee(db, organization_id=organization_id, employee_id=employee_id)
     charge = body.charge
+    # M-data-7: two assignments for one employee with overlapping charge
+    # versions resolve to a duplicate ACCOMMODATION_LICENSE_FEE code at
+    # calculate time. Reject at write time.
+    overlap_stmt = (
+        sa.select(accommodation_charge_versions.c.id)
+        .join(
+            AccommodationAssignment,
+            accommodation_charge_versions.c.header_id == AccommodationAssignment.id,
+        )
+        .where(AccommodationAssignment.organization_id == organization_id)
+        .where(AccommodationAssignment.employee_id == employee_id)
+        .where(
+            sa.or_(
+                sa.func.upper_inf(accommodation_charge_versions.c.validity),
+                sa.func.upper(accommodation_charge_versions.c.validity) > charge.effective_from,
+            )
+        )
+    )
+    if (await db.execute(overlap_stmt)).first() is not None:
+        raise ConflictError(
+            "An active accommodation assignment already exists for this "
+            "employee; end the existing series first."
+        )
     header = AccommodationAssignment(
         organization_id=organization_id,
         employee_id=employee_id,
@@ -99,6 +123,29 @@ async def create_accommodation(
         created_by=created_by,
     )
     try:
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=created_by,
+            command="accommodation_assignment.create",
+            entity_type="accommodation_assignment",
+            entity_id=header.id,
+            entity_label=(
+                f"{header.quarters_location} quarters {header.quarters_identifier} "
+                f"for {employee.employee_number}"
+            ),
+            before_state={},
+            after_state={
+                "assignment": entity_snapshot(header),
+                "charge_version": row_snapshot(version_row),
+            },
+            summary={
+                "employee_id": employee.id,
+                "quarters_location": header.quarters_location,
+                "version_id": version_row["id"],
+                "effective_from": charge.effective_from,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -144,6 +191,7 @@ async def update_accommodation(
     *,
     organization_id: UUID,
     assignment_id: UUID,
+    actor_user_id: UUID,
     body: AccommodationUpdate,
 ) -> dict[str, Any]:
     assignment = await _get_accommodation(
@@ -151,6 +199,7 @@ async def update_accommodation(
         organization_id=organization_id,
         assignment_id=assignment_id,
     )
+    before_state = entity_snapshot(assignment)
     if "quarters_identifier" in body.model_fields_set:
         assert body.quarters_identifier is not None
         assignment.quarters_identifier = body.quarters_identifier.strip()
@@ -172,6 +221,21 @@ async def update_accommodation(
         .mappings()
         .one()
     )
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="accommodation_assignment.update",
+        entity_type="accommodation_assignment",
+        entity_id=assignment.id,
+        entity_label=(f"{assignment.quarters_location} quarters {assignment.quarters_identifier}"),
+        before_state=before_state,
+        after_state=entity_snapshot(assignment),
+        summary={
+            "quarters_location": assignment.quarters_location,
+            "updated_fields": sorted(body.model_fields_set),
+        },
+    )
     await db.commit()
     return _accommodation_response(assignment, serialize_version_row(latest))
 
@@ -187,29 +251,72 @@ async def create_accommodation_charge_version(
     assignment = await _get_accommodation(
         db, organization_id=organization_id, assignment_id=assignment_id
     )
-    try:
-        body.validate_for_location(assignment.quarters_location)
-    except ValueError as exc:
-        raise ValidationError(str(exc)) from exc
-    payload = {
-        "license_fee": body.license_fee,
-        "house_rent": body.house_rent,
-        "service_charge": body.service_charge,
-        "parking_charge": body.parking_charge,
-        "additional_parking_charge": body.additional_parking_charge,
-        "informational_hra_foregone": body.informational_hra_foregone,
-    }
-    row = await versioning.insert_version(
+    open_row = await versioning.get_open_version(
         db,
         accommodation_charge_versions,
         organization_id=organization_id,
         header_id=assignment_id,
-        effective_from=body.effective_from,
-        values=payload,
-        change_reason=body.change_reason,
-        created_by=created_by,
     )
+    terminating = body.end_on is not None
+    if terminating:
+        # T1.6: terminate mode — close the open charge version so the
+        # accommodation recovery stops emitting lines from ``end_on``.
+        row = await versioning.terminate_open_version(
+            db,
+            accommodation_charge_versions,
+            organization_id=organization_id,
+            header_id=assignment_id,
+            end_on=body.end_on,
+        )
+    else:
+        if body.effective_from is None or body.license_fee is None:
+            raise ValidationError("effective_from and license_fee are required for a new version.")
+        try:
+            body.validate_for_location(assignment.quarters_location)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        payload = {
+            "license_fee": body.license_fee,
+            "house_rent": body.house_rent,
+            "service_charge": body.service_charge,
+            "parking_charge": body.parking_charge,
+            "additional_parking_charge": body.additional_parking_charge,
+            "informational_hra_foregone": body.informational_hra_foregone,
+        }
+        row = await versioning.insert_version(
+            db,
+            accommodation_charge_versions,
+            organization_id=organization_id,
+            header_id=assignment_id,
+            effective_from=body.effective_from,
+            values=payload,
+            change_reason=body.change_reason,
+            created_by=created_by,
+        )
     try:
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=created_by,
+            command=(
+                "accommodation_assignment.charge_version.terminate"
+                if terminating
+                else "accommodation_assignment.charge_version.append"
+            ),
+            entity_type="accommodation_assignment",
+            entity_id=assignment.id,
+            entity_label=(
+                f"{assignment.quarters_location} quarters {assignment.quarters_identifier}"
+            ),
+            before_state=row_snapshot(open_row) if open_row is not None else {},
+            after_state=row_snapshot(row),
+            summary={
+                "version_id": row["id"],
+                "effective_from": body.effective_from,
+                "end_on": body.end_on,
+                "change_reason": body.change_reason,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()

@@ -34,6 +34,15 @@ function readInitialTheme(storageKey: string, defaultTheme: Theme): Theme {
 	return defaultTheme;
 }
 
+/** Resolved-scheme colors — must stay in sync with the inline init in index.html. */
+const THEME_COLORS = { dark: "#0a0a0a", light: "#f3f5f5" } as const;
+
+function syncThemeColor(resolved: "dark" | "light") {
+	document
+		.querySelector('meta[name="theme-color"]')
+		?.setAttribute("content", THEME_COLORS[resolved]);
+}
+
 export function ThemeProvider({
 	children,
 	defaultTheme = "system",
@@ -50,12 +59,9 @@ export function ThemeProvider({
 				? window.matchMedia("(prefers-color-scheme: dark)")
 				: null;
 		const applyTheme = () => {
-			if (theme === "system") {
-				root.classList.add(mediaQuery?.matches ? "dark" : "light");
-				return;
-			}
-
-			root.classList.add(theme);
+			const resolved = theme === "system" ? (mediaQuery?.matches ? "dark" : "light") : theme;
+			root.classList.add(resolved);
+			syncThemeColor(resolved);
 		};
 
 		applyTheme();
@@ -66,7 +72,9 @@ export function ThemeProvider({
 			}
 
 			root.classList.remove("light", "dark");
-			root.classList.add(mediaQuery?.matches ? "dark" : "light");
+			const resolved = mediaQuery?.matches ? "dark" : "light";
+			root.classList.add(resolved);
+			syncThemeColor(resolved);
 		};
 
 		if (!mediaQuery) {

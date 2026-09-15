@@ -36,6 +36,7 @@ import {
 	usePayrollPeriods,
 	usePayrollRuns,
 } from "@/lib/api/payroll-runs";
+import { PAY_RUN_READ_CAPABILITIES, PAY_RUN_REPORT_READ_CAPABILITIES } from "@/lib/capabilities";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
@@ -64,14 +65,16 @@ const runColumns: ColumnDef<PayrollRunListItem>[] = [
 
 export default function PayRunsPage() {
 	const navigate = useNavigate();
-	const { hasCapability } = useAuth();
+	const { hasCapability, hasAnyCapability } = useAuth();
 	const canCreateRun = hasCapability("create_run");
 
 	const [createOpen, setCreateOpen] = useState(false);
 	const [selectedPeriod, setSelectedPeriod] = useState("");
 
-	const periodsQuery = usePayrollPeriods();
-	const runsQuery = usePayrollRuns();
+	// Periods stay view_master_data-gated; the runs list serves all run
+	// lifecycle roles plus report consumers.
+	const periodsQuery = usePayrollPeriods(hasCapability("view_master_data"));
+	const runsQuery = usePayrollRuns({}, hasAnyCapability(PAY_RUN_REPORT_READ_CAPABILITIES));
 	const createPeriod = useCreatePayrollPeriod();
 	const createRun = useCreatePayrollRun();
 
@@ -116,7 +119,7 @@ export default function PayRunsPage() {
 	};
 
 	return (
-		<CapabilityGate capability="create_run" title="Pay Runs">
+		<CapabilityGate anyOf={PAY_RUN_READ_CAPABILITIES} title="Pay Runs">
 			<AppLayout
 				title="Pay Runs"
 				actions={
@@ -142,7 +145,11 @@ export default function PayRunsPage() {
 							<EmptyState
 								icon={WalletCards}
 								title="No Payroll History"
-								description="Select Add to create the first payroll run."
+								description={
+									canCreateRun
+										? "Select Add to create the first payroll run."
+										: "No payroll runs have been created yet."
+								}
 							/>
 						) : null}
 

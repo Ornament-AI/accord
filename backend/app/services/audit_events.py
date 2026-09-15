@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -44,6 +45,22 @@ def entity_snapshot(entity: Any) -> dict[str, Any]:
         attribute.key: json_safe(getattr(entity, attribute.key))
         for attribute in mapper.column_attrs
     }
+
+
+def row_snapshot(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Serialize a Core-table row mapping (e.g. effective-dated version rows).
+
+    ``insert_version``/``terminate_open_version`` return ``RowMapping`` objects,
+    not ORM entities, so ``entity_snapshot`` does not apply. The ``validity``
+    daterange is flattened to ``effective_from``/``effective_to`` for readable
+    audit diffs.
+    """
+    data = dict(row)
+    validity = data.pop("validity", None)
+    if validity is not None:
+        data["effective_from"] = getattr(validity, "lower", None)
+        data["effective_to"] = getattr(validity, "upper", None)
+    return data
 
 
 def changed_fields(before: dict[str, Any], after: dict[str, Any]) -> list[str]:

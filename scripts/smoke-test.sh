@@ -81,7 +81,17 @@ fi
 # ---- 4. Docker services running ---------------------------------------------
 echo "--- Docker services ---"
 if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
-    REQUIRED_SERVICES="postgres api web"
+    # Required env vars make compose fail to parse without a readable .env —
+    # distinguish "no project" from "services down" instead of false-failing.
+    if ! (cd "$ROOT" && docker compose -f deploy/docker-compose.yml ps >/dev/null 2>&1); then
+        if [[ "${ACCORD_SMOKE_REQUIRE_DOCKER:-}" == "true" ]]; then
+            check_fail "compose project unreadable (run from the deploy bundle with .env present)"
+        else
+            check_skip "Docker services check — compose project unreadable (no .env?)"
+        fi
+    else
+    # minio-init is a one-shot bootstrap container, not a long-running service.
+    REQUIRED_SERVICES="postgres api web worker minio"
     for svc in $REQUIRED_SERVICES; do
         if (cd "$ROOT" && docker compose -f deploy/docker-compose.yml ps --status running --format '{{.Service}}' 2>/dev/null | grep -qx "$svc"); then
             SVC_STATUS=$(cd "$ROOT" && docker compose -f deploy/docker-compose.yml ps "$svc" --format '{{.Status}}' 2>/dev/null)
@@ -90,6 +100,7 @@ if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; the
             check_fail "Service '$svc' is not running"
         fi
     done
+    fi
 else
     check_skip "Docker services check — docker compose not available"
 fi

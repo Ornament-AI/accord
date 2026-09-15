@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import {
 	type AuditActor,
 	type AuditEventListItem,
+	isUuid,
 	toAuditDayBound,
 	useAuditEventsList,
 	useAuditFilterOptions,
@@ -171,12 +172,17 @@ export default function AuditPage() {
 	const debouncedEntityId = useDebouncedValue(entityId, 300);
 	const optionsQuery = useAuditFilterOptions();
 
+	// entity_id is a backend UUID: a debounced partial value would 422 and clear
+	// the workspace, so hold the query until the input is empty or UUID-shaped.
+	const trimmedEntityId = debouncedEntityId.trim();
+	const entityIdValid = trimmedEntityId === "" || isUuid(trimmedEntityId);
+
 	const listParams = useMemo(
 		() => ({
 			entity_type: entityType,
 			actor_user_id: actorId,
 			command,
-			entity_id: debouncedEntityId.trim() || null,
+			entity_id: trimmedEntityId || null,
 			from: dateRange?.from ? toAuditDayBound(dateRange.from, "start") : null,
 			to: dateRange?.to
 				? toAuditDayBound(dateRange.to, "end")
@@ -186,9 +192,9 @@ export default function AuditPage() {
 			page,
 			page_size: PAGE_SIZE,
 		}),
-		[entityType, actorId, command, debouncedEntityId, dateRange, page],
+		[entityType, actorId, command, trimmedEntityId, dateRange, page],
 	);
-	const listQuery = useAuditEventsList(listParams);
+	const listQuery = useAuditEventsList(listParams, entityIdValid);
 	const events = listQuery.data?.items ?? [];
 	const totalPages = listQuery.data?.total_pages ?? 1;
 	const hasFilters = Boolean(entityType || actorId || command || entityId || dateRange?.from);
@@ -268,16 +274,23 @@ export default function AuditPage() {
 								onChange={changeFilter(setEntityType)}
 								options={entityTypeOptions}
 							/>
-							<Input
-								value={entityId}
-								onChange={(event) => {
-									setEntityId(event.target.value);
-									setPage(1);
-								}}
-								placeholder="Entity ID"
-								aria-label="Filter by Entity ID"
-								className="w-48 shrink-0"
-							/>
+							<div className="flex w-48 shrink-0 flex-col gap-1">
+								<Input
+									value={entityId}
+									onChange={(event) => {
+										setEntityId(event.target.value);
+										setPage(1);
+									}}
+									placeholder="Entity ID"
+									aria-label="Filter by Entity ID"
+									aria-invalid={!entityIdValid || undefined}
+								/>
+								{!entityIdValid ? (
+									<p className="text-xs text-destructive" data-testid="entity-id-invalid">
+										Entity ID must be a UUID.
+									</p>
+								) : null}
+							</div>
 							<SelectFilter
 								label="Actor"
 								value={actorId}

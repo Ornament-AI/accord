@@ -18,6 +18,8 @@ from app.models.payroll_runs import (
     payroll_result_lines,
     payroll_run_versions,
 )
+from app.reports.canonical_pay_bill_allocation import post_metadata
+from app.reports.canonical_pay_bill_common import pay_bill_page_capacity_errors
 from app.schemas.payroll_runs import PayrollRunReportMetadata
 
 _COMMON_REPORT_TYPE = "canonical_export"
@@ -76,6 +78,79 @@ def _issues_for_report(
         *_REPORT_TYPE_DEPENDENCIES.get(report_type, frozenset()),
     }
     return [issue for issue in issues if issue["report_type"] in relevant_types]
+
+
+# Signatory roles and every canonical report type whose sheet renders them.
+# The Pay Bill register has no signature cell, so it is deliberately absent.
+_SIGNATORY_ROLE_REPORT_TYPES: dict[str, frozenset[str]] = {
+    "maker": frozenset({"treasury_face", "bank_rtgs_advice", "approval_note"}),
+    "checker": frozenset({"treasury_face", "approval_note"}),
+    # ``final_approver`` is the fallback slot for ``approving_officer`` on the
+    # front sheets, so the two roles gate the same exports.
+    "approving_officer": frozenset(
+        {
+            "treasury_face",
+            "bank_rtgs_advice",
+            "payslips",
+            "approval_note",
+            "income_tax_schedule",
+            "professional_tax_schedule",
+            "gis_schedule",
+            "gpf_mumbai_schedule",
+            "gpf_nagpur_schedule",
+            "gpf_advance_schedule",
+            "hba_schedule",
+            "motor_car_advance_schedule",
+            "motorcycle_advance_schedule",
+            "festival_advance_schedule",
+            "nps_contribution_schedule",
+            "accommodation_mumbai_schedule",
+            "accommodation_worli_schedule",
+        }
+    ),
+    "final_approver": frozenset(
+        {
+            "treasury_face",
+            "bank_rtgs_advice",
+            "payslips",
+            "approval_note",
+            "income_tax_schedule",
+            "professional_tax_schedule",
+            "gis_schedule",
+            "gpf_mumbai_schedule",
+            "gpf_nagpur_schedule",
+            "gpf_advance_schedule",
+            "hba_schedule",
+            "motor_car_advance_schedule",
+            "motorcycle_advance_schedule",
+            "festival_advance_schedule",
+            "nps_contribution_schedule",
+            "accommodation_mumbai_schedule",
+            "accommodation_worli_schedule",
+        }
+    ),
+}
+
+
+def _expand_signatory_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Retag ``*_signatory_missing`` issues to every sheet rendering that role.
+
+    The legacy readiness pass tags signatory problems only to
+    ``approval_note``, but canonical schedule and front-sheet renderers all
+    stamp signature blocks, so each affected report type must see the issue.
+    """
+    expanded: list[dict[str, Any]] = []
+    for issue in issues:
+        code = str(issue.get("code") or "")
+        role = code.removesuffix("_signatory_missing")
+        report_types = _SIGNATORY_ROLE_REPORT_TYPES.get(role)
+        if report_types is None:
+            expanded.append(issue)
+            continue
+        expanded.extend(
+            {**issue, "report_type": report_type} for report_type in sorted(report_types)
+        )
+    return expanded
 
 
 def _payslip_bucket_overflows(rows: list[Any]) -> list[dict[str, Any]]:
@@ -243,10 +318,12 @@ async def v3_report_readiness_issues(
     )
     from app.services.payroll_runs import report_readiness_issues
 
-    issues = report_readiness_issues(
-        metadata=metadata,
-        profile=profile,
-        run_id=posted_run_id,
+    issues = _expand_signatory_issues(
+        report_readiness_issues(
+            metadata=metadata,
+            profile=profile,
+            run_id=posted_run_id,
+        )
     )
     profile_href = "/pay-components?reportDefaults=1"
 
@@ -430,6 +507,44 @@ async def v3_report_readiness_issues(
                 )
             )
 
+    # Generic (non-reference) rosters flow sequentially through the canonical
+    # fixed page ends at serials 8 and 18; surface overflow here instead of
+    # failing the Pay Bill renderer mid-document.
+    orderable_groups: list[tuple[tuple[int, str, str, str], tuple[str, str, str, str, str]]] = []
+    for result in result_rows:
+        employee_id = str(result["employee_id"])
+        identity = identities.get(employee_id)
+        if not isinstance(identity, dict):
+            continue
+        group_key, title, sanctioned, vacant, pay_scale, display_order, _remarks = post_metadata(
+            identity
+        )
+        orderable_groups.append(
+            (
+                (display_order, group_key, title.casefold(), str(result["employee_number"])),
+                (
+                    group_key,
+                    title or "Unassigned Post",
+                    "" if sanctioned is None else str(sanctioned),
+                    "" if vacant is None else str(vacant),
+                    pay_scale,
+                ),
+            )
+        )
+    for message in pay_bill_page_capacity_errors(
+        [group for _key, group in sorted(orderable_groups)]
+    ):
+        issues.append(
+            _issue(
+                "pay_bill",
+                "pay_bill_page_capacity",
+                message,
+                owner="post_catalog",
+                href="/organization/posts",
+                entity_id=str(posted_run_id),
+            )
+        )
+
     issues.extend(_epf_identifier_issues(line_rows, identities))
     for row in line_rows:
         code = str(row["component_code"])
@@ -486,12 +601,30 @@ async def v3_report_readiness_issues(
                 ),
                 None,
             )
+            location = assignment.get("quarters_location") if isinstance(assignment, dict) else None
             report_type = (
-                f"accommodation_{assignment.get('quarters_location')}_schedule"
-                if isinstance(assignment, dict)
-                and assignment.get("quarters_location") in {"mumbai", "worli"}
+                f"accommodation_{location}_schedule"
+                if location in {"mumbai", "worli"}
                 else _COMMON_REPORT_TYPE
             )
+            if isinstance(assignment, dict) and location not in {"mumbai", "worli"}:
+                # M-data-15: the money cannot be attributed to either location
+                # schedule, so both must be blocked — not just the common gate.
+                for target in (
+                    "accommodation_mumbai_schedule",
+                    "accommodation_worli_schedule",
+                ):
+                    issues.append(
+                        _issue(
+                            target,
+                            "employee_accommodation_location_unknown",
+                            f"Employee {employee_number} has accommodation recovery with "
+                            f"unrecognized quarters location {location!r}.",
+                            owner="employee",
+                            href=f"/employees/{employee_id}",
+                            entity_id=employee_id,
+                        )
+                    )
             if not isinstance(assignment, dict) or _missing(assignment.get("quarters_address")):
                 issues.append(
                     _issue(

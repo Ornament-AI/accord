@@ -21,6 +21,7 @@ services:
 |---|---|
 | `postgres` | Postgres 18 (`postgres:18.4-alpine`); volume `pgdata` mounted at `/var/lib/postgresql` |
 | `minio` + `minio-init` | S3-compatible object storage; bucket `accord-artifacts` |
+| `role-sync` | One-shot role-password sync (`deploy/object-storage/sync-role-passwords.sh`) |
 | `migrations` | One-shot `alembic upgrade head` (runs as the ADR migrator role) |
 | `api` | FastAPI backend image |
 | `worker` | `python worker.py` durable-job loop |
@@ -28,8 +29,12 @@ services:
 
 On first boot, Postgres runs `deploy/object-storage/postgres-init-roles.sh`.
 That script applies `backend/scripts/create_roles.sql` and sets passwords
-for `accord_migrator`, `accord_app`, and `accord_worker` (ADR-0001). The
-Compose defaults wire each service to the right role:
+for `accord_migrator`, `accord_app`, and `accord_worker` (ADR-0001). Because
+`initdb.d` hooks only run on a fresh volume, the one-shot `role-sync`
+service re-asserts the same role passwords after Postgres is healthy on
+every deploy — rotating a password in `.env` takes effect on the next
+`docker compose up` without recreating `pgdata`. The Compose defaults wire
+each service to the right role:
 
 - `MIGRATIONS_DATABASE_URL` → `accord_migrator`
 - `DATABASE_URL` (api) → `accord_app`
