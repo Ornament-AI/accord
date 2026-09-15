@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 
 from app.exceptions import ConflictError
 from app.models.identity import Organization, OrganizationInvitation, OrganizationMembership
+from app.models.platform import AuditEvent
 from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_user
@@ -29,6 +30,48 @@ async def test_provision_organization_creates_once(session):
     invite = (await session.execute(select(OrganizationInvitation))).scalar_one()
     assert invite.email == "admin@example.com"
     assert invite.role == "organization_administrator"
+
+
+@pytest.mark.asyncio
+async def test_provision_organization_writes_audit_events(session):
+    result = await provision_organization(
+        session,
+        name="Acme Audit",
+        slug="acme-audit",
+        admin_email="admin@example.com",
+    )
+    org = result.organization
+    await bind_tenant_context(session, organization_id=org.id)
+
+    provision_event = (
+        await session.execute(
+            select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "organization.provision",
+                AuditEvent.entity_id == org.id,
+            )
+        )
+    ).scalar_one()
+    assert provision_event.entity_type == "organization"
+    assert provision_event.event_kind == "mutation"
+    # CLI bootstrap has no authenticated actor (ADR 0011).
+    assert provision_event.actor_user_id is None
+    assert provision_event.before_state == {}
+    assert provision_event.after_state["slug"] == "acme-audit"
+
+    invite = (await session.execute(select(OrganizationInvitation))).scalar_one()
+    invite_event = (
+        await session.execute(
+            select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "invitation.create",
+                AuditEvent.entity_id == invite.id,
+            )
+        )
+    ).scalar_one()
+    assert invite_event.entity_type == "organization_invitation"
+    assert invite_event.before_state == {}
+    assert invite_event.after_state["email"] == "admin@example.com"
 
 
 @pytest.mark.asyncio

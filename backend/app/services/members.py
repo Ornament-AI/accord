@@ -21,6 +21,7 @@ from app.models.identity import (
     OrganizationMembership,
     User,
 )
+from app.services.audit_events import entity_snapshot, write_mutation_event
 from app.services.bootstrap import get_singleton_organization
 from app.tenancy import bind_tenant_context
 
@@ -106,10 +107,23 @@ async def provision_member(
                     target_membership=existing,
                     next_role=role,
                 )
+            before_state = entity_snapshot(existing)
             existing.role = role
             existing.is_active = True
             existing.updated_at = utcnow()
             await db.flush()
+            await write_mutation_event(
+                db,
+                organization_id=organization_id,
+                actor_user_id=invited_by_user_id,
+                command="membership.update",
+                entity_type="organization_membership",
+                entity_id=existing.id,
+                entity_label=f"{cleaned_email} membership",
+                before_state=before_state,
+                after_state=entity_snapshot(existing),
+                summary={"email": cleaned_email, "role": role},
+            )
             return "membership", str(existing.id)
 
         membership = OrganizationMembership(
@@ -120,6 +134,18 @@ async def provision_member(
         )
         db.add(membership)
         await db.flush()
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=invited_by_user_id,
+            command="membership.create",
+            entity_type="organization_membership",
+            entity_id=membership.id,
+            entity_label=f"{cleaned_email} membership",
+            before_state={},
+            after_state=entity_snapshot(membership),
+            summary={"email": cleaned_email, "role": role},
+        )
         return "membership", str(membership.id)
 
     existing_invite = (
@@ -133,9 +159,22 @@ async def provision_member(
         )
     ).scalar_one_or_none()
     if existing_invite is not None:
+        invite_before = entity_snapshot(existing_invite)
         existing_invite.role = role
         existing_invite.updated_at = utcnow()
         await db.flush()
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=invited_by_user_id,
+            command="invitation.update",
+            entity_type="organization_invitation",
+            entity_id=existing_invite.id,
+            entity_label=f"Invitation for {cleaned_email}",
+            before_state=invite_before,
+            after_state=entity_snapshot(existing_invite),
+            summary={"email": cleaned_email, "role": role},
+        )
         return "invitation", str(existing_invite.id)
 
     invite = OrganizationInvitation(
@@ -150,6 +189,18 @@ async def provision_member(
             await db.flush()
     except IntegrityError as exc:
         raise ConflictError("A pending invitation for this email already exists.") from exc
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=invited_by_user_id,
+        command="invitation.create",
+        entity_type="organization_invitation",
+        entity_id=invite.id,
+        entity_label=f"Invitation for {cleaned_email}",
+        before_state={},
+        after_state=entity_snapshot(invite),
+        summary={"email": cleaned_email, "role": role},
+    )
     return "invitation", str(invite.id)
 
 
@@ -179,6 +230,21 @@ async def claim_pending_invitation(
     if existing is not None and existing.is_active:
         return existing
 
+    # Snapshot the pending invite before the atomic claim UPDATE so the audit
+    # event carries an accurate before state. Losing a concurrent claim is
+    # still guarded by the UPDATE's ``accepted_at IS NULL`` predicate.
+    invite = (
+        await db.execute(
+            select(OrganizationInvitation).where(
+                OrganizationInvitation.organization_id == org.id,
+                OrganizationInvitation.email == user.email,
+                OrganizationInvitation.accepted_at.is_(None),
+                OrganizationInvitation.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    invite_before = entity_snapshot(invite) if invite is not None else None
+
     now = utcnow()
     claim = await db.execute(
         update(OrganizationInvitation)
@@ -195,13 +261,41 @@ async def claim_pending_invitation(
     if claimed is None:
         return None
 
+    if invite is not None:
+        await db.refresh(invite)
+        await write_mutation_event(
+            db,
+            organization_id=org.id,
+            actor_user_id=user.id,
+            command="invitation.accept",
+            entity_type="organization_invitation",
+            entity_id=invite.id,
+            entity_label=f"Invitation for {user.email}",
+            before_state=invite_before or {},
+            after_state=entity_snapshot(invite),
+            summary={"email": user.email, "role": claimed.role},
+        )
+
     if existing is not None:
         # Inactive membership + claimed invite: reactivate in place with the
         # invitation role instead of inserting a duplicate (org, user) row.
+        membership_before = entity_snapshot(existing)
         existing.role = claimed.role
         existing.is_active = True
         existing.updated_at = now
         await db.flush()
+        await write_mutation_event(
+            db,
+            organization_id=org.id,
+            actor_user_id=user.id,
+            command="membership.update",
+            entity_type="organization_membership",
+            entity_id=existing.id,
+            entity_label=f"{user.email} membership",
+            before_state=membership_before,
+            after_state=entity_snapshot(existing),
+            summary={"email": user.email, "role": claimed.role},
+        )
         return existing
 
     # begin_nested() flushes pending state before opening the SAVEPOINT, so
@@ -231,11 +325,36 @@ async def claim_pending_invitation(
             )
         ).scalar_one_or_none()
         if winner is not None and not winner.is_active:
+            winner_before = entity_snapshot(winner)
             winner.role = claimed.role
             winner.is_active = True
             winner.updated_at = now
             await db.flush()
+            await write_mutation_event(
+                db,
+                organization_id=org.id,
+                actor_user_id=user.id,
+                command="membership.update",
+                entity_type="organization_membership",
+                entity_id=winner.id,
+                entity_label=f"{user.email} membership",
+                before_state=winner_before,
+                after_state=entity_snapshot(winner),
+                summary={"email": user.email, "role": claimed.role},
+            )
         return winner
+    await write_mutation_event(
+        db,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        command="membership.create",
+        entity_type="organization_membership",
+        entity_id=membership.id,
+        entity_label=f"{user.email} membership",
+        before_state={},
+        after_state=entity_snapshot(membership),
+        summary={"email": user.email, "role": claimed.role},
+    )
     return membership
 
 

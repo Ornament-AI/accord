@@ -18,6 +18,7 @@ from app.models.identity import (
     OrganizationSettings,
     User,
 )
+from app.services.audit_events import entity_snapshot, write_mutation_event
 from app.services.organizations import validate_slug
 from app.services.default_catalog import ensure_standard_components
 from app.tenancy import bind_tenant_context
@@ -140,23 +141,62 @@ async def provision_organization(
     await ensure_standard_components(db, organization_id=org.id)
 
     user = (await db.execute(select(User).where(User.email == cleaned_email))).scalar_one_or_none()
+    grant: OrganizationMembership | OrganizationInvitation
     if user is not None:
-        db.add(
-            OrganizationMembership(
-                organization_id=org.id,
-                user_id=user.id,
-                role="organization_administrator",
-                is_active=True,
-            )
+        grant = OrganizationMembership(
+            organization_id=org.id,
+            user_id=user.id,
+            role="organization_administrator",
+            is_active=True,
         )
     else:
-        db.add(
-            OrganizationInvitation(
-                organization_id=org.id,
-                email=cleaned_email,
-                role="organization_administrator",
-                invited_by_user_id=None,
-            )
+        grant = OrganizationInvitation(
+            organization_id=org.id,
+            email=cleaned_email,
+            role="organization_administrator",
+            invited_by_user_id=None,
+        )
+    db.add(grant)
+    await db.flush()
+
+    # CLI provisioning has no authenticated actor (ADR 0011): actor_user_id=None.
+    await write_mutation_event(
+        db,
+        organization_id=org.id,
+        actor_user_id=None,
+        command="organization.provision",
+        entity_type="organization",
+        entity_id=org.id,
+        entity_label=org.name,
+        before_state={},
+        after_state=entity_snapshot(org),
+        summary={"slug": org.slug, "admin_email": cleaned_email},
+    )
+    if isinstance(grant, OrganizationMembership):
+        await write_mutation_event(
+            db,
+            organization_id=org.id,
+            actor_user_id=None,
+            command="membership.create",
+            entity_type="organization_membership",
+            entity_id=grant.id,
+            entity_label=f"{cleaned_email} membership",
+            before_state={},
+            after_state=entity_snapshot(grant),
+            summary={"email": cleaned_email, "role": grant.role},
+        )
+    else:
+        await write_mutation_event(
+            db,
+            organization_id=org.id,
+            actor_user_id=None,
+            command="invitation.create",
+            entity_type="organization_invitation",
+            entity_id=grant.id,
+            entity_label=f"Invitation for {cleaned_email}",
+            before_state={},
+            after_state=entity_snapshot(grant),
+            summary={"email": cleaned_email, "role": grant.role},
         )
 
     try:

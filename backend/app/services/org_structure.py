@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.org_structure import Office, Post
 from app.schemas.org_structure import PostResponse, PostUpdate
+from app.services.audit_events import entity_snapshot, write_mutation_event
 
 
 def post_to_response(post: Post) -> PostResponse:
@@ -33,6 +34,7 @@ async def create_office(
     db: AsyncSession,
     organization_id: UUID,
     *,
+    actor_user_id: UUID,
     name: str,
     jurisdiction: str,
 ) -> Office:
@@ -43,6 +45,18 @@ async def create_office(
     )
     db.add(office)
     await db.flush()
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="office.create",
+        entity_type="office",
+        entity_id=office.id,
+        entity_label=office.name,
+        before_state={},
+        after_state=entity_snapshot(office),
+        summary={"name": office.name, "jurisdiction": office.jurisdiction},
+    )
     await db.commit()
     return office
 
@@ -59,6 +73,7 @@ async def update_office(
     organization_id: UUID,
     office_id: UUID,
     *,
+    actor_user_id: UUID,
     name: str | None = None,
     jurisdiction: str | None = None,
 ) -> Office:
@@ -72,12 +87,25 @@ async def update_office(
     if office is None:
         raise NotFoundError("Office not found.")
 
+    before_state = entity_snapshot(office)
     if name is not None:
         office.name = name
     if jurisdiction is not None:
         office.jurisdiction = jurisdiction
 
     await db.flush()
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="office.update",
+        entity_type="office",
+        entity_id=office.id,
+        entity_label=office.name,
+        before_state=before_state,
+        after_state=entity_snapshot(office),
+        summary={"name": office.name, "jurisdiction": office.jurisdiction},
+    )
     await db.commit()
     return office
 
@@ -86,6 +114,7 @@ async def create_post(
     db: AsyncSession,
     organization_id: UUID,
     *,
+    actor_user_id: UUID,
     designation: str,
     class_name: str,
     pay_bill_heading: str | None = None,
@@ -107,6 +136,21 @@ async def create_post(
     db.add(post)
     try:
         await db.flush()
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="post.create",
+            entity_type="post",
+            entity_id=post.id,
+            entity_label=post.designation,
+            before_state={},
+            after_state=entity_snapshot(post),
+            summary={
+                "designation": post.designation,
+                "class_name": post.class_,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -130,6 +174,7 @@ async def update_post(
     organization_id: UUID,
     post_id: UUID,
     *,
+    actor_user_id: UUID,
     body: PostUpdate,
 ) -> Post:
     result = await db.execute(
@@ -144,6 +189,8 @@ async def update_post(
 
     if body.designation is not None and body.designation != post.designation:
         raise ConflictError("Post designation cannot be changed.")
+
+    before_state = entity_snapshot(post)
 
     if body.class_name is not None:
         post.class_ = body.class_name
@@ -177,5 +224,20 @@ async def update_post(
         post.display_order = body.display_order
 
     await db.flush()
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="post.update",
+        entity_type="post",
+        entity_id=post.id,
+        entity_label=post.designation,
+        before_state=before_state,
+        after_state=entity_snapshot(post),
+        summary={
+            "designation": post.designation,
+            "updated_fields": sorted(body.model_fields_set),
+        },
+    )
     await db.commit()
     return post
