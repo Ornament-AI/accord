@@ -210,6 +210,10 @@ class PostgresJobQueue:
                 if dedupe_key is None or not _integrity_is_unique(exc):
                     raise
                 await self._prepare_session(session, organization_id=organization_id)
+                # No status filter: the dedupe winner may have finished in the
+                # gap between the unique-violation and this fallback — return
+                # the newest matching row (terminal included) as the enqueue
+                # result instead of re-raising a 500 (M-data-12).
                 existing = await session.execute(
                     text(
                         """
@@ -218,7 +222,7 @@ class PostgresJobQueue:
                          WHERE organization_id = :org_id
                            AND job_type = :job_type
                            AND dedupe_key = :dedupe_key
-                           AND status IN ('queued', 'running')
+                         ORDER BY created_at DESC
                          LIMIT 1
                         """
                     ),

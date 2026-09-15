@@ -201,7 +201,9 @@ async def test_reconcile_orphans_finalizes_and_deletes(session):
     await session.commit()
 
     await _bind(session, world["org_id"], world["user_id"])
-    counts = await reconcile_orphans(session, storage, older_than_minutes=60)
+    counts = await reconcile_orphans(
+        session, storage, organization_id=world["org_id"], older_than_minutes=60
+    )
     assert counts.finalized == 1
     assert counts.deleted == 1
 
@@ -236,7 +238,9 @@ async def test_expire_artifacts_past_retention(session):
     await session.commit()
 
     await _bind(session, world["org_id"], world["user_id"])
-    n = await expire_artifacts(session, now=datetime.now(timezone.utc))
+    n = await expire_artifacts(
+        session, organization_id=world["org_id"], now=datetime.now(timezone.utc)
+    )
     assert n == 1
 
     await _bind(session, world["org_id"], world["user_id"])

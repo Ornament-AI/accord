@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.api.responses import export_content_disposition
 from app.auth.principal import AuthPrincipal
+from app.middleware.rate_limit import limiter
 from app.models.platform import ExportArtifact
 from app.schemas.artifacts import ArtifactListPage, ArtifactResponse
 from app.services import artifacts as artifacts_service
@@ -88,7 +89,9 @@ async def get_artifact(
 
 
 @router.get("/artifacts/{artifact_id}/download")
+@limiter.limit("60/minute")
 async def download_artifact(
+    request: Request,
     artifact_id: UUID,
     tenant: TenantCtx,
     db: Session,

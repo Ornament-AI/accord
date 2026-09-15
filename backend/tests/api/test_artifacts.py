@@ -17,7 +17,7 @@ from app.services.artifacts import create_artifact
 from app.storage.memory import InMemoryObjectStorage
 from app.tenancy import bind_tenant_context
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
-from tests.identity_helpers import seed_membership, seed_organization, seed_user
+from tests.identity_helpers import attach_csrf_echo, seed_membership, seed_organization, seed_user
 
 
 def _artifacts_app(storage: InMemoryObjectStorage):
@@ -38,6 +38,7 @@ async def client(dev_settings, storage):
     application = _artifacts_app(storage)
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac
 
 
