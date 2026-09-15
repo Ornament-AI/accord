@@ -75,9 +75,7 @@ async def mint_session_cookie(
     return cookie
 
 
-def apply_session_cookie(
-    client: AsyncClient, cookie: str, settings_obj=None
-) -> None:
+def apply_session_cookie(client: AsyncClient, cookie: str, settings_obj=None) -> None:
     client.cookies.clear()
     client.cookies.set("accord_session", cookie)
     # The CSRF middleware only enforces when a session cookie is present, so
@@ -85,9 +83,7 @@ def apply_session_cookie(
     # with the same secret the app verifies against — the test Settings from
     # identity_helpers — NOT env get_settings(): CI exports a different
     # SESSION_SECRET_KEY than the local conftest default.
-    client.cookies.set(
-        "accord_csrf", sign_csrf_token(settings_obj or settings(), cookie)
-    )
+    client.cookies.set("accord_csrf", sign_csrf_token(settings_obj or settings(), cookie))
 
 
 @pytest_asyncio.fixture
