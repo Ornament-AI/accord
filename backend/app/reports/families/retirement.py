@@ -37,6 +37,7 @@ from app.reports.posted_run import (
     money,
     month_end,
     period_label,
+    reconcile_schedule_totals,
     require_posted_run,
     resolve_profile_as_of,
 )
@@ -167,9 +168,14 @@ class GpfScheduleBuilder:
         rows: list[tuple[Any, ...]] = []
         total_subscription = ZERO
         total_advance = ZERO
+        posted_totals: dict[str, Decimal] = {}
+        excluded_totals: dict[str, Decimal] = {}
 
         for item in packed:
             result = item["result"]
+            amounts = _line_amounts(item["lines"])
+            for code in (_GPF_SUBSCRIPTION, _GPF_ADVANCE):
+                posted_totals[code] = posted_totals.get(code, ZERO) + amounts.get(code, ZERO)
             profile = (
                 identities.get(str(result["employee_id"]))
                 if snapshot is not None
@@ -184,10 +190,20 @@ class GpfScheduleBuilder:
                 continue
             if str(profile["retirement_regime"]) != "gpf":
                 continue
-            if str(profile["gpf_jurisdiction"] or "") != self.jurisdiction:
+            jurisdiction = str(profile["gpf_jurisdiction"] or "")
+            if jurisdiction != self.jurisdiction:
+                # T1.15/M-data-21: the *other* valid jurisdiction is a
+                # legitimate exclusion — its schedule emits the money. A
+                # missing/invalid jurisdiction drops posted GPF money and
+                # must surface via the reconciliation below (mirroring the
+                # ``employee_gpf_jurisdiction_missing`` readiness check).
+                if jurisdiction in _GPF_REPORT_TYPES:
+                    for code in (_GPF_SUBSCRIPTION, _GPF_ADVANCE):
+                        excluded_totals[code] = excluded_totals.get(code, ZERO) + amounts.get(
+                            code, ZERO
+                        )
                 continue
 
-            amounts = _line_amounts(item["lines"])
             subscription = money(amounts.get(_GPF_SUBSCRIPTION, ZERO))
             advance = money(amounts.get(_GPF_ADVANCE, ZERO))
             account = str(profile["gpf_account_number"] or "")
@@ -202,6 +218,15 @@ class GpfScheduleBuilder:
             rows.append(row + (account, subscription, advance))
             total_subscription += subscription
             total_advance += advance
+
+        # T1.15/M-data-21: posted GPF money must be emitted here or owned by
+        # the other jurisdiction's schedule — never silently dropped.
+        reconcile_schedule_totals(
+            report_type=self.report_type,
+            posted=posted_totals,
+            emitted={_GPF_SUBSCRIPTION: total_subscription, _GPF_ADVANCE: total_advance},
+            excluded=excluded_totals,
+        )
 
         totals: tuple[Any, ...] = (
             ("TOTAL",)
@@ -268,9 +293,13 @@ class NpsContributionScheduleBuilder:
         total_employee = ZERO
         total_employer = ZERO
         total_combined = ZERO
+        posted_totals: dict[str, Decimal] = {}
 
         for item in packed:
             result = item["result"]
+            amounts = _line_amounts(item["lines"])
+            for code in (_NPS_EMPLOYEE, _NPS_EMPLOYER):
+                posted_totals[code] = posted_totals.get(code, ZERO) + amounts.get(code, ZERO)
             profile = (
                 identities.get(str(result["employee_id"]))
                 if snapshot is not None
@@ -287,7 +316,6 @@ class NpsContributionScheduleBuilder:
             if str(profile["retirement_regime"]) != "nps":
                 continue
 
-            amounts = _line_amounts(item["lines"])
             employee_amt = money(amounts.get(_NPS_EMPLOYEE, ZERO))
             employer_amt = money(amounts.get(_NPS_EMPLOYER, ZERO))
             row_total = money(employee_amt + employer_amt)
@@ -324,6 +352,15 @@ class NpsContributionScheduleBuilder:
             total_employee += employee_amt
             total_employer += employer_amt
             total_combined += row_total
+
+        # T1.15/M-data-21: posted NPS money must all be emitted on NPS-member
+        # rows — the regime gate scopes *membership*, so a posted NPS line on a
+        # non-NPS profile is contradictory data that must surface, not drop.
+        reconcile_schedule_totals(
+            report_type=REPORT_TYPE_NPS,
+            posted=posted_totals,
+            emitted={_NPS_EMPLOYEE: total_employee, _NPS_EMPLOYER: total_employer},
+        )
 
         totals: tuple[Any, ...] = (
             ("TOTAL",) + (None,) * 7 + (money(total_employee), money(total_employer), None)

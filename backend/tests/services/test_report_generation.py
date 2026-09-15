@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -11,7 +12,12 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.jobs.memory import InMemoryJobQueue
-from app.models.payroll_runs import PayrollPeriod, PayrollRun
+from app.models.payroll_runs import (
+    PayrollPeriod,
+    PayrollRun,
+    payroll_report_snapshots,
+    payroll_run_versions,
+)
 from app.models.platform import ExportArtifact
 from app.reports.base import (
     ColumnKind,
@@ -22,6 +28,8 @@ from app.reports.base import (
     TableSection,
     to_json,
 )
+from app.exceptions import ConflictError, ValidationError
+from app.reports.registry_setup import PRODUCT_REPORT_SHEETS
 from app.services.report_generation import (
     CANONICAL_RENDERER_REVISION,
     DEFAULT_ENGINE_VERSION,
@@ -31,6 +39,7 @@ from app.services.report_generation import (
     RunNotPostedError,
     UnsupportedReportFormatError,
     execute_generate_report,
+    request_consolidated_export,
     request_report,
 )
 from app.services.artifacts import create_artifact
@@ -91,7 +100,9 @@ async def _bind(session: AsyncSession, org_id: UUID, user_id: UUID) -> None:
     await bind_tenant_context(session, organization_id=org_id, user_id=user_id)
 
 
-async def _seed_world(session: AsyncSession, *, run_status: str = "posted") -> dict:
+async def _seed_world(
+    session: AsyncSession, *, run_status: str = "posted", with_snapshot: bool = True
+) -> dict:
     if session.in_transaction():
         await session.rollback()
 
@@ -117,6 +128,37 @@ async def _seed_world(session: AsyncSession, *, run_status: str = "posted") -> d
         status=run_status,
     )
     session.add(run)
+    await session.flush()
+    if run_status == "posted":
+        version_id = (
+            await session.execute(
+                sa.insert(payroll_run_versions)
+                .values(
+                    organization_id=org.id,
+                    run_id=run.id,
+                    version_number=1,
+                    engine_version="test-engine",
+                    content_hash="test-content-hash",
+                    calculated_at=datetime.now(UTC),
+                    calculated_by=user.id,
+                    inputs_snapshot={},
+                    totals={},
+                )
+                .returning(payroll_run_versions.c.id)
+            )
+        ).scalar_one()
+        run.current_version_id = version_id
+        if with_snapshot:
+            await session.execute(
+                sa.insert(payroll_report_snapshots).values(
+                    organization_id=org.id,
+                    run_version_id=version_id,
+                    snapshot={},
+                    provenance="posting",
+                    source_checksum="test-checksum",
+                    created_by=user.id,
+                )
+            )
     await session.commit()
     await _bind(session, org.id, user.id)
     return {
@@ -212,6 +254,60 @@ async def test_request_report_dedupe_returns_same_job(session):
     first = await request_report(session, queue, **kwargs)
     second = await request_report(session, queue, **kwargs)
     assert first.id == second.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant_key", [None, "", "   "])
+async def test_component_schedule_without_variant_key_rejected_at_request(session, variant_key):
+    """A component_schedule request without a variant_key fails before enqueue."""
+    world = await _seed_world(session)
+    queue = InMemoryJobQueue()
+    with pytest.raises(ValidationError, match="variant_key"):
+        await request_report(
+            session,
+            queue,
+            organization_id=world["org_id"],
+            report_type="component_schedule",
+            posted_run_id=world["run_id"],
+            format="excel",
+            requested_by=world["user_id"],
+            registry=_fresh_registry("component_schedule"),
+            variant_key=variant_key,
+        )
+
+
+@pytest.mark.asyncio
+async def test_component_schedule_with_variant_key_enqueues(session):
+    world = await _seed_world(session)
+    job = await request_report(
+        session,
+        InMemoryJobQueue(),
+        organization_id=world["org_id"],
+        report_type="component_schedule",
+        posted_run_id=world["run_id"],
+        format="excel",
+        requested_by=world["user_id"],
+        registry=_fresh_registry("component_schedule"),
+        variant_key="CO_OP",
+    )
+    assert job.payload["variant_key"] == "CO_OP"
+
+
+@pytest.mark.asyncio
+async def test_v2_request_rejects_run_without_report_snapshot(session):
+    """v2 builders need the immutable snapshot; request must not dead-letter."""
+    world = await _seed_world(session, with_snapshot=False)
+    with pytest.raises(ConflictError, match="report snapshot"):
+        await request_report(
+            session,
+            InMemoryJobQueue(),
+            organization_id=world["org_id"],
+            report_type=FAKE_REPORT_TYPE,
+            posted_run_id=world["run_id"],
+            format="excel",
+            requested_by=world["user_id"],
+            registry=_fresh_registry(),
+        )
 
 
 @pytest.mark.asyncio
@@ -434,3 +530,49 @@ async def test_revisioned_v3_does_not_reuse_pre_fix_artifact(session, monkeypatc
     await _bind(session, world["org_id"], world["user_id"])
     second = await execute_generate_report(session, storage, job, registry=registry)
     assert second == {"artifact_id": first["artifact_id"], "reused": True}
+
+
+def _product_registry() -> ReportRegistry:
+    registry = ReportRegistry()
+    for report_type in PRODUCT_REPORT_SHEETS:
+        registry.register(
+            report_type,
+            builder=_FakeBuilder(),
+            to_json=to_json,
+            to_excel=lambda dto: EXCEL_BYTES,
+            to_pdf=lambda dto: PDF_BYTES,
+            content_types=CONTENT_TYPES,
+            filename_pattern="{report_type}_{posted_run_id}.{ext}",
+        )
+    return registry
+
+
+@pytest.mark.asyncio
+async def test_consolidated_v2_rejects_run_without_report_snapshot(session):
+    """The v2 pack builds snapshot-backed sheets; it must not dead-letter."""
+    world = await _seed_world(session, with_snapshot=False)
+    with pytest.raises(ConflictError, match="report snapshot"):
+        await request_consolidated_export(
+            session,
+            InMemoryJobQueue(),
+            organization_id=world["org_id"],
+            posted_run_id=world["run_id"],
+            requested_by=world["user_id"],
+            registry=_product_registry(),
+            template_version="v2",
+        )
+
+
+@pytest.mark.asyncio
+async def test_consolidated_v3_rejects_run_without_report_snapshot(session):
+    """v3 readiness surfaces a missing snapshot as a synchronous failure."""
+    world = await _seed_world(session, with_snapshot=False)
+    with pytest.raises(ConflictError, match="incomplete"):
+        await request_consolidated_export(
+            session,
+            InMemoryJobQueue(),
+            organization_id=world["org_id"],
+            posted_run_id=world["run_id"],
+            requested_by=world["user_id"],
+            registry=_product_registry(),
+        )

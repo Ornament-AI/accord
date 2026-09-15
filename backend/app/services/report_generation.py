@@ -54,7 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.jobs.protocol import Job, JobQueue
-from app.models.payroll_runs import PayrollPeriod, PayrollRun
+from app.models.payroll_runs import PayrollPeriod, PayrollRun, payroll_report_snapshots
 from app.models.platform import ExportArtifact
 from app.models.platform import Job as JobRow
 from app.reports.base import ReportContext, ReportDTO, ReportRegistration, ReportRegistry
@@ -65,7 +65,7 @@ from app.reports.canonical_schedules import (
     canonical_schedule_to_excel,
 )
 from app.reports.registry_setup import PRODUCT_REPORT_SHEET_TITLES, PRODUCT_REPORT_SHEETS
-from app.services.artifacts import create_artifact
+from app.services.artifacts import create_artifact, resume_artifact_upload
 from app.services.audit_events import write_access_event
 from app.services.report_readiness import require_v3_report_readiness
 from app.storage.protocol import ObjectStorage
@@ -204,6 +204,38 @@ async def _require_posted_run(
     return run
 
 
+async def _require_report_snapshot(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    run: PayrollRun,
+) -> None:
+    """Fail v2 requests synchronously when the run has no report snapshot.
+
+    Every v2 builder loads the immutable snapshot at execution time; without
+    this gate a deterministically-failing request would be accepted (HTTP 202)
+    and dead-letter inside the worker instead of rejected up front.
+    """
+    exists = (
+        run.current_version_id is not None
+        and (
+            await session.execute(
+                sa.select(payroll_report_snapshots.c.run_version_id).where(
+                    payroll_report_snapshots.c.organization_id == organization_id,
+                    payroll_report_snapshots.c.run_version_id == run.current_version_id,
+                )
+            )
+        ).first()
+        is not None
+    )
+    if not exists:
+        raise ConflictError(
+            "Posted payroll run has no immutable report snapshot. "
+            "Create an explicit audited backfill before regenerating reports.",
+            details={"error_code": "report_snapshot_missing"},
+        )
+
+
 def _resolve_template_version(
     template_version: str | None,
     *,
@@ -296,14 +328,24 @@ async def request_report(
         raise UnsupportedReportFormatError(
             f"Format {format!r} is not supported for report type {report_type!r}."
         )
+    # component_schedule is parameterized by ``variant_key``; accepting a
+    # request without one would dead-letter deterministically in the worker.
+    if report_type == "component_schedule" and not (variant_key or "").strip():
+        raise ValidationError("component_schedule requires a component-code variant_key.")
 
-    await _require_posted_run(
+    run = await _require_posted_run(
         session,
         organization_id=organization_id,
         posted_run_id=posted_run_id,
     )
 
     resolved_version = _resolve_template_version(template_version, report_type=report_type)
+    if resolved_version == "v2":
+        await _require_report_snapshot(
+            session,
+            organization_id=organization_id,
+            run=run,
+        )
     renderer_revision = (
         CANONICAL_RENDERER_REVISION
         if resolved_version == "v3" and report_type in _PRODUCT_REPORT_SET
@@ -362,12 +404,20 @@ async def request_consolidated_export(
                 f"Format 'excel' is not supported for report type {report_type!r}."
             )
 
-    await _require_posted_run(
+    run = await _require_posted_run(
         session,
         organization_id=organization_id,
         posted_run_id=posted_run_id,
     )
     resolved_version = _resolve_template_version(template_version, consolidated=True)
+    if resolved_version == "v2":
+        # Every v2 product builder loads the immutable snapshot; reject the
+        # request now instead of dead-lettering the whole pack in the worker.
+        await _require_report_snapshot(
+            session,
+            organization_id=organization_id,
+            run=run,
+        )
     if resolved_version == "v3":
         await require_v3_report_readiness(
             session,
@@ -479,18 +529,29 @@ async def _find_reusable_artifact(
     content_type: str,
     variant_key: str | None = None,
 ) -> ExportArtifact | None:
+    """Best matching artifact row for this logical artifact identity.
+
+    ``finalized`` rows are fully reusable; ``pending``/``uploaded`` rows are
+    intent rows left by a failed attempt and are resumed in place (same row +
+    ``object_key``, verified checksum) instead of minting a new artifact
+    (M-data-12). Finalized rows win over incomplete ones, then newest first.
+    """
     stmt = sa.select(ExportArtifact).where(
         ExportArtifact.organization_id == organization_id,
         ExportArtifact.report_type == report_type,
         ExportArtifact.posted_run_id == posted_run_id,
         ExportArtifact.template_version == template_version,
         ExportArtifact.content_type == content_type,
-        ExportArtifact.status == "finalized",
+        ExportArtifact.status.in_(("finalized", "pending", "uploaded")),
     )
     if variant_key is None:
         stmt = stmt.where(ExportArtifact.variant_key.is_(None))
     else:
         stmt = stmt.where(ExportArtifact.variant_key == variant_key)
+    stmt = stmt.order_by(
+        sa.case((ExportArtifact.status == "finalized", 0), else_=1),
+        ExportArtifact.created_at.desc(),
+    )
     return (await session.execute(stmt)).scalars().first()
 
 
@@ -525,7 +586,10 @@ async def execute_generate_report(
     Idempotency: if a finalized artifact already exists for the same
     ``(organization_id, report_type, posted_run_id, template_version)`` and
     matching ``content_type``, return that artifact id with ``reused=True``
-    and skip regeneration.
+    and skip regeneration. A ``pending``/``uploaded`` row for the same
+    identity is a leftover intent from a failed attempt: the upload resumes
+    into that row's ``object_key`` (verified checksum) so one logical artifact
+    keeps a single row + object across retries.
     """
     payload = job.payload
     report_type = str(payload["report_type"])
@@ -567,7 +631,7 @@ async def execute_generate_report(
         content_type=content_type,
         variant_key=variant_key,
     )
-    if existing is not None:
+    if existing is not None and existing.status == "finalized":
         return {"artifact_id": str(existing.id), "reused": True}
 
     ctx = ReportContext(
@@ -581,19 +645,30 @@ async def execute_generate_report(
     dto = await registration.builder.build(session, ctx)
     content, content_type = _render_content(registration, dto, format=format_name)
 
-    artifact = await create_artifact(
-        session,
-        storage,
-        organization_id=organization_id,
-        report_type=report_type,
-        template_version=artifact_template_version,
-        content=content,
-        content_type=content_type,
-        requested_by=requested_by,
-        posted_run_id=posted_run_id,
-        engine_version=engine_version,
-        variant_key=variant_key,
-    )
+    if existing is not None:
+        # Retry after a crashed/failed attempt: put into the intent row's
+        # existing object_key and finalize that same row.
+        artifact = await resume_artifact_upload(
+            session,
+            storage,
+            artifact=existing,
+            content=content,
+            content_type=content_type,
+        )
+    else:
+        artifact = await create_artifact(
+            session,
+            storage,
+            organization_id=organization_id,
+            report_type=report_type,
+            template_version=artifact_template_version,
+            content=content,
+            content_type=content_type,
+            requested_by=requested_by,
+            posted_run_id=posted_run_id,
+            engine_version=engine_version,
+            variant_key=variant_key,
+        )
     return {"artifact_id": str(artifact.id)}
 
 

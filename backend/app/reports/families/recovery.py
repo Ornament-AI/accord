@@ -52,6 +52,7 @@ from app.reports.posted_run import (
     money,
     month_end,
     period_label,
+    reconcile_schedule_totals,
     require_posted_run,
 )
 
@@ -276,10 +277,12 @@ async def build_advance_schedule(
 
     rows: list[tuple[Any, ...]] = []
     schedule_total = ZERO
+    posted_total = ZERO
     canonical = ctx.template_version == "v3"
 
     for line in lines:
         installment_amount = money(line["amount"])
+        posted_total += installment_amount
         trace = line["trace"] or {}
         source_ids = list(trace.get("source_version_ids") or [])
         installment_version_id = UUID(str(source_ids[0])) if source_ids else None
@@ -371,6 +374,16 @@ async def build_advance_schedule(
                     progress,
                 )
             )
+
+    # T1.15/M-data-21: every posted line of this component must be emitted —
+    # the ``continue`` gates above only legitimately fire on inconsistent
+    # source data (missing/wrong-type advance account), which must surface
+    # rather than silently dropping posted money.
+    reconcile_schedule_totals(
+        report_type=report_type,
+        posted={component_code: posted_total},
+        emitted={component_code: schedule_total},
+    )
 
     title = (
         "HBA recovery schedule"
@@ -566,6 +579,8 @@ async def build_accommodation_schedule(
     schedule_rows: list[tuple[Any, ...]] = []
     actual_recovery_total = ZERO
     informational_foregone_hra_total = ZERO
+    posted_totals: dict[str, Decimal] = {}
+    excluded_totals: dict[str, Decimal] = {}
 
     for result in result_rows:
         emp_lines = lines_by_result.get(result["id"], [])
@@ -575,17 +590,25 @@ async def build_accommodation_schedule(
 
         for line in emp_lines:
             code = str(line["component_code"])
+            line_amount = money(line["amount"])
+            posted_totals[code] = posted_totals.get(code, ZERO) + line_amount
             line_assignment = await _assignment_for_line(line)
             if line_assignment is not None:
-                if line_assignment.get("quarters_location") != location:
-                    continue
+                resolved_location = line_assignment.get("quarters_location")
             else:
                 # Fallback when charge version is missing: use trace if present.
                 trace_loc = (
                     str((line["trace"] or {}).get("accommodation_location") or "").strip().lower()
                 )
-                if trace_loc != location:
-                    continue
+                resolved_location = trace_loc or None
+            if resolved_location != location:
+                # T1.15/M-data-21: only the *other* known location is a
+                # legitimate exclusion (that schedule emits the money); an
+                # unknown or unresolvable location silently drops posted money
+                # and must surface via the reconciliation below.
+                if resolved_location in ("mumbai", "worli"):
+                    excluded_totals[code] = excluded_totals.get(code, ZERO) + line_amount
+                continue
             if code == _LICENSE_FEE_COMPONENT:
                 license_line = line
                 assignment = line_assignment or assignment
@@ -686,6 +709,18 @@ async def build_accommodation_schedule(
     # Defense in depth: recovery total is actual only — never actual + foregone.
     actual_recovery_total = money(actual_recovery_total)
     informational_foregone_hra_total = money(informational_foregone_hra_total)
+    # T1.15/M-data-21: posted license-fee (and informational foregone) lines
+    # must all be emitted here or legitimately belong to the other location's
+    # schedule — anything left over was silently dropped posted money.
+    reconcile_schedule_totals(
+        report_type=report_type,
+        posted=posted_totals,
+        emitted={
+            _LICENSE_FEE_COMPONENT: actual_recovery_total,
+            _FOREGONE_HRA_COMPONENT: informational_foregone_hra_total,
+        },
+        excluded=excluded_totals,
+    )
 
     return ReportDTO(
         report_type=report_type,

@@ -29,6 +29,7 @@ from app.reports.families.retirement import (
     retirement_to_excel,
     retirement_to_pdf,
 )
+from app.reports.posted_run import resolve_profile_as_of
 from tests.e2e.fixture_loader import load_june_fixture
 from tests.identity_helpers import seed_organization, seed_user
 from tests.reports.test_payroll_register import (
@@ -330,6 +331,71 @@ async def test_unposted_run_raises_conflict(session):
     await _bind(session, org_id, user_id)
     with pytest.raises(ConflictError, match="must be posted"):
         await nps_contribution_builder.build(session, ctx)
+
+
+@pytest.mark.asyncio
+async def test_gpf_missing_jurisdiction_fails_closed(session, monkeypatch):
+    """A posted GPF line with no valid jurisdiction must not silently drop."""
+    world = await _retirement_june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    target_employee = world["employee_ids"]["E005"]  # gpf_mumbai in the fixture
+
+    real_resolve = resolve_profile_as_of
+
+    async def resolve_without_jurisdiction(session_arg, *, organization_id, employee_id, as_of):
+        profile = await real_resolve(
+            session_arg,
+            organization_id=organization_id,
+            employee_id=employee_id,
+            as_of=as_of,
+        )
+        if profile is not None and employee_id == target_employee:
+            profile = dict(profile)
+            profile["gpf_jurisdiction"] = None
+        return profile
+
+    monkeypatch.setattr(
+        "app.reports.families.retirement.resolve_profile_as_of",
+        resolve_without_jurisdiction,
+    )
+
+    # E005's posted GPF money is neither emitted nor legitimately excluded on
+    # either jurisdiction schedule, so both must fail reconciliation.
+    with pytest.raises(ConflictError, match="do not reconcile"):
+        await gpf_mumbai_builder.build(session, _ctx(world))
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="do not reconcile"):
+        await gpf_nagpur_builder.build(session, _ctx(world))
+
+
+@pytest.mark.asyncio
+async def test_nps_line_on_non_nps_profile_fails_closed(session, monkeypatch):
+    """NPS money on a non-NPS profile is contradictory data — never drop it."""
+    world = await _retirement_june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    target_employee = world["employee_ids"]["E018"]  # nps in the fixture
+
+    real_resolve = resolve_profile_as_of
+
+    async def resolve_with_epf_regime(session_arg, *, organization_id, employee_id, as_of):
+        profile = await real_resolve(
+            session_arg,
+            organization_id=organization_id,
+            employee_id=employee_id,
+            as_of=as_of,
+        )
+        if profile is not None and employee_id == target_employee:
+            profile = dict(profile)
+            profile["retirement_regime"] = "epf"
+        return profile
+
+    monkeypatch.setattr(
+        "app.reports.families.retirement.resolve_profile_as_of",
+        resolve_with_epf_regime,
+    )
+
+    with pytest.raises(ConflictError, match="do not reconcile"):
+        await nps_contribution_builder.build(session, _ctx(world))
 
 
 def test_register_retirement_reports_entries() -> None:

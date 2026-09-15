@@ -17,7 +17,7 @@ from __future__ import annotations
 import calendar
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, Mapping
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -50,6 +50,43 @@ DEFAULT_FILENAME_PATTERN = "{report_type}_{posted_run_id}.{ext}"
 def money(value: Any) -> Decimal:
     """Quantize a posted value to two decimal places (ADR 0006)."""
     return Decimal(str(value)).quantize(TWO_PLACES)
+
+
+def reconcile_schedule_totals(
+    *,
+    report_type: str,
+    posted: Mapping[str, Any],
+    emitted: Mapping[str, Any],
+    excluded: Mapping[str, Any] | None = None,
+) -> None:
+    """Fail closed when a schedule's emitted per-code totals diverge from posted.
+
+    Each mapping keys component codes to summed amounts. ``excluded`` carries
+    the *legitimate* scope exclusions for this schedule (e.g. the other GPF
+    jurisdiction's lines on a jurisdiction schedule); any posted amount that is
+    neither emitted nor legitimately excluded is silently dropped posted money
+    and must raise — never render — per T1.15/M-data-21.
+    """
+    excluded_totals = excluded or {}
+    codes = set(posted) | set(emitted) | set(excluded_totals)
+    mismatches = {
+        code: {
+            "posted": str(money(posted.get(code, ZERO))),
+            "emitted": str(money(emitted.get(code, ZERO))),
+            "excluded": str(money(excluded_totals.get(code, ZERO))),
+        }
+        for code in codes
+        if money(posted.get(code, ZERO))
+        != money(emitted.get(code, ZERO)) + money(excluded_totals.get(code, ZERO))
+    }
+    if mismatches:
+        raise ConflictError(
+            f"{report_type} emitted totals do not reconcile to posted result lines.",
+            details={
+                "error_code": "report_schedule_reconciliation",
+                "mismatches": mismatches,
+            },
+        )
 
 
 def month_end(year: int, month: int) -> date:

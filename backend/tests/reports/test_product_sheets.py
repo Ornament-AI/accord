@@ -5,17 +5,24 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+import sqlalchemy as sa
 from openpyxl import Workbook, load_workbook
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.jobs.memory import InMemoryJobQueue
-from app.models.payroll_runs import PayrollPeriod, PayrollRun
+from app.models.payroll_runs import (
+    PayrollPeriod,
+    PayrollRun,
+    payroll_report_snapshots,
+    payroll_run_versions,
+)
 from app.models.platform import ExportArtifact
 from app.reports.base import (
     ColumnKind,
@@ -306,6 +313,36 @@ async def _seed_posted_run(session: AsyncSession) -> dict[str, UUID]:
         status="posted",
     )
     session.add(run)
+    await session.flush()
+    # Posted runs always pin a run version and its immutable report snapshot.
+    version_id = (
+        await session.execute(
+            sa.insert(payroll_run_versions)
+            .values(
+                organization_id=org.id,
+                run_id=run.id,
+                version_number=1,
+                engine_version="test-engine",
+                content_hash="test-content-hash",
+                calculated_at=datetime.now(UTC),
+                calculated_by=user.id,
+                inputs_snapshot={},
+                totals={},
+            )
+            .returning(payroll_run_versions.c.id)
+        )
+    ).scalar_one()
+    run.current_version_id = version_id
+    await session.execute(
+        sa.insert(payroll_report_snapshots).values(
+            organization_id=org.id,
+            run_version_id=version_id,
+            snapshot={},
+            provenance="posting",
+            source_checksum="test-checksum",
+            created_by=user.id,
+        )
+    )
     await session.commit()
     await _bind(session, org.id, user.id)
     return {"organization_id": org.id, "user_id": user.id, "posted_run_id": run.id}

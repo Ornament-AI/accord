@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -17,7 +18,12 @@ from app.auth.capabilities import ROLE_CAPABILITIES
 from app.jobs.handlers import configure_generate_report
 from app.jobs.memory import InMemoryJobQueue
 from app.main import create_app
-from app.models.payroll_runs import PayrollPeriod, PayrollRun
+from app.models.payroll_runs import (
+    PayrollPeriod,
+    PayrollRun,
+    payroll_report_snapshots,
+    payroll_run_versions,
+)
 from app.models.platform import AuditEvent
 from app.reports.base import (
     ColumnKind,
@@ -32,7 +38,7 @@ from app.services.report_generation import execute_generate_report
 from app.storage.memory import InMemoryObjectStorage
 from app.tenancy import bind_tenant_context
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
-from tests.identity_helpers import seed_membership, seed_organization, seed_user
+from tests.identity_helpers import attach_csrf_echo, seed_membership, seed_organization, seed_user
 
 FAKE_REPORT_TYPE = "fake_api_report"
 CONTENT_TYPES = {
@@ -113,6 +119,7 @@ async def client(dev_settings, storage, registry, queue):
     application = _reports_app(registry=registry, queue=queue, storage=storage)
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac
 
 
@@ -169,6 +176,38 @@ async def _seed_run(
         status=status,
     )
     session.add(run)
+    await session.flush()
+    if status == "posted":
+        # Posted runs always pin a run version and its immutable report
+        # snapshot — v2/v3 report requests require both to exist.
+        version_id = (
+            await session.execute(
+                sa.insert(payroll_run_versions)
+                .values(
+                    organization_id=org_id,
+                    run_id=run.id,
+                    version_number=1,
+                    engine_version="test-engine",
+                    content_hash="test-content-hash",
+                    calculated_at=datetime.now(UTC),
+                    calculated_by=user_id,
+                    inputs_snapshot={},
+                    totals={},
+                )
+                .returning(payroll_run_versions.c.id)
+            )
+        ).scalar_one()
+        run.current_version_id = version_id
+        await session.execute(
+            sa.insert(payroll_report_snapshots).values(
+                organization_id=org_id,
+                run_version_id=version_id,
+                snapshot={},
+                provenance="posting",
+                source_checksum="test-checksum",
+                created_by=user_id,
+            )
+        )
     await session.commit()
     return run.id
 

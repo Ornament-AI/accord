@@ -617,6 +617,44 @@ async def test_v3_readiness_is_actionable_and_uses_nonzero_posted_facts(session)
     assert exc_info.value.details["error_code"] == "v3_report_not_ready"
 
 
+@pytest.mark.asyncio
+async def test_signatory_missing_expands_to_every_signatory_sheet(session):
+    """M-data-15: signatory gaps must block every sheet that renders the role."""
+    world = await _june_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    issues = await v3_report_readiness_issues(
+        session,
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+    )
+    approver_targets = {
+        issue["report_type"]
+        for issue in issues
+        if issue["code"] == "final_approver_signatory_missing"
+    }
+    assert {
+        "approval_note",
+        "treasury_face",
+        "bank_rtgs_advice",
+        "payslips",
+        "income_tax_schedule",
+        "professional_tax_schedule",
+        "gis_schedule",
+        "gpf_mumbai_schedule",
+        "gpf_nagpur_schedule",
+        "gpf_advance_schedule",
+        "hba_schedule",
+        "motor_car_advance_schedule",
+        "motorcycle_advance_schedule",
+        "festival_advance_schedule",
+        "nps_contribution_schedule",
+        "accommodation_mumbai_schedule",
+        "accommodation_worli_schedule",
+    } <= approver_targets
+    # The Pay Bill register has no signature cell.
+    assert "pay_bill" not in approver_targets
+
+
 def test_invalid_gpf_jurisdiction_blocks_both_individual_schedules():
     assert _gpf_readiness_report_types("") == (
         "gpf_mumbai_schedule",

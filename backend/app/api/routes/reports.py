@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, status
 from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id, tenant_user_id
 from app.auth.principal import AuthPrincipal
 from app.jobs.protocol import JobQueue
+from app.middleware.rate_limit import limiter
 from app.reports.base import ReportRegistry
 from app.schemas.reports import (
     ExportReportsRequest,
@@ -105,7 +106,9 @@ async def list_reports(
     response_model=ExportReportsResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit("20/minute")
 async def export_reports(
+    request: Request,
     body: ExportReportsRequest,
     tenant: TenantCtx,
     db: Session,
@@ -149,7 +152,9 @@ async def export_reports(
     response_model=GenerateReportResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit("20/minute")
 async def generate_report(
+    request: Request,
     body: GenerateReportRequest,
     tenant: TenantCtx,
     db: Session,
@@ -212,7 +217,8 @@ async def get_report_job(
         job_id=info.job_id,
         status=info.status,
         result=info.result,
-        last_error=info.last_error,
+        # Worker stores traceback excerpts — never leak internals to callers.
+        last_error="Report generation failed." if info.last_error else None,
     )
 
 

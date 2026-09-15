@@ -83,6 +83,10 @@ _DEDUCTION_COLUMN_CODES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("transfers", ("NPS_EMPLOYER_TRANSFER", "EPF_EMPLOYER_TRANSFER")),
 )
 
+_MAPPED_COMPONENT_CODES = frozenset(
+    (*_EARNING_CODES, *(code for _key, codes in _DEDUCTION_COLUMN_CODES for code in codes))
+)
+
 PAY_BILL_FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 TREASURY_FACE_FILENAME_PATTERN = DEFAULT_FILENAME_PATTERN
 
@@ -402,6 +406,30 @@ class PayBillBuilder:
             deduction_vals = [_sum_codes(amounts, codes) for _key, codes in _DEDUCTION_COLUMN_CODES]
             deductions_total = money(result["deductions_total"])
             net_payable = money(result["net_payable"])
+            # M-data-22: the fixed v1 layout prints posted aggregate totals next
+            # to hardcoded component cells. A nonzero posted component outside
+            # the fixed maps would land inside the totals while invisible in
+            # the cells — the row would visibly fail to cross-foot, so refuse.
+            visible_earnings = money(sum(earning_vals, ZERO))
+            visible_deductions = money(sum(deduction_vals, ZERO))
+            if visible_earnings != earnings_total or visible_deductions != deductions_total:
+                unmapped = sorted(
+                    code
+                    for code, amount in amounts.items()
+                    if code not in _MAPPED_COMPONENT_CODES and amount != ZERO
+                )
+                raise ConflictError(
+                    "v1 Pay Bill fixed columns do not cover all posted components.",
+                    details={
+                        "error_code": "pay_bill_v1_unmapped_components",
+                        "employee_number": str(result["employee_number"]),
+                        "unmapped_components": unmapped,
+                        "earnings_total": str(earnings_total),
+                        "visible_earnings": str(visible_earnings),
+                        "deductions_total": str(deductions_total),
+                        "visible_deductions": str(visible_deductions),
+                    },
+                )
 
             rows.append(
                 (

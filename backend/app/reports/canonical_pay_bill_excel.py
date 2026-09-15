@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
-from decimal import Decimal
 from io import BytesIO
 from typing import Mapping
 from openpyxl import Workbook
@@ -16,13 +16,18 @@ from app.reports.base import ReportDTO
 from app.reports.canonical_pay_bill_common import (
     _PAY_BILL_HEADERS,
     _PAY_BILL_WIDTHS,
+    _REFERENCE_DETAIL_ANCHORS,
     _excel_date,
+    _matches_reference_layout,
     _organization_label,
+    _post_group,
+    _post_group_label,
+    _reconcile_pay_bill_totals,
     _row_value,
-    _text_preserving_zero,
 )
 from app.reports.canonical_schedules import clone_canonical_sheet_structure
 from app.reports.excel import MONEY_FORMAT, sanitize_excel_text
+from app.reports.posted_run import money
 
 _THIN = Side(style="thin", color="000000")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
@@ -47,9 +52,19 @@ def _style_range(
 def _money_cell(ws: Worksheet, row: int, column: int, value) -> None:
     if value is None:
         return
-    cell = ws.cell(row=row, column=column, value=float(value))
+    cell = ws.cell(row=row, column=column, value=money(value))
     cell.number_format = MONEY_FORMAT
     cell.alignment = Alignment(horizontal="right", vertical="top")
+
+
+# Excel header/footer syntax uses "&" as an escape introducer ("&P" page
+# numbers, "&B" bold, ...); literal ampersands must be doubled or the footer
+# renders garbled. Control characters are invalid in XML outright.
+_FOOTER_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f]")
+
+
+def _footer_text(value: str) -> str:
+    return _FOOTER_CONTROL_CHARS.sub("", value).replace("&", "&&")
 
 
 def _formula_sum(column: int, rows: list[int]) -> str:
@@ -129,55 +144,6 @@ def _write_grand_totals(
         ws.merge_cells("A203:A207")
         ws.merge_cells("B203:B207")
     return final_row
-
-
-_REFERENCE_GROUP_STARTS = (1, 2, 3, 16, 25, 26)
-_REFERENCE_DETAIL_ANCHORS = (
-    10,
-    18,
-    25,
-    31,
-    37,
-    43,
-    49,
-    55,
-    68,
-    74,
-    80,
-    86,
-    92,
-    98,
-    104,
-    111,
-    117,
-    123,
-    135,
-    141,
-    147,
-    153,
-    159,
-    165,
-    172,
-    179,
-    185,
-    191,
-)
-
-
-def _matches_reference_layout(section) -> bool:
-    """Use the source layout only for its explicit roster-group topology."""
-
-    group_starts: list[int] = []
-    current_group = None
-    for serial, row in enumerate(section.rows, start=1):
-        group = _row_value(section, row, "post_group_key")
-        if group != current_group:
-            group_starts.append(serial)
-            current_group = group
-    return (
-        len(section.rows) == len(_REFERENCE_DETAIL_ANCHORS)
-        and tuple(group_starts) == _REFERENCE_GROUP_STARTS
-    )
 
 
 def pay_bill_v3_to_excel(dto: ReportDTO) -> bytes:
@@ -270,19 +236,12 @@ def pay_bill_v3_to_excel(dto: ReportDTO) -> bytes:
 
     current_row = 9
     current_group: tuple[str, str, str, str, str] | None = None
-    employee_total_rows: list[int] = []
     page_detail_starts: list[int] = []
     page_total_rows: list[int] = []
     page_summary_starts: list[int] = []
     reference_anchors = _REFERENCE_DETAIL_ANCHORS if _matches_reference_layout(section) else None
     for serial, item in enumerate(section.rows, start=1):
-        group = (
-            str(_row_value(section, item, "post_group_key") or ""),
-            str(_row_value(section, item, "post_title") or "Unassigned Post"),
-            _text_preserving_zero(_row_value(section, item, "sanctioned_posts")),
-            _text_preserving_zero(_row_value(section, item, "vacant_posts")),
-            str(_row_value(section, item, "pay_scale") or ""),
-        )
+        group = _post_group(section, item)
         planned_detail_start = None if reference_anchors is None else reference_anchors[serial - 1]
         if planned_detail_start is not None:
             current_row = planned_detail_start
@@ -295,17 +254,7 @@ def pay_bill_v3_to_excel(dto: ReportDTO) -> bytes:
                 end_row=group_row,
                 end_column=group_end_column,
             )
-            group_text = f"Post of {group[1]}"
-            strength = []
-            if group[2]:
-                strength.append(f"Total Posts {group[2]}")
-            if group[3]:
-                strength.append(f"Vacant {group[3]}")
-            if strength:
-                group_text += f" ({'. '.join(strength)})"
-            if group[4]:
-                group_text += f" - Scale {group[4]}"
-            ws.cell(group_row, 2, sanitize_excel_text(group_text))
+            ws.cell(group_row, 2, sanitize_excel_text(_post_group_label(group)))
             _style_range(ws, group_row, group_row)
             ws.cell(group_row, 2).font = Font(bold=True, size=9)
             current_group = group
@@ -378,12 +327,16 @@ def pay_bill_v3_to_excel(dto: ReportDTO) -> bytes:
         if narrations:
             ws.cell(detail_start + 2, 2, sanitize_excel_text("; ".join(narrations)))
         basic = _row_value(section, item, "c_basic")
-        basic_label = "" if basic is None else f"Basic @ Rs.{int(basic)}/-"
+        basic_label = "" if basic is None else f"Basic @ Rs.{money(basic)}/-"
         ws.cell(detail_start + (3 if narrations else 2), 2, basic_label)
         ws.cell(
             detail_start + 4, 2, sanitize_excel_text(str(_row_value(section, item, "pan") or ""))
         )
-        ws.cell(detail_start, 15, _row_value(section, item, "account_label"))
+        ws.cell(
+            detail_start,
+            15,
+            sanitize_excel_text(str(_row_value(section, item, "account_label") or "")),
+        )
         ws.cell(
             detail_start + 1,
             15,
@@ -446,7 +399,6 @@ def pay_bill_v3_to_excel(dto: ReportDTO) -> bytes:
         for cell in ws[total_row]:
             cell.font = Font(bold=True, size=9)
             cell.fill = _TOTAL_FILL
-        employee_total_rows.append(total_row)
         page_detail_starts.append(detail_start - 1 if special_serial_merge else detail_start)
         page_total_rows.append(total_row)
         current_row = total_row + 1
@@ -471,47 +423,7 @@ def pay_bill_v3_to_excel(dto: ReportDTO) -> bytes:
             page_total_rows = []
             current_row = page_end + 1
 
-    computed_totals = {
-        key: sum(
-            (Decimal(str(_row_value(section, item, key) or 0)) for item in section.rows),
-            Decimal("0"),
-        )
-        for key in (
-            "c_basic",
-            "d_da",
-            "e_cla",
-            "f_hra",
-            "g_wash_other",
-            "h_other_reimbursement",
-            "i_additional_allowance",
-            "j_ta",
-            "l_employer_share",
-            "m_recovery",
-            "p_gpf",
-            "q_pension_employer",
-            "r_pension_employee",
-            "s_advance",
-            "t_flood",
-            "u_income_tax",
-            "v_insurance_gis",
-            "w_hrr",
-            "x_professional_tax",
-            "y_co_op",
-        )
-    }
-    if section.totals is not None:
-        expected = dict(
-            zip((column.key for column in section.columns), section.totals, strict=True)
-        )
-        mismatches = {
-            key: (computed_totals[key], Decimal(str(expected[key] or 0)))
-            for key in computed_totals
-            if computed_totals[key] != Decimal(str(expected[key] or 0))
-        }
-        if mismatches:
-            raise ValueError(
-                f"Canonical Pay Bill grand totals do not match DTO totals: {mismatches}"
-            )
+    _reconcile_pay_bill_totals(section)
 
     final_page_start = 197 if reference_anchors is not None else max(current_row, 197)
     if page_detail_starts or not page_summary_starts:
@@ -553,12 +465,17 @@ def pay_bill_v3_to_excel(dto: ReportDTO) -> bytes:
     ws.page_margins.footer = 0.11811023622047245
     profile = dto.metadata.get("report_profile", {})
     footer_text = profile.get("pay_bill_footer_text") if isinstance(profile, Mapping) else None
-    ws.oddFooter.left.text = str(footer_text or f"{_organization_label(dto)} - Pay Bill")
+    ws.oddFooter.left.text = _footer_text(
+        str(footer_text or f"{_organization_label(dto)} - Pay Bill")
+    )
     ws.oddFooter.right.text = "Page &P"
-    row_break_ids = {item.id for item in ws.row_breaks.brk}
-    for break_id in (67, 134):
-        if break_id not in row_break_ids:
-            ws.row_breaks.append(Break(id=break_id))
+    # Manual row breaks encode the accepted reference pagination; generic
+    # rosters use the template's natural page breaks instead.
+    if reference_anchors is not None:
+        row_break_ids = {item.id for item in ws.row_breaks.brk}
+        for break_id in (67, 134):
+            if break_id not in row_break_ids:
+                ws.row_breaks.append(Break(id=break_id))
     if 28 not in {item.id for item in ws.col_breaks.brk}:
         ws.col_breaks.append(Break(id=28))
 

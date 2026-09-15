@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import ValidationError
 from app.models.reports import ReportConfiguration
 from app.schemas.pay_setup import REPORT_CONFIG_KEY_RE, PayrollExportProfile
+from app.services.audit_events import entity_snapshot, write_mutation_event
 from app.services.db_errors import raise_integrity_error
 
 
@@ -67,10 +68,20 @@ async def _upsert_report_configuration(
     db: AsyncSession,
     *,
     organization_id: UUID,
+    actor_user_id: UUID | None,
     key: str,
     value: Any,
 ) -> dict[str, Any]:
     validate_report_config_key(key)
+    existing = (
+        await db.execute(
+            sa.select(ReportConfiguration).where(
+                ReportConfiguration.organization_id == organization_id,
+                ReportConfiguration.key == key,
+            )
+        )
+    ).scalar_one_or_none()
+    before_state = entity_snapshot(existing) if existing is not None else {}
     table = ReportConfiguration.__table__
     stmt = (
         pg_insert(table)
@@ -86,11 +97,23 @@ async def _upsert_report_configuration(
                 "updated_at": sa.func.now(),
             },
         )
-        .returning(table.c.key, table.c.value, table.c.updated_at)
+        .returning(table.c.id, table.c.key, table.c.value, table.c.updated_at)
     )
     try:
         result = await db.execute(stmt)
         row = result.one()
+        await write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="report_configuration.upsert",
+            entity_type="report_configuration",
+            entity_id=row.id,
+            entity_label=f"Report configuration {row.key}",
+            before_state=before_state,
+            after_state={"key": row.key, "value": row.value},
+            summary={"key": row.key},
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -106,6 +129,7 @@ async def upsert_report_configuration(
     db: AsyncSession,
     *,
     organization_id: UUID,
+    actor_user_id: UUID,
     key: str,
     value: Any,
 ) -> dict[str, Any]:
@@ -116,6 +140,7 @@ async def upsert_report_configuration(
     return await _upsert_report_configuration(
         db,
         organization_id=organization_id,
+        actor_user_id=actor_user_id,
         key=key,
         value=value,
     )
@@ -144,6 +169,7 @@ async def upsert_payroll_export_profile(
     db: AsyncSession,
     *,
     organization_id: UUID,
+    actor_user_id: UUID,
     profile: PayrollExportProfile,
 ) -> dict[str, Any]:
     existing = (
@@ -170,6 +196,7 @@ async def upsert_payroll_export_profile(
     row = await _upsert_report_configuration(
         db,
         organization_id=organization_id,
+        actor_user_id=actor_user_id,
         key="payroll_export_profile",
         value=value,
     )

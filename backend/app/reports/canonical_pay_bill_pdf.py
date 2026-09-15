@@ -11,10 +11,18 @@ from app.reports.canonical_pay_bill_common import (
     _PDF_FONT_FAMILY,
     _PAY_BILL_WIDTHS,
     _organization_label,
+    _post_group,
+    _post_group_label,
+    _reconcile_pay_bill_totals,
     _row_value,
-    _text_preserving_zero,
 )
-from app.reports.pdf import DEFAULT_FONT_PATH
+from app.reports.formatting import format_inr
+from app.reports.pdf import (
+    DEFAULT_FONT_PATH,
+    DEVANAGARI_FONT_PATH,
+    UNICODE_FALLBACK_FONT_FAMILY,
+)
+from app.reports.posted_run import money
 
 
 class _CanonicalPayBillPDF(FPDF):
@@ -27,7 +35,7 @@ class _CanonicalPayBillPDF(FPDF):
 def _pdf_money(value) -> str:
     if value is None:
         return ""
-    return f"{int(round(value)):,}"
+    return format_inr(money(value))
 
 
 def _pdf_wrap_lines(pdf: _CanonicalPayBillPDF, value: str, width: float) -> list[str]:
@@ -189,7 +197,7 @@ def _pdf_page_header(
     pdf.set_font(_PDF_FONT_FAMILY, style="B", size=7)
     pdf.cell(0, 3.5, _organization_label(dto), new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.set_font(_PDF_FONT_FAMILY, style="B", size=8)
-    pdf.cell(0, 4, "Payroll Register - Pay Bill", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 4, dto.title, new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.set_font(_PDF_FONT_FAMILY, size=6)
     pdf.cell(0, 3.5, dto.subtitle, new_x="LMARGIN", new_y="NEXT", align="C")
     _pdf_table_header(pdf, widths)
@@ -211,11 +219,25 @@ def pay_bill_v3_to_pdf(dto: ReportDTO) -> bytes:
             detail_lines.setdefault(
                 (str(detail["employee_number"]), str(detail["register_column"])), []
             ).append(detail)
+    _reconcile_pay_bill_totals(section)
     pdf = _CanonicalPayBillPDF(orientation="L", unit="mm", format="Letter")
     regular_font = _ARIAL_PATH if _ARIAL_PATH.exists() else DEFAULT_FONT_PATH
-    bold_font = _ARIAL_BOLD_PATH if _ARIAL_BOLD_PATH.exists() else DEFAULT_FONT_PATH
+    # fpdf2 does not synthesize bold for TTF; the bold face must come from the
+    # same resolved family — never register NotoSans under the Arial family.
+    bold_font = _ARIAL_BOLD_PATH if _ARIAL_BOLD_PATH.exists() else regular_font
     pdf.add_font(family=_PDF_FONT_FAMILY, fname=str(regular_font))
     pdf.add_font(family=_PDF_FONT_FAMILY, style="B", fname=str(bold_font))
+    if DEVANAGARI_FONT_PATH.is_file():
+        pdf.add_font(
+            family=UNICODE_FALLBACK_FONT_FAMILY,
+            fname=str(DEVANAGARI_FONT_PATH),
+        )
+        pdf.add_font(
+            family=UNICODE_FALLBACK_FONT_FAMILY,
+            style="B",
+            fname=str(DEVANAGARI_FONT_PATH),
+        )
+        pdf.set_fallback_fonts([UNICODE_FALLBACK_FONT_FAMILY], exact_match=False)
     pdf.alias_nb_pages()
     pdf.set_margins(4.5, 4.5, 4.5)
     pdf.set_auto_page_break(False)
@@ -225,16 +247,9 @@ def pay_bill_v3_to_pdf(dto: ReportDTO) -> bytes:
     _pdf_page_header(pdf, dto, widths)
 
     current_group: tuple[str, str, str, str, str] | None = None
-    group_label = ""
     bottom_limit = pdf.h - 9
     for serial, item in enumerate(section.rows, start=1):
-        group = (
-            str(_row_value(section, item, "post_group_key") or ""),
-            str(_row_value(section, item, "post_title") or "Unassigned Post"),
-            _text_preserving_zero(_row_value(section, item, "sanctioned_posts")),
-            _text_preserving_zero(_row_value(section, item, "vacant_posts")),
-            str(_row_value(section, item, "pay_scale") or ""),
-        )
+        group = _post_group(section, item)
         group_changed = group != current_group
         required_height = 24.5 if group_changed else 20.5
         if pdf.get_y() + required_height > bottom_limit:
@@ -242,14 +257,9 @@ def pay_bill_v3_to_pdf(dto: ReportDTO) -> bytes:
             current_group = None
             group_changed = True
         if group_changed:
-            group_label = f"Post of {group[1]}"
-            if group[2] or group[3]:
-                group_label += f" (Total Posts {group[2] or '-'}; Vacant {group[3] or '-'})"
-            if group[4]:
-                group_label += f" - Scale {group[4]}"
             _pdf_cells(
                 pdf,
-                ["", group_label],
+                ["", _post_group_label(group)],
                 [widths[0], sum(widths[1:])],
                 height=4,
                 font_size=4.5,
@@ -323,11 +333,10 @@ def pay_bill_v3_to_pdf(dto: ReportDTO) -> bytes:
         secondary[14] = str(_row_value(section, item, "gpf_account_number") or "")
         basic_line = [""] * 28
         basic = _row_value(section, item, "c_basic")
-        basic_line[1] = "" if basic is None else f"Basic @ Rs.{int(basic)}/-"
+        basic_line[1] = "" if basic is None else f"Basic @ Rs.{money(basic)}/-"
         reason_line = [""] * 28
         pan_line = [""] * 28
         pan_line[1] = str(_row_value(section, item, "pan") or "")
-        display_rows = [primary, secondary, basic_line, reason_line, pan_line]
         column_by_key = {
             "c_basic": 2,
             "d_da": 3,
@@ -351,9 +360,8 @@ def pay_bill_v3_to_pdf(dto: ReportDTO) -> bytes:
             "y_co_op": 24,
         }
         reasons: list[str] = []
-        for key, column in column_by_key.items():
-            for offset, line in enumerate(detail_lines.get((employee_number, key), [])):
-                display_rows[offset][column] = _pdf_money(line["amount"])
+        for key in column_by_key:
+            for line in detail_lines.get((employee_number, key), []):
                 reason = " ".join(
                     filter(
                         None,
@@ -364,6 +372,19 @@ def pay_bill_v3_to_pdf(dto: ReportDTO) -> bytes:
                     reasons.append(reason)
         if reasons:
             reason_line[1] = "; ".join(reasons)
+        # Row order mirrors the Excel register: the narrations row precedes the
+        # "Basic @ Rs." annotation when narrations exist, otherwise the basic
+        # annotation occupies that slot.
+        text_rows = [reason_line, basic_line] if reasons else [basic_line, reason_line]
+        display_rows = [primary, secondary, *text_rows, pan_line]
+        for key, column in column_by_key.items():
+            lines = detail_lines.get((employee_number, key), [])
+            if len(lines) > 5:
+                raise ValueError(
+                    f"Employee {employee_number} has more than five detail lines for {key}."
+                )
+            for offset, line in enumerate(lines):
+                display_rows[offset][column] = _pdf_money(line["amount"])
         for offset, values in enumerate(display_rows):
             _pdf_cells(
                 pdf,
