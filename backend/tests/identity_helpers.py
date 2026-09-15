@@ -82,6 +82,10 @@ def patch_get_settings(monkeypatch, value: Settings) -> None:
     monkeypatch.setattr("app.api.routes.auth.get_settings", lambda: value)
     monkeypatch.setattr("app.api.deps.get_settings", lambda: value)
     monkeypatch.setattr("app.config.get_settings", lambda: value)
+    # The CSRF middleware resolves settings per-request via its own import —
+    # unpached it would verify tokens against env SESSION_SECRET_KEY (CI
+    # exports a different one) while tests mint with `settings()` secrets.
+    monkeypatch.setattr("app.middleware.csrf.get_settings", lambda: value)
 
 
 def clear_settings_cache() -> None:
