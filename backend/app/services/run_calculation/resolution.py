@@ -129,8 +129,10 @@ class _ResolvedMasterData:
     assignments_by_employee: Mapping[UUID, list[AccommodationAssignment]]
     charge_by_assignment: Mapping[UUID, Any]
     # Derived recovery progress (T1.6): count of posted
-    # ``loan_installment_recovery`` lines keyed by the installment version id
-    # recorded in each line's trace source_version_ids. Only lines belonging
+    # ``loan_installment_recovery`` lines keyed by the advance account id
+    # (resolved from the installment version id in each line's trace
+    # source_version_ids, so superseded versions still count). Only lines
+    # belonging
     # to the current version of a run with status ``posted`` count — draft /
     # reversed / superseded runs contribute nothing, so the derived count is
     # idempotent and reversal-safe.
@@ -266,7 +268,7 @@ async def _load_posted_recovery_counts(
     organization_id: UUID,
     employee_ids: list[UUID],
 ) -> dict[UUID, int]:
-    """Count posted ``loan_installment_recovery`` lines per installment version.
+    """Count posted ``loan_installment_recovery`` lines per advance account.
 
     The authoritative record of a recovered installment is a result line on the
     current version of a ``posted`` run; the line's trace carries the
@@ -274,6 +276,11 @@ async def _load_posted_recovery_counts(
     rows derives recovery progress without a mutable counter: reposting a run
     after reversal does not double-count (reversed runs are excluded) and a
     recalculated-but-unposted run never contributes.
+
+    Counts are keyed by the installment version's ``header_id`` (the advance
+    account), not the version id itself: appending a new installment version
+    must not reset progress and re-recover installments already posted under
+    the superseded version.
     """
     if not employee_ids:
         return {}
@@ -307,14 +314,40 @@ async def _load_posted_recovery_counts(
         .scalars()
         .all()
     )
-    counts: dict[UUID, int] = {}
+    version_ids: set[UUID] = set()
+    occurrences: list[UUID] = []
     for trace in rows:
         for source_id in (trace or {}).get("source_version_ids") or []:
             try:
                 version_id = UUID(str(source_id))
             except ValueError:
                 continue
-            counts[version_id] = counts.get(version_id, 0) + 1
+            version_ids.add(version_id)
+            occurrences.append(version_id)
+    if not version_ids:
+        return {}
+    header_rows = (
+        (
+            await db.execute(
+                sa.select(
+                    advance_installment_versions.c.id,
+                    advance_installment_versions.c.header_id,
+                ).where(
+                    advance_installment_versions.c.organization_id == organization_id,
+                    advance_installment_versions.c.id.in_(version_ids),
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    header_by_version = {row["id"]: row["header_id"] for row in header_rows}
+    counts: dict[UUID, int] = {}
+    for version_id in occurrences:
+        header_id = header_by_version.get(version_id)
+        if header_id is None:
+            continue
+        counts[header_id] = counts.get(header_id, 0) + 1
     return counts
 
 
@@ -412,11 +445,11 @@ def _resolve_employee_components(
         if inst is None:
             continue
         # Derived recovery progress (T1.6): the operator-declared opening count
-        # plus posted recovery lines that cite this installment version. When
-        # the derived count reaches installments_total, recovery is complete
+        # plus posted recovery lines across this advance's version lineage.
+        # When the derived count reaches installments_total, recovery is complete
         # and no line is emitted.
         recovered = int(inst["installments_recovered_opening"]) + int(
-            master.posted_recovery_counts.get(inst["id"], 0)
+            master.posted_recovery_counts.get(advance.id, 0)
         )
         if recovered >= int(inst["installments_total"]):
             continue

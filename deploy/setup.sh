@@ -140,8 +140,14 @@ for var in ACCORD_DB_PASSWORD WORKOS_CLIENT_ID WORKOS_API_KEY \
 done
 [[ -z "$MISSING" ]] || die "Missing required variables:$MISSING"
 
-[[ "$ACCORD_DB_PASSWORD" =~ ^[A-Za-z0-9._~-]+$ ]] \
-	|| die "ACCORD_DB_PASSWORD must use URL-unreserved characters only"
+# Passwords are interpolated into postgres DSNs by compose without
+# percent-encoding, so reserved characters (@, :, /, #, %) would corrupt
+# the URL. Enforce the RFC 3986 unreserved set on every role password.
+for var in ACCORD_DB_PASSWORD ACCORD_ROLE_PASSWORD ACCORD_APP_PASSWORD \
+	ACCORD_WORKER_PASSWORD ACCORD_MIGRATOR_PASSWORD; do
+	[[ -z "${!var:-}" || "${!var}" =~ ^[A-Za-z0-9._~-]+$ ]] \
+		|| die "$var must use URL-unreserved characters only"
+done
 (( ${#SESSION_SECRET_KEY} >= 32 )) || die "SESSION_SECRET_KEY must be at least 32 characters"
 [[ "$OBJECT_STORAGE_ACCESS_KEY" != "minioadmin" \
 	&& "$OBJECT_STORAGE_SECRET_KEY" != "minioadmin" ]] \

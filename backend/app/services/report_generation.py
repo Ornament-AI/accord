@@ -729,7 +729,7 @@ async def execute_consolidated_xlsx(
         else _zip_filename(period_label=period_label, posted_run_id=posted_run_id)
     )
 
-    if existing is not None:
+    if existing is not None and existing.status == "finalized":
         return {
             "artifact_id": str(existing.id),
             "reused": True,
@@ -776,18 +776,29 @@ async def execute_consolidated_xlsx(
                 )
         output_bytes = buffer.getvalue()
 
-    artifact = await create_artifact(
-        session,
-        storage,
-        organization_id=organization_id,
-        report_type=REPORT_TYPE_CONSOLIDATED_XLSX,
-        template_version=pack_template_version,
-        content=output_bytes,
-        content_type=pack_content_type,
-        requested_by=requested_by,
-        posted_run_id=posted_run_id,
-        engine_version=engine_version,
-    )
+    if existing is not None:
+        # Incomplete intent row from a crashed attempt — resume it in place
+        # (same object_key) instead of returning it as if it were usable.
+        artifact = await resume_artifact_upload(
+            session,
+            storage,
+            artifact=existing,
+            content=output_bytes,
+            content_type=pack_content_type,
+        )
+    else:
+        artifact = await create_artifact(
+            session,
+            storage,
+            organization_id=organization_id,
+            report_type=REPORT_TYPE_CONSOLIDATED_XLSX,
+            template_version=pack_template_version,
+            content=output_bytes,
+            content_type=pack_content_type,
+            requested_by=requested_by,
+            posted_run_id=posted_run_id,
+            engine_version=engine_version,
+        )
     return {
         "artifact_id": str(artifact.id),
         "manifest_hash": m_hash,

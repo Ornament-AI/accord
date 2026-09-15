@@ -138,8 +138,11 @@ class Settings(BaseSettings):
                 "WORKOS_REDIRECT_URI": self.workos_redirect_uri,
                 "WORKOS_WEBHOOK_SECRET": self.workos_webhook_secret,
                 "SESSION_SECRET_KEY": self.session_secret_key,
-                "MIGRATIONS_DATABASE_URL": self.migrations_database_url,
             }
+            # MIGRATIONS_DATABASE_URL is intentionally absent: only the
+            # one-shot migrate task consumes it (alembic env.py raises when
+            # unset), and injecting the privileged migrator DSN into
+            # long-lived api/worker env widens its blast radius.
             missing = [name for name, value in required.items() if not value]
             if missing:
                 raise ValueError("Missing required production settings: " + ", ".join(missing))

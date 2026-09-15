@@ -1215,3 +1215,119 @@ async def test_posted_recovery_line_advances_derived_count(session):
     await _bind(session, world["org_id"], world["user_id"])
     codes = await _version_component_codes(session, result["version_id"])
     assert "HBA_INSTALLMENT" not in codes
+
+
+@pytest.mark.asyncio
+async def test_recovery_progress_survives_installment_version_append(session):
+    """Posted recoveries count across the whole version lineage (keyed by the
+    advance account, not the version id). Appending a new installment version
+    must not reset progress and re-recover already-posted installments."""
+    world = await _seed_world(session)
+    advance_id = await _advance_id(session, world)
+
+    # One installment outstanding under the first version.
+    await _bind(session, world["org_id"], world["user_id"])
+    await versioning.insert_version(
+        session,
+        advance_installment_versions,
+        organization_id=world["org_id"],
+        header_id=advance_id,
+        effective_from=date(2026, 3, 1),
+        values={
+            "installment_amount": Decimal("1000.00"),
+            "installments_total": 12,
+            "installments_recovered_opening": 11,
+        },
+        change_reason=None,
+        created_by=world["user_id"],
+    )
+    await session.commit()
+
+    # June: the final installment is posted under version 1.
+    await _bind(session, world["org_id"], world["user_id"])
+    calc = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    assert "HBA_INSTALLMENT" in await _version_component_codes(session, calc["version_id"])
+    run = await session.get(PayrollRun, world["run_id"])
+    assert run is not None
+    run.status = "approved"
+    session.add(
+        PayrollApproval(
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            run_version_id=calc["version_id"],
+            content_hash=calc["content_hash"],
+            action="approve",
+            actor_user_id=world["user_id"],
+            reason="Looks good",
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await post_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    # July: the operator reschedules — a NEW installment version is appended
+    # (the dialog prefills the same opening count). The v1 recovery must still
+    # count toward the lineage total.
+    await _bind(session, world["org_id"], world["user_id"])
+    await versioning.insert_version(
+        session,
+        advance_installment_versions,
+        organization_id=world["org_id"],
+        header_id=advance_id,
+        effective_from=date(2026, 7, 1),
+        values={
+            "installment_amount": Decimal("1000.00"),
+            "installments_total": 12,
+            "installments_recovered_opening": 11,
+        },
+        change_reason="Reschedule",
+        created_by=world["user_id"],
+    )
+    july_period = PayrollPeriod(
+        organization_id=world["org_id"],
+        period_year=2026,
+        period_month=7,
+        status="open",
+    )
+    session.add(july_period)
+    await session.flush()
+    july_run = PayrollRun(
+        organization_id=world["org_id"],
+        period_id=july_period.id,
+        status="draft",
+    )
+    session.add(july_run)
+    await session.flush()
+    session.add_all(
+        initialize_run_roster(
+            organization_id=world["org_id"],
+            run=july_run,
+            employee_ids=[world["employee_id"]],
+            period_year=july_period.period_year,
+            period_month=july_period.period_month,
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=july_run.id,
+        user_id=world["user_id"],
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    codes = await _version_component_codes(session, result["version_id"])
+    assert "HBA_INSTALLMENT" not in codes

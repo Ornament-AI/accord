@@ -49,6 +49,17 @@ def test_signing_key_is_valid_ed25519_public_key() -> None:
     assert "ED25519 Public-Key" in result.stdout
 
 
+def test_deploy_role_sql_mirror_matches_canonical_source() -> None:
+    """deploy/create_roles.sql intentionally duplicates the canonical
+    backend/scripts source: the release bundle ships deploy/ only and the
+    compose mount needs the file beside it. This guard keeps them identical;
+    package-release.sh additionally overwrites the mirror with the canonical
+    bytes at stage time."""
+    mirror = (ROOT / "deploy" / "create_roles.sql").read_bytes()
+    canonical = (ROOT / "backend" / "scripts" / "create_roles.sql").read_bytes()
+    assert mirror == canonical
+
+
 def test_adapter_declares_every_service_and_required_proof() -> None:
     adapter = json.loads(ADAPTER.read_text())
     assert _module().validate_adapter(adapter) == adapter

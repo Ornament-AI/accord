@@ -135,6 +135,11 @@ class CreatePayVersionRequest(PayInput):
 
 
 class CreateBankVersionRequest(BankInput):
+    # Version requests may omit account_number entirely: the client masks it
+    # server-side, so an omitted value means "keep the current one" (merged
+    # from the open version by the service). Initial creation still uses
+    # BankInput directly, where account_number stays required.
+    account_number: str | None = None
     effective_from: date
     change_reason: str | None = None
 

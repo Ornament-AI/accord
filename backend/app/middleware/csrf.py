@@ -8,21 +8,56 @@ cannot forge the binding. Requests without a session cookie pass straight
 through — downstream auth returns 401 — which auto-exempts the login,
 magic-code, OAuth callback, and WorkOS webhook entry points without an
 exemption list.
+
+Sessions that predate the CSRF rollout (valid session cookie, no ``accord_csrf``
+cookie) are re-minted a session-bound token on any response — safe requests
+self-heal transparently, and a rejected mutation attaches the fresh cookie so
+the client's next attempt succeeds. The minted token still requires the
+session cookie itself, so this never weakens the binding.
 """
 
 from __future__ import annotations
 
 import hmac
 
+from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.responses import problem_response
-from app.auth.session import verify_csrf_token
+from app.auth.session import (
+    WeakSessionSecretError,
+    apply_csrf_cookie,
+    verify_csrf_token,
+)
 from app.config import get_settings
 
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 CSRF_HEADER_NAME = "x-csrf-token"
+
+
+def _send_with_csrf_cookie(
+    send: Send,
+    settings,
+    session_cookie: str,
+) -> Send:
+    """Attach a freshly minted session-bound ``accord_csrf`` Set-Cookie."""
+
+    async def send_with_cookie(message: Message) -> None:
+        if message["type"] == "http.response.start":
+            probe = Response()
+            try:
+                apply_csrf_cookie(settings, probe, session_cookie)
+            except WeakSessionSecretError:
+                pass
+            headers = MutableHeaders(raw=message.setdefault("headers", []))
+            for key, value in probe.raw_headers:
+                if key.lower() == b"set-cookie":
+                    headers.append("set-cookie", value.decode("latin-1"))
+        await send(message)
+
+    return send_with_cookie
 
 
 class CsrfMiddleware:
@@ -32,7 +67,7 @@ class CsrfMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] not in UNSAFE_METHODS:
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
@@ -47,12 +82,29 @@ class CsrfMiddleware:
             return
 
         csrf_cookie = request.cookies.get(settings.csrf_cookie_name)
+        bound_valid = csrf_cookie is not None and verify_csrf_token(
+            settings, session_cookie, csrf_cookie
+        )
+
+        if scope["method"] not in UNSAFE_METHODS:
+            if bound_valid:
+                await self.app(scope, receive, send)
+            else:
+                # Legacy/expired token: refresh the bound cookie so the client
+                # has one before its next mutation.
+                await self.app(
+                    scope,
+                    receive,
+                    _send_with_csrf_cookie(send, settings, session_cookie),
+                )
+            return
+
         csrf_header = request.headers.get(CSRF_HEADER_NAME)
         valid = (
-            csrf_cookie is not None
+            bound_valid
             and csrf_header is not None
+            and csrf_cookie is not None
             and hmac.compare_digest(csrf_header, csrf_cookie)
-            and verify_csrf_token(settings, session_cookie, csrf_cookie)
         )
         if valid:
             await self.app(scope, receive, send)
@@ -67,4 +119,11 @@ class CsrfMiddleware:
             request_id=request_id,
             headers={"X-Request-ID": request_id} if request_id else None,
         )
+        if not bound_valid:
+            # Attach a fresh bound token so a pre-existing session recovers on
+            # the next attempt instead of staying locked out until expiry.
+            try:
+                apply_csrf_cookie(settings, response, session_cookie)
+            except WeakSessionSecretError:
+                pass
         await response(scope, receive, send)

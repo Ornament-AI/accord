@@ -28,9 +28,9 @@ import json
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,9 +45,11 @@ _TENANT_GUCS = ("app.organization_id", "app.user_id", "app.request_id")
 
 # An ``in_progress`` row whose claimant died mid-command (crash between the
 # claim commit and the succeeded-mark commit) must not hold the key hostage
-# for the whole result TTL. Commands are request-scoped and take seconds, so
-# a claim untouched for this long is considered abandoned and reclaimed.
-_CLAIM_STALE_AFTER = timedelta(minutes=5)
+# for the whole result TTL. Commands are request-scoped but can legitimately
+# run for minutes on large orgs, so the stale window is deliberately generous;
+# the ``claim_token``-conditioned terminal writes are the real safety net — a
+# displaced claimant can never overwrite the new owner's result.
+_CLAIM_STALE_AFTER = timedelta(minutes=30)
 
 
 async def _snapshot_tenant_gucs(db: AsyncSession) -> dict[str, str]:
@@ -124,36 +126,38 @@ async def idempotent_command(
     request_hash = compute_request_hash(request_payload)
     expires_at = utcnow() + timedelta(hours=ttl_hours)
 
-    claimed_id = await _try_claim(
+    claimed = await _try_claim(
         db,
         organization_id=organization_id,
         key=key,
         request_hash=request_hash,
         expires_at=expires_at,
     )
-    if claimed_id is not None:
+    if claimed is not None:
+        row_id, claim_token = claimed
         gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
         await _rebind_tenant_gucs(db, gucs)
-        return await _execute_claimed(db, row_id=claimed_id, executor=executor)
+        return await _execute_claimed(db, row_id=row_id, claim_token=claim_token, executor=executor)
 
     row = await _load_row(db, organization_id=organization_id, key=key, for_update=True)
     if row is None:
         # Rare: row vanished between conflict and load (TTL cleanup). Reclaim.
-        claimed_id = await _try_claim(
+        claimed = await _try_claim(
             db,
             organization_id=organization_id,
             key=key,
             request_hash=request_hash,
             expires_at=expires_at,
         )
-        if claimed_id is None:
+        if claimed is None:
             await db.rollback()
             raise ConflictError("command in progress")
+        row_id, claim_token = claimed
         gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
         await _rebind_tenant_gucs(db, gucs)
-        return await _execute_claimed(db, row_id=claimed_id, executor=executor)
+        return await _execute_claimed(db, row_id=row_id, claim_token=claim_token, executor=executor)
 
     now = utcnow()
     if row.status == "succeeded":
@@ -172,7 +176,7 @@ async def idempotent_command(
         return snapshot
 
     if row.expires_at < now:
-        await _reset_lease(
+        claim_token = await _reset_lease(
             db,
             row,
             request_hash=request_hash,
@@ -181,7 +185,7 @@ async def idempotent_command(
         gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
         await _rebind_tenant_gucs(db, gucs)
-        return await _execute_claimed(db, row_id=row.id, executor=executor)
+        return await _execute_claimed(db, row_id=row.id, claim_token=claim_token, executor=executor)
 
     if row.request_hash != request_hash:
         await db.rollback()
@@ -192,8 +196,10 @@ async def idempotent_command(
             await db.rollback()
             raise ConflictError("command in progress")
         # Stale claim: the original claimant crashed between the claim commit
-        # and the succeeded-mark commit. Reclaim the lease and re-execute.
-        await _reset_lease(
+        # and the succeeded-mark commit — or is still running past the stale
+        # window. Reclaim under a fresh claim_token so the displaced claimant's
+        # terminal write can no longer clobber this execution's result.
+        claim_token = await _reset_lease(
             db,
             row,
             request_hash=request_hash,
@@ -202,10 +208,10 @@ async def idempotent_command(
         gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
         await _rebind_tenant_gucs(db, gucs)
-        return await _execute_claimed(db, row_id=row.id, executor=executor)
+        return await _execute_claimed(db, row_id=row.id, claim_token=claim_token, executor=executor)
 
     if row.status == "failed":
-        await _reset_lease(
+        claim_token = await _reset_lease(
             db,
             row,
             request_hash=request_hash,
@@ -214,7 +220,7 @@ async def idempotent_command(
         gucs = await _snapshot_tenant_gucs(db)
         await db.commit()
         await _rebind_tenant_gucs(db, gucs)
-        return await _execute_claimed(db, row_id=row.id, executor=executor)
+        return await _execute_claimed(db, row_id=row.id, claim_token=claim_token, executor=executor)
 
     await db.rollback()
     raise ConflictError(f"Unexpected idempotency status: {row.status}")
@@ -227,13 +233,14 @@ async def _try_claim(
     key: str,
     request_hash: str,
     expires_at,
-) -> UUID | None:
-    """Insert ``in_progress`` row; return id if this caller won the claim.
+) -> tuple[UUID, UUID] | None:
+    """Insert ``in_progress`` row; return (id, claim_token) if this caller won.
 
     Uses INSERT … ON CONFLICT DO NOTHING inside a SAVEPOINT so a conflict does
     not poison the outer session transaction.
     """
     table = IdempotencyKey.__table__
+    claim_token = uuid4()
     stmt = (
         pg_insert(table)
         .values(
@@ -241,6 +248,7 @@ async def _try_claim(
             key=key,
             request_hash=request_hash,
             status="in_progress",
+            claim_token=claim_token,
             expires_at=expires_at,
         )
         .on_conflict_do_nothing(constraint="uq_idempotency_keys_organization_id_key")
@@ -249,7 +257,7 @@ async def _try_claim(
     async with db.begin_nested():
         result = await db.execute(stmt)
         row = result.first()
-    return None if row is None else row.id
+    return None if row is None else (row.id, claim_token)
 
 
 async def _load_row(
@@ -275,40 +283,57 @@ async def _reset_lease(
     *,
     request_hash: str,
     expires_at,
-) -> None:
+) -> UUID:
+    """Reclaim the row under a fresh claim token and return it."""
     row.request_hash = request_hash
     row.status = "in_progress"
     row.response_snapshot = None
+    row.claim_token = uuid4()
     row.expires_at = expires_at
     await db.flush()
+    return row.claim_token
 
 
 async def _execute_claimed(
     db: AsyncSession,
     *,
     row_id: UUID,
+    claim_token: UUID,
     executor: Executor,
 ) -> dict[str, Any]:
     # Capture GUCs before executor runs: executor commit/rollback drops SET LOCAL.
     gucs = await _snapshot_tenant_gucs(db)
+    table = IdempotencyKey.__table__
     try:
         snapshot = await executor()
     except Exception:
         await db.rollback()
         # Rollback cleared tenant GUCs; rebind before any idempotency_keys touch.
         await _rebind_tenant_gucs(db, gucs)
-        row = await db.get(IdempotencyKey, row_id)
-        if row is not None:
-            row.status = "failed"
-            await db.commit()
+        # Conditional on claim_token: if a stale-window reclaim displaced this
+        # claimant, the new owner writes the row's terminal state — not us.
+        await db.execute(
+            update(table)
+            .where(table.c.id == row_id, table.c.claim_token == claim_token)
+            .values(status="failed")
+        )
+        await db.commit()
         raise
 
-    # Executor may have committed (dropping SET LOCAL); rebind before get+UPDATE.
+    # Executor may have committed (dropping SET LOCAL); rebind before UPDATE.
     await _rebind_tenant_gucs(db, gucs)
-    row = await db.get(IdempotencyKey, row_id)
-    if row is None:
-        raise ConflictError("Idempotency key disappeared during execution.")
-    row.status = "succeeded"
-    row.response_snapshot = snapshot
+    result = await db.execute(
+        update(table)
+        .where(table.c.id == row_id, table.c.claim_token == claim_token)
+        .values(status="succeeded", response_snapshot=snapshot)
+    )
     await db.commit()
+    if result.rowcount == 0:
+        # Claim was reclaimed mid-execution; the executor's side effects still
+        # happened, but the row now belongs to a concurrent claimant whose own
+        # result stands. Surface the outcome rather than silently pretending
+        # this execution recorded it.
+        raise ConflictError(
+            "Idempotency key was reclaimed by a concurrent request during execution."
+        )
     return snapshot

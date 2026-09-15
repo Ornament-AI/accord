@@ -20,6 +20,7 @@ from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import (
     DEV_SUBJECT,
+    attach_csrf_echo,
     clear_settings_cache,
     login_dev,
     patch_get_settings,
@@ -751,3 +752,52 @@ async def test_me_401_when_session_revoked(client, dev_settings, session):
 
     resp = await client.get("/api/auth/me")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_401_on_user_agent_mismatch(client, dev_settings, session):
+    # Sessions bind to the login-time User-Agent fingerprint; a changed UA
+    # must fail /me the same way protected endpoints reject it (otherwise the
+    # SPA ping-pongs: /me says authed, every API call 401s).
+    _, cookie = await login_dev(client)
+    assert cookie
+
+    resp = await client.get("/api/auth/me", headers={"User-Agent": "Other-Browser/9.9"})
+    assert resp.status_code == 401
+
+    # Same UA as the login request still resolves.
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_bootstraps_csrf_cookie(client, dev_settings, session):
+    # Sessions minted before the CSRF rollout have a session cookie but no
+    # accord_csrf. Safe requests must re-mint the bound token so the browser
+    # can mutate again instead of being locked out until session expiry.
+    _, cookie = await login_dev(client)
+    assert cookie
+    client.cookies.delete("accord_csrf")
+
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 200
+    assert "accord_csrf" in resp.cookies
+
+    # The freshly minted token now satisfies unsafe requests.
+    attach_csrf_echo(client)
+    resp = await client.post("/api/auth/logout")
+    assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_rejected_mutation_still_mints_csrf_cookie(client, dev_settings, session):
+    # A legacy session's first-ever mutation is rejected (nothing to verify
+    # against), but the 403 attaches a fresh bound token so the next attempt
+    # works — self-healing instead of a permanent lockout.
+    _, cookie = await login_dev(client)
+    assert cookie
+    client.cookies.delete("accord_csrf")
+
+    resp = await client.post("/api/auth/logout")
+    assert resp.status_code == 403
+    assert "accord_csrf" in resp.cookies

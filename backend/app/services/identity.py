@@ -258,6 +258,35 @@ async def build_me_payload(
     }
 
 
+async def session_matches_user_agent(
+    db: AsyncSession,
+    session_row,
+    user_agent_hash: str | None,
+) -> bool:
+    """Enforce the session's User-Agent binding (backfill or compare).
+
+    Mismatch rejects (a stolen cookie replayed from a different client) but
+    does not revoke — a browser auto-update should not nuke the session.
+    ``None`` stored hash backfills on read so pre-existing sessions bind now
+    instead of logging everyone out at deploy time.
+    """
+    stored_ua_hash = session_row.user_agent_hash
+    if stored_ua_hash is None:
+        if user_agent_hash is not None:
+            session_row.user_agent_hash = user_agent_hash
+            await db.flush()
+            await db.commit()
+        return True
+    if not hmac.compare_digest(stored_ua_hash, user_agent_hash or ""):
+        logger.warning(
+            "session_user_agent_mismatch",
+            session_id=str(session_row.id),
+            user_id=str(session_row.user_id),
+        )
+        return False
+    return True
+
+
 async def resolve_principal(
     db: AsyncSession,
     settings: Settings,
@@ -274,23 +303,7 @@ async def resolve_principal(
     if session_row is None:
         return None
 
-    # Bind the session to the User-Agent fingerprint captured at login.
-    # Mismatch rejects (a stolen cookie replayed from a different client) but
-    # does not revoke — a browser auto-update should not nuke the session.
-    stored_ua_hash = session_row.user_agent_hash
-    if stored_ua_hash is None:
-        if user_agent_hash is not None:
-            # Backfill on read so pre-existing sessions bind now instead of
-            # logging everyone out at deploy time.
-            session_row.user_agent_hash = user_agent_hash
-            await db.flush()
-            await db.commit()
-    elif not hmac.compare_digest(stored_ua_hash, user_agent_hash or ""):
-        logger.warning(
-            "session_user_agent_mismatch",
-            session_id=str(session_row.id),
-            user_id=str(session_row.user_id),
-        )
+    if not await session_matches_user_agent(db, session_row, user_agent_hash):
         return None
 
     user = await db.get(User, session_row.user_id)

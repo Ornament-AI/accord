@@ -5,33 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta name="description" content="Accord — payroll system of record">
 		<meta name="theme-color" content="#0a0a0a">
-		<script>
-			// Pre-bundle theme init: applies the stored ACCORD_THEME before any
-			// stylesheet/bundle executes, so first paint never flashes the wrong
-			// scheme. Must stay in sync with ThemeProvider — the app default is
-			// "dark" (App.tsx defaultTheme), NOT the OS preference.
-			try {
-				var stored = localStorage.getItem("ACCORD_THEME");
-				var theme =
-					stored === "dark" || stored === "light" || stored === "system"
-						? stored
-						: "dark";
-				if (theme === "system") {
-					theme = window.matchMedia("(prefers-color-scheme: dark)").matches
-						? "dark"
-						: "light";
-				}
-				document.documentElement.classList.add(theme);
-				// Keep the hardcoded meta in sync with the resolved scheme —
-				// dark bg ≈ #0a0a0a, light bg (oklch 0.985) ≈ #f3f5f5.
-				var meta = document.querySelector('meta[name="theme-color"]');
-				if (meta)
-					meta.content = theme === "light" ? "#f3f5f5" : "#0a0a0a";
-			} catch {
-				// Restricted storage / missing matchMedia — fall back to dark.
-				document.documentElement.classList.add("dark");
-			}
-		</script>
+		<script src="/theme-init.js"></script>
 		<link rel="preload" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 		<link rel="icon" type="image/svg+xml" href="./src/favicon.svg">
 		<title>Accord</title>

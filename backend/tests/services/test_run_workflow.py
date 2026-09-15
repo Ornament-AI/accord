@@ -802,3 +802,20 @@ async def test_reopen_illegal_statuses(session):
             user_id=world["user_id"],
         )
     assert exc.value.error_code == URN_ILLEGAL_TRANSITION
+
+
+def test_trace_from_row_preserves_legacy_unrounded_value():
+    # Versions written before canonical formatting can store raw repr strings
+    # like "1E-8". The hash covers the string verbatim, so reconstruction must
+    # not canonicalize it or pre-canonical versions stop reproducing their hash.
+    from app.services.run_reconstruction import trace_from_row
+
+    row = {
+        "trace": {"unrounded_value": "1E-8"},
+        "classification": "earning",
+        "component_code": "BASIC",
+        "calc_kind": "fixed",
+        "amount": Decimal("0.00"),
+    }
+    trace = trace_from_row(row)
+    assert trace.unrounded_value == "1E-8"

@@ -32,7 +32,9 @@ services:
       # Postgres 18+ images store data under /var/lib/postgresql/<major>/…;
       # mounting …/data breaks init (docker-library/postgres#1259).
       - pgdata:/var/lib/postgresql
-      # ADR-0001 role bootstrap (runs once on empty volume).
+      # ADR-0001 role bootstrap (runs once on empty volume). deploy/create_roles.sql
+      # mirrors backend/scripts/create_roles.sql — the release bundle ships
+      # deploy/ only, so the mounted copy must live here. A test pins them equal.
       - ./create_roles.sql:/roles/create_roles.sql:ro
       - ./object-storage/postgres-init-roles.sh:/docker-entrypoint-initdb.d/10-create-roles.sh:ro
     healthcheck:
@@ -116,6 +118,35 @@ services:
     networks:
       - backend-net
 
+  # Re-asserts ADR-0001 role passwords on every deploy. initdb.d only runs on
+  # an empty volume, so .env password rotation would otherwise update DSNs
+  # while the roles keep stale credentials.
+  role-sync:
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${ACCORD_DB_USER:-accord}
+      POSTGRES_DB: ${ACCORD_DB_NAME:-accord}
+      POSTGRES_PASSWORD: ${ACCORD_DB_PASSWORD:?ACCORD_DB_PASSWORD is required}
+      ACCORD_ROLE_PASSWORD: ${ACCORD_ROLE_PASSWORD:-}
+      ACCORD_APP_PASSWORD: ${ACCORD_APP_PASSWORD:-}
+      ACCORD_WORKER_PASSWORD: ${ACCORD_WORKER_PASSWORD:-}
+      ACCORD_MIGRATOR_PASSWORD: ${ACCORD_MIGRATOR_PASSWORD:-}
+      PGCONNECT_TIMEOUT: "10"
+    volumes:
+      - ./object-storage/sync-role-passwords.sh:/sync-role-passwords.sh:ro
+    entrypoint: ["/bin/sh", "/sync-role-passwords.sh"]
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 64m
+    networks:
+      - backend-net
+
   # One-shot Alembic upgrade using the restricted migration-owner role.
   migrations:
     image: ghcr.io/ornament-ai/accord/backend:${ACCORD_TAG:-latest}
@@ -125,10 +156,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      role-sync:
+        condition: service_completed_successfully
     environment:
       # Defaults use ADR-0001 roles created by postgres-init-roles.sh on first boot.
-      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_MIGRATOR_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_APP_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      MIGRATIONS_DATABASE_URL: ${MIGRATIONS_DATABASE_URL:-postgresql+asyncpg://accord_migrator:${ACCORD_MIGRATOR_PASSWORD:-${ACCORD_ROLE_PASSWORD:-$ACCORD_DB_PASSWORD}}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_APP_PASSWORD:-${ACCORD_ROLE_PASSWORD:-$ACCORD_DB_PASSWORD}}@postgres:5432/${ACCORD_DB_NAME:-accord}}
     command: ["alembic", "upgrade", "head"]
     restart: "no"
     security_opt:
@@ -157,7 +190,7 @@ services:
     environment:
       # Runtime uses only DATABASE_URL; the migrator DSN is intentionally not
       # injected here so the BYPASSRLS migrator credential stays out of the API.
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_APP_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_APP_PASSWORD:-${ACCORD_ROLE_PASSWORD:-$ACCORD_DB_PASSWORD}}@postgres:5432/${ACCORD_DB_NAME:-accord}}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}
@@ -216,7 +249,7 @@ services:
         condition: service_completed_successfully
     command: ["python", "worker.py"]
     environment:
-      DATABASE_URL: ${WORKER_DATABASE_URL:-postgresql+asyncpg://accord_worker:${ACCORD_WORKER_PASSWORD:-$ACCORD_DB_PASSWORD}@postgres:5432/${ACCORD_DB_NAME:-accord}}
+      DATABASE_URL: ${WORKER_DATABASE_URL:-postgresql+asyncpg://accord_worker:${ACCORD_WORKER_PASSWORD:-${ACCORD_ROLE_PASSWORD:-$ACCORD_DB_PASSWORD}}@postgres:5432/${ACCORD_DB_NAME:-accord}}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
       WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}

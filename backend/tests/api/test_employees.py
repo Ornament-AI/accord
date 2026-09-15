@@ -539,3 +539,135 @@ async def test_auditor_cannot_get_employees(client, session, dev_settings):
     resp = await client.get("/api/employees")
     assert resp.status_code == 403
     assert resp.json()["error"] == "urn:accord:capability:view_master_data"
+
+
+# --- Masked-field preserve-on-omit -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_profile_version_omitted_sensitive_fields_preserved(client, session, dev_settings):
+    """Masked fields omitted from the version payload must carry forward —
+    otherwise any unrelated profile change wipes PAN/PRAN/etc."""
+    _, _, office, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    resp = await client.post(
+        f"/api/employees/{employee_id}/versions/profile",
+        json={
+            "effective_from": "2026-06-01",
+            "name": "Alice Renamed",
+            "retirement_regime": "gpf",
+            "gpf_jurisdiction": "mumbai",
+            # pan / pran / gpf_account_number deliberately omitted (masked UI).
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    revealed = await client.get(
+        f"/api/employees/{employee_id}",
+        params={"reveal": "true", "as_of": "2026-06-15"},
+    )
+    assert revealed.status_code == 200
+    profile = revealed.json()["profile"]
+    assert profile["name"] == "Alice Renamed"
+    assert profile["pan"] == "ABCDE1234F"
+    assert profile["pran"] == "123456789012"
+    assert profile["gpf_account_number"] == "GPF998877"
+
+
+@pytest.mark.asyncio
+async def test_profile_version_explicit_null_clears_sensitive(client, session, dev_settings):
+    """An explicit ``null`` is a deliberate clear — distinct from omission."""
+    _, _, office, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    resp = await client.post(
+        f"/api/employees/{employee_id}/versions/profile",
+        json={
+            "effective_from": "2026-06-01",
+            "name": "Alice",
+            "retirement_regime": "gpf",
+            "gpf_jurisdiction": "mumbai",
+            "pan": None,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    revealed = await client.get(
+        f"/api/employees/{employee_id}",
+        params={"reveal": "true", "as_of": "2026-06-15"},
+    )
+    assert revealed.status_code == 200
+    assert revealed.json()["profile"]["pan"] is None
+    # Fields not mentioned at all still carry forward.
+    assert revealed.json()["profile"]["pran"] == "123456789012"
+
+
+@pytest.mark.asyncio
+async def test_bank_version_omitted_account_number_preserved(client, session, dev_settings):
+    """Masked account_number is omitted by the client; the version append must
+    preserve the stored number instead of 422ing on a required field."""
+    _, _, office, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    resp = await client.post(
+        f"/api/employees/{employee_id}/versions/bank",
+        json={
+            "effective_from": "2026-06-01",
+            "ifsc": "SBIN0002222",
+            "bank_name": "SBI",
+            "branch": "Alt",
+            "is_primary_salary": True,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    revealed = await client.get(
+        f"/api/employees/{employee_id}",
+        params={"reveal": "true", "as_of": "2026-06-15"},
+    )
+    assert revealed.status_code == 200
+    bank = revealed.json()["bank"]
+    assert bank["account_number"] == "123456789012"
+    assert bank["ifsc"] == "SBIN0002222"
+
+
+@pytest.mark.asyncio
+async def test_bank_version_explicit_account_number_replaces(client, session, dev_settings):
+    _, _, office, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, post_id=post.id),
+    )
+    employee_id = created["id"]
+
+    resp = await client.post(
+        f"/api/employees/{employee_id}/versions/bank",
+        json={
+            "effective_from": "2026-06-01",
+            "account_number": "9999888877776666",
+            "ifsc": "SBIN0002222",
+            "bank_name": "SBI",
+            "branch": "Alt",
+            "is_primary_salary": True,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    revealed = await client.get(
+        f"/api/employees/{employee_id}",
+        params={"reveal": "true", "as_of": "2026-06-15"},
+    )
+    assert revealed.json()["bank"]["account_number"] == "9999888877776666"

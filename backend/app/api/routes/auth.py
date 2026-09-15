@@ -38,6 +38,7 @@ from app.schemas.identity import MagicCodeLoginRequest, MagicCodeRequest, Passwo
 from app.services.identity import (
     build_me_payload,
     establish_session_for_identity,
+    session_matches_user_agent,
 )
 from app.services.bootstrap import get_singleton_organization
 from app.tenancy import bind_tenant_context
@@ -439,6 +440,13 @@ async def me(request: Request, db: Session) -> Response:
         store = get_session_store(settings, db)
         session_row = await store.read_session(cookie_value)
     except WeakSessionSecretError:
+        session_row = None
+
+    if session_row is not None and not await session_matches_user_agent(
+        db,
+        session_row,
+        hash_user_agent(request.headers.get("user-agent")),
+    ):
         session_row = None
 
     if session_row is None:

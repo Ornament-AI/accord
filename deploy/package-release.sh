@@ -111,7 +111,9 @@ mv "$STAGE_ROOT/scripts/vendor/onprem_release.py" \
     "$STAGE_ROOT/deploy/onprem_release.py"
 mv "$STAGE_ROOT/scripts/smoke-test.sh" "$STAGE_ROOT/deploy/smoke-test.sh"
 # Single source of truth: backend/scripts/create_roles.sql is staged at the
-# bundle path docker-compose mounts (./create_roles.sql → /roles/...).
+# bundle path docker-compose mounts (./create_roles.sql → /roles/...). This
+# overwrites the checked-in deploy/ mirror, so the bundle always ships the
+# canonical bytes even if the mirror drifts.
 mv "$STAGE_ROOT/backend/scripts/create_roles.sql" \
     "$STAGE_ROOT/deploy/create_roles.sql"
 rmdir "$STAGE_ROOT/backend/scripts" "$STAGE_ROOT/backend"

@@ -21,6 +21,7 @@ from app.models.employees import (
 )
 from app.models.org_structure import Office, Post
 from app.schemas.employees import (
+    SENSITIVE_PROFILE_FIELDS,
     BankInput,
     CreateEmployeeRequest,
     EmployeeDetail,
@@ -91,7 +92,11 @@ def _pay_values(pay: PayInput) -> dict[str, Any]:
 
 def _bank_values(bank: BankInput) -> dict[str, Any]:
     return {
-        "account_number": bank.account_number.strip(),
+        # ``None`` here means "preserve" — the service substitutes the open
+        # version's account number after this call.
+        "account_number": (
+            bank.account_number.strip() if bank.account_number is not None else None
+        ),
         "ifsc": bank.ifsc.strip(),
         "bank_name": bank.bank_name.strip(),
         "branch": bank.branch.strip() if bank.branch is not None else None,
@@ -425,10 +430,24 @@ async def create_employee_version(
     parsed = _parse_kind(kind)
     table = VERSION_TABLES[parsed]
 
+    open_row = await get_open_version(
+        db,
+        table,
+        organization_id=organization_id,
+        header_id=employee_id,
+    )
+
     if parsed == "profile":
         if profile is None:
             raise ValidationError("profile fields are required for kind=profile")
         values = _profile_values(profile)
+        # Sensitive fields the client never received in clear (masked) are
+        # omitted from the request; omission carries the open version's value
+        # forward, while an explicit null still clears it.
+        if open_row is not None:
+            for field in SENSITIVE_PROFILE_FIELDS:
+                if field not in profile.model_fields_set:
+                    values[field] = open_row[field]
     elif parsed == "posting":
         if posting is None:
             raise ValidationError("posting fields are required for kind=posting")
@@ -441,15 +460,15 @@ async def create_employee_version(
     else:
         if bank is None:
             raise ValidationError("bank fields are required for kind=bank")
-        values = _bank_values(bank)
+        if bank.account_number is None:
+            if open_row is None:
+                raise ValidationError("bank.account_number is required when no bank version exists")
+            values = _bank_values(bank)
+            values["account_number"] = open_row["account_number"]
+        else:
+            values = _bank_values(bank)
 
     try:
-        open_row = await get_open_version(
-            db,
-            table,
-            organization_id=organization_id,
-            header_id=employee_id,
-        )
         row = await insert_version(
             db,
             table,

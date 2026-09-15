@@ -576,3 +576,64 @@ async def test_consolidated_v3_rejects_run_without_report_snapshot(session):
             requested_by=world["user_id"],
             registry=_product_registry(),
         )
+
+
+@pytest.mark.asyncio
+async def test_consolidated_pending_artifact_is_resumed_not_reused(session):
+    """A pending intent row from a crashed attempt is not a finished artifact:
+    the consolidated path must resume it (upload + finalize), not return it
+    with ``reused`` as if it were downloadable."""
+    from app.services.report_generation import (
+        REPORT_TYPE_CONSOLIDATED_XLSX,
+        ZIP_CONTENT_TYPE,
+        execute_consolidated_xlsx,
+        manifest_hash,
+        product_sheet_manifest,
+    )
+
+    world = await _seed_world(session)
+    registry = _product_registry()
+    storage = InMemoryObjectStorage()
+
+    job = await request_consolidated_export(
+        session,
+        InMemoryJobQueue(),
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        requested_by=world["user_id"],
+        registry=registry,
+        template_version="v2",
+    )
+
+    m_hash = manifest_hash(product_sheet_manifest(template_version="v2"))
+    # Pending intent row + a checksum from the crashed first attempt — bytes
+    # that never reached storage.
+    pending = ExportArtifact(
+        organization_id=world["org_id"],
+        posted_run_id=world["run_id"],
+        report_type=REPORT_TYPE_CONSOLIDATED_XLSX,
+        template_version=f"v2+{m_hash}",
+        object_key=f"{world['org_id']}/{uuid4()}",
+        checksum_sha256="0" * 64,
+        content_type=ZIP_CONTENT_TYPE,
+        size_bytes=1,
+        status="pending",
+        requested_by=world["user_id"],
+    )
+    session.add(pending)
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await execute_consolidated_xlsx(session, storage, job, registry=registry)
+    assert result["artifact_id"] == str(pending.id)
+    assert result.get("reused") is not True
+
+    await _bind(session, world["org_id"], world["user_id"])
+    stored = await session.get(ExportArtifact, pending.id)
+    assert stored.status == "finalized"
+    # The adopted checksum matches the bytes now in storage, not the stale
+    # first-attempt digest.
+    content = await storage.get(stored.object_key)
+    import hashlib
+
+    assert stored.checksum_sha256 == hashlib.sha256(content).hexdigest()

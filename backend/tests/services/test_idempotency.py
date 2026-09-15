@@ -279,12 +279,13 @@ async def test_stale_in_progress_claim_is_reclaimed(session):
     )
     session.add(row)
     await session.commit()
-    # Backdate the claim: a live claimant updates the row; a crashed one does
-    # not. Explicit values in UPDATE override the onupdate default.
+    # Backdate the claim past _CLAIM_STALE_AFTER (30 min): a live claimant
+    # updates the row; a crashed one does not. Explicit values in UPDATE
+    # override the onupdate default.
     await session.execute(
         sa.update(IdempotencyKey)
         .where(IdempotencyKey.id == row.id)
-        .values(updated_at=utcnow() - timedelta(minutes=10))
+        .values(updated_at=utcnow() - timedelta(hours=2))
     )
     await session.commit()
 
@@ -304,6 +305,7 @@ async def test_stale_in_progress_claim_is_reclaimed(session):
     assert out == {"reclaimed": True}
     assert len(calls) == 1
 
+    session.expire_all()  # terminal write is a Core UPDATE — bypasses identity map
     stored = (
         await session.execute(
             select(IdempotencyKey).where(
@@ -529,3 +531,73 @@ async def test_execute_claimed_rebinds_tenant_gucs_under_accord_app(
             assert len(calls) == 1
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_displaced_claimants_terminal_write_does_not_clobber(session):
+    """A stale-window reclaim hands the row to a new claimant; the displaced
+    claimant's late terminal write must not overwrite the new owner's result."""
+    from app.services.idempotency import _execute_claimed, _try_claim
+
+    org = await seed_organization(session, slug="idem-displaced")
+    await session.commit()
+    org_id = org.id
+
+    payload = {"action": "post"}
+    request_hash = compute_request_hash(payload)
+
+    # Claimant A wins the row and starts a long-running command.
+    claimed = await _try_claim(
+        session,
+        organization_id=org_id,
+        key="cmd-displaced",
+        request_hash=request_hash,
+        expires_at=utcnow() + timedelta(hours=72),
+    )
+    assert claimed is not None
+    row_id, token_a = claimed
+    await session.commit()
+
+    # The claim goes stale (A is slow or dead); B reclaims and completes.
+    await session.execute(
+        sa.update(IdempotencyKey)
+        .where(IdempotencyKey.id == row_id)
+        .values(updated_at=utcnow() - timedelta(hours=2))
+    )
+    await session.commit()
+
+    async def b_executor():
+        return {"winner": "B"}
+
+    out = await idempotent_command(
+        session,
+        organization_id=org_id,
+        key="cmd-displaced",
+        request_payload=payload,
+        executor=b_executor,
+    )
+    assert out == {"winner": "B"}
+
+    # A finally finishes: its token no longer matches — the terminal write
+    # must not clobber B's recorded result.
+    async def a_executor():
+        return {"winner": "A"}
+
+    with pytest.raises(ConflictError, match="reclaimed"):
+        await _execute_claimed(
+            session,
+            row_id=row_id,
+            claim_token=token_a,
+            executor=a_executor,
+        )
+
+    stored = (
+        await session.execute(
+            select(IdempotencyKey).where(
+                IdempotencyKey.organization_id == org_id,
+                IdempotencyKey.key == "cmd-displaced",
+            )
+        )
+    ).scalar_one()
+    assert stored.status == "succeeded"
+    assert stored.response_snapshot == {"winner": "B"}
