@@ -388,6 +388,8 @@ def _validate_employee_result(employee: EmployeeResult) -> list[ValidationFindin
             )
         )
 
+    findings.extend(_validate_employer_transfer_pairing(employee))
+
     for line in employee.lines:
         if (
             line.classification in _DEDUCTION_CLASSIFICATIONS
@@ -414,6 +416,98 @@ def _validate_employee_result(employee: EmployeeResult) -> list[ValidationFindin
                 )
             )
 
+    return findings
+
+
+def _validate_employer_transfer_pairing(employee: EmployeeResult) -> list[ValidationFinding]:
+    """Sum-based contribution↔transfer pairing over result lines.
+
+    Mirrors the engine's ``_offbill_employer_remittance`` rule on stored
+    results: every ``employer_contribution`` line must be covered by
+    employer-transfer deduction lines naming it via ``transfer_of``, and each
+    named target must exist. Transfers with ``transfer_of=None`` are off-bill
+    remittances and are exempt. ``informational`` lines are the only
+    excluded-from-aggregates signal available on a ``CalculationTrace``.
+    """
+    findings: list[ValidationFinding] = []
+    ref = employee.employee_ref
+    counted = [line for line in employee.lines if line.classification != "informational"]
+
+    contributions = {
+        line.component: line.rounded_value
+        for line in counted
+        if line.classification == "employer_contribution"
+    }
+    transfer_sums: dict[str, list[Money]] = {}
+    for line in counted:
+        if not line.employer_transfer or line.transfer_of is None:
+            continue
+        if line.transfer_of not in contributions:
+            findings.append(
+                ValidationFinding(
+                    code="unpaired_employer_transfer",
+                    severity=Severity.error,
+                    employee_ref=ref,
+                    component_code=line.component,
+                    message=(
+                        f"Employer-transfer line {line.component!r} on employee {ref!r} "
+                        f"references missing employer contribution {line.transfer_of!r}"
+                    ),
+                    context={
+                        "employee_ref": ref,
+                        "component_code": line.component,
+                        "transfer_of": line.transfer_of,
+                        "rounded_value": line.rounded_value.to_canonical_str(),
+                    },
+                )
+            )
+            continue
+        transfer_sums.setdefault(line.transfer_of, []).append(line.rounded_value)
+
+    for code, contribution_amount in contributions.items():
+        transfers = transfer_sums.get(code)
+        if not transfers:
+            if contribution_amount == Money.zero():
+                continue
+            findings.append(
+                ValidationFinding(
+                    code="unpaired_employer_contribution",
+                    severity=Severity.error,
+                    employee_ref=ref,
+                    component_code=code,
+                    message=(
+                        f"Employer contribution {code!r} on employee {ref!r} has no "
+                        "paired employer-transfer deduction line"
+                    ),
+                    context={
+                        "employee_ref": ref,
+                        "component_code": code,
+                        "rounded_value": contribution_amount.to_canonical_str(),
+                    },
+                )
+            )
+            continue
+        paired_total = Money.sum(transfers)
+        if paired_total != contribution_amount:
+            findings.append(
+                ValidationFinding(
+                    code="transfer_contribution_mismatch",
+                    severity=Severity.error,
+                    employee_ref=ref,
+                    component_code=code,
+                    message=(
+                        f"Employer-transfer lines for {code!r} on employee {ref!r} "
+                        f"total {paired_total.to_canonical_str()} which does not match "
+                        f"contribution amount {contribution_amount.to_canonical_str()}"
+                    ),
+                    context={
+                        "employee_ref": ref,
+                        "component_code": code,
+                        "contribution_amount": contribution_amount.to_canonical_str(),
+                        "transfer_total": paired_total.to_canonical_str(),
+                    },
+                )
+            )
     return findings
 
 

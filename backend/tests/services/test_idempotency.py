@@ -8,6 +8,7 @@ from datetime import timedelta
 
 import psycopg
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -209,7 +210,10 @@ async def test_failed_row_retries_and_succeeds(session):
 
 
 @pytest.mark.asyncio
-async def test_expired_row_reexecutes(session):
+async def test_expired_succeeded_replays_snapshot_never_reexecutes(session):
+    """M-data-11: a ``succeeded`` row is a durable record of a completed
+    command — TTL expiry bounds replay retention only. The stored snapshot
+    replays and the command must never re-execute."""
     org = await seed_organization(session, slug="idem-expired")
     await session.commit()
 
@@ -239,8 +243,8 @@ async def test_expired_row_reexecutes(session):
         request_payload=payload,
         executor=executor,
     )
-    assert out == {"fresh": True}
-    assert len(calls) == 1
+    assert out == {"stale": True}
+    assert calls == []
 
     row = (
         await session.execute(
@@ -251,8 +255,101 @@ async def test_expired_row_reexecutes(session):
         )
     ).scalar_one()
     assert row.status == "succeeded"
-    assert row.response_snapshot == {"fresh": True}
+    assert row.response_snapshot == {"stale": True}
+    # Retention refreshes so the replay record outlives active retries.
     assert row.expires_at > utcnow()
+
+
+@pytest.mark.asyncio
+async def test_stale_in_progress_claim_is_reclaimed(session):
+    """M-data-11: an ``in_progress`` row untouched past the staleness window
+    means the claimant crashed mid-command; the lease is reclaimed and the
+    command re-executes instead of holding the key hostage for the full TTL."""
+    org = await seed_organization(session, slug="idem-stale")
+    await session.commit()
+    org_id = org.id
+
+    payload = {"action": "post"}
+    row = IdempotencyKey(
+        organization_id=org_id,
+        key="cmd-stale",
+        request_hash=compute_request_hash(payload),
+        status="in_progress",
+        expires_at=utcnow() + timedelta(hours=72),
+    )
+    session.add(row)
+    await session.commit()
+    # Backdate the claim: a live claimant updates the row; a crashed one does
+    # not. Explicit values in UPDATE override the onupdate default.
+    await session.execute(
+        sa.update(IdempotencyKey)
+        .where(IdempotencyKey.id == row.id)
+        .values(updated_at=utcnow() - timedelta(minutes=10))
+    )
+    await session.commit()
+
+    calls: list[int] = []
+
+    async def executor():
+        calls.append(1)
+        return {"reclaimed": True}
+
+    out = await idempotent_command(
+        session,
+        organization_id=org_id,
+        key="cmd-stale",
+        request_payload=payload,
+        executor=executor,
+    )
+    assert out == {"reclaimed": True}
+    assert len(calls) == 1
+
+    stored = (
+        await session.execute(
+            select(IdempotencyKey).where(
+                IdempotencyKey.organization_id == org_id,
+                IdempotencyKey.key == "cmd-stale",
+            )
+        )
+    ).scalar_one()
+    assert stored.status == "succeeded"
+    assert stored.response_snapshot == {"reclaimed": True}
+
+
+@pytest.mark.asyncio
+async def test_expired_in_progress_row_reexecutes(session):
+    """An expired non-``succeeded`` row (e.g. a dead ``in_progress`` claim)
+    resets its lease and re-executes."""
+    org = await seed_organization(session, slug="idem-expired-inprog")
+    await session.commit()
+
+    payload = {"action": "submit"}
+    session.add(
+        IdempotencyKey(
+            organization_id=org.id,
+            key="cmd-expired-inprog",
+            request_hash=compute_request_hash(payload),
+            status="in_progress",
+            expires_at=utcnow() - timedelta(hours=1),
+        )
+    )
+    await session.commit()
+
+    calls: list[int] = []
+
+    async def executor():
+        calls.append(1)
+        return {"fresh": True}
+
+    out = await idempotent_command(
+        session,
+        organization_id=org.id,
+        key="cmd-expired-inprog",
+        request_payload=payload,
+        executor=executor,
+    )
+    assert out == {"fresh": True}
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio

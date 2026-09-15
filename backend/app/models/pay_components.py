@@ -181,6 +181,16 @@ component_rate_versions = Table(
         ")",
         name="ck_component_rate_versions_calc_kind",
     ),
+    # Negative amount is a deliberate one_time_adjustment carve-out; every
+    # other calc kind carries non-negative money (T1.4).
+    CheckConstraint(
+        "calc_kind = 'one_time_adjustment' OR amount IS NULL OR amount >= 0",
+        name="ck_component_rate_versions_amount",
+    ),
+    CheckConstraint(
+        "rate IS NULL OR (rate >= 0 AND rate <= 99999.9999)",
+        name="ck_component_rate_versions_rate",
+    ),
     ExcludeConstraint(
         ("organization_id", "="),
         ("header_id", "="),

@@ -11,7 +11,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.payroll.engine import calculate_run
+from app.domain.payroll.validation import has_blocking, validate_run_inputs
 from app.exceptions import ConflictError, NotFoundError, ValidationError
+from app.services.audit_events import entity_snapshot, write_mutation_event
 from app.models.payroll_runs import (
     PayrollPeriod,
     PayrollRun,
@@ -69,6 +71,8 @@ async def calculate_run_command(
     if run.status == "draft" and not run.roster_initialized:
         raise ConflictError("Payroll run roster must be saved before calculation.")
 
+    run_before = entity_snapshot(run)
+
     period = await db.get(PayrollPeriod, run.period_id)
     if period is None or period.organization_id != organization_id:
         raise NotFoundError("Payroll period not found.")
@@ -96,6 +100,27 @@ async def calculate_run_command(
         # is already guarded by assert_roster_calculable above. The raised
         # error rolls back the transaction, restoring the pre-call status.
         raise ConflictError("No calculable employees resolved for this run; nothing to calculate.")
+
+    # Pre-calculation structural checks (T1.4): error-severity findings such
+    # as negative amounts on non-adjustment kinds or missing amount/rate block
+    # calculation instead of flowing through to a posted version.
+    input_findings = validate_run_inputs(run_input)
+    if has_blocking(input_findings):
+        raise ValidationError(
+            "Run inputs failed validation; resolve the reported findings and recalculate.",
+            details={
+                "findings": [
+                    {
+                        "code": finding.code,
+                        "severity": finding.severity.value,
+                        "employee_ref": finding.employee_ref,
+                        "component_code": finding.component_code,
+                        "message": finding.message,
+                    }
+                    for finding in input_findings
+                ]
+            },
+        )
     result = calculate_run(run_input)
 
     max_version_stmt = sa.select(
@@ -187,6 +212,25 @@ async def calculate_run_command(
     run.lock_version = run.lock_version + 1
     run.updated_at = datetime.now(timezone.utc)
     await db.flush()
+    await write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=user_id,
+        command="payroll_run.calculate",
+        entity_type="payroll_run",
+        entity_id=run.id,
+        entity_label=f"Payroll run {run.id}",
+        before_state=run_before,
+        after_state=entity_snapshot(run),
+        summary={
+            "version_id": version_id,
+            "version_number": next_version,
+            "content_hash": result.content_hash,
+            "engine_version": result.engine_version,
+            "employee_count": len(result.employees),
+        },
+        metadata={"totals": totals},
+    )
     await db.commit()
 
     return {

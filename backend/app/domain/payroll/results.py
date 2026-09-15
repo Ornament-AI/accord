@@ -30,9 +30,25 @@ actually receives in bank/RTGS credit, and is reconciled **separately** from
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from app.domain.payroll.money import Money
 from app.domain.payroll.rates import Rate
+
+
+def canonical_unrounded_str(value: Decimal | str) -> str:
+    """Canonical fixed-point string for a pre-round value (ADR-0006).
+
+    ``format(d, "f")`` never emits scientific notation (``"1E+3"`` ->
+    ``"1000"``); negative zero is normalized to positive zero so numerically
+    equal values serialize identically and hash identically in
+    ``content_hash``. Accepts stored payload strings so reconstruction lanes
+    re-canonicalize rows written before the canonical form was enforced.
+    """
+    d = value if isinstance(value, Decimal) else Decimal(str(value))
+    if d == 0:
+        d = d.copy_abs()
+    return format(d, "f")
 
 
 @dataclass(frozen=True, slots=True)

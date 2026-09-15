@@ -28,6 +28,7 @@ from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
+    attach_csrf_echo,
     login_dev,
     seed_membership,
     seed_user,
@@ -47,6 +48,7 @@ async def client(dev_settings):
     application = _run_commands_app()
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac
 
 

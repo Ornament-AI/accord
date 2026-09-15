@@ -391,6 +391,207 @@ def test_employer_transfer_requires_matching_contribution_amount() -> None:
         calculate_employee(employee)
 
 
+def test_employer_transfer_sums_multiple_lines_against_one_contribution() -> None:
+    """Two transfer lines whose sum equals the contribution pair cleanly."""
+    employee = EmployeeCalcInput(
+        employee_ref="E001",
+        components=(
+            ComponentInput(
+                component_code="EPF_EMPLOYER",
+                classification="employer_contribution",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("100.00"),
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER_TRANSFER_A",
+                classification="AG_deduction",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("60.00"),
+                employer_transfer=True,
+                transfer_of="EPF_EMPLOYER",
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER_TRANSFER_B",
+                classification="treasury_deduction",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("40.00"),
+                employer_transfer=True,
+                transfer_of="EPF_EMPLOYER",
+            ),
+        ),
+    )
+    result = calculate_employee(employee)
+    # 100 gross addition - 100 paired transfer deductions; off-bill is zero.
+    assert result.net_payable == Money.from_str("0.00")
+    assert result.offbill_employer_remittance == Money.zero()
+    assert result.disbursement == Money.from_str("0.00")
+
+
+def test_employer_transfer_sum_shortfall_is_rejected() -> None:
+    employee = EmployeeCalcInput(
+        employee_ref="E001",
+        components=(
+            ComponentInput(
+                component_code="EPF_EMPLOYER",
+                classification="employer_contribution",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("100.00"),
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER_TRANSFER_A",
+                classification="AG_deduction",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("60.00"),
+                employer_transfer=True,
+                transfer_of="EPF_EMPLOYER",
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER_TRANSFER_B",
+                classification="AG_deduction",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("30.00"),
+                employer_transfer=True,
+                transfer_of="EPF_EMPLOYER",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="does not match"):
+        calculate_employee(employee)
+
+
+def test_unpaired_employer_contribution_is_rejected() -> None:
+    """A non-excluded employer_contribution with no transfer line would pay
+    the employee employer money — it must not survive to net_payable."""
+    employee = EmployeeCalcInput(
+        employee_ref="E001",
+        components=(
+            ComponentInput(
+                component_code="BASIC",
+                classification="earning",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("1000.00"),
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER",
+                classification="employer_contribution",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("120.00"),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="no paired"):
+        calculate_employee(employee)
+
+
+def test_transfer_referencing_missing_contribution_is_rejected() -> None:
+    employee = EmployeeCalcInput(
+        employee_ref="E001",
+        components=(
+            ComponentInput(
+                component_code="BASIC",
+                classification="earning",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("1000.00"),
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER_TRANSFER",
+                classification="AG_deduction",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("120.00"),
+                employer_transfer=True,
+                transfer_of="EPF_EMPLOYER",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="missing employer contribution"):
+        calculate_employee(employee)
+
+
+def test_zero_contribution_without_transfer_is_allowed() -> None:
+    """A zero-valued contribution carries no employer money — no transfer
+    line is required to reverse it."""
+    employee = EmployeeCalcInput(
+        employee_ref="E001",
+        components=(
+            ComponentInput(
+                component_code="EPF_EMPLOYER",
+                classification="employer_contribution",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("0.00"),
+            ),
+        ),
+    )
+    result = calculate_employee(employee)
+    assert result.net_payable == Money.zero()
+
+
+def test_employer_transfer_on_earning_classification_is_rejected() -> None:
+    employee = EmployeeCalcInput(
+        employee_ref="E001",
+        components=(
+            ComponentInput(
+                component_code="EPF_EMPLOYER",
+                classification="employer_contribution",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("100.00"),
+            ),
+            ComponentInput(
+                component_code="EPF_EMPLOYER_TRANSFER",
+                classification="earning",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("100.00"),
+                employer_transfer=True,
+                transfer_of="EPF_EMPLOYER",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="must be a deduction"):
+        calculate_employee(employee)
+
+
+# --- canonical unrounded_value (M-data-4) -------------------------------------
+
+
+def test_canonical_unrounded_str_normalizes_scientific_and_negative_zero() -> None:
+    from app.domain.payroll.results import canonical_unrounded_str
+
+    assert canonical_unrounded_str(Decimal("1E+3")) == "1000"
+    assert canonical_unrounded_str(Decimal("-0.00")) == "0.00"
+    assert canonical_unrounded_str("1E+3") == "1000"
+    assert canonical_unrounded_str(Decimal("1234.567890")) == "1234.567890"
+    assert canonical_unrounded_str(Decimal("-42.10")) == "-42.10"
+
+
+def test_trace_unrounded_value_is_fixed_point_not_scientific() -> None:
+    """A tiny unrounded value whose ``str()`` form is scientific notation must
+    serialize canonically in the trace so content hashing is stable
+    (ADR-0006). 0.01 * 0.000001 -> Decimal('1E-8')."""
+    employee = EmployeeCalcInput(
+        employee_ref="E1",
+        components=(
+            ComponentInput(
+                component_code="BASIC",
+                classification="earning",
+                calc_kind="fixed_recurring_amount",
+                amount=Money.from_str("0.01"),
+            ),
+            ComponentInput(
+                component_code="DA",
+                classification="earning",
+                calc_kind="percentage_of_component_bases",
+                rate=Rate.from_fraction("0.000001"),
+                basis=("BASIC",),
+                rounding_rule=ROUND_HALF_UP_PAISE,
+            ),
+        ),
+    )
+    result = calculate_employee(employee)
+    by_code = {line.component: line for line in result.lines}
+    assert str(Decimal("0.01") * Decimal("0.000001")) == "1E-8"  # premise
+    assert by_code["DA"].unrounded_value == "0.00000001"
+    assert "E" not in by_code["DA"].unrounded_value.upper()
+
+
 # --- negative gross_adjustment ------------------------------------------------
 
 

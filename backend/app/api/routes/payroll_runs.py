@@ -54,6 +54,7 @@ async def create_payroll_period(
     return await payroll_runs_service.create_period(
         db,
         organization_id=tenant_org_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
         body=body,
     )
 
@@ -84,6 +85,7 @@ async def create_payroll_run(
     return await payroll_runs_service.create_run(
         db,
         organization_id=tenant_org_id(tenant),
+        actor_user_id=tenant_user_id(tenant),
         body=body,
     )
 
@@ -95,7 +97,8 @@ async def list_payroll_runs(
     period_id: UUID | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     # Readable by every run-lifecycle participant, incl. approver/releaser who
-    # lack view_master_data but must load runs they approve/post (maker-checker).
+    # lack view_master_data but must load runs they approve/post (maker-checker)
+    # and auditors, whose report downloads carry the same content.
     _: AuthPrincipal = Depends(
         require_any_capability(
             "view_master_data",
@@ -103,6 +106,7 @@ async def list_payroll_runs(
             "submit_run",
             "approve_run",
             "post_run",
+            "generate_reports",
         )
     ),
 ) -> list[dict[str, Any]]:
@@ -120,7 +124,8 @@ async def get_payroll_run(
     tenant: TenantCtx,
     db: Session,
     # Readable by every run-lifecycle participant, incl. approver/releaser who
-    # lack view_master_data but must load runs they approve/post (maker-checker).
+    # lack view_master_data but must load runs they approve/post (maker-checker)
+    # and auditors, whose report downloads carry the same content.
     _: AuthPrincipal = Depends(
         require_any_capability(
             "view_master_data",
@@ -128,6 +133,7 @@ async def get_payroll_run(
             "submit_run",
             "approve_run",
             "post_run",
+            "generate_reports",
         )
     ),
 ) -> dict[str, Any]:
@@ -170,6 +176,7 @@ async def update_payroll_run_report_metadata(
         db,
         organization_id=tenant_org_id(tenant),
         run_id=run_id,
+        actor_user_id=tenant_user_id(tenant),
         body=body,
     )
 
@@ -182,7 +189,9 @@ async def get_payroll_run_report_readiness(
     run_id: UUID,
     tenant: TenantCtx,
     db: Session,
-    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+    # Approver/releaser/auditor roles drive the export workflow without
+    # view_master_data; report downloads already expose the same facts.
+    _: AuthPrincipal = Depends(require_any_capability("view_master_data", "generate_reports")),
 ) -> dict[str, Any]:
     return await payroll_runs_service.get_report_readiness(
         db,
@@ -199,8 +208,8 @@ async def list_payroll_run_roster(
     run_id: UUID,
     tenant: TenantCtx,
     db: Session,
-    # Match run detail: approvers/releasers must see roster content without
-    # view_master_data.
+    # Match run detail: approvers/releasers/auditors must see roster content
+    # without view_master_data.
     _: AuthPrincipal = Depends(
         require_any_capability(
             "view_master_data",
@@ -208,6 +217,7 @@ async def list_payroll_run_roster(
             "submit_run",
             "approve_run",
             "post_run",
+            "generate_reports",
         )
     ),
 ) -> list[dict[str, Any]]:
@@ -320,5 +330,6 @@ async def delete_payroll_run_input(
         organization_id=tenant_org_id(tenant),
         run_id=run_id,
         input_id=input_id,
+        actor_user_id=tenant_user_id(tenant),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

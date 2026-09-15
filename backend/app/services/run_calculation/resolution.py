@@ -66,6 +66,9 @@ from app.models.payroll_runs import (
     PayrollRun,
     PayrollRunEmployee,
     PayrollRunInput,
+    payroll_employee_results,
+    payroll_result_lines,
+    payroll_run_versions,
 )
 from app.models.recurring_instructions import (
     RecurringInstruction,
@@ -125,6 +128,13 @@ class _ResolvedMasterData:
     installment_by_advance: Mapping[UUID, Any]
     assignments_by_employee: Mapping[UUID, list[AccommodationAssignment]]
     charge_by_assignment: Mapping[UUID, Any]
+    # Derived recovery progress (T1.6): count of posted
+    # ``loan_installment_recovery`` lines keyed by the installment version id
+    # recorded in each line's trace source_version_ids. Only lines belonging
+    # to the current version of a run with status ``posted`` count — draft /
+    # reversed / superseded runs contribute nothing, so the derived count is
+    # idempotent and reversal-safe.
+    posted_recovery_counts: Mapping[UUID, int]
 
 
 async def _load_master_data(
@@ -205,6 +215,11 @@ async def _load_master_data(
         organization_id=organization_id,
         on_date=on_date,
     )
+    posted_recovery_counts = await _load_posted_recovery_counts(
+        db,
+        organization_id=organization_id,
+        employee_ids=employee_ids,
+    )
 
     assignments_by_employee: dict[UUID, list[AccommodationAssignment]] = {}
     assignments = (
@@ -241,7 +256,66 @@ async def _load_master_data(
         installment_by_advance=installment_by_advance,
         assignments_by_employee=assignments_by_employee,
         charge_by_assignment=charge_by_assignment,
+        posted_recovery_counts=posted_recovery_counts,
     )
+
+
+async def _load_posted_recovery_counts(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    employee_ids: list[UUID],
+) -> dict[UUID, int]:
+    """Count posted ``loan_installment_recovery`` lines per installment version.
+
+    The authoritative record of a recovered installment is a result line on the
+    current version of a ``posted`` run; the line's trace carries the
+    ``advance_installment_versions.id`` it was calculated from. Counting those
+    rows derives recovery progress without a mutable counter: reposting a run
+    after reversal does not double-count (reversed runs are excluded) and a
+    recalculated-but-unposted run never contributes.
+    """
+    if not employee_ids:
+        return {}
+    rows = (
+        (
+            await db.execute(
+                sa.select(payroll_result_lines.c.trace)
+                .select_from(payroll_result_lines)
+                .join(
+                    payroll_employee_results,
+                    payroll_result_lines.c.employee_result_id == payroll_employee_results.c.id,
+                )
+                .join(
+                    payroll_run_versions,
+                    payroll_employee_results.c.run_version_id == payroll_run_versions.c.id,
+                )
+                .join(
+                    PayrollRun,
+                    sa.and_(
+                        PayrollRun.current_version_id == payroll_run_versions.c.id,
+                        PayrollRun.status == "posted",
+                    ),
+                )
+                .where(payroll_result_lines.c.organization_id == organization_id)
+                .where(payroll_employee_results.c.organization_id == organization_id)
+                .where(payroll_run_versions.c.organization_id == organization_id)
+                .where(payroll_result_lines.c.calc_kind == "loan_installment_recovery")
+                .where(payroll_employee_results.c.employee_id.in_(employee_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    counts: dict[UUID, int] = {}
+    for trace in rows:
+        for source_id in (trace or {}).get("source_version_ids") or []:
+            try:
+                version_id = UUID(str(source_id))
+            except ValueError:
+                continue
+            counts[version_id] = counts.get(version_id, 0) + 1
+    return counts
 
 
 def _put_component(
@@ -336,6 +410,15 @@ def _resolve_employee_components(
     for advance in master.advances_by_employee.get(employee.id, []):
         inst = master.installment_by_advance.get(advance.id)
         if inst is None:
+            continue
+        # Derived recovery progress (T1.6): the operator-declared opening count
+        # plus posted recovery lines that cite this installment version. When
+        # the derived count reaches installments_total, recovery is complete
+        # and no line is emitted.
+        recovered = int(inst["installments_recovered_opening"]) + int(
+            master.posted_recovery_counts.get(inst["id"], 0)
+        )
+        if recovered >= int(inst["installments_total"]):
             continue
         code = _ADVANCE_COMPONENT_CODES.get(advance.advance_type)
         if code is None:
@@ -480,6 +563,9 @@ def _resolve_employee_components(
                 replace=existing is not None,
             )
 
+    # Tracks which input_kind produced each run-input-sourced component code so
+    # a later row of a different kind cannot silently merge into it (M-data-9).
+    input_kind_by_code: dict[str, str] = {}
     for row in sorted(run_inputs, key=lambda r: (r.component_code, r.input_kind, str(r.id))):
         catalog_row = catalog.get(row.component_code)
         classification = (
@@ -497,61 +583,55 @@ def _resolve_employee_components(
             raise ValidationError(
                 f"Rate input for component {row.component_code!r} must be an override."
             )
+        prior_kind = input_kind_by_code.get(row.component_code)
+        if prior_kind is not None and prior_kind != row.input_kind:
+            raise ConflictError(
+                f"component_code {row.component_code!r} is already supplied by a "
+                f"{prior_kind!r} input on this run; a {row.input_kind!r} input "
+                "cannot also target it."
+            )
         if row.input_kind == "override":
             existing = by_code.get(row.component_code)
-            if existing is not None:
-                merged_sources = tuple(
-                    dict.fromkeys([*existing.source_version_ids, *source_ids_extra])
+            if existing is None:
+                # M-data-5: an override that resolves to nothing must fail
+                # loudly — silently creating a gross_adjustment would turn a
+                # typo into added money.
+                raise ConflictError(
+                    f"Override input for component {row.component_code!r} resolved to "
+                    "nothing for this employee; an override can only replace a "
+                    "component that is already calculated."
                 )
-                if row.rate is not None and existing.calc_kind not in _RATE_BASED_CALC_KINDS:
-                    raise ValidationError(
-                        f"Rate override for component {row.component_code!r} requires an "
-                        "existing rate-based component."
-                    )
-                is_amount_override = row.amount is not None
-                _put_component(
-                    by_code,
-                    ComponentInput(
-                        component_code=existing.component_code,
-                        classification=existing.classification,
-                        calc_kind=(
-                            "direct_monthly_amount" if is_amount_override else existing.calc_kind
-                        ),
-                        amount=money_or_none(row.amount) if is_amount_override else None,
-                        rate=rate_or_none(row.rate) if row.rate is not None else None,
-                        basis=() if is_amount_override else existing.basis,
-                        rounding_rule=ROUND_NONE if is_amount_override else existing.rounding_rule,
-                        source_version_ids=merged_sources,
-                        informational=existing.informational,
-                        excluded_from_totals=existing.excluded_from_totals,
-                        gpf_jurisdiction=existing.gpf_jurisdiction,
-                        accommodation_location=existing.accommodation_location,
-                        employer_transfer=existing.employer_transfer,
-                        transfer_of=existing.transfer_of,
-                        service_period=service_period or existing.service_period,
-                        reason=row.reason,
+            merged_sources = tuple(dict.fromkeys([*existing.source_version_ids, *source_ids_extra]))
+            if row.rate is not None and existing.calc_kind not in _RATE_BASED_CALC_KINDS:
+                raise ValidationError(
+                    f"Rate override for component {row.component_code!r} requires an "
+                    "existing rate-based component."
+                )
+            is_amount_override = row.amount is not None
+            _put_component(
+                by_code,
+                ComponentInput(
+                    component_code=existing.component_code,
+                    classification=existing.classification,
+                    calc_kind=(
+                        "direct_monthly_amount" if is_amount_override else existing.calc_kind
                     ),
-                    replace=True,
-                )
-            else:
-                if row.rate is not None:
-                    raise ValidationError(
-                        f"Rate override for component {row.component_code!r} requires an "
-                        "existing rate-based component."
-                    )
-                _put_component(
-                    by_code,
-                    ComponentInput(
-                        component_code=row.component_code,
-                        classification=classification,
-                        calc_kind="direct_monthly_amount",
-                        amount=money_or_none(row.amount),
-                        rounding_rule=ROUND_NONE,
-                        source_version_ids=source_ids_extra,
-                        service_period=service_period,
-                        reason=row.reason,
-                    ),
-                )
+                    amount=money_or_none(row.amount) if is_amount_override else None,
+                    rate=rate_or_none(row.rate) if row.rate is not None else None,
+                    basis=() if is_amount_override else existing.basis,
+                    rounding_rule=ROUND_NONE if is_amount_override else existing.rounding_rule,
+                    source_version_ids=merged_sources,
+                    informational=existing.informational,
+                    excluded_from_totals=existing.excluded_from_totals,
+                    gpf_jurisdiction=existing.gpf_jurisdiction,
+                    accommodation_location=existing.accommodation_location,
+                    employer_transfer=existing.employer_transfer,
+                    transfer_of=existing.transfer_of,
+                    service_period=service_period or existing.service_period,
+                    reason=row.reason,
+                ),
+                replace=True,
+            )
         elif row.input_kind == "exception":
             _put_component(
                 by_code,
@@ -582,6 +662,7 @@ def _resolve_employee_components(
             )
         else:
             raise ValidationError(f"Unsupported run input_kind {row.input_kind!r}.")
+        input_kind_by_code[row.component_code] = row.input_kind
 
     by_code = stamp_employer_transfer_metadata(by_code, catalog)
 

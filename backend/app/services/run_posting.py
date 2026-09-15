@@ -14,11 +14,19 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
+from asyncpg.exceptions import UniqueViolationError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.payroll.engine import content_hash_for
 from app.domain.payroll.money import Money
 from app.domain.payroll.rates import Rate
-from app.domain.payroll.results import CalculationTrace, EmployeeResult, RunResult
+from app.domain.payroll.results import (
+    CalculationTrace,
+    EmployeeResult,
+    RunResult,
+    canonical_unrounded_str,
+)
 from app.domain.payroll.validation import has_blocking, validate_run_result
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.payroll_runs import (
@@ -32,6 +40,8 @@ from app.models.payroll_runs import (
 from app.models.identity import Organization
 from app.models.platform import OutboxEvent, PayrollApproval
 from app.services.audit_events import entity_snapshot, write_mutation_event
+from app.services.db_errors import integrity_is
+from app.services.run_workflow import URN_STALE_VERSION
 from app.schemas.payroll_runs import PayrollRunReportMetadata
 
 # ADR 0008 §4: maker/checker SoD is submitter ≠ approver only. Poster may equal
@@ -63,6 +73,18 @@ def _optional_rate_from_canonical(value: Any) -> Rate | None:
     return Rate.from_fraction(str(value))
 
 
+# ``informational`` / ``excluded_from_totals`` are added to ``CalculationTrace``
+# alongside the trace-payload write in a parallel change; restore them only when
+# the dataclass declares the fields so either landing order keeps working, and
+# read with ``.get(name, False)`` so pre-existing payloads without the keys
+# still reconstruct.
+_TRACE_FLAG_FIELDS = tuple(
+    name
+    for name in ("informational", "excluded_from_totals")
+    if name in CalculationTrace.__dataclass_fields__
+)
+
+
 def _trace_from_row(row: Any) -> CalculationTrace:
     payload = row["trace"] or {}
     classification = payload.get("classification")
@@ -78,7 +100,7 @@ def _trace_from_row(row: Any) -> CalculationTrace:
         basis=tuple(str(item) for item in basis_raw),
         basis_total=_optional_money_from_canonical(payload.get("basis_total")),
         rate=_optional_rate_from_canonical(payload.get("rate")),
-        unrounded_value=str(payload.get("unrounded_value", "0")),
+        unrounded_value=canonical_unrounded_str(payload.get("unrounded_value", "0")),
         rounding_rule=str(payload.get("rounding_rule") or "ROUND_NONE"),
         rounded_value=_money_from_db(row["amount"]),
         source_version_ids=tuple(str(item) for item in source_ids),
@@ -90,6 +112,16 @@ def _trace_from_row(row: Any) -> CalculationTrace:
             None if payload.get("service_period") is None else str(payload["service_period"])
         ),
         reason=(None if payload.get("reason") is None else str(payload["reason"])),
+        **{name: bool(payload.get(name, False)) for name in _TRACE_FLAG_FIELDS},
+    )
+
+
+def _is_excluded_from_totals(trace: CalculationTrace) -> bool:
+    """Mirror ``ComponentInput.is_excluded_from_aggregates`` for stored lines."""
+    return (
+        trace.classification == "informational"
+        or getattr(trace, "informational", False)
+        or getattr(trace, "excluded_from_totals", False)
     )
 
 
@@ -105,6 +137,8 @@ def _aggregate_from_traces(
 
     for trace in traces:
         # Informational / non-bucket classifications are excluded from aggregates.
+        if _is_excluded_from_totals(trace):
+            continue
         if trace.classification == "earning":
             earnings.append(trace.rounded_value)
         elif trace.classification == "employer_contribution":
@@ -160,21 +194,34 @@ async def _load_run_result(
         .all()
     )
 
-    employees: list[EmployeeResult] = []
-    for emp in emp_rows:
+    # One fetch for every employee's lines (was a per-employee query inside the
+    # run FOR UPDATE critical section); grouped by employee preserving the
+    # per-employee ``sequence`` ordering.
+    line_rows = []
+    emp_result_ids = [emp["id"] for emp in emp_rows]
+    if emp_result_ids:
         line_rows = (
             (
                 await db.execute(
                     sa.select(payroll_result_lines)
                     .where(payroll_result_lines.c.organization_id == organization_id)
-                    .where(payroll_result_lines.c.employee_result_id == emp["id"])
-                    .order_by(payroll_result_lines.c.sequence)
+                    .where(payroll_result_lines.c.employee_result_id.in_(emp_result_ids))
+                    .order_by(
+                        payroll_result_lines.c.employee_result_id,
+                        payroll_result_lines.c.sequence,
+                    )
                 )
             )
             .mappings()
             .all()
         )
-        traces = tuple(_trace_from_row(row) for row in line_rows)
+    lines_by_emp: dict[Any, list[Any]] = {}
+    for line_row in line_rows:
+        lines_by_emp.setdefault(line_row["employee_result_id"], []).append(line_row)
+
+    employees: list[EmployeeResult] = []
+    for emp in emp_rows:
+        traces = tuple(_trace_from_row(row) for row in lines_by_emp.get(emp["id"], ()))
         (
             earnings_total,
             employer_contribution_total,
@@ -233,6 +280,27 @@ async def _load_run_result(
         run_offbill = Money.zero()
         run_disbursement = Money.zero()
 
+    # Recompute the content hash from the reconstructed lines instead of
+    # trusting the stored value; ``post_run`` compares it against the persisted
+    # ``content_hash`` before any posting side-effect.
+    recomputed_hash = content_hash_for(
+        period=_period_label(period.period_year, period.period_month),
+        org_ref=str(organization_id),
+        engine_version=str(version["engine_version"]),
+        employees=employee_tuple,
+        earnings_total=run_earnings,
+        employer_contribution_total=run_employer,
+        gross_adjustment_total=run_gross_adj,
+        gross_total=run_gross,
+        ag_deduction_total=run_ag,
+        treasury_deduction_total=run_treasury,
+        external_recovery_total=run_external,
+        deductions_total=run_deductions,
+        net_payable=run_net,
+        offbill_employer_remittance=run_offbill,
+        disbursement=run_disbursement,
+    )
+
     return RunResult(
         period=_period_label(period.period_year, period.period_month),
         org_ref=str(organization_id),
@@ -249,7 +317,7 @@ async def _load_run_result(
         net_payable=run_net,
         offbill_employer_remittance=run_offbill,
         disbursement=run_disbursement,
-        content_hash=version["content_hash"],
+        content_hash=recomputed_hash,
     )
 
 
@@ -342,6 +410,14 @@ async def post_run(
         period=period,
         version=version,
     )
+    if result.content_hash != version["content_hash"]:
+        # Recomputed hash disagrees with the persisted digest: the immutable
+        # version rows were tampered with (or predate the canonical shape).
+        stale = ConflictError(
+            "Persisted run version content_hash does not match the reconstructed result."
+        )
+        stale.error_code = URN_STALE_VERSION
+        raise stale
     findings = validate_run_result(result)
     if has_blocking(findings):
         raise ConflictError("Payroll run result has blocking validation findings.")
@@ -385,16 +461,69 @@ async def post_run(
         separators=(",", ":"),
         default=str,
     )
-    await db.execute(
-        sa.insert(payroll_report_snapshots).values(
-            organization_id=organization_id,
-            run_version_id=version_id,
-            snapshot=report_snapshot,
-            provenance="posting",
-            source_checksum=hashlib.sha256(report_snapshot_json.encode("utf-8")).hexdigest(),
-            created_by=user_id,
+    source_checksum = hashlib.sha256(report_snapshot_json.encode("utf-8")).hexdigest()
+
+    # uq_payroll_report_snapshots_org_run_version means a pre-existing row
+    # (e.g. a workbook/current-master backfill, or a concurrent post) would
+    # otherwise brick posting with a 500 on every retry. Adopt an identical
+    # row; conflict on divergent contents.
+    existing_snapshot = (
+        (
+            await db.execute(
+                sa.select(
+                    payroll_report_snapshots.c.source_checksum,
+                    payroll_report_snapshots.c.provenance,
+                ).where(
+                    payroll_report_snapshots.c.organization_id == organization_id,
+                    payroll_report_snapshots.c.run_version_id == version_id,
+                )
+            )
         )
+        .mappings()
+        .one_or_none()
     )
+    if existing_snapshot is None:
+        try:
+            async with db.begin_nested():
+                await db.execute(
+                    sa.insert(payroll_report_snapshots).values(
+                        organization_id=organization_id,
+                        run_version_id=version_id,
+                        snapshot=report_snapshot,
+                        provenance="posting",
+                        source_checksum=source_checksum,
+                        created_by=user_id,
+                    )
+                )
+        except IntegrityError as exc:
+            if not integrity_is(exc, UniqueViolationError):
+                raise
+            # Lost the insert race — the savepoint rolled back; re-select the
+            # winning row and let the checksum comparison below decide.
+            existing_snapshot = (
+                (
+                    await db.execute(
+                        sa.select(
+                            payroll_report_snapshots.c.source_checksum,
+                            payroll_report_snapshots.c.provenance,
+                        ).where(
+                            payroll_report_snapshots.c.organization_id == organization_id,
+                            payroll_report_snapshots.c.run_version_id == version_id,
+                        )
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+    if existing_snapshot is not None and existing_snapshot["source_checksum"] != source_checksum:
+        raise ConflictError(
+            "A payroll report snapshot already exists for this run version with "
+            "different contents.",
+            details={
+                "error_code": "report_snapshot_conflict",
+                "provenance": existing_snapshot["provenance"],
+            },
+        )
 
     db.add(
         PayrollApproval(

@@ -28,6 +28,13 @@ from app.schemas.money import MoneyAmount, RateValue
 
 REPORT_CONFIG_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 
+# Component codes are URL-safe slugs (M-data-5): they appear as path segments
+# and join keys, so '/', whitespace, and other punctuation are rejected.
+COMPONENT_CODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+_MONEY_MAX = Decimal("99999999.99")
+_RATE_MAX = Decimal("99999.9999")
+
 
 class Classification(StrEnum):
     EARNING = "earning"
@@ -78,7 +85,7 @@ class ScheduleKind(StrEnum):
 class PayComponentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    code: str = Field(min_length=1)
+    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1)
     classification: Classification
     display_order: int = 0
@@ -117,6 +124,8 @@ class PayComponentCreate(BaseModel):
         stripped = value.strip()
         if not stripped:
             raise ValueError("transfer_of must not be empty")
+        if not COMPONENT_CODE_RE.fullmatch(stripped):
+            raise ValueError("transfer_of must be a URL-safe component code")
         return stripped
 
     @field_validator("code", "name")
@@ -126,6 +135,16 @@ class PayComponentCreate(BaseModel):
         if not stripped:
             raise ValueError("must not be empty or whitespace-only")
         return stripped
+
+    @field_validator("code")
+    @classmethod
+    def _code_is_url_safe_slug(cls, value: str) -> str:
+        if not COMPONENT_CODE_RE.fullmatch(value):
+            raise ValueError(
+                "code must be a URL-safe slug: letters, digits, '_' or '-', "
+                "starting with a letter or digit"
+            )
+        return value
 
 
 class PayComponentUpdate(BaseModel):
@@ -158,6 +177,8 @@ class PayComponentUpdate(BaseModel):
         stripped = value.strip()
         if not stripped:
             raise ValueError("transfer_of must not be empty")
+        if not COMPONENT_CODE_RE.fullmatch(stripped):
+            raise ValueError("transfer_of must be a URL-safe component code")
         return stripped
 
     @model_validator(mode="after")
@@ -190,34 +211,55 @@ class PayComponentResponse(BaseModel):
 class ComponentRateVersionCreate(BaseModel):
     effective_from: date
     calc_kind: CalcKind
-    rate: RateValue | None = None
-    amount: MoneyAmount | None = None
+    rate: RateValue | None = Field(default=None, ge=Decimal("0"), le=_RATE_MAX)
+    # Bounded to Numeric(12, 2); negative only for the one_time_adjustment
+    # carve-out (enforced in _validate_calc_kind_matrix).
+    amount: MoneyAmount | None = Field(default=None, ge=-_MONEY_MAX, le=_MONEY_MAX)
     basis: list[str] | None = None
     rounding_rule: RoundingRule
     change_reason: str | None = None
 
+    @field_validator("basis")
+    @classmethod
+    def _basis_codes_are_slugs(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        for code in value:
+            if not COMPONENT_CODE_RE.fullmatch(code):
+                raise ValueError(f"basis entry {code!r} is not a URL-safe component code")
+        return value
+
     @model_validator(mode="after")
     def _validate_calc_kind_matrix(self) -> ComponentRateVersionCreate:
+        """Amount/rate/basis matrix for all seven calc kinds (M-data-6).
+
+        Passthrough kinds (fixed_recurring_amount, direct_monthly_amount,
+        loan_installment_recovery, accommodation_charge, one_time_adjustment)
+        require ``amount``; percentage-shaped kinds
+        (percentage_of_component_bases, employer_employee_contribution)
+        require ``rate`` and a non-empty ``basis``.
+        """
         kind = self.calc_kind
-        if kind == CalcKind.PERCENTAGE_OF_COMPONENT_BASES:
+        if kind in {
+            CalcKind.PERCENTAGE_OF_COMPONENT_BASES,
+            CalcKind.EMPLOYER_EMPLOYEE_CONTRIBUTION,
+        }:
             if self.rate is None:
-                raise ValueError("rate is required for percentage_of_component_bases")
+                raise ValueError(f"rate is required for {kind.value}")
             if not self.basis:
-                raise ValueError("basis is required for percentage_of_component_bases")
+                raise ValueError(f"basis is required for {kind.value}")
             if self.amount is not None:
-                raise ValueError("amount must be absent for percentage_of_component_bases")
-        elif kind in {CalcKind.FIXED_RECURRING_AMOUNT, CalcKind.DIRECT_MONTHLY_AMOUNT}:
+                raise ValueError(f"amount must be absent for {kind.value}")
+        else:
+            # Passthrough kinds: amount is the carried value.
             if self.amount is None:
                 raise ValueError(f"amount is required for {kind.value}")
             if self.rate is not None:
                 raise ValueError(f"rate must be absent for {kind.value}")
             if self.basis is not None:
                 raise ValueError(f"basis must be absent for {kind.value}")
-        elif kind == CalcKind.EMPLOYER_EMPLOYEE_CONTRIBUTION:
-            if self.rate is None:
-                raise ValueError("rate is required for employer_employee_contribution")
-            if self.amount is not None:
-                raise ValueError("amount must be absent for employer_employee_contribution")
+        if self.amount is not None and self.amount < 0 and kind != CalcKind.ONE_TIME_ADJUSTMENT:
+            raise ValueError("negative amount is allowed only for one_time_adjustment")
         return self
 
 
@@ -241,8 +283,11 @@ class ComponentRateVersionResponse(VersionResponse):
 class RecurringInstructionCreate(BaseModel):
     component_id: UUID
     effective_from: date
-    amount: MoneyAmount | None = None
-    rate: RateValue | None = None
+    # Signed bound only: the calc_kind lives on the component's rate version,
+    # so the one_time_adjustment negative carve-out cannot be decided here —
+    # validate_run_inputs enforces it at calculate time.
+    amount: MoneyAmount | None = Field(default=None, ge=-_MONEY_MAX, le=_MONEY_MAX)
+    rate: RateValue | None = Field(default=None, ge=Decimal("0"), le=_RATE_MAX)
     reason: str | None = None
 
     @model_validator(mode="after")
@@ -254,8 +299,8 @@ class RecurringInstructionCreate(BaseModel):
 
 class RecurringInstructionVersionCreate(BaseModel):
     effective_from: date | None = None
-    amount: MoneyAmount | None = None
-    rate: RateValue | None = None
+    amount: MoneyAmount | None = Field(default=None, ge=-_MONEY_MAX, le=_MONEY_MAX)
+    rate: RateValue | None = Field(default=None, ge=Decimal("0"), le=_RATE_MAX)
     reason: str | None = None
     end_on: date | None = None
     change_reason: str | None = None
@@ -298,7 +343,7 @@ class RecurringInstructionResponse(BaseModel):
 
 
 class AdvanceInstallmentInput(BaseModel):
-    installment_amount: MoneyAmount
+    installment_amount: MoneyAmount = Field(gt=0, le=_MONEY_MAX)
     installments_total: int = Field(gt=0)
     installments_recovered_opening: int = Field(ge=0)
     effective_from: date
@@ -306,29 +351,63 @@ class AdvanceInstallmentInput(BaseModel):
 
 class AdvanceCreate(BaseModel):
     advance_type: AdvanceType
-    principal: MoneyAmount
+    principal: MoneyAmount = Field(gt=0, le=_MONEY_MAX)
     sanctioned_on: date
     reference: str | None = None
     installment: AdvanceInstallmentInput
 
     @model_validator(mode="after")
     def _validate_installment(self) -> AdvanceCreate:
-        if self.principal <= Decimal("0"):
-            raise ValueError("principal must be greater than zero.")
         inst = self.installment
         if inst.installment_amount > self.principal:
             raise ValueError("installment_amount must not exceed principal.")
         if inst.installments_recovered_opening > inst.installments_total:
             raise ValueError("installments_recovered_opening must not exceed installments_total.")
+        # Scheduled remaining recovery may not exceed what was lent (T1.6).
+        remaining = inst.installment_amount * Decimal(
+            inst.installments_total - inst.installments_recovered_opening
+        )
+        if remaining > self.principal:
+            raise ValueError("scheduled remaining recovery must not exceed principal.")
         return self
 
 
 class AdvanceInstallmentVersionCreate(BaseModel):
-    effective_from: date
-    installment_amount: MoneyAmount
-    installments_total: int = Field(gt=0)
-    installments_recovered_opening: int = Field(ge=0)
+    """New-version or terminate mode (mirrors RecurringInstructionVersionCreate)."""
+
+    effective_from: date | None = None
+    installment_amount: MoneyAmount | None = Field(default=None, gt=0, le=_MONEY_MAX)
+    installments_total: int | None = Field(default=None, gt=0)
+    installments_recovered_opening: int | None = Field(default=None, ge=0)
+    end_on: date | None = None
     change_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_mode(self) -> AdvanceInstallmentVersionCreate:
+        terminate = self.end_on is not None
+        new_version = self.effective_from is not None
+        if terminate and new_version:
+            raise ValueError("end_on cannot be combined with effective_from.")
+        if terminate:
+            if (
+                self.installment_amount is not None
+                or self.installments_total is not None
+                or self.installments_recovered_opening is not None
+            ):
+                raise ValueError("installment fields must be absent when end_on is provided.")
+            return self
+        if not new_version:
+            raise ValueError("Either effective_from or end_on is required.")
+        if (
+            self.installment_amount is None
+            or self.installments_total is None
+            or self.installments_recovered_opening is None
+        ):
+            raise ValueError(
+                "installment_amount, installments_total, and "
+                "installments_recovered_opening are required for a new version."
+            )
+        return self
 
 
 class AdvanceInstallmentVersionResponse(VersionResponse):
@@ -378,12 +457,12 @@ def _validate_accommodation_breakdown(location: QuartersLocation | str, charge: 
 
 
 class AccommodationChargeInput(BaseModel):
-    license_fee: MoneyAmount
-    house_rent: MoneyAmount | None = None
-    service_charge: MoneyAmount | None = None
-    parking_charge: MoneyAmount | None = None
-    additional_parking_charge: MoneyAmount | None = None
-    informational_hra_foregone: MoneyAmount | None = None
+    license_fee: MoneyAmount = Field(ge=0, le=_MONEY_MAX)
+    house_rent: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    service_charge: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    parking_charge: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    additional_parking_charge: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    informational_hra_foregone: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
     effective_from: date
 
     def validate_for_location(self, location: QuartersLocation | str) -> None:
@@ -418,14 +497,43 @@ class AccommodationUpdate(BaseModel):
 
 
 class AccommodationChargeVersionCreate(BaseModel):
-    effective_from: date
-    license_fee: MoneyAmount
-    house_rent: MoneyAmount | None = None
-    service_charge: MoneyAmount | None = None
-    parking_charge: MoneyAmount | None = None
-    additional_parking_charge: MoneyAmount | None = None
-    informational_hra_foregone: MoneyAmount | None = None
+    """New-version or terminate mode (mirrors RecurringInstructionVersionCreate)."""
+
+    effective_from: date | None = None
+    license_fee: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    house_rent: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    service_charge: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    parking_charge: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    additional_parking_charge: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    informational_hra_foregone: MoneyAmount | None = Field(default=None, ge=0, le=_MONEY_MAX)
+    end_on: date | None = None
     change_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_mode(self) -> AccommodationChargeVersionCreate:
+        terminate = self.end_on is not None
+        new_version = self.effective_from is not None
+        if terminate and new_version:
+            raise ValueError("end_on cannot be combined with effective_from.")
+        if terminate:
+            if any(
+                value is not None
+                for value in (
+                    self.license_fee,
+                    self.house_rent,
+                    self.service_charge,
+                    self.parking_charge,
+                    self.additional_parking_charge,
+                    self.informational_hra_foregone,
+                )
+            ):
+                raise ValueError("charge fields must be absent when end_on is provided.")
+            return self
+        if not new_version:
+            raise ValueError("Either effective_from or end_on is required.")
+        if self.license_fee is None:
+            raise ValueError("license_fee is required for a new version.")
+        return self
 
     def validate_for_location(self, location: QuartersLocation | str) -> None:
         _validate_accommodation_breakdown(location, self)

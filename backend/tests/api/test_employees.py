@@ -151,6 +151,23 @@ async def test_create_employee_all_regimes_masks_sensitive_and_money_string(
     assert isinstance(body["pay"]["basic_pay"], str)
 
 
+@pytest.mark.asyncio
+async def test_list_employees_returns_created_rows(client, session, dev_settings):
+    """Happy-path coverage for ``GET /api/employees`` (T1.17 — list reads were
+    only exercised on the 403/409 paths)."""
+    _, _, office, post = await _admin_world(session, dev_settings, client)
+    created = await _create_employee(
+        client,
+        _create_payload(office_id=office.id, post_id=post.id),
+    )
+
+    resp = await client.get("/api/employees")
+    assert resp.status_code == 200
+    body = resp.json()
+    items = body["items"] if isinstance(body, dict) else body
+    assert any(row["id"] == created["id"] for row in items)
+
+
 # --- Validation -------------------------------------------------------------------
 
 

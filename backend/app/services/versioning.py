@@ -49,6 +49,7 @@ from app.services.db_errors import integrity_is, raise_integrity_error
 __all__ = [
     "get_active_version",
     "get_active_versions_map",
+    "get_open_version",
     "insert_version",
     "list_versions",
     "terminate_open_version",
@@ -69,11 +70,16 @@ async def _fetch_open_version(
     organization_id: UUID,
     header_id: UUID,
 ) -> RowMapping | None:
+    # FOR UPDATE serializes terminate-vs-insert on the same header: a
+    # concurrent clip waits for the in-flight rewrite, then re-evaluates the
+    # predicate under READ COMMITTED and sees the clipped (no longer open)
+    # row instead of rewriting it with a stale lower bound (M-data-8).
     stmt = (
         sa.select(version_table)
         .where(version_table.c.organization_id == organization_id)
         .where(version_table.c.header_id == header_id)
         .where(sa.func.upper_inf(version_table.c.validity))
+        .with_for_update()
     )
     result = await session.execute(stmt)
     return result.mappings().first()
@@ -106,6 +112,27 @@ async def _assert_no_historical_conflict(
     result = await session.execute(stmt)
     if result.first() is not None:
         raise ConflictError("the requested effective_from overlaps an existing historical version")
+
+
+async def get_open_version(
+    session: AsyncSession,
+    version_table: sa.Table,
+    *,
+    organization_id: UUID,
+    header_id: UUID,
+) -> RowMapping | None:
+    """Return the open-ended version row for ``header_id``, or ``None``.
+
+    Public wrapper over the FOR UPDATE open-version lookup so callers can
+    snapshot the pre-clip state for audit events before ``insert_version`` /
+    ``terminate_open_version`` rewrite it.
+    """
+    return await _fetch_open_version(
+        session,
+        version_table,
+        organization_id=organization_id,
+        header_id=header_id,
+    )
 
 
 async def insert_version(

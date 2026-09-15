@@ -20,6 +20,7 @@ from app.tenancy import bind_tenant_context
 from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
+    attach_csrf_echo,
     login_dev,
     seed_membership,
     seed_user,
@@ -38,6 +39,7 @@ async def client(dev_settings):
     application = _payroll_runs_app()
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac
 
 
@@ -569,6 +571,48 @@ async def test_payroll_reviewer_can_get_but_not_write(client, dev_settings, sess
     )
     assert post_period.status_code == 403
     assert post_period.json()["error"] == "urn:accord:capability:create_run"
+
+    post_run = await client.post(
+        "/api/payroll-runs",
+        json={"period_id": period["id"]},
+    )
+    assert post_run.status_code == 403
+    assert post_run.json()["error"] == "urn:accord:capability:create_run"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["payroll_approver", "report_releaser"])
+async def test_approver_and_releaser_can_read_but_not_write_runs(
+    client, dev_settings, session, role
+):
+    """Approver/releaser lack view_master_data yet must load runs they act on."""
+    ctx = await _admin_context(client, session)
+    period = await _create_period(client)
+    run = await _create_run(client, period_id=period["id"])
+
+    member = await seed_user(session, email=f"{role}@example.com", name=role)
+    await seed_membership(
+        session,
+        organization_id=ctx["org_id"],
+        user_id=member.id,
+        role=role,
+    )
+    await session.commit()
+
+    cookie = await mint_session_cookie(
+        session,
+        dev_settings,
+        user_id=member.id,
+        active_organization_id=ctx["org_id"],
+    )
+    apply_session_cookie(client, cookie)
+
+    list_runs = await client.get("/api/payroll-runs")
+    assert list_runs.status_code == 200
+    assert any(r["id"] == run["id"] for r in list_runs.json())
+
+    get_run = await client.get(f"/api/payroll-runs/{run['id']}")
+    assert get_run.status_code == 200
 
     post_run = await client.post(
         "/api/payroll-runs",

@@ -43,6 +43,12 @@ from app.tenancy import set_config_local
 
 _TENANT_GUCS = ("app.organization_id", "app.user_id", "app.request_id")
 
+# An ``in_progress`` row whose claimant died mid-command (crash between the
+# claim commit and the succeeded-mark commit) must not hold the key hostage
+# for the whole result TTL. Commands are request-scoped and take seconds, so
+# a claim untouched for this long is considered abandoned and reclaimed.
+_CLAIM_STALE_AFTER = timedelta(minutes=5)
+
 
 async def _snapshot_tenant_gucs(db: AsyncSession) -> dict[str, str]:
     """Capture transaction-local tenant context before a mid-command commit.
@@ -95,10 +101,14 @@ async def idempotent_command(
       ``response_snapshot`` + ``succeeded`` on success.
     * Same key + same payload + ``succeeded`` → replay snapshot (no re-exec).
     * Same key + same payload + ``in_progress`` → ``ConflictError`` (retryable;
-      callers may retry later).
+      callers may retry later) unless the claim is stale — a claimant that
+      crashed mid-command is reclaimed after ``_CLAIM_STALE_AFTER``.
     * Same key + same payload + ``failed`` → reset lease and re-execute.
     * Same key + different payload → ``ConflictError`` (409 payload mismatch).
-    * Expired row (``expires_at`` < now) → reset lease and re-execute.
+    * ``succeeded`` is a durable record of a completed command: TTL expiry
+      bounds replay retention only — the snapshot replays (or conflicts on a
+      mismatched payload) but the command is **never re-executed**.
+    * Expired non-``succeeded`` row → reset lease and re-execute.
     * Concurrent callers: INSERT race decides the winner; the loser follows the
       row-exists path (replay or in-progress conflict).
 
@@ -146,6 +156,21 @@ async def idempotent_command(
         return await _execute_claimed(db, row_id=claimed_id, executor=executor)
 
     now = utcnow()
+    if row.status == "succeeded":
+        # Never re-execute a completed command just because its TTL expired:
+        # replay the stored snapshot when the payload matches (M-data-11).
+        if row.request_hash != request_hash:
+            await db.rollback()
+            raise ConflictError("Idempotency key reused with a different request payload.")
+        snapshot = row.response_snapshot
+        if snapshot is None:
+            await db.rollback()
+            raise ConflictError("Idempotency snapshot missing for succeeded key.")
+        # Refresh retention so the replay record outlives active retries.
+        row.expires_at = expires_at
+        await db.commit()
+        return snapshot
+
     if row.expires_at < now:
         await _reset_lease(
             db,
@@ -162,16 +187,22 @@ async def idempotent_command(
         await db.rollback()
         raise ConflictError("Idempotency key reused with a different request payload.")
 
-    if row.status == "succeeded":
-        snapshot = row.response_snapshot
-        await db.commit()
-        if snapshot is None:
-            raise ConflictError("Idempotency snapshot missing for succeeded key.")
-        return snapshot
-
     if row.status == "in_progress":
-        await db.rollback()
-        raise ConflictError("command in progress")
+        if row.updated_at > now - _CLAIM_STALE_AFTER:
+            await db.rollback()
+            raise ConflictError("command in progress")
+        # Stale claim: the original claimant crashed between the claim commit
+        # and the succeeded-mark commit. Reclaim the lease and re-execute.
+        await _reset_lease(
+            db,
+            row,
+            request_hash=request_hash,
+            expires_at=expires_at,
+        )
+        gucs = await _snapshot_tenant_gucs(db)
+        await db.commit()
+        await _rebind_tenant_gucs(db, gucs)
+        return await _execute_claimed(db, row_id=row.id, executor=executor)
 
     if row.status == "failed":
         await _reset_lease(

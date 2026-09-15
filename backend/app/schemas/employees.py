@@ -93,7 +93,8 @@ class PayInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     pay_matrix_level: str | None = Field(default=None, min_length=1)
-    basic_pay: MoneyAmount
+    # basic_pay is Numeric(12, 2) at rest and is never negative.
+    basic_pay: MoneyAmount = Field(ge=Decimal("0"), le=Decimal("99999999.99"))
 
 
 class BankInput(BaseModel):

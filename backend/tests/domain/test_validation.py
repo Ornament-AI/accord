@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 from app.domain.payroll.engine import calculate_run
@@ -94,6 +95,19 @@ def _trace(
         source_version_ids=(),
         calculator_kind="fixed_recurring_amount",
         engine_version="test",
+    )
+
+
+def _transfer_trace(
+    component: str,
+    classification: str,
+    rounded: str,
+    transfer_of: str | None,
+) -> CalculationTrace:
+    return replace(
+        _trace(component, classification, rounded),
+        employer_transfer=True,
+        transfer_of=transfer_of,
     )
 
 
@@ -371,6 +385,111 @@ def test_empty_run() -> None:
     findings = validate_run_result(_run_result())
     assert "empty_run" in _codes(findings)
     assert has_blocking(findings) is True
+
+
+# --- employer contribution<->transfer pairing (T1.5) ---------------------------
+
+
+def test_unpaired_employer_contribution_finding() -> None:
+    emp = _zero_employee_result(
+        "E1",
+        lines=(_trace("EPF_EMPLOYER", "employer_contribution", "120.00"),),
+    )
+    findings = validate_run_result(_run_result(emp))
+    assert any(
+        f.code == "unpaired_employer_contribution"
+        and f.severity is Severity.error
+        and f.component_code == "EPF_EMPLOYER"
+        for f in findings
+    )
+
+
+def test_unpaired_employer_transfer_finding() -> None:
+    emp = _zero_employee_result(
+        "E1",
+        lines=(_transfer_trace("EPF_EMPLOYER_TRANSFER", "AG_deduction", "120.00", "EPF_EMPLOYER"),),
+    )
+    findings = validate_run_result(_run_result(emp))
+    assert any(
+        f.code == "unpaired_employer_transfer"
+        and f.severity is Severity.error
+        and f.component_code == "EPF_EMPLOYER_TRANSFER"
+        for f in findings
+    )
+
+
+def test_transfer_contribution_mismatch_finding() -> None:
+    emp = _zero_employee_result(
+        "E1",
+        lines=(
+            _trace("EPF_EMPLOYER", "employer_contribution", "120.00"),
+            _transfer_trace("EPF_EMPLOYER_TRANSFER", "AG_deduction", "100.00", "EPF_EMPLOYER"),
+        ),
+    )
+    findings = validate_run_result(_run_result(emp))
+    assert any(
+        f.code == "transfer_contribution_mismatch" and f.severity is Severity.error
+        for f in findings
+    )
+
+
+def test_transfer_sum_pairing_is_clean_when_sums_match() -> None:
+    """Two transfer lines whose sum equals the contribution produce no
+    pairing findings."""
+    emp = _zero_employee_result(
+        "E1",
+        lines=(
+            _trace("EPF_EMPLOYER", "employer_contribution", "120.00"),
+            _transfer_trace("EPF_TRANSFER_A", "AG_deduction", "80.00", "EPF_EMPLOYER"),
+            _transfer_trace("EPF_TRANSFER_B", "treasury_deduction", "40.00", "EPF_EMPLOYER"),
+        ),
+    )
+    findings = validate_run_result(_run_result(emp))
+    pairing_codes = {
+        "unpaired_employer_contribution",
+        "unpaired_employer_transfer",
+        "transfer_contribution_mismatch",
+    }
+    assert not pairing_codes.intersection(_codes(findings))
+
+
+def test_offbill_transfer_with_no_transfer_of_is_exempt() -> None:
+    """NPS-style off-bill remittances (employer_transfer, transfer_of=None)
+    never raise pairing findings."""
+    emp = _zero_employee_result(
+        "E1",
+        lines=(_transfer_trace("NPS_EMPLOYER_TRANSFER", "AG_deduction", "100.00", None),),
+    )
+    findings = validate_run_result(_run_result(emp))
+    assert "unpaired_employer_transfer" not in _codes(findings)
+
+
+def test_zero_contribution_without_transfer_is_not_a_finding() -> None:
+    emp = _zero_employee_result(
+        "E1",
+        lines=(_trace("EPF_EMPLOYER", "employer_contribution", "0.00"),),
+    )
+    findings = validate_run_result(_run_result(emp))
+    assert "unpaired_employer_contribution" not in _codes(findings)
+
+
+def test_informational_lines_are_ignored_by_pairing() -> None:
+    """An informational-classified transfer/contribution contributes to no
+    aggregate and is exempt from pairing."""
+    emp = _zero_employee_result(
+        "E1",
+        lines=(
+            _trace("EPF_EMPLOYER", "informational", "120.00"),
+            _transfer_trace("EPF_T", "informational", "120.00", "EPF_EMPLOYER"),
+        ),
+    )
+    findings = validate_run_result(_run_result(emp))
+    pairing_codes = {
+        "unpaired_employer_contribution",
+        "unpaired_employer_transfer",
+        "transfer_contribution_mismatch",
+    }
+    assert not pairing_codes.intersection(_codes(findings))
 
 
 # --- has_blocking / severities / ordering / clean path ------------------------
@@ -723,6 +842,47 @@ def test_every_finding_code_is_covered() -> None:
         )
     )
     covered.update(_codes(validate_run_result(_run_result())))
+    covered.update(
+        _codes(
+            validate_run_result(
+                _run_result(
+                    _zero_employee_result(
+                        "E1",
+                        lines=(_trace("EPF_EMPLOYER", "employer_contribution", "120.00"),),
+                    )
+                )
+            )
+        )
+    )
+    covered.update(
+        _codes(
+            validate_run_result(
+                _run_result(
+                    _zero_employee_result(
+                        "E1",
+                        lines=(
+                            _transfer_trace("EPF_T", "AG_deduction", "50.00", "MISSING_TARGET"),
+                        ),
+                    )
+                )
+            )
+        )
+    )
+    covered.update(
+        _codes(
+            validate_run_result(
+                _run_result(
+                    _zero_employee_result(
+                        "E1",
+                        lines=(
+                            _trace("EPF_EMPLOYER", "employer_contribution", "120.00"),
+                            _transfer_trace("EPF_T", "AG_deduction", "100.00", "EPF_EMPLOYER"),
+                        ),
+                    )
+                )
+            )
+        )
+    )
 
     expected = {
         "duplicate_component_code",
@@ -738,5 +898,8 @@ def test_every_finding_code_is_covered() -> None:
         "zero_net_payable",
         "deduction_exceeds_gross",
         "empty_run",
+        "unpaired_employer_contribution",
+        "unpaired_employer_transfer",
+        "transfer_contribution_mismatch",
     }
     assert expected <= covered

@@ -100,6 +100,32 @@ accommodation_charge_versions = Table(
         "NOT isempty(validity)",
         name="ck_accommodation_charge_versions_validity_not_empty",
     ),
+    CheckConstraint(
+        "license_fee >= 0 AND license_fee <= 99999999.99",
+        name="ck_accommodation_charge_versions_license_fee",
+    ),
+    CheckConstraint(
+        "house_rent IS NULL OR (house_rent >= 0 AND house_rent <= 99999999.99)",
+        name="ck_accommodation_charge_versions_house_rent",
+    ),
+    CheckConstraint(
+        "service_charge IS NULL OR (service_charge >= 0 AND service_charge <= 99999999.99)",
+        name="ck_accommodation_charge_versions_service_charge",
+    ),
+    CheckConstraint(
+        "parking_charge IS NULL OR (parking_charge >= 0 AND parking_charge <= 99999999.99)",
+        name="ck_accommodation_charge_versions_parking_charge",
+    ),
+    CheckConstraint(
+        "additional_parking_charge IS NULL OR (additional_parking_charge >= 0 "
+        "AND additional_parking_charge <= 99999999.99)",
+        name="ck_accommodation_charge_versions_additional_parking",
+    ),
+    CheckConstraint(
+        "informational_hra_foregone IS NULL OR (informational_hra_foregone >= 0 "
+        "AND informational_hra_foregone <= 99999999.99)",
+        name="ck_accommodation_charge_versions_hra_foregone",
+    ),
     ExcludeConstraint(
         ("organization_id", "="),
         ("header_id", "="),

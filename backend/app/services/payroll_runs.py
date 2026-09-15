@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import ConflictError, NotFoundError, StaleRowError, ValidationError
 from app.models.base import utcnow
 from app.models.employees import Employee, employee_pay_versions, employee_profile_versions
+from app.models.pay_components import PayComponent
 from app.models.platform import AuditEvent
 from app.models.payroll_runs import (
     PayrollPeriod,
@@ -186,6 +187,7 @@ async def update_run_report_metadata(
     *,
     organization_id: UUID,
     run_id: UUID,
+    actor_user_id: UUID,
     body: PayrollRunReportMetadata,
 ) -> dict[str, Any]:
     run = await _get_run_for_update(db, organization_id=organization_id, run_id=run_id)
@@ -194,9 +196,23 @@ async def update_run_report_metadata(
             "Payroll run report metadata is immutable after the run is submitted. "
             "Withdraw it before making changes."
         )
+    run_before = audit_events.entity_snapshot(run)
     run.report_metadata = body.model_dump(mode="json")
     run.lock_version += 1
     run.updated_at = utcnow()
+    await db.flush()
+    await audit_events.write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="payroll_run.report_metadata.update",
+        entity_type="payroll_run",
+        entity_id=run.id,
+        entity_label=f"Payroll run {run.id}",
+        before_state=run_before,
+        after_state=audit_events.entity_snapshot(run),
+        summary={"action": "Updated report metadata"},
+    )
     await db.commit()
     return body.model_dump(mode="json")
 
@@ -443,6 +459,7 @@ async def create_period(
     db: AsyncSession,
     *,
     organization_id: UUID,
+    actor_user_id: UUID,
     body: PayrollPeriodCreate,
 ) -> dict[str, Any]:
     period = PayrollPeriod(
@@ -454,6 +471,21 @@ async def create_period(
     db.add(period)
     try:
         await db.flush()
+        await audit_events.write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="payroll_period.create",
+            entity_type="payroll_period",
+            entity_id=period.id,
+            entity_label=f"Payroll period {period.period_year}-{period.period_month:02d}",
+            before_state={},
+            after_state=audit_events.entity_snapshot(period),
+            summary={
+                "period_year": period.period_year,
+                "period_month": period.period_month,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -483,6 +515,7 @@ async def create_run(
     db: AsyncSession,
     *,
     organization_id: UUID,
+    actor_user_id: UUID,
     body: PayrollRunCreate,
 ) -> dict[str, Any]:
     period = await _get_period(db, organization_id=organization_id, period_id=body.period_id)
@@ -494,6 +527,22 @@ async def create_run(
     db.add(run)
     try:
         await db.flush()
+        await audit_events.write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="payroll_run.create",
+            entity_type="payroll_run",
+            entity_id=run.id,
+            entity_label=(f"Payroll run {period.period_year}-{period.period_month:02d}"),
+            before_state={},
+            after_state=audit_events.entity_snapshot(run),
+            summary={
+                "period_id": period.id,
+                "period_year": period.period_year,
+                "period_month": period.period_month,
+            },
+        )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -820,13 +869,29 @@ async def upsert_run_input(
     actor_user_id: UUID,
     body: PayrollRunInputUpsert,
 ) -> dict[str, Any]:
-    run = await _get_run(db, organization_id=organization_id, run_id=run_id)
+    # Lock the run row so an in-flight calculate/roster write serializes
+    # against this upsert instead of silently missing the produced version.
+    run = await _get_run_for_update(db, organization_id=organization_id, run_id=run_id)
     _require_draft(run)
     await _get_employee(db, organization_id=organization_id, employee_id=employee_id)
 
     code = component_code.strip()
     if not code:
         raise ValidationError("component_code must not be empty.")
+
+    # The code must resolve to the org component catalog; otherwise the input
+    # would silently mint a ``gross_adjustment`` line at calculate time
+    # (resolution falls back when the code matches nothing).
+    component_exists = (
+        await db.execute(
+            sa.select(PayComponent.id).where(
+                PayComponent.organization_id == organization_id,
+                PayComponent.code == code,
+            )
+        )
+    ).scalar_one_or_none()
+    if component_exists is None:
+        raise ValidationError(f"Unknown pay component code {code!r}.")
 
     stmt = (
         sa.select(PayrollRunInput)
@@ -838,7 +903,12 @@ async def upsert_run_input(
     )
     existing = (await db.execute(stmt)).scalar_one_or_none()
 
+    before_state: dict[str, Any] = {}
     if existing is None:
+        if body.expected_version is not None:
+            # An expected_version precondition asserts the row already exists;
+            # creating instead would silently accept a stale-client write.
+            raise StaleRowError()
         row = PayrollRunInput(
             organization_id=organization_id,
             run_id=run_id,
@@ -858,6 +928,7 @@ async def upsert_run_input(
     else:
         if body.expected_version is not None and body.expected_version != existing.version:
             raise StaleRowError()
+        before_state = audit_events.entity_snapshot(existing)
         existing.amount = body.amount
         existing.rate = body.rate
         existing.reason = body.reason
@@ -870,6 +941,24 @@ async def upsert_run_input(
 
     try:
         await db.flush()
+        await audit_events.write_mutation_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="payroll_run_input.upsert",
+            entity_type="payroll_run_input",
+            entity_id=row.id,
+            entity_label=(f"Run input {row.component_code} for employee {row.employee_id}"),
+            before_state=before_state,
+            after_state=audit_events.entity_snapshot(row),
+            summary={
+                "run_id": run_id,
+                "employee_id": employee_id,
+                "component_code": row.component_code,
+                "input_kind": row.input_kind,
+                "version": row.version,
+            },
+        )
         # Build the response BEFORE commit: the commit ends the transaction and
         # clears SET LOCAL tenant GUCs, so a post-commit refresh SELECT runs
         # blind under forced RLS and raises InvalidRequestError.
@@ -904,12 +993,34 @@ async def delete_run_input(
     organization_id: UUID,
     run_id: UUID,
     input_id: UUID,
+    actor_user_id: UUID,
 ) -> None:
-    run = await _get_run(db, organization_id=organization_id, run_id=run_id)
+    run = await _get_run_for_update(db, organization_id=organization_id, run_id=run_id)
     _require_draft(run)
     row = await db.get(PayrollRunInput, input_id)
     if row is None or row.organization_id != organization_id or row.run_id != run_id:
         raise NotFoundError("Payroll run input not found.")
+    before_state = audit_events.entity_snapshot(row)
     await db.delete(row)
     await db.flush()
+    await audit_events.write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="payroll_run_input.delete",
+        entity_type="payroll_run_input",
+        entity_id=input_id,
+        entity_label=(
+            f"Run input {before_state.get('component_code')} "
+            f"for employee {before_state.get('employee_id')}"
+        ),
+        before_state=before_state,
+        after_state={},
+        summary={
+            "run_id": run_id,
+            "employee_id": before_state.get("employee_id"),
+            "component_code": before_state.get("component_code"),
+            "input_kind": before_state.get("input_kind"),
+        },
+    )
     await db.commit()

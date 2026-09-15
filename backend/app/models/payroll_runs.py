@@ -257,6 +257,17 @@ class PayrollRunInput(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixi
             "input_kind IN ('exception','override','one_time')",
             name="ck_payroll_run_inputs_input_kind",
         ),
+        # Negative money is a deliberate one_time (one_time_adjustment)
+        # carve-out; exception/override inputs may never carry it.
+        CheckConstraint(
+            "amount IS NULL OR (amount >= -99999999.99 AND amount <= 99999999.99 "
+            "AND (input_kind = 'one_time' OR amount >= 0))",
+            name="ck_payroll_run_inputs_amount",
+        ),
+        CheckConstraint(
+            "rate IS NULL OR (rate >= 0 AND rate <= 99999.9999)",
+            name="ck_payroll_run_inputs_rate",
+        ),
         UniqueConstraint(
             "organization_id",
             "run_id",

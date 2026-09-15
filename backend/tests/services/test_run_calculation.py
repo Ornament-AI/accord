@@ -33,6 +33,7 @@ from app.models.payroll_runs import (
     payroll_result_lines,
     payroll_run_versions,
 )
+from app.models.platform import AuditEvent, PayrollApproval
 from app.models.recurring_instructions import (
     RecurringInstruction,
     recurring_instruction_versions,
@@ -40,6 +41,7 @@ from app.models.recurring_instructions import (
 from app.services import versioning
 from app.services.report_readiness import v3_report_readiness_issues
 from app.services.run_calculation import calculate_run_command
+from app.services.run_posting import post_run
 from app.tenancy import bind_tenant_context
 from tests.identity_helpers import seed_organization, seed_user
 from tests.roster_helpers import initialize_run_roster
@@ -432,6 +434,24 @@ async def test_calculate_persists_version_results_and_totals(session):
     assert run.status == "calculated"
     assert run.current_version_id == result["version_id"]
     assert run.lock_version == 1
+
+    audit = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.entity_id == world["run_id"],
+                AuditEvent.command == "payroll_run.calculate",
+            )
+        )
+    ).scalar_one()
+    assert audit.entity_type == "payroll_run"
+    assert audit.event_kind == "mutation"
+    assert audit.actor_user_id == world["user_id"]
+    assert audit.before_state["status"] == "draft"
+    assert audit.before_state["current_version_id"] is None
+    assert audit.after_state["status"] == "calculated"
+    assert audit.after_state["current_version_id"] == str(result["version_id"])
+    assert audit.summary["version_number"] == 1
+    assert audit.summary["content_hash"] == result["content_hash"]
 
 
 @pytest.mark.asyncio
@@ -850,3 +870,348 @@ async def test_calculate_rejects_roster_member_without_active_profile(session):
             run_id=world["run_id"],
             user_id=world["user_id"],
         )
+
+
+@pytest.mark.asyncio
+async def test_calculate_blocks_negative_amount_finding(session):
+    """T1.4: ``validate_run_inputs`` runs before the engine — a signed
+    recurring-instruction amount resolving to a non-adjustment calc kind is
+    an error-severity finding and blocks calculation."""
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    # Remove the seeded override first: it would replace the FIXED_ALLOWANCE
+    # component wholesale and mask the negative instruction amount.
+    seeded_override = await session.get(PayrollRunInput, world["override_id"])
+    assert seeded_override is not None
+    await session.delete(seeded_override)
+    instruction_id = (
+        await session.execute(
+            sa.select(RecurringInstruction.id).where(
+                RecurringInstruction.organization_id == world["org_id"],
+                RecurringInstruction.employee_id == world["employee_id"],
+            )
+        )
+    ).scalar_one()
+    # The row-level CHECK stays signed (the calc kind lives on the
+    # component's rate version), so this insert succeeds; the kind rule is
+    # enforced by validate_run_inputs at calculate time.
+    await versioning.insert_version(
+        session,
+        recurring_instruction_versions,
+        organization_id=world["org_id"],
+        header_id=instruction_id,
+        effective_from=date(2026, 3, 1),
+        values={"amount": Decimal("-100.00"), "rate": None, "reason": "bad"},
+        change_reason=None,
+        created_by=world["user_id"],
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ValidationError, match="failed validation") as excinfo:
+        await calculate_run_command(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )
+    codes = {f["code"] for f in excinfo.value.details["findings"]}
+    assert "negative_amount" in codes
+
+
+@pytest.mark.asyncio
+async def test_one_time_negative_input_remains_allowed(session):
+    """T1.4 carve-out: a negative ``one_time`` run input is a deliberate
+    prior-period recovery and must still calculate."""
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    session.add(
+        PayComponent(
+            organization_id=world["org_id"],
+            code="PRIOR_RECOVERY",
+            name="Prior Period Recovery",
+            classification="gross_adjustment",
+        )
+    )
+    session.add(
+        PayrollRunInput(
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            employee_id=world["employee_id"],
+            component_code="PRIOR_RECOVERY",
+            input_kind="one_time",
+            amount=Decimal("-500.00"),
+            reason="Recover prior overpayment",
+            created_by=world["user_id"],
+            updated_by=world["user_id"],
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    assert result["totals"]["gross_adjustment_total"] == "-500.00"
+    assert result["totals"]["gross_total"] == "52000.00"
+    assert result["totals"]["net_payable"] == "50500.00"
+
+
+@pytest.mark.asyncio
+async def test_override_for_unresolved_component_code_conflicts(session):
+    """M-data-5: an override that resolves to no calculated component must
+    fail loudly instead of silently creating a gross adjustment."""
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    session.add(
+        PayrollRunInput(
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            employee_id=world["employee_id"],
+            component_code="NO_SUCH_COMPONENT",
+            input_kind="override",
+            amount=Decimal("10.00"),
+            reason="typo",
+            created_by=world["user_id"],
+            updated_by=world["user_id"],
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="resolved to nothing"):
+        await calculate_run_command(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_cross_kind_input_code_collision_conflicts(session):
+    """M-data-9: a ``one_time`` input may not silently coexist with an
+    ``override`` input for the same component code."""
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    # A catalog code with no resolved component: the one_time row creates it
+    # first (sorted before "override"), then the override row must conflict.
+    session.add(
+        PayComponent(
+            organization_id=world["org_id"],
+            code="COLLIDE_ADJ",
+            name="Collision Probe",
+            classification="gross_adjustment",
+        )
+    )
+    session.add_all(
+        [
+            PayrollRunInput(
+                organization_id=world["org_id"],
+                run_id=world["run_id"],
+                employee_id=world["employee_id"],
+                component_code="COLLIDE_ADJ",
+                input_kind="one_time",
+                amount=Decimal("50.00"),
+                reason="colliding one_time",
+                created_by=world["user_id"],
+                updated_by=world["user_id"],
+            ),
+            PayrollRunInput(
+                organization_id=world["org_id"],
+                run_id=world["run_id"],
+                employee_id=world["employee_id"],
+                component_code="COLLIDE_ADJ",
+                input_kind="override",
+                amount=Decimal("60.00"),
+                reason="colliding override",
+                created_by=world["user_id"],
+                updated_by=world["user_id"],
+            ),
+        ]
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="already supplied"):
+        await calculate_run_command(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )
+
+
+async def _version_component_codes(session: AsyncSession, version_id) -> set[str]:
+    emp_result_id = (
+        await session.execute(
+            sa.select(payroll_employee_results.c.id).where(
+                payroll_employee_results.c.run_version_id == version_id
+            )
+        )
+    ).scalar_one()
+    rows = (
+        (
+            await session.execute(
+                sa.select(payroll_result_lines.c.component_code).where(
+                    payroll_result_lines.c.employee_result_id == emp_result_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(rows)
+
+
+async def _advance_id(session: AsyncSession, world: dict):
+    return (
+        await session.execute(
+            sa.select(AdvanceAccount.id).where(
+                AdvanceAccount.organization_id == world["org_id"],
+                AdvanceAccount.employee_id == world["employee_id"],
+            )
+        )
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_completed_recovery_emits_no_installment_line(session):
+    """T1.6: once the derived recovered count reaches installments_total the
+    recovery line stops being emitted."""
+    world = await _seed_world(session)
+    await _bind(session, world["org_id"], world["user_id"])
+    await versioning.insert_version(
+        session,
+        advance_installment_versions,
+        organization_id=world["org_id"],
+        header_id=await _advance_id(session, world),
+        effective_from=date(2026, 3, 1),
+        values={
+            "installment_amount": Decimal("1000.00"),
+            "installments_total": 12,
+            "installments_recovered_opening": 12,
+        },
+        change_reason=None,
+        created_by=world["user_id"],
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    codes = await _version_component_codes(session, result["version_id"])
+    assert "HBA_INSTALLMENT" not in codes
+    # Only the accommodation license fee remains as external recovery.
+    assert result["totals"]["external_recovery_total"] == "500.00"
+    assert result["totals"]["net_payable"] == "52000.00"
+
+
+@pytest.mark.asyncio
+async def test_posted_recovery_line_advances_derived_count(session):
+    """T1.6: recovery progress derives from posted result lines citing the
+    installment version — no mutable counter is touched. One remaining
+    installment posted in June completes the series, so July emits none."""
+    world = await _seed_world(session)
+
+    # Leave exactly one installment outstanding (11 recovered of 12).
+    await _bind(session, world["org_id"], world["user_id"])
+    await versioning.insert_version(
+        session,
+        advance_installment_versions,
+        organization_id=world["org_id"],
+        header_id=await _advance_id(session, world),
+        effective_from=date(2026, 3, 1),
+        values={
+            "installment_amount": Decimal("1000.00"),
+            "installments_total": 12,
+            "installments_recovered_opening": 11,
+        },
+        change_reason=None,
+        created_by=world["user_id"],
+    )
+    await session.commit()
+
+    # June: calculate -> approve -> post, emitting the final installment.
+    await _bind(session, world["org_id"], world["user_id"])
+    calc = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    assert "HBA_INSTALLMENT" in await _version_component_codes(session, calc["version_id"])
+    run = await session.get(PayrollRun, world["run_id"])
+    assert run is not None
+    run.status = "approved"
+    session.add(
+        PayrollApproval(
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            run_version_id=calc["version_id"],
+            content_hash=calc["content_hash"],
+            action="approve",
+            actor_user_id=world["user_id"],
+            reason="Looks good",
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await post_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    # July: a fresh run over the same installment version derives
+    # recovered = opening 11 + 1 posted = 12 -> complete, no line emitted.
+    await _bind(session, world["org_id"], world["user_id"])
+    july_period = PayrollPeriod(
+        organization_id=world["org_id"],
+        period_year=2026,
+        period_month=7,
+        status="open",
+    )
+    session.add(july_period)
+    await session.flush()
+    july_run = PayrollRun(
+        organization_id=world["org_id"],
+        period_id=july_period.id,
+        status="draft",
+    )
+    session.add(july_run)
+    await session.flush()
+    session.add_all(
+        initialize_run_roster(
+            organization_id=world["org_id"],
+            run=july_run,
+            employee_ids=[world["employee_id"]],
+            period_year=july_period.period_year,
+            period_month=july_period.period_month,
+        )
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    result = await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=july_run.id,
+        user_id=world["user_id"],
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    codes = await _version_component_codes(session, result["version_id"])
+    assert "HBA_INSTALLMENT" not in codes

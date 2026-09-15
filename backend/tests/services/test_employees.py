@@ -7,10 +7,12 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ConflictError, NotFoundError
 from app.models.org_structure import Office, Post
+from app.models.platform import AuditEvent
 from app.schemas.employees import (
     BankInput,
     CreateEmployeeRequest,
@@ -272,6 +274,144 @@ async def test_get_detail_as_of_and_masking(session, clean_identity_tables):
     assert on.pay is not None and on.pay.pay_matrix_level == "L11"
     assert before.profile is not None and before.profile.pan == "••••234F"
     assert on.profile is not None and on.profile.pan == "ABCDE1234F"
+
+
+@pytest.mark.asyncio
+async def test_create_employee_writes_audit_event(session, clean_identity_tables):
+    org, user, *_ = await _world(session)
+    await _bind(session, org, user)
+    detail = await create_employee(
+        session,
+        organization_id=org.id,
+        created_by=user.id,
+        body=CreateEmployeeRequest(
+            employee_number="AUD-1",
+            effective_from=date(2026, 1, 1),
+            profile=_profile(pan="ABCDE1234F"),
+            bank=BankInput(
+                account_number="123456789012",
+                ifsc="SBIN0001234",
+                bank_name="SBI",
+                branch="Main",
+                is_primary_salary=True,
+            ),
+        ),
+    )
+    audit = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "employee.create",
+                AuditEvent.entity_id == detail.id,
+            )
+        )
+    ).scalar_one()
+    assert audit.entity_type == "employee"
+    assert audit.event_kind == "mutation"
+    assert audit.actor_user_id == user.id
+    assert audit.before_state == {}
+    after = audit.after_state
+    assert after["employee"]["employee_number"] == "AUD-1"
+    # Full sensitive values are stored; masking happens only at read time.
+    assert after["versions"]["profile"]["pan"] == "ABCDE1234F"
+    assert after["versions"]["bank"]["account_number"] == "123456789012"
+
+
+@pytest.mark.asyncio
+async def test_create_employee_version_writes_audit_event(session, clean_identity_tables):
+    org, user, *_ = await _world(session)
+    await _bind(session, org, user)
+    detail = await create_employee(
+        session,
+        organization_id=org.id,
+        created_by=user.id,
+        body=CreateEmployeeRequest(
+            employee_number="AUD-2",
+            effective_from=date(2026, 1, 1),
+            profile=_profile(),
+            pay=PayInput(pay_matrix_level="L10", basic_pay=Decimal("50000.00")),
+        ),
+    )
+    await _bind(session, org, user)
+    await create_employee_version(
+        session,
+        organization_id=org.id,
+        employee_id=detail.id,
+        kind="pay",
+        created_by=user.id,
+        effective_from=date(2026, 7, 1),
+        change_reason="Annual increment",
+        pay=PayInput(pay_matrix_level="L11", basic_pay=Decimal("56000.00")),
+    )
+    audit = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "employee.pay_version.append",
+                AuditEvent.entity_id == detail.id,
+            )
+        )
+    ).scalar_one()
+    assert audit.entity_type == "employee"
+    assert audit.before_state["basic_pay"] == "50000.00"
+    assert audit.before_state["effective_from"] == "2026-01-01"
+    assert audit.before_state["effective_to"] is None
+    assert audit.after_state["basic_pay"] == "56000.00"
+    assert audit.after_state["effective_from"] == "2026-07-01"
+    assert audit.summary["kind"] == "pay"
+    assert audit.summary["change_reason"] == "Annual increment"
+
+
+@pytest.mark.asyncio
+async def test_bank_version_append_audit_keeps_full_account(session, clean_identity_tables):
+    """T1.13 forensic scenario: a beneficiary bank-account swap is captured."""
+    org, user, *_ = await _world(session)
+    await _bind(session, org, user)
+    detail = await create_employee(
+        session,
+        organization_id=org.id,
+        created_by=user.id,
+        body=CreateEmployeeRequest(
+            employee_number="AUD-3",
+            effective_from=date(2026, 1, 1),
+            profile=_profile(),
+            bank=BankInput(
+                account_number="111122223333",
+                ifsc="SBIN0001111",
+                bank_name="SBI",
+                branch="A",
+                is_primary_salary=True,
+            ),
+        ),
+    )
+    await _bind(session, org, user)
+    await create_employee_version(
+        session,
+        organization_id=org.id,
+        employee_id=detail.id,
+        kind="bank",
+        created_by=user.id,
+        effective_from=date(2026, 7, 1),
+        change_reason="Account change",
+        bank=BankInput(
+            account_number="999988887777",
+            ifsc="SBIN0002222",
+            bank_name="SBI",
+            branch="B",
+            is_primary_salary=True,
+        ),
+    )
+    audit = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "employee.bank_version.append",
+                AuditEvent.entity_id == detail.id,
+            )
+        )
+    ).scalar_one()
+    assert audit.before_state["account_number"] == "111122223333"
+    assert audit.after_state["account_number"] == "999988887777"
 
 
 def test_mask_value_helper():
