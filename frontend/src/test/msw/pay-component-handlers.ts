@@ -24,6 +24,8 @@ export type PayComponentHandlersOptions = {
 	/** Collect rate-version create bodies for assertions. */
 	onCreateRateVersion?: (componentId: string, body: ComponentRateVersionCreate) => void;
 	reportProfile?: PayrollExportProfile;
+	/** When set, GET /api/report-profile returns this status/body. */
+	reportProfileError?: { status: number; body: Record<string, unknown> };
 	onUpdateReportProfile?: (body: PayrollExportProfile) => void;
 };
 
@@ -119,6 +121,11 @@ export function createPayComponentHandlers(options: PayComponentHandlersOptions 
 
 	const handlers = [
 		http.get("/api/report-profile", () => {
+			if (options.reportProfileError) {
+				return HttpResponse.json(options.reportProfileError.body, {
+					status: options.reportProfileError.status,
+				});
+			}
 			const response: PayrollExportProfileResponse = {
 				value: reportProfile,
 				updated_at: "2026-07-18T12:00:00Z",

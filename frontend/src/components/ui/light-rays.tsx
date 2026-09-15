@@ -1,6 +1,6 @@
 import { type CSSProperties, useMemo } from "react";
 
-import { m } from "@/lib/motion";
+import { m, useReducedMotion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface LightRaysProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -54,6 +54,7 @@ const createRays = (count: number, cycle: number): LightRay[] => {
 };
 
 const Ray = ({ left, rotate, width, swing, delay, duration, intensity }: LightRay) => {
+	const reduceMotion = useReducedMotion();
 	return (
 		<m.div
 			className="pointer-events-none absolute -top-[12%] left-[var(--ray-left)] h-[var(--light-rays-length)] w-[var(--ray-width)] origin-top -translate-x-1/2 rounded-full bg-gradient-to-b from-[color-mix(in_srgb,var(--light-rays-color)_70%,transparent)] to-transparent opacity-0 blur-[var(--light-rays-blur)]"
@@ -64,17 +65,27 @@ const Ray = ({ left, rotate, width, swing, delay, duration, intensity }: LightRa
 				} as CSSProperties
 			}
 			initial={{ rotate: rotate }}
-			animate={{
-				opacity: [0, intensity, 0],
-				rotate: [rotate - swing, rotate + swing, rotate - swing],
-			}}
-			transition={{
-				duration: duration,
-				repeat: Infinity,
-				ease: "easeInOut",
-				delay: delay,
-				repeatDelay: duration * 0.1,
-			}}
+			animate={
+				reduceMotion
+					? // Static soft glow — the infinite swing/opacity loop ignores the
+						// CSS reduced-motion media query because motion animates inline.
+						{ opacity: intensity * 0.5, rotate }
+					: {
+							opacity: [0, intensity, 0],
+							rotate: [rotate - swing, rotate + swing, rotate - swing],
+						}
+			}
+			transition={
+				reduceMotion
+					? { duration: 0 }
+					: {
+							duration: duration,
+							repeat: Infinity,
+							ease: "easeInOut",
+							delay: delay,
+							repeatDelay: duration * 0.1,
+						}
+			}
 		/>
 	);
 };

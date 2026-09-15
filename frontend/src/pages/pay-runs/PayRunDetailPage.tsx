@@ -1,4 +1,5 @@
 import { ClockCounterClockwiseIcon as History } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
+import { useQueryClient } from "@tanstack/react-query";
 import {
 	type ColumnDef,
 	getCoreRowModel,
@@ -34,11 +35,13 @@ import {
 	type PayrollRunCalculateResult,
 	type PayrollRunRosterHistoryResponse,
 	parsePayrollRunVersion,
+	payrollRunQueryKeys,
 	useCalculatePayrollRun,
 	usePayrollRun,
 	usePayrollRunReportReadiness,
 	usePayrollRunRosterHistory,
 } from "@/lib/api/payroll-runs";
+import { PAY_RUN_READ_CAPABILITIES, PAY_RUN_REPORT_READ_CAPABILITIES } from "@/lib/capabilities";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
 import { reportReadinessAction } from "@/lib/report-readiness";
@@ -130,7 +133,27 @@ const ROSTER_HISTORY_COLUMNS: ColumnDef<PayrollRunRosterHistoryResponse>[] = [
 
 export default function PayRunDetailPage() {
 	const { runId } = useParams<{ runId: string }>();
-	const { hasCapability } = useAuth();
+
+	if (!runId) {
+		return (
+			<CapabilityGate anyOf={PAY_RUN_READ_CAPABILITIES} title="Pay Run">
+				<AppLayout title="Pay Run">
+					<PageShell>
+						<EmptyState title="Pay Run Not Found" description="Missing run id." />
+					</PageShell>
+				</AppLayout>
+			</CapabilityGate>
+		);
+	}
+
+	// Remount on runId change: dirty roster edits, validation results, and
+	// calculate state from run A must never leak into run B.
+	return <PayRunDetailContent key={runId} runId={runId} />;
+}
+
+function PayRunDetailContent({ runId }: { runId: string }) {
+	const queryClient = useQueryClient();
+	const { hasCapability, hasAnyCapability } = useAuth();
 	const canCreateRun = hasCapability("create_run");
 
 	const [lastCalculateResult, setLastCalculateResult] = useState<PayrollRunCalculateResult | null>(
@@ -145,11 +168,16 @@ export default function PayRunDetailPage() {
 
 	const runQuery = usePayrollRun(runId);
 	const rosterHistoryQuery = usePayrollRunRosterHistory(runId);
-	const readinessQuery = usePayrollRunReportReadiness(runId);
-	const calculateMutation = useCalculatePayrollRun(runId ?? "");
+	const readinessQuery = usePayrollRunReportReadiness(
+		runId,
+		hasAnyCapability(PAY_RUN_REPORT_READ_CAPABILITIES),
+	);
+	const calculateMutation = useCalculatePayrollRun(runId);
 
 	const run = runQuery.data;
-	const canEditInputs = Boolean(run && isDraftStatus(run.status));
+	// Roster and report-metadata writes require `create_run`; view-only lifecycle
+	// roles (reviewer/approver/releaser) must not see edit affordances.
+	const canEditInputs = Boolean(run && canCreateRun && isDraftStatus(run.status));
 
 	const versionInfo = useMemo(() => {
 		const fromDetail = parsePayrollRunVersion(run?.current_version);
@@ -200,20 +228,25 @@ export default function PayRunDetailPage() {
 		}
 	};
 
-	if (!runId) {
-		return (
-			<CapabilityGate capability="create_run" title="Pay Run">
-				<AppLayout title="Pay Run">
-					<PageShell>
-						<EmptyState title="Pay Run Not Found" description="Missing run id." />
-					</PageShell>
-				</AppLayout>
-			</CapabilityGate>
-		);
-	}
+	// Stale-version refresh: refetch every run-scoped query, not just the run —
+	// roster, results, history, and readiness all change with a new version.
+	const handleRefreshAll = () => {
+		setValidationResult(null);
+		void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.run(runId) });
+		void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.runs() });
+		void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
+		void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.roster(runId) });
+		void queryClient.invalidateQueries({
+			queryKey: payrollRunQueryKeys.rosterHistory(runId),
+		});
+		void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
+		void queryClient.invalidateQueries({
+			queryKey: payrollRunQueryKeys.reportReadiness(runId),
+		});
+	};
 
 	return (
-		<CapabilityGate capability="create_run" title="Pay Run">
+		<CapabilityGate anyOf={PAY_RUN_READ_CAPABILITIES} title="Pay Run">
 			<AppLayout
 				title={
 					run ? (
@@ -228,7 +261,7 @@ export default function PayRunDetailPage() {
 							run={run}
 							versionInfo={versionInfo}
 							onValidated={setValidationResult}
-							onRefresh={() => void runQuery.refetch()}
+							onRefresh={handleRefreshAll}
 						>
 							<div className="flex items-center gap-2" data-testid="pay-run-menu-actions">
 								{canCreateRun ? (
@@ -322,7 +355,7 @@ export default function PayRunDetailPage() {
 							<ReportMetadataSection
 								runId={run.id}
 								metadata={run.report_metadata ?? {}}
-								editable={["draft", "calculated"].includes(run.status)}
+								editable={canCreateRun && ["draft", "calculated"].includes(run.status)}
 							/>
 
 							{readinessQuery.data && !readinessQuery.data.ready ? (

@@ -107,8 +107,11 @@ export function getReportPreview(reportType: string, postedRunId: string) {
 	return fetchJson<ReportPreviewResponse>(`/api/reports/${reportType}/preview${qs}`);
 }
 
-export function exportReports(body: ExportReportsRequest) {
-	return fetchJson<ExportReportsResponse>("/api/reports/export", jsonRequest("POST", body));
+export function exportReports(body: ExportReportsRequest, idempotencyKey: string) {
+	return fetchJson<ExportReportsResponse>(
+		"/api/reports/export",
+		jsonRequest("POST", body, { "Idempotency-Key": idempotencyKey }),
+	);
 }
 
 export function getReportJob(jobId: string) {
@@ -174,7 +177,8 @@ export function useArtifactsList(params: ListArtifactsParams = {}) {
 export function useExportReports() {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: exportReports,
+		mutationFn: (variables: { body: ExportReportsRequest; idempotencyKey: string }) =>
+			exportReports(variables.body, variables.idempotencyKey),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: reportQueryKeys.artifacts() });
 		},

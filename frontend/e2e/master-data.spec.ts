@@ -95,7 +95,7 @@ test("create office, pay component, employee; schedule pay change; PAN masked", 
 	await expect(page.getByTestId("employee-list-page")).toContainText(employeeName);
 
 	updateRunContext({
-		officeCode,
+		officeName,
 		componentCode,
 		employeeNumber,
 		employeeName,

@@ -142,7 +142,7 @@ export function ReportMetadataSection({
 								value={String(form[key] ?? "")}
 								onChange={(event) => setField(key, event.target.value || null)}
 								disabled={!editable || update.isPending}
-								required={required}
+								aria-required={required}
 							/>
 						)}
 					</div>

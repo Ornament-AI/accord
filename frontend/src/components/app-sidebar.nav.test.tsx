@@ -41,17 +41,16 @@ function isPathActive(currentPath: string, itemPath: string) {
 
 function expectedTitlesForRole(role: Role, pathname: string): string[] {
 	const capabilities = new Set(ROLE_CAPABILITIES[role]);
+	const hasAny = (required?: readonly Capability[]) =>
+		required === undefined || required.some((capability) => capabilities.has(capability));
 	const titles: string[] = [];
 	for (const item of NAV_REGISTRY) {
-		if (item.capability !== undefined && !capabilities.has(item.capability)) {
+		if (!hasAny(item.capabilities)) {
 			continue;
 		}
 		titles.push(item.title);
 		if (item.children) {
-			const visibleChildren = item.children.filter(
-				(child) =>
-					child.capability === undefined || capabilities.has(child.capability as Capability),
-			);
+			const visibleChildren = item.children.filter((child) => hasAny(child.capabilities));
 			// A folder's children only mount when the folder is expanded, which the
 			// sidebar does when one of its child routes is active for the current path.
 			const sectionOpen = visibleChildren.some((child) => isPathActive(pathname, child.path));

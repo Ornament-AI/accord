@@ -323,7 +323,7 @@ export function EditPayComponentDialog({
 													transfer_of: checked ? prev.transfer_of : "",
 												}))
 											}
-											disabled={isSubmitting}
+											disabled={isSubmitting || component.is_standard}
 										/>
 									</div>
 

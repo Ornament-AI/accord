@@ -9,7 +9,7 @@ const plugins: PluginOption[] = [react(), tailwindcss()];
 
 function apiProxyTarget(env: Record<string, string>) {
 	if (env.API_PROXY_TARGET) return env.API_PROXY_TARGET;
-	return `http://127.0.0.1:${env.BACKEND_PORT || "8001"}`;
+	return `http://127.0.0.1:${env.BACKEND_PORT || "8000"}`;
 }
 
 export default defineConfig(({ mode }) => {

@@ -5,29 +5,30 @@ import { ClipboardTextIcon as ClipboardList } from "@phosphor-icons/react/dist/c
 import { MoneyIcon as Banknote } from "@phosphor-icons/react/dist/csr/Money";
 import { WalletIcon as WalletCards } from "@phosphor-icons/react/dist/csr/Wallet";
 
+import { PAY_RUN_READ_CAPABILITIES } from "@/lib/capabilities";
 import { PRODUCT_REPORT_SHEETS } from "@/lib/reports/report-registry";
 import type { Capability } from "@/types/auth";
 
 export type NavRegistryChild = {
 	title: string;
 	path: string;
-	/** When set, the child is shown only if `hasCapability(capability)` is true. */
-	capability?: Capability;
+	/** When set, the child is shown only if `hasAnyCapability(capabilities)` is true. */
+	capabilities?: readonly Capability[];
 };
 
 export type NavRegistryEntry = {
 	title: string;
 	icon: PhosphorIcon;
 	path: string;
-	/** When set, the item is shown only if `hasCapability(capability)` is true. */
-	capability?: Capability;
+	/** When set, the item is shown only if `hasAnyCapability(capabilities)` is true. */
+	capabilities?: readonly Capability[];
 	children?: readonly NavRegistryChild[];
 };
 
 const REPORT_NAV_CHILDREN: readonly NavRegistryChild[] = PRODUCT_REPORT_SHEETS.map((sheet) => ({
 	title: sheet.title,
 	path: `/reports/${sheet.slug}`,
-	capability: "generate_reports" as const,
+	capabilities: ["generate_reports"],
 }));
 
 /** Ordered primary navigation using the most direct capability from the frozen contract. */
@@ -36,7 +37,7 @@ export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
 		title: "Organization",
 		icon: Building2,
 		path: "/organization",
-		capability: "view_master_data",
+		capabilities: ["view_master_data"],
 		children: [
 			{ title: "Employees", path: "/employees" },
 			{ title: "Offices", path: "/organization/offices" },
@@ -47,15 +48,20 @@ export const NAV_REGISTRY: readonly NavRegistryEntry[] = [
 		title: "Pay Components",
 		icon: WalletCards,
 		path: "/pay-components",
-		capability: "view_master_data",
+		capabilities: ["view_master_data"],
 	},
-	{ title: "Pay Runs", icon: Banknote, path: "/pay-runs", capability: "create_run" },
+	{
+		title: "Pay Runs",
+		icon: Banknote,
+		path: "/pay-runs",
+		capabilities: PAY_RUN_READ_CAPABILITIES,
+	},
 	{
 		title: "Reports",
 		icon: FileBarChart2,
 		path: "/reports",
-		capability: "generate_reports",
+		capabilities: ["generate_reports"],
 		children: REPORT_NAV_CHILDREN,
 	},
-	{ title: "Audit", icon: ClipboardList, path: "/audit", capability: "view_audit" },
+	{ title: "Audit", icon: ClipboardList, path: "/audit", capabilities: ["view_audit"] },
 ] as const;

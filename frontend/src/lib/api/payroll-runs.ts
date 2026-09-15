@@ -99,8 +99,11 @@ export function parsePayrollRunVersion(value: unknown): PayrollRunCalculateResul
 	const versionNumber = asOptionalNumber(value.version_number);
 	const engineVersion = asOptionalString(value.engine_version);
 	const contentHash = asOptionalString(value.content_hash);
+	// The calculate response carries `run_id`/`version_id`; the run detail's
+	// `current_version` (CurrentVersion schema) identifies the version as `id`
+	// and has no run_id — that field stays "" for the current_version shape.
 	const runId = asOptionalString(value.run_id) ?? "";
-	const versionId = asOptionalString(value.version_id) ?? "";
+	const versionId = asOptionalString(value.version_id) ?? asOptionalString(value.id) ?? "";
 
 	let totals: PayrollRunTotals = {};
 	if (isRecord(value.totals)) {
@@ -203,10 +206,11 @@ export function calculatePayrollRun(runId: string) {
 	});
 }
 
-export function usePayrollPeriods() {
+export function usePayrollPeriods(enabled = true) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.periods(),
 		queryFn: listPayrollPeriods,
+		enabled,
 	});
 }
 
@@ -220,10 +224,11 @@ export function useCreatePayrollPeriod() {
 	});
 }
 
-export function usePayrollRuns(filters: PayrollRunFilters = {}) {
+export function usePayrollRuns(filters: PayrollRunFilters = {}, enabled = true) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.runs(filters),
 		queryFn: () => listPayrollRuns(filters),
+		enabled,
 	});
 }
 
@@ -237,11 +242,13 @@ export function useCreatePayrollRun() {
 	});
 }
 
-export function usePayrollRun(runId: string | undefined) {
+export function usePayrollRun(runId: string | undefined, enabled = true) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.run(runId ?? ""),
 		queryFn: () => getPayrollRun(runId!),
-		enabled: Boolean(runId),
+		enabled: Boolean(runId) && enabled,
+		// A run mid-`calculating` has no other update path — poll until it settles.
+		refetchInterval: (query) => (query.state.data?.status === "calculating" ? 3_000 : false),
 	});
 }
 
@@ -256,27 +263,27 @@ export function useUpdatePayrollRunReportMetadata(runId: string) {
 	});
 }
 
-export function usePayrollRunReportReadiness(runId: string | undefined) {
+export function usePayrollRunReportReadiness(runId: string | undefined, enabled = true) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.reportReadiness(runId ?? ""),
 		queryFn: () => getPayrollRunReportReadiness(runId!),
-		enabled: Boolean(runId),
+		enabled: Boolean(runId) && enabled,
 	});
 }
 
-export function usePayrollRunRoster(runId: string | undefined) {
+export function usePayrollRunRoster(runId: string | undefined, enabled = true) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.roster(runId ?? ""),
 		queryFn: () => listPayrollRunRoster(runId!),
-		enabled: Boolean(runId),
+		enabled: Boolean(runId) && enabled,
 	});
 }
 
-export function usePayrollRunRosterHistory(runId: string | undefined) {
+export function usePayrollRunRosterHistory(runId: string | undefined, enabled = true) {
 	return useQuery({
 		queryKey: payrollRunQueryKeys.rosterHistory(runId ?? ""),
 		queryFn: () => listPayrollRunRosterHistory(runId!),
-		enabled: Boolean(runId),
+		enabled: Boolean(runId) && enabled,
 	});
 }
 

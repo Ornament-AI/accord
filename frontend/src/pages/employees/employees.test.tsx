@@ -544,6 +544,149 @@ describe("ScheduleChangeDialog", () => {
 			),
 		);
 	});
+
+	it("omits masked sensitive values from the profile version payload", async () => {
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const onCreateVersion = vi.fn();
+		const { handlers: employeeHandlers } = createEmployeeHandlers({ onCreateVersion });
+		const { handlers: orgHandlers } = createOrgSetupHandlers();
+		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
+
+		const baseProfile = buildEmployeeDetail({
+			id: "emp-1",
+			employee_number: "E-001",
+		}).profile!;
+		const maskedProfile = {
+			...baseProfile,
+			pan: "••••234F",
+			pran: "••••9012",
+			pension_account: "••••9012",
+			gpf_account_number: "••••8877",
+			epf_number: "••••3456",
+		};
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME_TEST">
+					<AuthProvider>
+						<ScheduleChangeDialog
+							open
+							onOpenChange={vi.fn()}
+							employeeId="emp-1"
+							kind="profile"
+							activeProfile={maskedProfile}
+						/>
+					</AuthProvider>
+				</ThemeProvider>
+			</QueryClientProvider>,
+		);
+
+		await screen.findByRole("heading", { name: /Schedule Profile Change/i });
+
+		// A fresh value typed over the mask must still be submitted.
+		fireEvent.change(screen.getByLabelText("PAN"), { target: { value: "ABCDE9999Z" } });
+		fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+		await waitFor(() => expect(onCreateVersion).toHaveBeenCalledOnce());
+		const body = onCreateVersion.mock.calls[0][2] as Record<string, unknown>;
+		expect(body.pan).toBe("ABCDE9999Z");
+		expect(body).not.toHaveProperty("pran");
+		expect(body).not.toHaveProperty("pension_account");
+		expect(body).not.toHaveProperty("gpf_account_number");
+		expect(body).not.toHaveProperty("epf_number");
+		expect(body.name).toBe("Alice Example");
+	});
+
+	it("omits a masked account number from the bank version payload", async () => {
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const onCreateVersion = vi.fn();
+		const { handlers: employeeHandlers } = createEmployeeHandlers({ onCreateVersion });
+		const { handlers: orgHandlers } = createOrgSetupHandlers();
+		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
+
+		const maskedBank = {
+			...buildEmployeeDetail({ id: "emp-1", employee_number: "E-001" }).bank!,
+			account_number: "••••9012",
+		};
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME_TEST">
+					<AuthProvider>
+						<ScheduleChangeDialog
+							open
+							onOpenChange={vi.fn()}
+							employeeId="emp-1"
+							kind="bank"
+							activeBank={maskedBank}
+						/>
+					</AuthProvider>
+				</ThemeProvider>
+			</QueryClientProvider>,
+		);
+
+		await screen.findByRole("heading", { name: /Schedule Bank Change/i });
+		fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+		await waitFor(() => expect(onCreateVersion).toHaveBeenCalledOnce());
+		const body = onCreateVersion.mock.calls[0][2] as Record<string, unknown>;
+		expect(body).not.toHaveProperty("account_number");
+		expect(body.ifsc).toBe("SBIN0001234");
+		expect(body.bank_name).toBe("SBI");
+	});
+
+	it("keeps in-progress edits when active version props refresh", async () => {
+		const { handlers: authHandlers } = createAuthHandlers({
+			me: buildRoleAuthMe("organization_administrator"),
+		});
+		const { handlers: employeeHandlers } = createEmployeeHandlers();
+		const { handlers: orgHandlers } = createOrgSetupHandlers();
+		server.use(...authHandlers, ...employeeHandlers, ...orgHandlers);
+
+		const bank = buildEmployeeDetail({ id: "emp-1", employee_number: "E-001" }).bank!;
+
+		const view = render(
+			<QueryClientProvider client={queryClient}>
+				<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME_TEST">
+					<AuthProvider>
+						<ScheduleChangeDialog
+							open
+							onOpenChange={vi.fn()}
+							employeeId="emp-1"
+							kind="bank"
+							activeBank={bank}
+						/>
+					</AuthProvider>
+				</ThemeProvider>
+			</QueryClientProvider>,
+		);
+
+		await screen.findByRole("heading", { name: /Schedule Bank Change/i });
+		fireEvent.change(screen.getByLabelText("IFSC"), { target: { value: "NEWI0001234" } });
+
+		// A refetch supplies a fresh object identity; the effect must not re-seed.
+		view.rerender(
+			<QueryClientProvider client={queryClient}>
+				<ThemeProvider defaultTheme="dark" storageKey="ACCORD_THEME_TEST">
+					<AuthProvider>
+						<ScheduleChangeDialog
+							open
+							onOpenChange={vi.fn()}
+							employeeId="emp-1"
+							kind="bank"
+							activeBank={{ ...bank }}
+						/>
+					</AuthProvider>
+				</ThemeProvider>
+			</QueryClientProvider>,
+		);
+
+		expect(screen.getByLabelText("IFSC")).toHaveValue("NEWI0001234");
+	});
 });
 
 describe("Employees capability gate", () => {

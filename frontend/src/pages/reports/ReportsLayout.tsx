@@ -4,6 +4,7 @@ import { DownloadSimpleIcon as Download } from "@phosphor-icons/react/dist/csr/D
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useSearchParams } from "react-router";
+import { toast } from "sonner";
 
 import { AppLayout } from "@/components/app-layout";
 import { CapabilityGate } from "@/components/capability-gate";
@@ -21,6 +22,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
 import {
 	type PayrollRunListItem,
 	usePayrollRunReportReadiness,
@@ -36,6 +38,7 @@ import {
 	useExportReports,
 	useReportJob,
 } from "@/lib/api/reports";
+import { PAY_RUN_REPORT_READ_CAPABILITIES } from "@/lib/capabilities";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
 import { reportReadinessAction } from "@/lib/report-readiness";
@@ -62,8 +65,12 @@ export default function ReportsLayout() {
 	const [exportJobId, setExportJobId] = useState<string | undefined>();
 	const downloadedArtifactRef = useRef<string | null>(null);
 
-	const runsQuery = usePayrollRuns({ status: "posted" });
-	const readinessQuery = usePayrollRunReportReadiness(selectedRunId ?? undefined);
+	const { hasAnyCapability } = useAuth();
+	// Runs-list and report-readiness reads serve the full run-lifecycle union plus
+	// report consumers (e.g. `auditor`); gate so other roles don't fire a 403.
+	const canReadRunData = hasAnyCapability(PAY_RUN_REPORT_READ_CAPABILITIES);
+	const runsQuery = usePayrollRuns({ status: "posted" }, canReadRunData);
+	const readinessQuery = usePayrollRunReportReadiness(selectedRunId ?? undefined, canReadRunData);
 	const exportMutation = useExportReports();
 	const exportJobQuery = useReportJob(exportJobId);
 	const downloadMutation = useDownloadArtifact();
@@ -105,6 +112,14 @@ export default function ReportsLayout() {
 					preferFilename: exportJobQuery.data.result?.filename,
 				},
 				{
+					onError: (error) => {
+						toast.error(
+							getErrorMessage(
+								error,
+								"Export finished, but the artifact download failed. Retry it from Recent Artifacts.",
+							),
+						);
+					},
 					onSettled: () => {
 						setExportJobId(undefined);
 					},
@@ -155,7 +170,12 @@ export default function ReportsLayout() {
 		if (!selectedRunId || exportBlocked) return;
 		downloadedArtifactRef.current = null;
 		exportMutation.mutate(
-			{ posted_run_id: selectedRunId, template_version: "v3" },
+			{
+				body: { posted_run_id: selectedRunId, template_version: "v3" },
+				// One key per user-initiated export: duplicate submissions of the
+				// same click dedupe server-side, a deliberate re-export does not.
+				idempotencyKey: crypto.randomUUID(),
+			},
 			{
 				onSuccess: (result) => {
 					setExportJobId(result.job_id);

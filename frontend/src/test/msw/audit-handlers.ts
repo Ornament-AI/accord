@@ -1,10 +1,11 @@
 import { HttpResponse, http } from "msw";
 
-import type {
-	AuditEventDetail,
-	AuditEventListItem,
-	AuditFilterOptions,
-	PaginatedAuditEventResponse,
+import {
+	type AuditEventDetail,
+	type AuditEventListItem,
+	type AuditFilterOptions,
+	isUuid,
+	type PaginatedAuditEventResponse,
 } from "@/lib/api/audit";
 
 export type AuditHandlersOptions = {
@@ -96,6 +97,12 @@ function defaultEvents(count: number): AuditEventDetail[] {
 	});
 }
 
+/** Mirror `_to_utc_naive`: naive timestamps are UTC; aware ones keep their offset. */
+function parseBackendTimestamp(value: string): number {
+	const aware = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+	return Date.parse(aware ? value : `${value}Z`);
+}
+
 function captureParams(url: URL): CapturedAuditListRequest {
 	return {
 		entity_type: url.searchParams.get("entity_type"),
@@ -141,14 +148,38 @@ export function createAuditHandlers(options: AuditHandlersOptions = {}) {
 			const to = url.searchParams.get("to");
 			const page = Number(url.searchParams.get("page") ?? "1");
 			const size = Number(url.searchParams.get("page_size") ?? String(pageSize));
+			// Mirror FastAPI: entity_id is declared `UUID` → a non-UUID value 422s.
+			if (entityId && !isUuid(entityId)) {
+				return HttpResponse.json(
+					{
+						detail: [
+							{
+								loc: ["query", "entity_id"],
+								msg: "Input should be a valid UUID",
+								type: "uuid_parsing",
+							},
+						],
+					},
+					{ status: 422 },
+				);
+			}
 			let items = Array.from(store.values());
 			if (entityType) items = items.filter((item) => item.entity_type === entityType);
 			if (entityId) items = items.filter((item) => item.entity_id === entityId);
 			if (command) items = items.filter((item) => item.command === command);
 			if (actorUserId) items = items.filter((item) => item.actor?.id === actorUserId);
-			if (from) items = items.filter((item) => Date.parse(item.created_at) >= Date.parse(from));
-			if (to) items = items.filter((item) => Date.parse(item.created_at) <= Date.parse(to));
-			items.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+			if (from)
+				items = items.filter(
+					(item) => parseBackendTimestamp(item.created_at) >= parseBackendTimestamp(from),
+				);
+			if (to)
+				items = items.filter(
+					(item) => parseBackendTimestamp(item.created_at) <= parseBackendTimestamp(to),
+				);
+			items.sort(
+				(left, right) =>
+					parseBackendTimestamp(right.created_at) - parseBackendTimestamp(left.created_at),
+			);
 			const total = items.length;
 			const totalPages = Math.max(1, Math.ceil(total / size));
 			const start = (page - 1) * size;
