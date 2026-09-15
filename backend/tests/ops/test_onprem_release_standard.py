@@ -69,6 +69,7 @@ def test_adapter_declares_every_service_and_required_proof() -> None:
         "minio",
         "minio-init",
         "postgres",
+        "role-sync",
         "web",
         "worker",
     ]
@@ -112,6 +113,7 @@ def test_package_builds_self_contained_digest_release(tmp_path: Path) -> None:
         "minio",
         "minio-init",
         "postgres",
+        "role-sync",
         "web",
         "worker",
     }
