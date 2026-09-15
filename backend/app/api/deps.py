@@ -16,6 +16,7 @@ from app.auth.errors import (
     WeakSessionSecretError,
 )
 from app.auth.principal import AuthPrincipal
+from app.auth.session import hash_user_agent
 from app.config import get_settings
 from app.db import get_session
 from app.models.identity import User
@@ -40,7 +41,12 @@ async def _resolve_current_user(
         return None
 
     try:
-        principal = await resolve_principal(db, settings, cookie_value)
+        principal = await resolve_principal(
+            db,
+            settings,
+            cookie_value,
+            user_agent_hash=hash_user_agent(request.headers.get("user-agent")),
+        )
     except WeakSessionSecretError:
         return None
     if principal is not None:

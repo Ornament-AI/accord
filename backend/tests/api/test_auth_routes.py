@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.auth.adapters import AuthenticatedIdentity, DevAuthAdapter
 from app.auth.errors import AuthMisconfiguredError, InvalidAuthenticationError
 from app.auth.session import DatabaseSessionStore, sign_oauth_state
+from tests.identity_helpers import apply_oauth_state_cookie
 from app.models.base import utcnow
 from app.models.identity import OrganizationInvitation, Session as SessionRow
 from app.models.identity import User
@@ -107,6 +108,7 @@ async def test_logout_clears_cookie_revokes_session_and_me_401(client, dev_setti
 @pytest.mark.asyncio
 async def test_callback_happy_path_with_dev_adapter(client, dev_settings):
     state = sign_oauth_state(dev_settings)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "dev-login", "state": state},
@@ -146,6 +148,7 @@ async def test_callback_happy_path_with_mocked_workos_exchange(client, monkeypat
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "auth-code", "state": state},
@@ -292,6 +295,7 @@ async def test_magic_code_request_rejects_unregistered_email(client, monkeypatch
 @pytest.mark.asyncio
 async def test_callback_invalid_state_redirects_with_error(client, dev_settings):
     state = sign_oauth_state(dev_settings)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "dev-login", "state": state + "tampered"},
@@ -315,6 +319,7 @@ async def test_callback_missing_state_redirects_with_error(client, dev_settings)
 @pytest.mark.asyncio
 async def test_callback_missing_code_redirects_auth_failed(client, dev_settings):
     state = sign_oauth_state(dev_settings)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"state": state},
@@ -492,6 +497,7 @@ async def test_return_to_round_trip_via_callback_state(client, monkeypatch):
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value, redirect_to="/pay-runs")
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
@@ -529,6 +535,7 @@ async def test_callback_drops_evil_return_to_in_state(client, monkeypatch):
         salt="accord-oauth-state-v1",
     )
     state = serializer.dumps({"n": "nonce", "r": "https://evil.com"})
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
@@ -586,6 +593,7 @@ async def test_callback_upsert_creates_user_and_updates_existing(client, monkeyp
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     await client.get(
         "/api/auth/callback",
         params={"code": "c1", "state": state},
@@ -603,6 +611,7 @@ async def test_callback_upsert_creates_user_and_updates_existing(client, monkeyp
         )
     )
     state2 = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state2)
     await client.get(
         "/api/auth/callback",
         params={"code": "c2", "state": state2},
@@ -645,6 +654,7 @@ async def test_callback_claims_invite_and_activates(client, monkeypatch, session
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},
@@ -683,6 +693,7 @@ async def test_callback_unprovisioned_when_org_exists_without_invite(client, mon
     monkeypatch.setattr("app.api.routes.auth.get_auth_adapter", lambda _s: mock_adapter)
 
     state = sign_oauth_state(value)
+    apply_oauth_state_cookie(client, state)
     resp = await client.get(
         "/api/auth/callback",
         params={"code": "c", "state": state},

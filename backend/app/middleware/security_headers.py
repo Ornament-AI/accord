@@ -34,6 +34,15 @@ _SECURITY_HEADERS: dict[str, str] = {
 }
 
 
+def build_security_headers() -> dict[str, str]:
+    """Return the standard security header set (a fresh dict per call).
+
+    Used by ``SecurityHeadersMiddleware`` and by the outermost unhandled-error
+    handler, which runs outside the user middleware stack.
+    """
+    return dict(_SECURITY_HEADERS)
+
+
 # ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ def _set_base_env(monkeypatch):
     monkeypatch.delenv("DB_POOL_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("DB_POOL_RECYCLE_SECONDS", raising=False)
     monkeypatch.delenv("DB_STATEMENT_TIMEOUT_MS", raising=False)
+    monkeypatch.delenv("ACCORD_ALLOW_WEAK_SECRETS", raising=False)
 
 
 def test_dev_defaults(monkeypatch):
@@ -87,7 +88,7 @@ def test_production_accepts_complete_auth_and_db_seams(monkeypatch):
     monkeypatch.setenv("WORKOS_API_KEY", "key")
     monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
     monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
-    monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret-of-adequate-length")
     monkeypatch.setenv(
         "MIGRATIONS_DATABASE_URL",
         "postgresql+asyncpg://accord_migrator@localhost/accord",
@@ -98,3 +99,70 @@ def test_production_accepts_complete_auth_and_db_seams(monkeypatch):
     assert settings.is_production is True
     assert settings.workos_client_id == "client"
     assert settings.migrations_database_url.startswith("postgresql+asyncpg://")
+
+
+@pytest.mark.parametrize("bad_env", ["prod", "STAGINGGG", "", "local", "prd"])
+def test_environment_allowlist_rejects_unknown_values(monkeypatch, bad_env):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", bad_env)
+
+    with pytest.raises(ValidationError, match="ENVIRONMENT must be one of"):
+        Settings(_env_file=None)
+
+
+@pytest.mark.parametrize("good_env", ["development", "staging", "production", "Production "])
+def test_environment_allowlist_accepts_known_values(monkeypatch, good_env):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", good_env)
+    if good_env.strip().lower() != "development":
+        monkeypatch.setenv("WORKOS_CLIENT_ID", "client")
+        monkeypatch.setenv("WORKOS_API_KEY", "key")
+        monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
+        monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
+        monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret-of-adequate-length")
+        monkeypatch.setenv("MIGRATIONS_DATABASE_URL", "postgresql+asyncpg://m@localhost/accord")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.environment == good_env.strip().lower()
+    assert settings.is_development is (good_env.strip().lower() == "development")
+
+
+def test_staging_is_production_class(monkeypatch):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("DEV_AUTH_BYPASS", "true")
+
+    with pytest.raises(ValidationError, match="DEV_AUTH_BYPASS cannot be enabled in production"):
+        Settings(_env_file=None)
+
+
+def test_production_rejects_allow_weak_secrets(monkeypatch):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ACCORD_ALLOW_WEAK_SECRETS", "true")
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "client")
+    monkeypatch.setenv("WORKOS_API_KEY", "key")
+    monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
+    monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret-of-adequate-length")
+    monkeypatch.setenv("MIGRATIONS_DATABASE_URL", "postgresql+asyncpg://m@localhost/accord")
+
+    with pytest.raises(
+        ValidationError, match="ACCORD_ALLOW_WEAK_SECRETS cannot be enabled in production"
+    ):
+        Settings(_env_file=None)
+
+
+def test_production_rejects_short_session_secret(monkeypatch):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "client")
+    monkeypatch.setenv("WORKOS_API_KEY", "key")
+    monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
+    monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "short")
+    monkeypatch.setenv("MIGRATIONS_DATABASE_URL", "postgresql+asyncpg://m@localhost/accord")
+
+    with pytest.raises(ValidationError, match="SESSION_SECRET_KEY must be at least"):
+        Settings(_env_file=None)

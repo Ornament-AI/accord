@@ -15,7 +15,8 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.session import DatabaseSessionStore
+from app.auth.session import DatabaseSessionStore, sign_csrf_token
+from app.config import get_settings
 from app.models.identity import Organization, User
 from tests.identity_helpers import (  # noqa: F401
     clear_settings_cache,
@@ -78,6 +79,9 @@ async def mint_session_cookie(
 def apply_session_cookie(client: AsyncClient, cookie: str) -> None:
     client.cookies.clear()
     client.cookies.set("accord_session", cookie)
+    # The CSRF middleware only enforces when a session cookie is present, so
+    # minted-session tests must carry the bound accord_csrf cookie too.
+    client.cookies.set("accord_csrf", sign_csrf_token(get_settings(), cookie))
 
 
 @pytest_asyncio.fixture

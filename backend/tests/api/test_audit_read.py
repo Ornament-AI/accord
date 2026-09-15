@@ -9,13 +9,16 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+import sqlalchemy as sa
+
 from app.api.routes.audit import router as audit_router
 from app.main import create_app
 from app.models.platform import AuditEvent
-from app.tenancy import bind_tenant_context
+from app.tenancy import bind_tenant_context, set_config_local
 from app.services.bootstrap import provision_organization
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
+    attach_csrf_echo,
     login_dev,
     seed_membership,
     seed_user,
@@ -35,6 +38,7 @@ async def client(dev_settings):
     application = _audit_app()
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac
 
 
@@ -50,7 +54,17 @@ async def _create_org_as_admin(client, session) -> tuple[UUID, UUID]:
     await login_dev(client)
     body = (await client.get("/api/auth/me")).json()
     assert body["access_state"] == "active", body
-    return UUID(body["organization"]["id"]), UUID(body["id"])
+    org_id, user_id = UUID(body["organization"]["id"]), UUID(body["id"])
+    # T1.13: bootstrap + first login now emit real mutation events. These
+    # read-path tests assume only the seeded rows exist, so purge the
+    # provisioning noise via the documented immutable-DDL escape hatch.
+    if session.in_transaction():
+        await session.rollback()
+    async with session.begin():
+        await bind_tenant_context(session, organization_id=org_id, user_id=user_id)
+        await set_config_local(session, "accord.allow_immutable_ddl", "on")
+        await session.execute(sa.delete(AuditEvent).where(AuditEvent.organization_id == org_id))
+    return org_id, user_id
 
 
 async def _seed_audit_event(

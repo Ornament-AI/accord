@@ -45,7 +45,7 @@ Browsers never receive bearer JWTs for ordinary sessions.
 | HTTP-only | Cookie not readable from JavaScript (`httponly=True` in `backend/app/auth/session.py`). | XSS cannot exfiltrate `accord_session` via `document.cookie`. |
 | Secure | Cookie is marked Secure when `ENVIRONMENT=production`. A staging deployment using another environment value does not receive that flag; the [security review](security-review.md) records this gap. | Run internet-facing staging with the production security mode, or close the environment-policy gap before relying on a separate staging value. |
 | SameSite=Lax | Cookie sent on top-level navigations; withheld on most cross-site subrequests. | **Why Lax, not Strict:** the AuthKit login/callback flow needs top-level cross-site redirects that must carry the session cookie; `Strict` breaks that flow. Lax alone is **not** enough CSRF defense for APIs. |
-| Synchronizer CSRF | State-changing routes must require a synchronizer CSRF token — a server-issued token the client echoes back in a header. | **Not yet implemented.** SameSite=Lax and signed OAuth `state` exist today, but general mutations do not have the required token proof. |
+| Synchronizer CSRF | Cookie-authenticated mutations (POST/PUT/PATCH/DELETE) must echo the non-HttpOnly `accord_csrf` cookie in the `X-CSRF-Token` header; the cookie value is a server-signed token bound to the SHA-256 of the session cookie (`backend/app/middleware/csrf.py`, `backend/app/auth/session.py`). | Enforced by `CsrfMiddleware`; requests without a session cookie pass through to fail closed at auth. |
 | Expiry / refresh | Absolute 12-hour TTL (`SESSION_MAX_AGE_SECONDS`) plus an idle timeout (`SESSION_IDLE_TIMEOUT_SECONDS`, default 2 h). A fresh session row is minted at login; logout revokes the row. | Covered by `backend/tests/auth/test_session.py` and `backend/tests/gate_d/test_session_adversarial.py`. |
 | Login rate limits | Password and magic-code login routes are rate limited per client IP (`backend/app/middleware/rate_limit.py`; decorators in `backend/app/api/routes/auth.py`). | Credential stuffing and code guessing are throttled. |
 | Logging | Session tokens never appear in structured logs. | Redaction rules below. |
@@ -210,7 +210,7 @@ Gate checklist item in [release-acceptance.md](release-acceptance.md).
 | Area | Current coverage | Remaining gap |
 | --- | --- | --- |
 | Session hardening | `backend/tests/auth/test_session.py`, `backend/tests/gate_d/test_session_adversarial.py` | Secure-cookie behavior treats staging as non-production |
-| CSRF | Signed OAuth-state coverage in session/auth tests | No synchronizer token on general mutations |
+| CSRF | Signed OAuth-state + session-bound synchronizer token (`CsrfMiddleware`); auth/API suites exercise the echo contract | None identified in current contract |
 | WorkOS webhooks | `backend/tests/api/test_webhooks_workos.py` | None identified in current contract |
 | Privilege escalation | `backend/tests/gate_d/test_capability_matrix.py`, `backend/tests/api/test_deps_capabilities.py` | Support elevation is intentionally absent |
 | PII masking / reveal | Employee API/service suites | Reveal read is not audit-logged |

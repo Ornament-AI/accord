@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hmac
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,13 +18,28 @@ from app.config import Settings
 from app.models.base import utcnow
 from app.models.identity import Organization, OrganizationMembership, User
 from app.models.identity import Session as SessionRow
+from app.services.audit_events import entity_snapshot, write_mutation_event
 from app.services.bootstrap import get_singleton_organization
 from app.services.members import claim_pending_invitation
 from app.tenancy import bind_tenant_context
 
+logger = structlog.get_logger()
 
-async def upsert_user(db: AsyncSession, identity: AuthenticatedIdentity) -> User:
-    """Create or update a local user keyed by WorkOS subject id."""
+
+async def upsert_user(
+    db: AsyncSession,
+    identity: AuthenticatedIdentity,
+    *,
+    organization_id: UUID | None = None,
+) -> User:
+    """Create or update a local user keyed by WorkOS subject id.
+
+    Audit: only real state transitions emit events — a first-seen identity
+    (``user.create``) or an IdP-driven email/name change (``user.update``).
+    Routine logins whose claims match the stored row write no audit noise.
+    ``organization_id`` may be None pre-bootstrap; without a tenant the
+    tenant-scoped audit row cannot be written, so creation is silent.
+    """
     result = await db.execute(select(User).where(User.workos_user_id == identity.subject_id))
     user = result.scalar_one_or_none()
     name = (identity.name or "").strip() or identity.email
@@ -35,18 +52,45 @@ async def upsert_user(db: AsyncSession, identity: AuthenticatedIdentity) -> User
         )
         db.add(user)
         await db.flush()
+        if organization_id is not None:
+            await write_mutation_event(
+                db,
+                organization_id=organization_id,
+                actor_user_id=user.id,
+                command="user.create",
+                entity_type="user",
+                entity_id=user.id,
+                entity_label=f"{user.name} <{user.email}>",
+                before_state={},
+                after_state=entity_snapshot(user),
+                summary={"email": user.email, "workos_user_id": user.workos_user_id},
+            )
         return user
 
-    changed = False
+    changed_fields: list[str] = []
+    before_state = entity_snapshot(user)
     if user.email != email:
         user.email = email
-        changed = True
+        changed_fields.append("email")
     if user.name != name:
         user.name = name
-        changed = True
-    if changed:
+        changed_fields.append("name")
+    if changed_fields:
         user.updated_at = utcnow()
         await db.flush()
+        if organization_id is not None:
+            await write_mutation_event(
+                db,
+                organization_id=organization_id,
+                actor_user_id=user.id,
+                command="user.update",
+                entity_type="user",
+                entity_id=user.id,
+                entity_label=f"{user.name} <{user.email}>",
+                before_state=before_state,
+                after_state=entity_snapshot(user),
+                summary={"updated_fields": changed_fields},
+            )
     return user
 
 
@@ -123,8 +167,18 @@ async def establish_session_for_identity(
 
     upsert user → claim invite → auto-bind singleton membership → create session.
     """
-    user = await upsert_user(db, identity)
     org = await get_singleton_organization(db)
+    if org is not None:
+        # audit_events RLS (accord_app) requires app.organization_id on INSERT;
+        # the login path runs without a pre-bound tenant context.
+        await bind_tenant_context(db, organization_id=org.id)
+    user = await upsert_user(
+        db,
+        identity,
+        organization_id=org.id if org is not None else None,
+    )
+    if org is not None:
+        await bind_tenant_context(db, organization_id=org.id, user_id=user.id)
     active_organization_id = None
     if org is not None:
         membership = await claim_pending_invitation(db, user, org)
@@ -208,6 +262,8 @@ async def resolve_principal(
     db: AsyncSession,
     settings: Settings,
     cookie_value: str,
+    *,
+    user_agent_hash: str | None = None,
 ) -> AuthPrincipal | None:
     """Read session store → load user → resolve active org/role/capabilities."""
     try:
@@ -216,6 +272,25 @@ async def resolve_principal(
         return None
     session_row = await store.read_session(cookie_value)
     if session_row is None:
+        return None
+
+    # Bind the session to the User-Agent fingerprint captured at login.
+    # Mismatch rejects (a stolen cookie replayed from a different client) but
+    # does not revoke — a browser auto-update should not nuke the session.
+    stored_ua_hash = session_row.user_agent_hash
+    if stored_ua_hash is None:
+        if user_agent_hash is not None:
+            # Backfill on read so pre-existing sessions bind now instead of
+            # logging everyone out at deploy time.
+            session_row.user_agent_hash = user_agent_hash
+            await db.flush()
+            await db.commit()
+    elif not hmac.compare_digest(stored_ua_hash, user_agent_hash or ""):
+        logger.warning(
+            "session_user_agent_mismatch",
+            session_id=str(session_row.id),
+            user_id=str(session_row.user_id),
+        )
         return None
 
     user = await db.get(User, session_row.user_id)

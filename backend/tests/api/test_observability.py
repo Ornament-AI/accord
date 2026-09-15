@@ -9,6 +9,14 @@ from uuid import uuid4
 import pytest
 
 from app.main import app
+from app.models.identity import Organization
+from app.models.platform import Job
+from app.observability import (
+    accord_jobs,
+    accord_outbox_oldest_age_seconds,
+    accord_outbox_pending,
+    refresh_platform_gauges,
+)
 from app.reports.base import ReportRegistry
 
 
@@ -89,3 +97,34 @@ async def test_readyz_empty_report_registry_is_degraded(client, monkeypatch):
     assert body["reports"] == "empty"
     assert body["database"] == "ok"
     assert body["auth"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_platform_gauges_reflect_seeded_jobs(session, clean_identity_tables):
+    """Scrape-time gauges must see tenant rows (they are forced-RLS protected)."""
+    org = Organization(id=uuid4(), name="Metrics Org", slug=f"metrics-{uuid4().hex[:8]}")
+    session.add(org)
+    await session.flush()
+    session.add(
+        Job(
+            organization_id=org.id,
+            job_type="export.generate",
+            status="queued",
+            payload={},
+        )
+    )
+    await session.commit()
+
+    await refresh_platform_gauges()
+
+    assert accord_jobs.labels(status="queued")._value.get() == 1
+
+
+@pytest.mark.asyncio
+async def test_platform_gauges_zero_on_fresh_install(session, clean_identity_tables):
+    """No organization (pre-bootstrap): gauges report honest zeros, no error."""
+    await refresh_platform_gauges()
+
+    assert accord_jobs.labels(status="queued")._value.get() == 0
+    assert accord_outbox_pending._value.get() == 0
+    assert accord_outbox_oldest_age_seconds._value.get() == 0
