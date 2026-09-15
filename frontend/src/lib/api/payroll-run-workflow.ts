@@ -1,4 +1,4 @@
-/** Payroll run workflow commands: validate, submit, withdraw, approve, reject, post, reverse. */
+/** Payroll run workflow commands: validate, submit, withdraw, approve, reject, reopen, post, reverse. */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { fetchJson } from "@/lib/api/http";
@@ -99,6 +99,15 @@ export function rejectPayrollRun(runId: string, options: WorkflowCommandOptions)
 	});
 }
 
+export function reopenPayrollRun(runId: string, options: WorkflowCommandOptions) {
+	const body: WorkflowReasonBody = { reason: options.reason ?? null };
+	return fetchJson<PayrollRunWorkflowSummary>(`/api/payroll-runs/${runId}/reopen`, {
+		method: "POST",
+		headers: workflowHeaders(options.idempotencyKey),
+		body: JSON.stringify(body),
+	});
+}
+
 export function postPayrollRun(runId: string, idempotencyKey: string) {
 	return fetchJson<PayrollRunWorkflowSummary>(`/api/payroll-runs/${runId}/post`, {
 		method: "POST",
@@ -151,6 +160,14 @@ export function useRejectPayrollRun(runId: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (options: WorkflowCommandOptions) => rejectPayrollRun(runId, options),
+		onSuccess: () => invalidateRunQueries(queryClient, runId),
+	});
+}
+
+export function useReopenPayrollRun(runId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (options: WorkflowCommandOptions) => reopenPayrollRun(runId, options),
 		onSuccess: () => invalidateRunQueries(queryClient, runId),
 	});
 }

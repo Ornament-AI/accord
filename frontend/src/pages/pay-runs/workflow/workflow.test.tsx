@@ -142,8 +142,8 @@ describe("WorkflowActionBar visibility matrix", () => {
 			name: "calculated + preparer caps",
 			status: "calculated",
 			capabilities: ["create_run", "submit_run"],
-			visible: ["validate", "submit"],
-			enabled: ["validate", "submit"],
+			visible: ["validate", "submit", "reopen"],
+			enabled: ["validate", "submit", "reopen"],
 		},
 		{
 			name: "submitted + submit/approve",
@@ -170,8 +170,15 @@ describe("WorkflowActionBar visibility matrix", () => {
 			name: "calculated without submit",
 			status: "calculated",
 			capabilities: ["approve_run", "create_run"],
-			visible: ["validate"],
-			enabled: ["validate"],
+			visible: ["validate", "reopen"],
+			enabled: ["validate", "reopen"],
+		},
+		{
+			name: "rejected + reopen",
+			status: "rejected",
+			capabilities: ["create_run"],
+			visible: ["reopen"],
+			enabled: ["reopen"],
 		},
 		{
 			name: "draft disables all legal actions",
@@ -520,6 +527,47 @@ describe("Workflow 409 handling", () => {
 
 			expect(await screen.findByTestId("stale-version-alert")).toBeInTheDocument();
 			expect(screen.getByTestId("stale-refresh-button")).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"stale-version refresh refetches all run-scoped queries",
+		async () => {
+			const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+			await setupDetailPage({
+				status: "submitted",
+				workflow: {
+					commandErrors: {
+						approve: {
+							status: 409,
+							body: {
+								detail: "Version is stale",
+								error: "urn:accord:workflow:stale_version",
+							},
+						},
+					},
+				},
+			});
+
+			fireEvent.click(screen.getByTestId("workflow-action-approve"));
+			expect(await screen.findByTestId("workflow-confirm-dialog")).toBeInTheDocument();
+			fireEvent.click(screen.getByTestId("workflow-confirm-submit"));
+
+			// Isolate the Refresh click from the approve mutation's own invalidations.
+			invalidateSpy.mockClear();
+			fireEvent.click(await screen.findByTestId("stale-refresh-button"));
+
+			for (const key of [
+				["payroll-run", "run-1"],
+				["payroll-run-roster", "run-1"],
+				["payroll-run-roster-history", "run-1"],
+				["payroll-run-results", "run-1"],
+				["payroll-run-report-readiness", "run-1"],
+				["payroll-run-inputs", "run-1"],
+			]) {
+				expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: key });
+			}
 		},
 		PAGE_TIMEOUT,
 	);

@@ -7,7 +7,6 @@ export {
 } from "./WorkflowConfirmDialog";
 export {
 	getWorkflowErrorUrn,
-	isWorkflowActionLegal,
 	WORKFLOW_ACTIONS,
 	WORKFLOW_URN_MAKER_CHECKER,
 	WORKFLOW_URN_STALE_VERSION,

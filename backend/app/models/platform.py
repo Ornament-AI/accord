@@ -180,7 +180,7 @@ class PayrollApproval(UUIDPrimaryKeyMixin, OrganizationOwnedMixin, table=True):
     __tablename__ = "payroll_approvals"
     __table_args__ = (
         CheckConstraint(
-            "action IN ('submit','withdraw','approve','reject','post','reverse')",
+            "action IN ('submit','withdraw','approve','reject','post','reverse','reopen')",
             name="ck_payroll_approvals_action",
         ),
     )

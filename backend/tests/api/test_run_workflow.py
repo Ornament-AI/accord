@@ -29,6 +29,7 @@ from app.services.bootstrap import provision_organization
 from app.tenancy import bind_tenant_context
 from tests.gate_d.conftest import apply_session_cookie, mint_session_cookie
 from tests.identity_helpers import (
+    attach_csrf_echo,
     login_dev,
     seed_membership,
     seed_user,
@@ -49,6 +50,7 @@ async def client(dev_settings):
     application = _workflow_app()
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        attach_csrf_echo(ac)
         yield ac
 
 
@@ -404,6 +406,49 @@ async def test_api_capability_gates(client, session, dev_settings):
     reject = await client.post(f"/api/payroll-runs/{run_id}/reject")
     assert reject.status_code == 403
     assert reject.json()["error"] == "urn:accord:capability:approve_run"
+
+    reopen = await client.post(f"/api/payroll-runs/{run_id}/reopen")
+    assert reopen.status_code == 403
+    assert reopen.json()["error"] == "urn:accord:capability:create_run"
+
+
+@pytest.mark.asyncio
+async def test_api_reopen_rejected_run(client, session, dev_settings):
+    org_id, user_id = await _create_org_as_admin(client, session)
+    run_id = await _create_calculated_run(
+        client, session, dev_settings, org_id=org_id, user_id=user_id
+    )
+
+    submit = await client.post(f"/api/payroll-runs/{run_id}/submit")
+    assert submit.status_code == 200, submit.text
+
+    # Maker/checker: a different approver rejects.
+    if session.in_transaction():
+        await session.rollback()
+    approver = await seed_user(session, email="approver-reopen@example.com", name="Approver")
+    approver_id = approver.id
+    await seed_membership(
+        session,
+        organization_id=org_id,
+        user_id=approver_id,
+        role="payroll_approver",
+    )
+    await session.commit()
+    await _restore_cookie(client, session, dev_settings, org_id=org_id, user_id=approver_id)
+
+    reject = await client.post(f"/api/payroll-runs/{run_id}/reject", json={"reason": "fix inputs"})
+    assert reject.status_code == 200, reject.text
+    assert reject.json()["status"] == "rejected"
+
+    await _restore_cookie(client, session, dev_settings, org_id=org_id, user_id=user_id)
+    reopen = await client.post(f"/api/payroll-runs/{run_id}/reopen")
+    assert reopen.status_code == 200, reopen.text
+    assert reopen.json()["status"] == "draft"
+
+    # Reopening a draft run is an illegal transition.
+    again = await client.post(f"/api/payroll-runs/{run_id}/reopen")
+    assert again.status_code == 409
+    assert again.json()["error"] == "urn:accord:workflow:illegal_transition"
 
 
 @pytest.mark.asyncio

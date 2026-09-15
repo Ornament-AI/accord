@@ -6,6 +6,7 @@ export type WorkflowActionId =
 	| "withdraw"
 	| "approve"
 	| "reject"
+	| "reopen"
 	| "post"
 	| "reverse";
 
@@ -53,6 +54,13 @@ export const WORKFLOW_ACTIONS: readonly WorkflowActionDef[] = [
 		variant: "destructive",
 	},
 	{
+		id: "reopen",
+		label: "Reopen",
+		capability: "create_run",
+		legalStatuses: ["calculated", "rejected"],
+		variant: "outline",
+	},
+	{
 		id: "post",
 		label: "Post",
 		capability: "post_run",
@@ -66,11 +74,6 @@ export const WORKFLOW_ACTIONS: readonly WorkflowActionDef[] = [
 		variant: "destructive",
 	},
 ] as const;
-
-export function isWorkflowActionLegal(actionId: WorkflowActionId, status: string): boolean {
-	const action = WORKFLOW_ACTIONS.find((item) => item.id === actionId);
-	return action ? action.legalStatuses.includes(status) : false;
-}
 
 export function workflowActionDisabledReason(
 	action: WorkflowActionDef,
