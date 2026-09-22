@@ -72,6 +72,10 @@ export function isKnownArrayExpression(
       isKnownArrayExpression(sourceCode, method.object, visited)
     );
   }
+  if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Array") {
+    const constructor = resolveArrayBinding(sourceCode, node.callee);
+    return constructor === null || constructor.defs.length === 0;
+  }
   if (node.type !== "Identifier") return false;
   const variable = resolveArrayBinding(sourceCode, node);
   if (variable === null || visited.has(variable)) return false;

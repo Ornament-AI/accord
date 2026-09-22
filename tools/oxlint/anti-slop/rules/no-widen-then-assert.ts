@@ -1,5 +1,13 @@
 import { defineRule } from "@oxlint/plugins";
-import type { ESTree, Variable } from "@oxlint/plugins";
+import type { ESTree, SourceCode, Variable } from "@oxlint/plugins";
+
+import { resolveVariable } from "../shared/scope.ts";
+import {
+  createTypeAliasEnvironment,
+  hasVisibleTypeBinding,
+  resolvedTypeMatches,
+  type TypeAliasEnvironment,
+} from "../shared/type-alias-resolution.ts";
 
 type BroadTypeKind = "top" | "object" | "record";
 
@@ -31,61 +39,94 @@ function typeReferenceName(type: ESTree.TSTypeReference): string | null {
   return type.typeName.type === "Identifier" ? type.typeName.name : null;
 }
 
-function isUnknownOrAnyType(type: ESTree.TSType): boolean {
-  const unwrapped = unwrapTypeParentheses(type);
-  return unwrapped.type === "TSUnknownKeyword" || unwrapped.type === "TSAnyKeyword";
+function isUnknownOrAnyType(type: ESTree.TSType, environment: TypeAliasEnvironment): boolean {
+  return resolvedTypeMatches(type, environment, (resolved, matches) => {
+    const unwrapped = unwrapTypeParentheses(resolved);
+    if (unwrapped.type === "TSUnknownKeyword" || unwrapped.type === "TSAnyKeyword") return true;
+    return unwrapped.type === "TSUnionType" && unwrapped.types.some(matches);
+  });
 }
 
-function isBroadRecordKeyType(type: ESTree.TSType): boolean {
-  const unwrapped = unwrapTypeParentheses(type);
-  if (
-    unwrapped.type === "TSStringKeyword" ||
-    unwrapped.type === "TSNumberKeyword" ||
-    unwrapped.type === "TSSymbolKeyword"
-  ) {
-    return true;
-  }
-  if (unwrapped.type === "TSUnionType") return unwrapped.types.every(isBroadRecordKeyType);
-  return unwrapped.type === "TSTypeReference" && typeReferenceName(unwrapped) === "PropertyKey";
+function isBroadRecordKeyType(type: ESTree.TSType, environment: TypeAliasEnvironment): boolean {
+  return resolvedTypeMatches(type, environment, (resolved, matches) => {
+    const unwrapped = unwrapTypeParentheses(resolved);
+    if (
+      unwrapped.type === "TSStringKeyword" ||
+      unwrapped.type === "TSNumberKeyword" ||
+      unwrapped.type === "TSSymbolKeyword"
+    ) {
+      return true;
+    }
+    if (unwrapped.type === "TSUnionType") return unwrapped.types.some(matches);
+    return (
+      unwrapped.type === "TSTypeReference" &&
+      typeReferenceName(unwrapped) === "PropertyKey" &&
+      !hasVisibleTypeBinding("PropertyKey", unwrapped, environment)
+    );
+  });
 }
 
-function isBroadRecordType(type: ESTree.TSType): boolean {
+function isBroadRecordShape(
+  type: ESTree.TSType,
+  environment: TypeAliasEnvironment,
+  matches: (child: ESTree.TSType) => boolean,
+): boolean {
   const unwrapped = unwrapTypeParentheses(type);
 
   if (unwrapped.type === "TSTypeReference") {
-    if (typeReferenceName(unwrapped) === "Readonly") {
+    const name = typeReferenceName(unwrapped);
+    if (name === "Readonly" && !hasVisibleTypeBinding("Readonly", unwrapped, environment)) {
       const [inner] = unwrapped.typeArguments?.params ?? [];
-      return inner !== undefined && isBroadRecordType(inner);
+      return inner !== undefined && matches(inner);
     }
 
-    if (typeReferenceName(unwrapped) !== "Record") return false;
+    if (name !== "Record" || hasVisibleTypeBinding("Record", unwrapped, environment)) return false;
     const parameters = unwrapped.typeArguments?.params ?? [];
     return (
       parameters.length === 2 &&
       parameters[0] !== undefined &&
       parameters[1] !== undefined &&
-      isBroadRecordKeyType(parameters[0]) &&
-      isUnknownOrAnyType(parameters[1])
+      isBroadRecordKeyType(parameters[0], environment) &&
+      isUnknownOrAnyType(parameters[1], environment)
     );
   }
 
   if (unwrapped.type !== "TSTypeLiteral" || unwrapped.members.length !== 1) return false;
   const [member] = unwrapped.members;
-  const [parameter] = member?.type === "TSIndexSignature" ? member.parameters : [];
+  if (member?.type !== "TSIndexSignature" || member.parameters.length !== 1) return false;
+  const [parameter] = member.parameters;
+  const keyType = parameter?.typeAnnotation?.typeAnnotation;
+  const valueType = member.typeAnnotation?.typeAnnotation;
   return (
-    member?.type === "TSIndexSignature" &&
-    member.parameters.length === 1 &&
-    parameter !== undefined &&
-    isBroadRecordKeyType(parameter.typeAnnotation.typeAnnotation) &&
-    isUnknownOrAnyType(member.typeAnnotation.typeAnnotation)
+    keyType !== undefined &&
+    valueType !== undefined &&
+    isBroadRecordKeyType(keyType, environment) &&
+    isUnknownOrAnyType(valueType, environment)
   );
 }
 
-function broadTypeKind(type: ESTree.TSType): BroadTypeKind | null {
-  const unwrapped = unwrapTypeParentheses(type);
-  if (unwrapped.type === "TSUnknownKeyword" || unwrapped.type === "TSAnyKeyword") return "top";
-  if (unwrapped.type === "TSObjectKeyword") return "object";
-  return isBroadRecordType(unwrapped) ? "record" : null;
+function broadTypeKind(
+  type: ESTree.TSType,
+  environment: TypeAliasEnvironment,
+): BroadTypeKind | null {
+  let kind: BroadTypeKind | null = null;
+  resolvedTypeMatches(type, environment, (resolved, matches) => {
+    const unwrapped = unwrapTypeParentheses(resolved);
+    if (unwrapped.type === "TSUnknownKeyword" || unwrapped.type === "TSAnyKeyword") {
+      kind = "top";
+      return true;
+    }
+    if (unwrapped.type === "TSObjectKeyword") {
+      kind = "object";
+      return true;
+    }
+    if (isBroadRecordShape(unwrapped, environment, matches)) {
+      kind = "record";
+      return true;
+    }
+    return false;
+  });
+  return kind;
 }
 
 function assertedExpression(
@@ -119,44 +160,62 @@ function typesHaveSameSyntax(
   );
 }
 
-function isDefinitelyObjectType(type: ESTree.TSType): boolean {
-  const unwrapped = unwrapTypeParentheses(type);
-  switch (unwrapped.type) {
-    case "TSArrayType":
-    case "TSConstructorType":
-    case "TSFunctionType":
-    case "TSMappedType":
-    case "TSObjectKeyword":
-    case "TSTupleType":
-      return true;
-    case "TSTypeLiteral":
-      return unwrapped.members.length > 0;
-    case "TSIntersectionType":
-      return unwrapped.types.every(isDefinitelyObjectType);
-    case "TSTypeOperator":
-      return unwrapped.operator === "readonly" && isDefinitelyObjectType(unwrapped.typeAnnotation);
-    default:
-      return false;
-  }
+function isDefinitelyObjectType(
+  type: ESTree.TSType,
+  environment: TypeAliasEnvironment,
+): boolean {
+  return resolvedTypeMatches(type, environment, (resolved, matches) => {
+    const unwrapped = unwrapTypeParentheses(resolved);
+    switch (unwrapped.type) {
+      case "TSArrayType":
+      case "TSConstructorType":
+      case "TSFunctionType":
+      case "TSMappedType":
+      case "TSObjectKeyword":
+      case "TSTupleType":
+        return true;
+      case "TSTypeLiteral":
+        return unwrapped.members.length > 0;
+      case "TSIntersectionType":
+        return unwrapped.types.every(matches);
+      case "TSTypeOperator":
+        return unwrapped.operator === "readonly" && matches(unwrapped.typeAnnotation);
+      case "TSTypeReference": {
+        if (
+          typeReferenceName(unwrapped) !== "Readonly" ||
+          hasVisibleTypeBinding("Readonly", unwrapped, environment)
+        ) return false;
+        const [inner] = unwrapped.typeArguments?.params ?? [];
+        return inner !== undefined && matches(inner);
+      }
+      default:
+        return false;
+    }
+  });
 }
 
-function isDefinitelyNarrowerRecordType(type: ESTree.TSType): boolean {
-  const unwrapped = unwrapTypeParentheses(type);
-  if (unwrapped.type === "TSTypeLiteral") {
-    return unwrapped.members.some((member) => member.type !== "TSIndexSignature");
-  }
+function isDefinitelyNarrowerRecordType(
+  type: ESTree.TSType,
+  environment: TypeAliasEnvironment,
+): boolean {
+  return resolvedTypeMatches(type, environment, (resolved, matches) => {
+    const unwrapped = unwrapTypeParentheses(resolved);
+    if (unwrapped.type === "TSTypeLiteral") {
+      return unwrapped.members.some((member) => member.type !== "TSIndexSignature");
+    }
 
-  if (unwrapped.type !== "TSTypeReference") return false;
-  if (typeReferenceName(unwrapped) === "Readonly") {
-    const [inner] = unwrapped.typeArguments?.params ?? [];
-    return inner !== undefined && isDefinitelyNarrowerRecordType(inner);
-  }
-  if (typeReferenceName(unwrapped) !== "Record") return false;
+    if (unwrapped.type !== "TSTypeReference") return false;
+    const name = typeReferenceName(unwrapped);
+    if (name === "Readonly" && !hasVisibleTypeBinding("Readonly", unwrapped, environment)) {
+      const [inner] = unwrapped.typeArguments?.params ?? [];
+      return inner !== undefined && matches(inner);
+    }
+    if (name !== "Record" || hasVisibleTypeBinding("Record", unwrapped, environment)) return false;
 
-  const parameters = unwrapped.typeArguments?.params ?? [];
-  return (
-    parameters.length === 2 && parameters[1] !== undefined && !isUnknownOrAnyType(parameters[1])
-  );
+    const parameters = unwrapped.typeArguments?.params ?? [];
+    const valueType = parameters[1];
+    return parameters.length === 2 && valueType !== undefined && !isUnknownOrAnyType(valueType, environment);
+  });
 }
 
 function functionBoundary(node: ESTree.Node): ESTree.Node | null {
@@ -164,26 +223,6 @@ function functionBoundary(node: ESTree.Node): ESTree.Node | null {
   while (current !== null && current.type !== "Program") {
     if (functionBoundaryTypes.has(current.type)) return current;
     current = current.parent;
-  }
-  return null;
-}
-
-function resolvedVariableForIdentifier(
-  scopes: readonly {
-    readonly references: readonly {
-      readonly identifier: ESTree.Node;
-      readonly resolved: Variable | null;
-    }[];
-  }[],
-  identifier: ESTree.IdentifierReference,
-): Variable | null {
-  for (const scope of scopes) {
-    const reference = scope.references.find(
-      (candidate) =>
-        candidate.identifier.start === identifier.start &&
-        candidate.identifier.end === identifier.end,
-    );
-    if (reference !== undefined) return reference.resolved;
   }
   return null;
 }
@@ -199,14 +238,20 @@ function variableDeclarator(variable: Variable): ESTree.VariableDeclarator | nul
 
 function knownValueEvidence(
   expression: ESTree.Expression,
-  scopes: Parameters<typeof resolvedVariableForIdentifier>[0],
+  sourceCode: SourceCode,
+  environment: TypeAliasEnvironment,
   boundary: ESTree.Node | null,
   visitedVariables: ReadonlySet<Variable>,
 ): KnownValueEvidence | null {
   const unwrapped = unwrapExpressionParentheses(expression);
 
+  if (unwrapped.type === "TSSatisfiesExpression") {
+    if (broadTypeKind(unwrapped.typeAnnotation, environment) !== null) return null;
+    return { type: unwrapped.typeAnnotation };
+  }
+
   if (unwrapped.type === "TSAsExpression" || unwrapped.type === "TSTypeAssertion") {
-    if (broadTypeKind(unwrapped.typeAnnotation) !== null) return null;
+    if (broadTypeKind(unwrapped.typeAnnotation, environment) !== null) return null;
     return { type: unwrapped.typeAnnotation };
   }
 
@@ -226,7 +271,7 @@ function knownValueEvidence(
   }
 
   if (unwrapped.type !== "Identifier") return null;
-  const variable = resolvedVariableForIdentifier(scopes, unwrapped);
+  const variable = resolveVariable(sourceCode, unwrapped);
   if (variable === null || visitedVariables.has(variable)) return null;
 
   const annotatedIdentifier = variable.identifiers.find(
@@ -234,7 +279,7 @@ function knownValueEvidence(
   );
   const annotation = annotatedIdentifier?.typeAnnotation?.typeAnnotation;
   if (annotation !== undefined && annotatedIdentifier !== undefined) {
-    if (functionBoundary(annotatedIdentifier) !== boundary || broadTypeKind(annotation) !== null) {
+    if (functionBoundary(annotatedIdentifier) !== boundary || broadTypeKind(annotation, environment) !== null) {
       return null;
     }
     return { type: annotation };
@@ -254,7 +299,8 @@ function knownValueEvidence(
 
   return knownValueEvidence(
     declarator.init,
-    scopes,
+    sourceCode,
+    environment,
     boundary,
     new Set([...visitedVariables, variable]),
   );
@@ -262,7 +308,8 @@ function knownValueEvidence(
 
 function widenedBinding(
   variable: Variable,
-  scopes: Parameters<typeof resolvedVariableForIdentifier>[0],
+  sourceCode: SourceCode,
+  environment: TypeAliasEnvironment,
 ): {
   readonly broadKind: BroadTypeKind;
   readonly evidence: KnownValueEvidence;
@@ -285,8 +332,8 @@ function widenedBinding(
   const declaredType = declarator.id.typeAnnotation?.typeAnnotation;
   const initializerAssertion = assertionFromExpression(declarator.init);
   const initializerBroadKind =
-    initializerAssertion === null ? null : broadTypeKind(initializerAssertion.typeAnnotation);
-  const declaredBroadKind = declaredType === undefined ? null : broadTypeKind(declaredType);
+    initializerAssertion === null ? null : broadTypeKind(initializerAssertion.typeAnnotation, environment);
+  const declaredBroadKind = declaredType === undefined ? null : broadTypeKind(declaredType, environment);
   const broadKind = declaredBroadKind ?? initializerBroadKind;
   if (broadKind === null) return null;
 
@@ -294,7 +341,7 @@ function widenedBinding(
     initializerAssertion !== null && initializerBroadKind !== null
       ? assertedExpression(initializerAssertion)
       : declarator.init;
-  const evidence = knownValueEvidence(originalExpression, scopes, boundary, new Set([variable]));
+  const evidence = knownValueEvidence(originalExpression, sourceCode, environment, boundary, new Set([variable]));
   return evidence === null ? null : { broadKind, evidence, declaredAt: declarator.end, boundary };
 }
 
@@ -303,12 +350,13 @@ function assertionIsNarrower(
   broadKind: BroadTypeKind,
   evidence: KnownValueEvidence,
   assertedType: ESTree.TSType,
+  environment: TypeAliasEnvironment,
 ): boolean {
-  if (broadTypeKind(assertedType) !== null) return false;
+  if (broadTypeKind(assertedType, environment) !== null) return false;
   if (broadKind === "top") return true;
   if (typesHaveSameSyntax(sourceText, evidence.type, assertedType)) return true;
-  if (broadKind === "object") return isDefinitelyObjectType(assertedType);
-  return isDefinitelyNarrowerRecordType(assertedType);
+  if (broadKind === "object") return isDefinitelyObjectType(assertedType, environment);
+  return isDefinitelyNarrowerRecordType(assertedType, environment);
 }
 
 /** Detect immutable local bindings that erase a known type and are later asserted back to a narrower type. */
@@ -325,15 +373,16 @@ export const noWidenThenAssertRule = defineRule({
     },
   },
   createOnce(context) {
-    let scopes: Parameters<typeof resolvedVariableForIdentifier>[0] = [];
+    let environment: TypeAliasEnvironment | null = null;
 
     const checkAssertion = (node: ESTree.TSAsExpression | ESTree.TSTypeAssertion) => {
+      if (environment === null) return;
       const expression = assertedExpression(node);
       if (expression.type !== "Identifier") return;
 
-      const variable = resolvedVariableForIdentifier(scopes, expression);
+      const variable = resolveVariable(context.sourceCode, expression);
       if (variable === null) return;
-      const widened = widenedBinding(variable, scopes);
+      const widened = widenedBinding(variable, context.sourceCode, environment);
       if (
         widened === null ||
         node.start <= widened.declaredAt ||
@@ -343,6 +392,7 @@ export const noWidenThenAssertRule = defineRule({
           widened.broadKind,
           widened.evidence,
           node.typeAnnotation,
+          environment,
         )
       ) {
         return;
@@ -356,8 +406,8 @@ export const noWidenThenAssertRule = defineRule({
     };
 
     return {
-      Program() {
-        scopes = context.sourceCode.scopeManager.scopes;
+      Program(node) {
+        environment = createTypeAliasEnvironment(node, context.sourceCode.visitorKeys);
       },
       TSAsExpression: checkAssertion,
       TSTypeAssertion: checkAssertion,

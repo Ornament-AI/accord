@@ -8,26 +8,72 @@ import {
   unwrapArrayExpression,
 } from "../shared/array-method.ts";
 
-function enclosingReducer(node: ESTree.Node) {
+type ReducerCall = {
+  readonly initialValue: ESTree.Expression | undefined;
+};
+
+function reducerCall(owner: ESTree.Node, sourceCode: SourceCode): ReducerCall | null {
+  if (owner.type !== "CallExpression") return null;
+  const method = arrayMethodTarget(owner.callee);
+  const firstArgument = owner.arguments[0];
+  if (
+    method === null || (method.name !== "reduce" && method.name !== "reduceRight") ||
+    owner.arguments.length > 2 || firstArgument === undefined ||
+    !isKnownArrayExpression(sourceCode, method.object)
+  ) return null;
+  return { initialValue: owner.arguments[1] };
+}
+
+function referencedReducerCalls(
+  callback: ESTree.FunctionDeclaration | ESTree.ArrowFunctionExpression | ESTree.FunctionExpression,
+  sourceCode: SourceCode,
+): ReducerCall[] {
+  let identifier: ESTree.Identifier | null = null;
+  if (callback.type === "FunctionDeclaration") {
+    identifier = callback.id;
+  } else if (callback.parent?.type === "VariableDeclarator" && callback.parent.id.type === "Identifier") {
+    identifier = callback.parent.id;
+  }
+  if (identifier === null) return [];
+
+  const variable = resolveArrayBinding(sourceCode, identifier);
+  if (variable === null) return [];
+  const calls: ReducerCall[] = [];
+  for (const reference of variable.references) {
+    const call = reference.identifier.parent;
+    if (
+      call?.type !== "CallExpression" ||
+      call.arguments[0] === undefined ||
+      unwrapArrayExpression(call.arguments[0]) !== reference.identifier
+    ) continue;
+    const candidate = reducerCall(call, sourceCode);
+    if (candidate !== null) calls.push(candidate);
+  }
+  return calls;
+}
+
+function enclosingReducer(node: ESTree.Node, sourceCode: SourceCode) {
   let parent = node.parent;
   while (parent !== null) {
-    if (parent.type === "FunctionDeclaration") return null;
-    if (parent.type === "ArrowFunctionExpression" || parent.type === "FunctionExpression") {
+    if (
+      parent.type === "FunctionDeclaration" ||
+      parent.type === "ArrowFunctionExpression" ||
+      parent.type === "FunctionExpression"
+    ) {
       const callback = parent;
       let owner: ESTree.Node | null = callback.parent;
       while (owner !== null && unwrapArrayExpression(owner) === callback) owner = owner.parent;
-      if (owner?.type !== "CallExpression") return null;
-      const method = arrayMethodTarget(owner.callee);
-      const firstArgument = owner.arguments[0];
-      if (
-        method === null || (method.name !== "reduce" && method.name !== "reduceRight") ||
-        owner.arguments.length > 2 || firstArgument === undefined ||
-        unwrapArrayExpression(firstArgument) !== callback
-      ) return null;
+      const inlineCall = owner?.type === "CallExpression" &&
+        owner.arguments[0] !== undefined &&
+        unwrapArrayExpression(owner.arguments[0]) === callback
+        ? reducerCall(owner, sourceCode)
+        : null;
+      const calls = inlineCall === null ? referencedReducerCalls(callback, sourceCode) : [inlineCall];
+      if (calls.length === 0) return null;
       const firstParameter = callback.params[0];
       const accumulator = firstParameter?.type === "AssignmentPattern" ? firstParameter.left : firstParameter;
       if (accumulator?.type !== "Identifier") return null;
-      return { callback, accumulator, initialValue: owner.arguments[1] };
+      return { callback, accumulator, initialValues: calls.map(call => call.initialValue) };
     }
     parent = parent.parent;
   }
@@ -78,7 +124,7 @@ export const noReduceAccumulatorCopyRule = defineRule({
       CallExpression(node) {
         const method = arrayMethodTarget(node.callee);
         if (method === null) return;
-        const reducer = enclosingReducer(node);
+        const reducer = enclosingReducer(node, context.sourceCode);
         if (reducer === null) return;
         const accumulator = context.sourceCode.getDeclaredVariables(reducer.callback).find(variable =>
           variable.identifiers.some(identifier => identifier.start === reducer.accumulator.start),
@@ -97,10 +143,13 @@ export const noReduceAccumulatorCopyRule = defineRule({
           const source = node.arguments[0];
           copiesAccumulator = source !== undefined && isAccumulator(source);
         } else if (["concat", "slice", "toSpliced", "toSorted", "toReversed", "with"].includes(method.name)) {
-          const initialValue = reducer.initialValue;
-          const arrayAccumulator = initialValue !== undefined &&
-            isKnownArrayExpression(context.sourceCode, initialValue);
-          copiesAccumulator = arrayAccumulator && isAccumulator(method.object);
+          const arrayAccumulator = reducer.initialValues.some(initialValue =>
+            initialValue !== undefined && isKnownArrayExpression(context.sourceCode, initialValue),
+          );
+          copiesAccumulator = arrayAccumulator && (
+            isAccumulator(method.object) ||
+            (method.name === "concat" && node.arguments.some(isAccumulator))
+          );
         }
         if (copiesAccumulator) context.report({ node, messageId: "accumulatorCopy" });
       },

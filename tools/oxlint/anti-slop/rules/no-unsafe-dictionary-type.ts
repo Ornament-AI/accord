@@ -138,8 +138,8 @@ export const noUnsafeDictionaryTypeRule = defineRule({
 			TSMappedType: reportIfUnsafe,
 			TSIndexSignature(node) {
 				if (
-					environment === null ||
-					node.typeAnnotation === null ||
+				environment === null ||
+					(node.typeAnnotation === null || node.typeAnnotation === undefined) ||
 					node.parent.type === "TSTypeLiteral"
 				)
 					return;
