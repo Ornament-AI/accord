@@ -14,7 +14,7 @@ Tool: React Doctor 0.9.14, freshly resolved with `npx react-doctor@latest`; Node
 
 Scans were run from each root above. Baseline and final command: `npx react-doctor@latest --verbose`. Audit command: `npx react-doctor@latest --verbose --no-cache --no-respect-inline-disables`. Default full scope was retained. Normal build outputs were left in place for final scans. The scanner applies its own built-in scope; no project exclusions were added.
 
-Raw full logs and diagnostic arrays are in [react-doctor-2026-09-22/](react-doctor-2026-09-22/). The strict audit deliberately exposes any pre-existing inline suppressions; it is not replaced with a changed-files scan.
+Full text logs and diagnostic arrays are in [react-doctor-2026-09-22/](react-doctor-2026-09-22/). The strict audit deliberately exposes any pre-existing inline suppressions; it is not replaced with a changed-files scan.
 
 ## Changes and stop condition
 
@@ -35,10 +35,14 @@ The requested 100/100 target is not achieved. Work stopped at this verified scan
 | `corepack pnpm test` | exit 0 |
 | `corepack pnpm build` | exit 0 |
 
-Builds of Firebase applications used synthetic CI-style Firebase values; these builds do not prove production configuration or authentication. No production data or credentials were used.
+Local build checks do not prove production configuration or authentication. No production data or credentials were used.
 
 ## Scope and preservation
 
-Original checkouts, existing worktrees, branches, stashes, and unrelated work were preserved. This branch includes only the remediation described above and its verification record. There was no merge, deployment, or production mutation.
+Original checkouts, existing worktrees, branches, stashes, and unrelated work were preserved. This branch contains the focused changes described above and their verification record. At the scan stage, no merge, deployment, or production mutation had occurred. Release tracking is separate.
 
-Non-document source manifest SHA-256: `a85cb15c3371577e841f99ead9e2ba3aaab6df5a46d10ca4c41aa6c7fe340b5e`. The full filename/hash manifest and timestamped command results are in `verification.json`.
+Non-document source manifest SHA-256: `cbe340db746da50255ae838eba3c56a55ca70138769fc62f40d7652be71aade2`. The full filename/hash manifest and timestamped command results are in `verification.json`.
+
+Evidence formatting: committed text logs remove trailing whitespace and trailing blank lines and replace absolute checkout paths with `<repository>`; all diagnostics and nonblank output lines remain. `log-provenance.json` records original and committed hashes. Verbatim output remains in the local evidence bundle. Validation working directories are repository-relative.
+
+The commands above record the required `@latest` invocations as actually run. To reproduce the recorded scanner version later, use `npx react-doctor@0.9.14 --verbose` (plus the stated strict audit flags).

@@ -1,7 +1,7 @@
 $ pnpm --filter frontend test:run
 $ vitest run
 
- RUN  v4.1.9 /Users/darshan/Documents/react-doctor-20260922/worktrees/accord/frontend
+ RUN  v4.1.9 <repository>/frontend
 
 Not implemented: Window's scrollTo() method
 Not implemented: Window's scrollTo() method
@@ -38,4 +38,3 @@ Not implemented: Window's scrollTo() method
       Tests  204 passed (204)
    Start at  09:50:12
    Duration  56.61s (transform 663ms, setup 2.35s, import 15.73s, tests 26.96s, environment 9.13s)
-

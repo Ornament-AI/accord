@@ -29,7 +29,7 @@
         "pnpm",
         "typecheck"
       ],
-      "cwd": "/Users/darshan/Documents/react-doctor-20260922/worktrees/accord",
+      "cwd": ".",
       "started": "2026-09-22T13:50:11.337564+00:00",
       "finished": "2026-09-22T13:50:12.174036+00:00",
       "exit_code": 0,
@@ -43,7 +43,7 @@
         "pnpm",
         "lint"
       ],
-      "cwd": "/Users/darshan/Documents/react-doctor-20260922/worktrees/accord",
+      "cwd": ".",
       "started": "2026-09-22T13:50:12.184579+00:00",
       "finished": "2026-09-22T13:50:12.644972+00:00",
       "exit_code": 0,
@@ -57,12 +57,12 @@
         "pnpm",
         "test"
       ],
-      "cwd": "/Users/darshan/Documents/react-doctor-20260922/worktrees/accord",
+      "cwd": ".",
       "started": "2026-09-22T13:50:12.655813+00:00",
       "finished": "2026-09-22T13:51:09.637261+00:00",
       "exit_code": 0,
       "head": "0e45a6805a227e334aa93c1530a2645f9e236cf5",
-      "log_sha256": "d3d7708bc1a44c228d6541590834ccd082b5146510613c3777622e1d26152e8e",
+      "log_sha256": "a7aa5f1799a27d8cf64ec5b58b09fa9af4d29dfa747db20e26a548c8dabba973",
       "log": "test.log"
     },
     {
@@ -71,24 +71,36 @@
         "pnpm",
         "build"
       ],
-      "cwd": "/Users/darshan/Documents/react-doctor-20260922/worktrees/accord",
+      "cwd": ".",
       "started": "2026-09-22T13:51:09.647528+00:00",
       "finished": "2026-09-22T13:51:10.926433+00:00",
       "exit_code": 0,
       "head": "0e45a6805a227e334aa93c1530a2645f9e236cf5",
-      "log_sha256": "4d5bb2b399741bd3cd92d22661f56fab156f9044c1d7faafabe2b8c51d4b2db1",
+      "log_sha256": "92932601d9c9b7dd4109ede9871fc5d83ea934cd4303b21edaf5abe936d775f2",
       "log": "build.log"
     }
   ],
-  "source_manifest_sha256": "a85cb15c3371577e841f99ead9e2ba3aaab6df5a46d10ca4c41aa6c7fe340b5e",
+  "source_manifest_sha256": "cbe340db746da50255ae838eba3c56a55ca70138769fc62f40d7652be71aade2",
   "source_files": [
-    [
-      "frontend/src/contexts/AppShellContext.test.tsx",
-      "bae8f5af7bfeea00f18acfc1344f8bfee434638b34d3a70ce3053bc1ace107be"
-    ],
     [
       ".dockerignore",
       "1aed00dd808cd74306ff695da90fd13054bcdd27ff1fe4673f4dc7c3d746336c"
+    ],
+    [
+      ".github/workflows/backfill-onprem-rollback.yml",
+      "85d97a0603125ef5e87575c191011b9d7df9a9fe7119b11e1a56858973c6b0b7"
+    ],
+    [
+      ".github/workflows/ci.yml",
+      "22775e52f5bb15610d8eaadcd5a72fb61c2accbb5b6d1a7085e4960a328b121d"
+    ],
+    [
+      ".github/workflows/deploy.yml",
+      "70db66dd1b8426019a51bbaf18d6a6c984f89ea1036aa74b08bed95fb145f273"
+    ],
+    [
+      ".gitignore",
+      "03aa0b541b13de4e8c293ac5205db1eb938c725d4f26342a744251d6ba5105be"
     ],
     [
       "AGENTS.md",
@@ -1905,6 +1917,10 @@
     [
       "frontend/src/components/ui/use-sidebar-resize.ts",
       "77bc04a559264c6cb8f0e61b699825be5fdfc4976a45701f85b985b148fc3f4b"
+    ],
+    [
+      "frontend/src/contexts/AppShellContext.test.tsx",
+      "bae8f5af7bfeea00f18acfc1344f8bfee434638b34d3a70ce3053bc1ace107be"
     ],
     [
       "frontend/src/contexts/AppShellContext.tsx",

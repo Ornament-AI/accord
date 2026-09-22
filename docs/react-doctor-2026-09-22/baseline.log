@@ -1,6 +1,6 @@
 npm notice run frontend@0.0.0 npx
 npm notice run 'react-doctor' --verbose
-  
+
 Agent guidance
   - Treat React Doctor diagnostics as starting hypotheses. Read the relevant code before confirming or suppressing each finding.
   - For each group, decide true positive, false positive, or needs-human-review, then assign high/medium/low confidence.
