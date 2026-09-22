@@ -13,8 +13,4 @@ overrides:
   undici: 7.28.0
 allowBuilds:
   msw: true
-minimumReleaseAge: 10080
-minimumReleaseAgeExclude:
-  - vite@8.1.0
-  - undici@7.28.0
 trustPolicy: no-downgrade
