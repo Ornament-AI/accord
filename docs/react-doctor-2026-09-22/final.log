@@ -1,0 +1,181 @@
+npm notice run frontend@0.0.0 npx
+npm notice run 'react-doctor' --verbose
+  
+Agent guidance
+  - Treat React Doctor diagnostics as starting hypotheses. Read the relevant code before confirming or suppressing each finding.
+  - For each group, decide true positive, false positive, or needs-human-review, then assign high/medium/low confidence.
+  - Do not suppress a finding without evidence from the file in question. Confidence requires code context.
+  - Understand the root cause before editing. Fix the underlying code instead of changing react-doctor config or suppressing rules unless explicitly asked.
+  - Investigate deeply where relevant: race conditions, security-sensitive flows, state propagation, multi-file refactors, and downstream dependency chains.
+  - Ignore pure style preferences, theoretical issues without real impact, missing features, and unrelated pre-existing code.
+  - Start with high-confidence fixes that preserve behavior. Leave low-confidence or product-dependent changes as notes.
+  - Run `npx react-doctor@latest --verbose --scope changed` before and after changes, plus relevant tests after each focused batch.
+  - When available, spawn subagents or isolated worktrees for independent rule families, then review and merge only the best safe fixes.
+  - Split unrelated, broad, or behavior-changing work into separate PRs/branches instead of one large cleanup.
+  - When one rule spans dozens of files (a migration-scale change), fix a representative sample first, confirm the recipe holds, and get the code owner's sign-off before changing the rest. Don't mass-fix a broad pattern in one unreviewed pass.
+  - For confirmed issues that cannot be fixed now, create GitHub issues with the rule, file/line, confidence, impact, and proposed fix.
+  - If a fix needs an API, UX, or architecture decision, stop and ask before editing.
+
+✔ Scanned 208 files in 1.4s
+
+React Doctor — frontend
+Score: 60 / 100 Needs work
+
+107 issues
+Performance: 5 warnings
+Bugs: 2 errors, 80 warnings
+Maintainability: 20 warnings
+
+⚠ await inside a loop ×2
+  react-doctor/async-await-in-loop
+  scripts/check-bundle-size.mjs:31
+  scripts/check-bundle-size.mjs:71
+⚠ State adjusted after a prop changes ×55
+  react-doctor/no-adjust-state-on-prop-change
+  src/components/app-sidebar.tsx:65
+  src/pages/audit/AuditPage.tsx:229
+  src/pages/audit/AuditPage.tsx:230
+  src/pages/audit/AuditPage.tsx:235
+  src/pages/employees/CreateEmployeeDialog.tsx:153
+  src/pages/employees/CreateEmployeeDialog.tsx:154
+  src/pages/employees/CreateEmployeeDialog.tsx:155
+  src/pages/employees/CreateEmployeeDialog.tsx:156
+  src/pages/employees/ScheduleChangeDialog.tsx:152
+  src/pages/employees/ScheduleChangeDialog.tsx:153
+  src/pages/employees/ScheduleChangeDialog.tsx:154
+  src/pages/employees/ScheduleChangeDialog.tsx:155
+  src/pages/employees/payroll-setup/AccommodationTab.tsx:284
+  src/pages/employees/payroll-setup/AccommodationTab.tsx:421
+  src/pages/employees/payroll-setup/AccommodationTab.tsx:682
+  src/pages/employees/payroll-setup/AdvancesTab.tsx:233
+  src/pages/employees/payroll-setup/AdvancesTab.tsx:234
+  src/pages/employees/payroll-setup/AdvancesTab.tsx:505
+  src/pages/employees/payroll-setup/AdvancesTab.tsx:506
+  src/pages/employees/payroll-setup/AdvancesTab.tsx:521
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:209
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:210
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:211
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:443
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:444
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:445
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:451
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:452
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:660
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:661
+  src/pages/employees/payroll-setup/RecurringItemsTab.tsx:662
+  src/pages/org-setup/OfficesTab.tsx:127
+  src/pages/org-setup/OfficesTab.tsx:128
+  src/pages/org-setup/OfficesTab.tsx:138
+  src/pages/org-setup/OfficesTab.tsx:140
+  src/pages/org-setup/PostsTab.tsx:145
+  src/pages/org-setup/PostsTab.tsx:146
+  src/pages/org-setup/PostsTab.tsx:147
+  src/pages/org-setup/PostsTab.tsx:161
+  src/pages/org-setup/PostsTab.tsx:163
+  src/pages/org-setup/PostsTab.tsx:164
+  src/pages/pay-components/CreatePayComponentDialog.tsx:79
+  src/pages/pay-components/CreatePayComponentDialog.tsx:80
+  src/pages/pay-components/CreatePayComponentDialog.tsx:81
+  src/pages/pay-components/CreateRateVersionDialog.tsx:85
+  src/pages/pay-components/CreateRateVersionDialog.tsx:86
+  src/pages/pay-components/CreateRateVersionDialog.tsx:87
+  src/pages/pay-components/EditPayComponentDialog.tsx:89
+  src/pages/pay-components/ReportProfileDialog.tsx:334
+  src/pages/pay-runs/ReportMetadataSection.tsx:75
+  src/pages/pay-runs/UpsertInputDialog.tsx:77
+  src/pages/pay-runs/UpsertInputDialog.tsx:80
+  src/pages/pay-runs/UpsertInputDialog.tsx:81
+  src/pages/pay-runs/workflow/WorkflowConfirmDialog.tsx:100
+  src/pages/pay-runs/workflow/WorkflowConfirmDialog.tsx:101
+⚠ Array index used as a key ×2
+  react-doctor/no-array-index-as-key
+  src/components/fields-value-table.tsx:34
+  src/components/ui/month-picker.tsx:253
+✖ Ref mutated during render ×2
+  react-doctor/no-ref-current-in-render
+  src/components/ui/sidebar.tsx:136
+  src/lib/ui/providers/theme-provider.tsx:100
+⚠ Non-component export in component file ×3
+  react-doctor/only-export-components
+  src/components/ui/table.tsx:139
+  src/components/ui/tabs.tsx:74
+  src/pages/pay-runs/workflow/WorkflowConfirmDialog.tsx:81
+⚠ Loading flag reset outside finally
+  react-doctor/no-loading-flag-reset-outside-finally
+  src/contexts/AuthContext.tsx:171
+⚠ Array lookup inside a loop ×2
+  react-doctor/js-set-map-lookups
+  src/contexts/AuthContext.tsx:201
+  src/pages/pay-components/CreateRateVersionDialog.tsx:270
+⚠ React function has high control-flow complexity ×11
+  react-doctor/no-high-complexity-react-function
+  src/pages/audit/AuditPage.tsx:162
+  src/pages/employees/CreateEmployeeDialog.tsx:121
+  src/pages/employees/EmployeeDetailPage.tsx:202
+  src/pages/employees/EmployeeListPage.tsx:87
+  src/pages/employees/ScheduleChangeDialog.tsx:74
+  src/pages/pay-components/EditPayComponentDialog.tsx:56
+  src/pages/pay-components/PayComponentDetailPage.tsx:104
+  src/pages/pay-components/PayComponentsPage.tsx:72
+  src/pages/pay-runs/PayRunDetailPage.tsx:154
+  src/pages/pay-runs/PayRunsPage.tsx:66
+  src/pages/reports/ReportsLayout.tsx:59
+⚠ Large component is hard to read and change ×6
+  react-doctor/no-giant-component
+  src/pages/audit/AuditPage.tsx:162
+  src/pages/employees/CreateEmployeeDialog.tsx:121
+  src/pages/employees/ScheduleChangeDialog.tsx:74
+  src/pages/pay-components/CreatePayComponentDialog.tsx:70
+  src/pages/pay-components/EditPayComponentDialog.tsx:56
+  src/pages/pay-runs/UpsertInputDialog.tsx:61
+⚠ Missing effect dependencies ×9
+  react-doctor/exhaustive-deps
+  src/pages/audit/AuditPage.tsx:237
+  src/pages/audit/AuditPage.tsx:246
+  src/pages/employees/CreateEmployeeDialog.tsx:132
+  src/pages/employees/CreateEmployeeDialog.tsx:136
+  src/pages/employees/CreateEmployeeDialog.tsx:141
+  src/pages/employees/ScheduleChangeDialog.tsx:93
+  src/pages/employees/ScheduleChangeDialog.tsx:97
+  src/pages/employees/ScheduleChangeDialog.tsx:102
+  src/pages/reports/ReportsLayout.tsx:98
+⚠ Async mutating handler without re-entry guard ×2
+  react-doctor/no-async-event-handler-without-reentry-guard
+  src/pages/employees/CreateEmployeeDialog.tsx:259
+  src/pages/employees/ScheduleChangeDialog.tsx:253
+⚠ Table data or columns recreated every render ×7
+  react-doctor/tanstack-table-no-unstable-data-or-columns
+  src/pages/employees/EmployeeListPage.tsx:110
+  src/pages/org-setup/CatalogTab.tsx:54
+  src/pages/pay-components/PayComponentDetailPage.tsx:129
+  src/pages/pay-components/PayComponentsPage.tsx:91
+  src/pages/pay-runs/PayRunDetailPage.tsx:187
+  src/pages/pay-runs/PayRunsPage.tsx:84
+  src/pages/reports/ArtifactsSection.tsx:146
+⚠ State initializer runs on every render
+  react-doctor/rerender-lazy-state-init
+  src/pages/employees/ScheduleChangeDialog.tsx:105
+⚠ Live state pushed to parent via effect
+  react-doctor/no-pass-live-state-to-parent
+  src/pages/pay-runs/PayrollRunRosterTable.tsx:410
+⚠ Parent kept in sync with a callback effect
+  react-doctor/no-prop-callback-in-effect
+  src/pages/pay-runs/PayrollRunRosterTable.tsx:410
+⚠ Effects chained together ×2
+  react-doctor/no-effect-chain
+  src/pages/reports/ReportsLayout.tsx:80
+  src/pages/reports/ReportsLayout.tsx:86
+  Full diagnostics written to /var/folders/z7/pw6h3jdx02jgcqcgv_16k6fc0000gn/T/react-doctor-2b7a4914-baf6-41d8-a0c4-b49f6d40ef34
+
+  ────────────────────────────────────────────────────────────
+
+  Share: https://react.doctor/share?p=frontend&s=60&e=2&w=105&f=34
+  Tell others how you did on socials
+
+  Docs: https://react.doctor/docs
+  Learn more about fixing issues, setting up CI/CD, and
+  configuring rules with a config file
+
+  GitHub: https://github.com/millionco/react-doctor
+  Report issues and star the repository!
+
