@@ -13,9 +13,17 @@
     "build": "pnpm --filter frontend build",
     "typecheck": "pnpm --filter frontend typecheck",
     "lint": "pnpm --filter frontend lint",
+    "lint:anti-slop": "oxlint --config .oxlintrc.json .",
+    "lint:anti-slop:ci": "oxlint --config .oxlintrc.json --quiet .",
+    "lint:anti-slop:strict": "oxlint --config .oxlintrc.json --deny-warnings .",
+    "lint:anti-slop:smoke": "node scripts/check-anti-slop.mjs",
     "format": "pnpm --filter frontend format",
     "test": "pnpm --filter frontend test:run",
     "verify": "./scripts/verify.sh",
     "generate:api": "pnpm --filter frontend generate:api"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.85.0",
+    "oxlint": "1.85.0"
   }
 }

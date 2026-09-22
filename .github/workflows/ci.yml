@@ -68,9 +68,21 @@ jobs:
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
+              - '**/*.js'
+              - '**/*.jsx'
+              - '**/*.mjs'
+              - '**/*.cjs'
+              - '**/*.ts'
+              - '**/*.tsx'
+              - '**/*.mts'
+              - '**/*.cts'
               - 'package.json'
+              - '.oxlintrc*.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
+              - 'tools/oxlint/**'
+              - 'scripts/check-anti-slop.mjs'
+              - 'scripts/capture-readme-screenshots.mjs'
               - 'tools/openapi-typescript-runtime/**'
               - 'deploy/Dockerfile.web'
               - 'deploy/nginx/**'
@@ -247,6 +259,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint
         run: pnpm --filter frontend lint
+      - name: Lint anti-slop policy
+        run: |
+          pnpm lint:anti-slop:ci
+          pnpm lint:anti-slop:smoke
       - name: Format check
         run: pnpm --filter frontend format:check
       - name: Typecheck
