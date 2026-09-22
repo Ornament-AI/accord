@@ -74,6 +74,7 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'tools/oxlint/**'
               - 'scripts/check-anti-slop.mjs'
+              - 'scripts/capture-readme-screenshots.mjs'
               - 'tools/openapi-typescript-runtime/**'
               - 'deploy/Dockerfile.web'
               - 'deploy/nginx/**'

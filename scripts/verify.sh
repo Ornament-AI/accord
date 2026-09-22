@@ -91,6 +91,15 @@ else
 	skip_step "frontend lint — frontend/package.json not found"
 fi
 
+step "Lint anti-slop policy"
+if [[ -f "$ROOT/.oxlintrc.json" && -f "$ROOT/tools/oxlint/anti-slop/index.ts" ]]; then
+	if (( ! PNPM_RESOLVED )); then resolve_pnpm && PNPM_RESOLVED=1 || die_step "pnpm not found"; fi
+	run_step "anti-slop CI gate" "${PNPM_CMD[@]}" lint:anti-slop:ci
+	run_step "anti-slop smoke check" "${PNPM_CMD[@]}" lint:anti-slop:smoke
+else
+	skip_step "anti-slop policy — configuration or vendored plugin not found"
+fi
+
 step "Check frontend formatting"
 if [[ -f "$ROOT/frontend/package.json" ]]; then
 	if (( ! PNPM_RESOLVED )); then resolve_pnpm && PNPM_RESOLVED=1 || die_step "pnpm not found"; fi
