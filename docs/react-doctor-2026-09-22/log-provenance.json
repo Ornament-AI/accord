@@ -1,0 +1,40 @@
+{
+  "normalization": "Trailing whitespace and blank lines at EOF removed; absolute checkout paths replaced with <repository>. All diagnostics and nonblank output lines retained. Original verbatim logs retained locally.",
+  "logs": [
+    {
+      "log": "audit.log",
+      "original_sha256": "8e12fc9abab25e7bb1f6df357046eac1bc9fb11ca617f787aac4e91568fdf490",
+      "committed_sha256": "183cf70a6a44700f59e847695e85dbc9f4837f339dc223a45941f6a8cd5bc8a0"
+    },
+    {
+      "log": "baseline.log",
+      "original_sha256": "de925e4d8a1338ea4ab63414c08bd55d583fcad0f0e115424f6e7655c877f417",
+      "committed_sha256": "34b273198dc8e184fa39f8d2e892fa06a57a1857ec219a081fee9c75288b7a3b"
+    },
+    {
+      "log": "build.log",
+      "original_sha256": "4d5bb2b399741bd3cd92d22661f56fab156f9044c1d7faafabe2b8c51d4b2db1",
+      "committed_sha256": "92932601d9c9b7dd4109ede9871fc5d83ea934cd4303b21edaf5abe936d775f2"
+    },
+    {
+      "log": "final.log",
+      "original_sha256": "820e37f4a0d0f70bb8ce5ffa3e96167fe011fb25317cc0e66eb0f7fea5b8f753",
+      "committed_sha256": "e3f0ed95f24c82dca5a931230f3b7480f9d4b0fe4205c0f085ff3687a0bfce5a"
+    },
+    {
+      "log": "lint.log",
+      "original_sha256": "73f6ecd44a88e757aaa72c001620644442eabfe6ed0046208abf1083f883a264",
+      "committed_sha256": "73f6ecd44a88e757aaa72c001620644442eabfe6ed0046208abf1083f883a264"
+    },
+    {
+      "log": "test.log",
+      "original_sha256": "d3d7708bc1a44c228d6541590834ccd082b5146510613c3777622e1d26152e8e",
+      "committed_sha256": "a7aa5f1799a27d8cf64ec5b58b09fa9af4d29dfa747db20e26a548c8dabba973"
+    },
+    {
+      "log": "typecheck.log",
+      "original_sha256": "5262dfc9058b406ef234572ad801f70ac5d2a52d4686b02ba1b9f7e731c14f04",
+      "committed_sha256": "5262dfc9058b406ef234572ad801f70ac5d2a52d4686b02ba1b9f7e731c14f04"
+    }
+  ]
+}

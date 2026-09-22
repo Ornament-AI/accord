@@ -48,11 +48,9 @@ export function AppShellProvider({ children }: AppShellProviderProps) {
 	}, []);
 
 	const clearHeader = useCallback((registrationId: symbol) => {
-		setHeaderState((currentHeader) => {
-			if (activeRegistrationRef.current !== registrationId) return currentHeader;
-			activeRegistrationRef.current = null;
-			return defaultHeader;
-		});
+		if (activeRegistrationRef.current !== registrationId) return;
+		activeRegistrationRef.current = null;
+		setHeaderState(defaultHeader);
 	}, []);
 
 	const registration = useMemo(() => ({ setHeader, clearHeader }), [clearHeader, setHeader]);

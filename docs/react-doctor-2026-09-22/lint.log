@@ -1,0 +1,5 @@
+$ pnpm --filter frontend lint
+$ biome check src && pnpm run lint:e2e
+Checked 197 files in 94ms. No fixes applied.
+$ biome check $(git ls-files 'playwright.config.ts' 'e2e/*.ts' 'e2e/**/*.ts')
+Checked 10 files in 24ms. No fixes applied.
