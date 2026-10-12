@@ -77,11 +77,9 @@ test.describe("reports", () => {
 		if (status === "approved") {
 			await openNewestPayRun(page);
 			await confirmWorkflowAction(page, "post");
-			await expect(page.getByTestId("run-status-badge")).toHaveAttribute(
-				"data-status",
-				"posted",
-				{ timeout: 30_000 },
-			);
+			await expect(page.getByTestId("run-status-badge")).toHaveAttribute("data-status", "posted", {
+				timeout: 30_000,
+			});
 		}
 
 		// Reports: select the posted run, export the workbook, download the artifact.
@@ -93,10 +91,7 @@ test.describe("reports", () => {
 		await page.getByRole("option").first().click();
 
 		await page.getByRole("button", { name: /Export/ }).click();
-		const artifactRow = page
-			.getByTestId("artifacts-section")
-			.locator("table tbody tr")
-			.first();
+		const artifactRow = page.getByTestId("artifacts-section").locator("table tbody tr").first();
 		await expect(artifactRow).toBeVisible({ timeout: 120_000 });
 
 		const downloadPromise = page.waitForEvent("download", { timeout: 60_000 });
@@ -109,7 +104,12 @@ test.describe("reports", () => {
 		// Runs only when no posted run exists yet; otherwise the selector shows.
 		await page.goto("/reports");
 		await expect(page.getByTestId("reports-page")).toBeVisible({ timeout: 30_000 });
-		if (await page.getByLabel("Select Posted Run").isVisible().catch(() => false)) {
+		if (
+			await page
+				.getByLabel("Select Posted Run")
+				.isVisible()
+				.catch(() => false)
+		) {
 			test.skip(true, "a posted run already exists in this database");
 			return;
 		}

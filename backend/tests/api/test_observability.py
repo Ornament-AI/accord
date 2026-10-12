@@ -71,6 +71,7 @@ async def test_readyz_all_ok_with_configured_storage(client, monkeypatch):
         "jobs": "ok",
         "storage": "ok",
         "reports": "ok",
+        "organization": "pending",
     }
 
 

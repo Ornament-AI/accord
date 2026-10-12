@@ -132,6 +132,11 @@ class OutboxEvent(UUIDPrimaryKeyMixin, OrganizationOwnedMixin, table=True):
             "occurred_at",
             postgresql_where=text("processed_at IS NULL"),
         ),
+        Index(
+            "ix_outbox_events_claimable",
+            "occurred_at",
+            postgresql_where=text("processed_at IS NULL AND dead_lettered_at IS NULL"),
+        ),
     )
 
     id: uuid.UUID = _id_field()
@@ -191,6 +196,7 @@ class PayrollApproval(UUIDPrimaryKeyMixin, OrganizationOwnedMixin, table=True):
             "action IN ('submit','withdraw','approve','reject','post','reverse','reopen')",
             name="ck_payroll_approvals_action",
         ),
+        Index("ix_payroll_approvals_run_id", "run_id"),
     )
 
     id: uuid.UUID = _id_field()
@@ -354,6 +360,7 @@ class ExportArtifact(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixin
             name="ck_export_artifacts_status",
         ),
         UniqueConstraint("object_key", name="uq_export_artifacts_object_key"),
+        Index("ix_export_artifacts_posted_run_id", "posted_run_id"),
     )
 
     id: uuid.UUID = _id_field()

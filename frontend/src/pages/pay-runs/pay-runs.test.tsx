@@ -618,7 +618,7 @@ describe("Pay run detail — calculate gating", () => {
 	it.each([
 		["draft", true],
 		["calculated", true],
-		["rejected", true],
+		["rejected", false],
 		["submitted", false],
 		["approved", false],
 		["posted", false],

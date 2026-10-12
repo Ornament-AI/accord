@@ -167,6 +167,7 @@ class OrganizationMembership(
             ")",
             name="ck_organization_memberships_role",
         ),
+        Index("ix_organization_memberships_user_id", "user_id"),
         UniqueConstraint(
             "organization_id",
             "user_id",
@@ -317,6 +318,7 @@ class IdempotencyKey(
             "status IN ('in_progress', 'succeeded', 'failed')",
             name="ck_idempotency_keys_status",
         ),
+        Index("ix_idempotency_keys_expires_at", "expires_at"),
         UniqueConstraint(
             "organization_id",
             "key",
