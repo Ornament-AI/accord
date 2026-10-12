@@ -568,6 +568,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/payroll-periods/{period_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Payroll Period */
+        post: operations["close_payroll_period_api_payroll_periods__period_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/payroll-runs": {
         parameters: {
             query?: never;
@@ -3504,7 +3521,6 @@ export interface operations {
                 search?: string | null;
                 page?: number;
                 size?: number;
-                reveal?: boolean;
             };
             header?: never;
             path?: never;
@@ -3572,7 +3588,6 @@ export interface operations {
                 search?: string | null;
                 page?: number;
                 size?: number;
-                reveal?: boolean;
             };
             header?: never;
             path?: never;
@@ -4262,6 +4277,37 @@ export interface operations {
             };
         };
     };
+    close_payroll_period_api_payroll_periods__period_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                period_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollPeriodResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_payroll_runs_api_payroll_runs_get: {
         parameters: {
             query?: {
@@ -4400,7 +4446,9 @@ export interface operations {
     calculate_payroll_run_api_payroll_runs__run_id__calculate_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
             path: {
                 run_id: string;
             };

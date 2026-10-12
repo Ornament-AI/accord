@@ -81,11 +81,41 @@ pnpm --filter frontend e2e:ui
 
 Config: `frontend/playwright.config.ts` — `baseURL` `http://127.0.0.1:5173`, `retries: 1`, `trace: on-first-retry`, Chromium only.
 
+## Multi-identity (maker/checker) lane
+
+`DevAuthAdapter` derives a distinct subject per email submitted to
+`POST /api/auth/login/password`, so a second identity can sign in without
+restarting the backend. Provision the checker member once per database:
+
+```bash
+MIGRATIONS_DATABASE_URL=postgresql+asyncpg://accord_migrator:accord@127.0.0.1:5432/accord_e2e \
+backend/.venv/bin/python scripts/provision_member.py \
+  --email e2e.checker@accord.local --role organization_administrator
+```
+
+`reports.spec.ts` uses this identity (see `helpers/auth.ts#loginAsEmail`) to
+approve → post → export → download.
+
+## Visual regression
+
+`e2e/visual.spec.ts` compares screenshots against baselines in
+`visual.spec.ts-snapshots/`. **No baselines are committed yet** — until they
+exist, each test skips with a clear message (unless snapshots are being
+regenerated). Baselines are platform- and data-sensitive, so generate them
+deliberately on the machine that produces release evidence:
+
+```bash
+pnpm --filter frontend exec playwright test e2e/visual.spec.ts --update-snapshots
+```
+
+Commit the generated PNGs. Once baselines are in the repo, the suite compares
+screenshots on every run instead of skipping.
+
 ## Coverage and tooling policy
 
 Hosted CI lints and format-checks only tracked E2E TypeScript, then runs `playwright test --list` to prove test discovery. It does not start the application stack or a browser. The full Chromium suite is local release-acceptance evidence against a freshly prepared real stack.
 
-The tracked-file selection excludes `.auth`, `playwright-report`, `test-results`, `blob-report`, and other generated or ignored artifacts. Never inspect, format, or commit authentication state. Report generation/download remains outside browser acceptance until the harness has a documented multi-identity and posted-run data strategy; API, service, and frontend integration tests remain the proof for that path.
+The tracked-file selection excludes `.auth`, `playwright-report`, `test-results`, `blob-report`, and other generated or ignored artifacts. Never inspect, format, or commit authentication state. Report generation/download is covered by `reports.spec.ts` via the multi-identity checker lane above; visual and axe suites cover the remaining gate-K surfaces.
 
 ## Stop
 
@@ -100,7 +130,7 @@ The tracked-file selection excludes `.auth`, `playwright-report`, `test-results`
 | `auth-and-org.spec.ts` | **Setup project**: dev-bypass login, reuse singleton org, save `e2e/.auth/user.json` + run context |
 | `master-data.spec.ts` | Office, pay component, employee (+ regime), schedule pay change, masked PAN |
 | `payroll-flow.spec.ts` | Period → run → input → Calculate → Validate → Submit → self-approve blocked |
-| `reports.spec.ts` | Empty posted-run state; generate-report journey `test.skip` (see below) |
+| `reports.spec.ts` | Empty posted-run state; multi-identity approve → post → export → auto-download journey |
 | `axe-a11y.spec.ts` | axe-core smoke on login, authenticated landing, employees list |
 
 Specs share one org per run via `storageState` and `e2e/.auth/run-context.json` (unique slug each process).
@@ -120,7 +150,7 @@ Consequences for this lane:
 
 1. **No second UI identity** without restarting the backend with a different `DEV_AUTH_EMAIL`.
 2. Org creator is `organization_administrator` (all capabilities). After **Submit**, the same user **Approve** is rejected with maker/checker (`urn:accord:workflow:maker_checker`) — covered in `payroll-flow.spec.ts`.
-3. **Posted runs** require a different approver, so the full report generate → poll → download path is `test.skip` in `reports.spec.ts`.
+3. **Posted runs** require a different approver — provided by the checker identity in the multi-identity lane above.
 
 ## Login redirect note
 
@@ -134,6 +164,6 @@ Consequences for this lane:
 ## Verification expectation
 
 Run the suite against a freshly prepared `accord_e2e` database for release
-evidence. The report generation/download test is intentionally skipped for
-the single-identity reason above; do not describe the browser lane as complete
-report-export proof. Backend report API/service tests provide that coverage.
+evidence. The report generate → poll → download journey in `reports.spec.ts`
+runs live via the checker identity and asserts the automatic `.xlsx`
+download.

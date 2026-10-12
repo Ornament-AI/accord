@@ -531,7 +531,8 @@ async def test_results_unprovisioned_user_fail_closed(client, session, dev_setti
 
 
 @pytest.mark.asyncio
-async def test_results_capability_gate_auditor_403(client, session, dev_settings):
+async def test_results_read_access_auditor_200(client, session, dev_settings):
+    """Auditors can read the results they audit (run-lifecycle capability set)."""
     org_id, user_id = await _create_org_as_admin(client, session)
     world = await _seed_calculated_world(session, org_id=org_id, user_id=user_id)
 
@@ -553,11 +554,9 @@ async def test_results_capability_gate_auditor_403(client, session, dev_settings
     apply_session_cookie(client, cookie)
 
     resp = await client.get(f"/api/payroll-runs/{world['run_id']}/results")
-    assert resp.status_code == 403
-    assert resp.json()["error"] == "urn:accord:capability:view_master_data"
+    assert resp.status_code == 200, resp.text
 
     emp_resp = await client.get(
         f"/api/payroll-runs/{world['run_id']}/results/{world['employee_id']}"
     )
-    assert emp_resp.status_code == 403
-    assert emp_resp.json()["error"] == "urn:accord:capability:view_master_data"
+    assert emp_resp.status_code == 200, emp_resp.text

@@ -701,3 +701,51 @@ async def test_reverse_without_reason_raises(session):
             user_id=world["user_id"],
             reason="   ",
         )
+
+
+@pytest.mark.asyncio
+async def test_reverse_rejected_on_closed_period(session):
+    world = await _seed_world(session)
+    await _calculate_and_approve(session, world)
+    await _bind(session, world["org_id"], world["user_id"])
+    await post_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    period = await session.get(PayrollPeriod, world["period_id"])
+    period.status = "closed"
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="must be open to reverse"):
+        await reverse_run(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+            reason="Bank file rejected",
+        )
+
+
+@pytest.mark.asyncio
+async def test_post_rejected_on_closed_period(session):
+    world = await _seed_world(session)
+    await _calculate_and_approve(session, world)
+
+    await _bind(session, world["org_id"], world["user_id"])
+    period = await session.get(PayrollPeriod, world["period_id"])
+    period.status = "closed"
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    with pytest.raises(ConflictError, match="must be open to post"):
+        await post_run(
+            session,
+            organization_id=world["org_id"],
+            run_id=world["run_id"],
+            user_id=world["user_id"],
+        )

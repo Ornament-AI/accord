@@ -276,6 +276,7 @@ class PayrollRunInput(UUIDPrimaryKeyMixin, TimestampMixin, OrganizationOwnedMixi
             "input_kind",
             name="uq_payroll_run_inputs_org_run_emp_comp_kind",
         ),
+        Index("ix_payroll_run_inputs_run_id", "run_id"),
     )
 
     id: uuid.UUID = _id_field()
@@ -375,6 +376,7 @@ payroll_run_versions = Table(
         "version_number",
         name="uq_payroll_run_versions_organization_id_run_id_version_number",
     ),
+    Index("ix_payroll_run_versions_run_id", "run_id"),
 )
 
 
@@ -473,6 +475,7 @@ payroll_employee_results = Table(
         "employee_id",
         name="uq_payroll_employee_results_org_version_emp",
     ),
+    Index("ix_payroll_employee_results_run_version_id", "run_version_id"),
 )
 
 payroll_result_lines = Table(
@@ -527,6 +530,7 @@ payroll_result_lines = Table(
         "sequence",
         name="uq_payroll_result_lines_org_result_comp_seq",
     ),
+    Index("ix_payroll_result_lines_employee_result_id", "employee_result_id"),
 )
 
 # Re-export typing helper for callers that annotate JSON payloads.

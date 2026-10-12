@@ -12,8 +12,8 @@ Rationale (traceability against ADR-0002 §8 columns):
   generation/download" column (yes for all six org roles → ``generate_reports``).
   There is no separate release column; ``release_reports`` is granted only to
   ``report_releaser`` (+ org admin) by role-name inference.
-* **Run reverse unimplemented** — ADR has a Run reverse column but no matching
-  frozen capability string; left as a future-phase seam (do not invent a 13th).
+* **Run reverse shares ``post_run``** — the ADR reverse column has no separate
+  frozen capability string; the same role that posts a run may reverse it.
 * **Platform support out of scope** — not an ``organization_memberships.role``;
   ``is_platform_admin`` is display-only this phase (no capability bypass).
 * **``view_audit`` scoping seam** — granted to every role with any ADR audit

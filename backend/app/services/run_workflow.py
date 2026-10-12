@@ -38,6 +38,7 @@ from app.models.payroll_runs import (
 )
 from app.models.platform import PayrollApproval
 from app.services.audit_events import entity_snapshot, write_mutation_event
+from app.services.outbox import emit_event
 from app.services.run_reconstruction import load_run_result
 
 # Problem-detail ``error`` URNs for workflow conflicts (ADR 0008 HTTP mapping).
@@ -46,6 +47,16 @@ URN_MAKER_CHECKER = "urn:accord:workflow:maker_checker"
 URN_STALE_VERSION = "urn:accord:workflow:stale_version"
 URN_BLOCKING_VALIDATION = "urn:accord:workflow:blocking_validation"
 URN_WITHDRAW_FORBIDDEN = "urn:accord:workflow:withdraw_forbidden"
+
+# Outbox contract (ADR 0009 §6): lifecycle transitions that external consumers
+# care about. Post/reverse emit from run_posting; calculate from command.py.
+_OUTBOX_EVENT_BY_ACTION = {
+    "submit": "payroll_run.submitted",
+    "withdraw": "payroll_run.withdrawn",
+    "approve": "payroll_run.approved",
+    "reject": "payroll_run.rejected",
+    "reopen": "payroll_run.reopened",
+}
 
 
 def _conflict(message: str, *, error_code: str, details: dict | None = None) -> ConflictError:
@@ -261,6 +272,23 @@ async def _write_approval_and_audit(
         metadata={"reason": reason} if reason else {},
         idempotency_key=idempotency_key,
     )
+    event_type = _OUTBOX_EVENT_BY_ACTION.get(action)
+    if event_type is not None:
+        await emit_event(
+            db,
+            organization_id=organization_id,
+            event_type=event_type,
+            payload={
+                "run_id": str(run.id),
+                "run_version_id": str(version["id"]),
+                "version_number": int(version["version_number"]),
+                "content_hash": str(version["content_hash"]),
+                "from_status": from_status,
+                "to_status": to_status,
+                "actor_user_id": str(user_id),
+                "reason": reason,
+            },
+        )
 
 
 async def _transition(

@@ -536,6 +536,45 @@ async def test_input_unknown_employee_404(client, session):
 
 
 @pytest.mark.asyncio
+async def test_close_period_admin_roundtrip(client, session):
+    await _admin_context(client, session)
+    period = await _create_period(client)
+
+    resp = await client.post(f"/api/payroll-periods/{period['id']}/close")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_close_period_requires_post_run_capability(client, dev_settings, session):
+    """Close is a posting-lifecycle action: payroll_preparer holds create_run
+    but not post_run, so it must be denied."""
+    ctx = await _admin_context(client, session)
+    period = await _create_period(client)
+
+    preparer = await seed_user(session, email="preparer@example.com", name="Preparer")
+    await seed_membership(
+        session,
+        organization_id=ctx["org_id"],
+        user_id=preparer.id,
+        role="payroll_preparer",
+    )
+    await session.commit()
+
+    cookie = await mint_session_cookie(
+        session,
+        dev_settings,
+        user_id=preparer.id,
+        active_organization_id=ctx["org_id"],
+    )
+    apply_session_cookie(client, cookie)
+
+    resp = await client.post(f"/api/payroll-periods/{period['id']}/close")
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "urn:accord:capability:post_run"
+
+
+@pytest.mark.asyncio
 async def test_payroll_reviewer_can_get_but_not_write(client, dev_settings, session):
     ctx = await _admin_context(client, session)
     period = await _create_period(client)

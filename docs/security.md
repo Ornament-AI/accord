@@ -120,7 +120,7 @@ PITR means point-in-time recovery: restoring the database to a chosen moment.
 | Retention | Meet customer/regulatory retention; default engineering floor documented in ops runbook (e.g. ≥ 30 days backups). |
 | PITR window | Provider/configured PITR window documented per environment; production window ≥ 7 days unless waived. |
 | Access | Backup credentials are not `accord_app`; restore uses controlled procedure. |
-| Restore rehearsals | Periodic restore into an isolated environment; prove forced RLS and the `NOSUPERUSER NOBYPASSRLS` runtime roles still enforce isolation. `scripts/backup-restore.sh` rehearses logical restore integrity, but the post-restore RLS proof is not automated. Gate **K** in [release-acceptance.md](release-acceptance.md). |
+| Restore rehearsals | Periodic restore into an isolated environment; prove forced RLS and the `NOSUPERUSER NOBYPASSRLS` runtime roles still enforce isolation. `scripts/backup-restore.sh restore-scratch` rehearses logical restore integrity **and** verifies forced RLS + immutable-table + `alembic_version` denies under `accord_app`/`accord_worker` post-restore. Gate **K** in [release-acceptance.md](release-acceptance.md). |
 
 Threat mapping: [threat-model.md](threat-model.md) §12 (Backup / restore exposure).
 
@@ -139,9 +139,11 @@ package inside a release.
 | SBOM | syft and/or CycloneDX SBOM attached to release artifacts | SBOM stored with release evidence |
 | Block vs advisory | **Block** merge/deploy on critical (and agreed high) findings in direct runtime deps without waiver; **advisory** for transitive/low with ticket SLA | Waivers time-bounded and signed |
 
-Status: `.github/workflows/ci.yml` runs lint, tests, migrations, and Docker
-builds, but does not yet wire these scanners or SBOM steps. The
-[security review](security-review.md) tracks this as a Medium finding.
+Status: `.github/workflows/ci.yml` runs a `supply-chain` job —
+`pip-audit --strict` on backend dependencies, `pnpm audit --prod
+--audit-level=high` on the frontend lockfile, and a CycloneDX SBOM uploaded
+as a build artifact (30-day retention). Container image scanning on release
+remains tracked by the [security review](security-review.md).
 
 Threat mapping: [threat-model.md](threat-model.md) §11 (Supply-chain / dependency risks).
 Evidence feeds gate C / security reviewer sign-off in
@@ -156,7 +158,7 @@ Evidence feeds gate C / security reviewer sign-off in
 | Format | JSON structured logs (structlog) with `request_id`; wired in `backend/app/logging_config.py`. | Machine-parseable; correlatable. |
 | Never log | PAN, bank account numbers, PRAN, GPF numbers, full legal names where avoidable, session tokens, passwords, API keys, WorkOS secrets, raw webhook signatures. | CI/log review finds zero hits. The `redact_sensitive` processor in `backend/app/logging_config.py` redacts `pan`, `pran`, `account_number`, `password`, `secret`, `token`, `authorization`, and `cookie` keys recursively. |
 | Prefer | Stable opaque ids (`employee_id`, `organization_id`, `payroll_run_id`). | Support can debug without PII. |
-| PII reveal | The API shows masked fields by default; `reveal=true` is gated on `reveal_sensitive_fields` (`backend/app/api/routes/employees.py`). The reveal is **not yet audited**. | Masking/capability coverage exists in the employee API/service suites; an append-only reveal access event remains required. |
+| PII reveal | The API shows masked fields by default; `reveal=true` is gated on `reveal_sensitive_fields` (`backend/app/api/routes/employees.py`) and writes an append-only `employee.pii.reveal` access audit event. | Masking/capability/access-event coverage in the employee API/service suites. |
 | Fixtures | Real June 2026 workbook PII never enters git/CI/logs; only synthetic data in `fixtures/sanitized/june-2026/`. | The fixture validator exists; a dedicated CI hash/name guard remains missing. See [testing.md](testing.md). |
 
 ---
@@ -213,7 +215,7 @@ Gate checklist item in [release-acceptance.md](release-acceptance.md).
 | CSRF | Signed OAuth-state + session-bound synchronizer token (`CsrfMiddleware`); auth/API suites exercise the echo contract | None identified in current contract |
 | WorkOS webhooks | `backend/tests/api/test_webhooks_workos.py` | None identified in current contract |
 | Privilege escalation | `backend/tests/gate_d/test_capability_matrix.py`, `backend/tests/api/test_deps_capabilities.py` | Support elevation is intentionally absent |
-| PII masking / reveal | Employee API/service suites | Reveal read is not audit-logged |
+| PII masking / reveal | Employee API/service suites | — |
 | Support break-glass | Default deny; no capability bypass | No time-boxed audited support path |
 | Posted SQL immutability | `backend/tests/rls/test_immutable_grants.py`, `backend/tests/rls/test_payroll_run_rls.py` | None identified in current contract |
 | Backup/restore RLS | Runtime-role and RLS suites; `scripts/backup-restore.sh` integrity rehearsal | No automated combined restore-under-runtime-role proof |

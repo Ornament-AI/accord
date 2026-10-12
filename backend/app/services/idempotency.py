@@ -30,7 +30,7 @@ from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,8 +38,9 @@ from sqlalchemy import text
 
 from app.exceptions import ConflictError
 from app.models.base import utcnow
+from app.services.audit_events import json_safe
 from app.models.identity import IdempotencyKey
-from app.tenancy import set_config_local
+from app.tenancy import bind_tenant_context, set_config_local
 
 _TENANT_GUCS = ("app.organization_id", "app.user_id", "app.request_id")
 
@@ -305,7 +306,7 @@ async def _execute_claimed(
     gucs = await _snapshot_tenant_gucs(db)
     table = IdempotencyKey.__table__
     try:
-        snapshot = await executor()
+        snapshot = json_safe(await executor())
     except Exception:
         await db.rollback()
         # Rollback cleared tenant GUCs; rebind before any idempotency_keys touch.
@@ -337,3 +338,27 @@ async def _execute_claimed(
             "Idempotency key was reclaimed by a concurrent request during execution."
         )
     return snapshot
+
+
+async def purge_expired_keys(session: AsyncSession, *, organization_id: UUID) -> int:
+    """Delete this org's expired non-``succeeded`` ``idempotency_keys`` rows.
+
+    ``succeeded`` rows are durable replay records of completed commands —
+    TTL expiry bounds replay retention, never re-execution — so they are
+    kept; only expired ``in_progress``/``failed`` rows are removed.
+
+    The maintenance worker calls this after earlier steps may have committed,
+    so transaction-local tenant GUCs are re-bound here before the delete.
+    """
+    if not session.in_transaction():
+        await session.begin()
+    await bind_tenant_context(session, organization_id=organization_id)
+    result = await session.execute(
+        delete(IdempotencyKey).where(
+            IdempotencyKey.organization_id == organization_id,
+            IdempotencyKey.expires_at < func.now(),
+            IdempotencyKey.status != "succeeded",
+        )
+    )
+    await session.commit()
+    return int(result.rowcount or 0)

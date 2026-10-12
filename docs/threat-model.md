@@ -57,7 +57,7 @@ summarized in [release-readiness.md](release-readiness.md).
 | append-only audit log tables | `audit_events` never updated/deleted in place (triggers + revoked DML) |
 | immutability triggers | Block UPDATE/DELETE on posted `payroll_run_version` rows; runtime DML on snapshot tables is also revoked |
 | capability/permission checks at the API layer | Role/capability enforcement before commands (`require_capability` in `backend/app/api/deps.py`) |
-| masked fields with a capability-gated reveal option | Default mask; explicit reveal requires `reveal_sensitive_fields`; reveal audit is not yet implemented (see [security.md](security.md)) |
+| masked fields with a capability-gated reveal option | Default mask; explicit reveal requires `reveal_sensitive_fields` and writes an `employee.pii.reveal` access audit event (see [security.md](security.md)) |
 
 **CSRF strategy (normative):** CSRF (cross-site request forgery) tricks a
 logged-in browser into sending a request the user never meant. The required
@@ -65,8 +65,9 @@ defense has two parts. First, the session cookie uses SameSite=Lax. Second,
 each state-changing route must require a synchronizer CSRF token: the server
 issues a token, and the client must echo it back in a header. Lax covers the
 cross-site redirects that WorkOS login needs. The token guards writes
-(POST/PUT/PATCH/DELETE), including same-site adjacent risks. The token is not
-built yet — see the current gap inventory in [security.md](security.md).
+(POST/PUT/PATCH/DELETE), including same-site adjacent risks. This is
+implemented by `backend/app/middleware/csrf.py` (session-bound `accord_csrf`
+cookie ↔ `X-CSRF-Token` header); see [security.md](security.md).
 
 ---
 

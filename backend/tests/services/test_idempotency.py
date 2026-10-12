@@ -17,7 +17,11 @@ from app.db import get_session_factory
 from app.exceptions import ConflictError
 from app.models.base import utcnow
 from app.models.identity import IdempotencyKey
-from app.services.idempotency import compute_request_hash, idempotent_command
+from app.services.idempotency import (
+    compute_request_hash,
+    idempotent_command,
+    purge_expired_keys,
+)
 from app.tenancy import set_config_local
 from tests.identity_helpers import seed_organization
 from tests.migrations.conftest import (
@@ -601,3 +605,48 @@ async def test_displaced_claimants_terminal_write_does_not_clobber(session):
     ).scalar_one()
     assert stored.status == "succeeded"
     assert stored.response_snapshot == {"winner": "B"}
+
+
+def _key_row(org_id: uuid.UUID, key: str, status: str, *, expired: bool) -> IdempotencyKey:
+    return IdempotencyKey(
+        organization_id=org_id,
+        key=key,
+        request_hash=compute_request_hash({"key": key}),
+        status=status,
+        expires_at=utcnow() - timedelta(hours=1) if expired else utcnow() + timedelta(hours=72),
+    )
+
+
+@pytest.mark.asyncio
+async def test_purge_expired_keys_scoped_status_and_expiry(session):
+    """Only this org's expired non-``succeeded`` rows are deleted.
+
+    ``succeeded`` rows are durable replay records of completed commands —
+    TTL expiry bounds replay retention, never re-execution — so an expired
+    ``succeeded`` row must survive the purge; unexpired rows are untouched.
+    Org-scoping is proven by purging under a foreign organization id first
+    (the ADR-0011 singleton index makes a second org row unseedable).
+    """
+    org = await seed_organization(session, slug="idem-purge")
+    session.add_all(
+        [
+            _key_row(org.id, "k-exp-succeeded", "succeeded", expired=True),
+            _key_row(org.id, "k-exp-failed", "failed", expired=True),
+            _key_row(org.id, "k-exp-in-progress", "in_progress", expired=True),
+            _key_row(org.id, "k-live-failed", "failed", expired=False),
+        ]
+    )
+    await session.commit()
+
+    # A purge bound to a different organization must not touch these rows.
+    foreign = await purge_expired_keys(session, organization_id=uuid.uuid4())
+    assert foreign == 0
+    assert (
+        await session.execute(select(sa.func.count()).select_from(IdempotencyKey))
+    ).scalar_one() == 4
+
+    purged = await purge_expired_keys(session, organization_id=org.id)
+    assert purged == 2
+
+    remaining = {r.key for r in (await session.execute(select(IdempotencyKey))).scalars().all()}
+    assert remaining == {"k-exp-succeeded", "k-live-failed"}

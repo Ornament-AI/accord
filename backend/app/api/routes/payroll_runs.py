@@ -59,6 +59,24 @@ async def create_payroll_period(
     )
 
 
+@router.post(
+    "/payroll-periods/{period_id}/close",
+    response_model=PayrollPeriodResponse,
+)
+async def close_payroll_period(
+    period_id: UUID,
+    tenant: TenantCtx,
+    db: Session,
+    _: AuthPrincipal = Depends(require_capability("post_run")),
+) -> dict[str, Any]:
+    return await payroll_runs_service.close_period(
+        db,
+        organization_id=tenant_org_id(tenant),
+        period_id=period_id,
+        actor_user_id=tenant_user_id(tenant),
+    )
+
+
 @router.get("/payroll-periods", response_model=list[PayrollPeriodResponse])
 async def list_payroll_periods(
     tenant: TenantCtx,

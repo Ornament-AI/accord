@@ -34,7 +34,11 @@ from app.reports.base import (
     to_json,
 )
 from app.reports.canonical_excel import CANONICAL_PRODUCT_SHEETS, consolidate_v3_workbooks
-from app.reports.canonical_front_sheets import bank_tip_to_excel, payslip_to_excel
+from app.reports.canonical_front_sheets import (
+    bank_tip_to_excel,
+    office_tip_to_excel,
+    payslip_to_excel,
+)
 from app.reports.canonical_schedules import clone_canonical_sheet_structure
 from app.reports.registry_setup import (
     PRODUCT_REPORT_SHEET_TITLES,
@@ -165,6 +169,74 @@ def test_consolidated_v3_copies_dynamic_overflow_without_stale_template_merges()
     assert bank["B200"].value == "Dynamic overflow row"
     assert "B200:D200" in {str(item) for item in bank.merged_cells.ranges}
     assert bank.print_area == "'Bank Tip'!$A$1:$G$200"
+
+
+def test_dynamic_front_sheets_render_past_template_pinned_merges() -> None:
+    """Regression: rows past the canonical layout must not hit stale template merges.
+
+    The office-tip template pre-merges prose/signature rows (B38:E41, A58:C59, ...)
+    and Bank Tip pins signature merges (E44:G44, D48:E48, F48:H48).  With enough
+    beneficiaries a dynamic row lands inside one as a non-anchor cell and the
+    render used to raise ``AttributeError`` — dead-lettering consolidated exports.
+    """
+    approval = ReportDTO(
+        report_type="approval_note",
+        template_version="v3",
+        title="Approval Note",
+        organization_name="Org",
+        subtitle="June 2026",
+        sections=(
+            TableSection(
+                title="Beneficiaries",
+                columns=(
+                    ReportColumn(key="name", header="Name"),
+                    ReportColumn(key="designation", header="Designation"),
+                    ReportColumn(key="net_payable", header="Net payable", kind=ColumnKind.MONEY),
+                ),
+                rows=tuple((f"Employee {index}", "Clerk", Decimal("50000")) for index in range(35)),
+            ),
+            TableSection(
+                title="Bill reference",
+                columns=(
+                    ReportColumn(key="label", header="Label"),
+                    ReportColumn(key="value", header="Value"),
+                ),
+                rows=(("Approval note No.", "42"),),
+            ),
+        ),
+    )
+    office = load_workbook(io.BytesIO(office_tip_to_excel(approval)))["office tip"]
+    # Row 38 sat inside the template's stale B38:E38 prose merge.
+    assert office["C38"].value == "Employee 30"
+    # Signature row 60 sat inside the stale A58:C59 merge.
+    assert office["A60"].value is not None
+
+    bank_dto = ReportDTO(
+        report_type="bank_rtgs_advice",
+        template_version="v3",
+        title="Bank advice",
+        organization_name="Org",
+        subtitle="June 2026",
+        sections=(
+            TableSection(
+                title="Payment credits",
+                columns=(
+                    ReportColumn(key="name", header="Name"),
+                    ReportColumn(key="bank_name", header="Bank"),
+                    ReportColumn(key="bank_branch", header="Branch"),
+                    ReportColumn(key="account_number", header="Account"),
+                    ReportColumn(key="ifsc", header="IFSC"),
+                    ReportColumn(key="disbursement", header="Amount", kind=ColumnKind.MONEY),
+                ),
+                rows=tuple(
+                    (f"Employee {index}", "Bank", "Branch", "1", "IFSC", Decimal("50000"))
+                    for index in range(35)
+                ),
+            ),
+        ),
+    )
+    bank = load_workbook(io.BytesIO(bank_tip_to_excel(bank_dto)))["Bank Tip"]
+    assert bank["F44"].value == "IFSC"
 
 
 class _FakeBuilder:

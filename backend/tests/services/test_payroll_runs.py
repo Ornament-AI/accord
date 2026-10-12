@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.employees import Employee
 from app.models.pay_components import PayComponent
+from app.exceptions import ConflictError
+from app.models.payroll_runs import PayrollRun
 from app.models.platform import AuditEvent
 from app.schemas.payroll_runs import (
     InputKind,
@@ -188,3 +190,205 @@ async def test_run_input_upsert_and_delete_audit(session):
     assert event.before_state["amount"] == "750.00"
     assert event.after_state == {}
     assert event.summary["component_code"] == "SVC_ADJ"
+
+
+@pytest.mark.asyncio
+async def test_close_period_open_to_closed_and_audit(session):
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=7),
+    )
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    closed = await payroll_runs_service.close_period(
+        session,
+        organization_id=org.id,
+        period_id=period["id"],
+        actor_user_id=user.id,
+    )
+    assert closed["status"] == "closed"
+
+    event = await _audit(
+        session,
+        organization_id=org.id,
+        command="payroll_period.close",
+        entity_id=period["id"],
+    )
+    assert event.before_state["status"] == "open"
+    assert event.after_state["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_close_period_rejects_non_open(session):
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=8),
+    )
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    await payroll_runs_service.close_period(
+        session,
+        organization_id=org.id,
+        period_id=period["id"],
+        actor_user_id=user.id,
+    )
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    with pytest.raises(ConflictError):
+        await payroll_runs_service.close_period(
+            session,
+            organization_id=org.id,
+            period_id=period["id"],
+            actor_user_id=user.id,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    ["draft", "calculating", "calculated", "submitted", "approved", "rejected"],
+)
+async def test_close_period_rejects_unsettled_primary_run(session, status):
+    """Close requires every primary run to be posted or reversed."""
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=9),
+    )
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    run = await payroll_runs_service.create_run(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollRunCreate(period_id=period["id"]),
+    )
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    await session.execute(
+        sa.update(PayrollRun).where(PayrollRun.id == run["id"]).values(status=status)
+    )
+    await session.commit()
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    with pytest.raises(ConflictError, match="not posted or reversed"):
+        await payroll_runs_service.close_period(
+            session,
+            organization_id=org.id,
+            period_id=period["id"],
+            actor_user_id=user.id,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["posted", "reversed"])
+async def test_close_period_allows_settled_primary_run(session, status):
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=9),
+    )
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    run = await payroll_runs_service.create_run(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollRunCreate(period_id=period["id"]),
+    )
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    await session.execute(
+        sa.update(PayrollRun).where(PayrollRun.id == run["id"]).values(status=status)
+    )
+    await session.commit()
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    closed = await payroll_runs_service.close_period(
+        session,
+        organization_id=org.id,
+        period_id=period["id"],
+        actor_user_id=user.id,
+    )
+    assert closed["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_close_period_ignores_draft_reversal_placeholder(session):
+    """``reverse_run`` leaves a draft placeholder (``original_run_id`` set) in
+    the period — it must not block closing once the primary run settled."""
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=10),
+    )
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    run = await payroll_runs_service.create_run(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollRunCreate(period_id=period["id"]),
+    )
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    await session.execute(
+        sa.update(PayrollRun).where(PayrollRun.id == run["id"]).values(status="reversed")
+    )
+    session.add(
+        PayrollRun(
+            organization_id=org.id,
+            period_id=period["id"],
+            status="draft",
+            original_run_id=run["id"],
+        )
+    )
+    await session.commit()
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    closed = await payroll_runs_service.close_period(
+        session,
+        organization_id=org.id,
+        period_id=period["id"],
+        actor_user_id=user.id,
+    )
+    assert closed["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_create_run_rejects_closed_period(session):
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=11),
+    )
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    await payroll_runs_service.close_period(
+        session,
+        organization_id=org.id,
+        period_id=period["id"],
+        actor_user_id=user.id,
+    )
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    with pytest.raises(ConflictError, match="must be open"):
+        await payroll_runs_service.create_run(
+            session,
+            organization_id=org.id,
+            actor_user_id=user.id,
+            body=PayrollRunCreate(period_id=period["id"]),
+        )

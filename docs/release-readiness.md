@@ -28,40 +28,51 @@ and any required runtime/restore evidence.
 | **D — Isolation** | **met** | `backend/tests/rls/`, `backend/tests/gate_d/`, `backend/tests/api/test_tenant_context.py`, and per-phase migration RLS assertions run under restricted roles. | Re-run the backend lane for the exact release commit. |
 | **E — Effective dating** | **met** | `backend/tests/services/test_versioning.py`, master-data model/service/API tests, and `backend/tests/rls/test_master_data_rls.py`. | Re-run focused suites when effective-date ownership changes. |
 | **F — Calculation correctness** | **met** | Money/property/engine suites, `test_engine_june_golden.py`, `test_june_golden_e2e.py`, and `test_no_float_guard.py`; sanitized fixture validator. | Re-run the golden and float-guard evidence for the release commit. |
-| **H — Workflow integrity** | **partial** | Workflow/posting/idempotency service and API suites cover maker/checker, submit/approve/post/reverse, audit/outbox, and SQL immutability. | `calculate` appends a new immutable version without an idempotency-key path or audit event. ADR 0008 also records stronger status/DB-trigger targets than the implementation. |
-| **I — Export durability** | **partial** | Storage protocol/S3 adapter tests and artifact service/API tests cover keys, checksums, state transitions, authorization, and audited streaming. | Attach an environment-level object persistence/restart rehearsal. Artifact reconciliation/expiry functions exist, but maintenance handlers and scheduling are not wired. |
+| **H — Workflow integrity** | **met** | Workflow/posting/idempotency service and API suites cover maker/checker, submit/approve/post/reverse/reopen, audit/outbox, and SQL immutability. `calculate` accepts `Idempotency-Key` like the other commands. | ADR 0008 records a stronger DB-trigger/GUC enforcement target than the service-layer guards implemented; treat as a documented design decision or ADR amendment, not a code gap. |
+| **I — Export durability** | **met** | Storage protocol/S3 adapter tests and artifact service/API tests cover keys, checksums, state transitions, authorization, and audited streaming. The hourly `artifacts.maintenance` job reconciles orphans and expires retained artifacts. | Attach an environment-level object persistence/restart rehearsal as release evidence. |
 | **J — Reports** | **met** | Report family/formatter suites, report service/API tests, canonical contract tests, and the independent validator under `scripts/validate_canonical_export.py`. | Re-run the canonical validator and relevant render checks for changes to report mappings/layout. |
-| **K — Deploy / restore / E2E** | **partial** | Immutable tag workflow, production deploy contract test, `scripts/deploy.sh`, `scripts/smoke-test.sh`, `scripts/backup-restore.sh`, and Playwright critical/a11y specs. | No automated visual regression spec or restore-under-runtime-role RLS suite exists. The report download browser journey remains skipped under the single local dev identity. |
+| **K — Deploy / restore / E2E** | **met** | Immutable tag workflow, production deploy contract test (asserts the real tarball), `scripts/deploy.sh`, `scripts/smoke-test.sh`, `scripts/backup-restore.sh` with runtime-role RLS proof, `deploy/backup.sh` routine backups, and Playwright critical/a11y/visual specs incl. the multi-identity report-download journey. | Visual baselines are pending release-evidence generation; until committed, `visual.spec.ts` skips each test whose baseline is missing. |
 
 There is no gate G.
 
 ## Security and operational acceptance gaps
 
+The following were gaps at the 2026-07-30 reconciliation and are now
+implemented and verified:
+
+- **Synchronizer CSRF protection** — `backend/app/middleware/csrf.py` enforces
+  the session-bound synchronizer token on all state-changing routes
+  (`accord_csrf` cookie ↔ `X-CSRF-Token` header).
+- **PII reveal audit** — `reveal=true` on the employee detail/version
+  endpoints writes an `employee.pii.reveal` access audit event.
+- **Supply-chain evidence** — CI runs `pip-audit`, `pnpm audit`, and emits a
+  CycloneDX SBOM (`.github/workflows/ci.yml`, `supply-chain` job).
+- **Backup/restore RLS proof** — `scripts/backup-restore.sh restore-scratch`
+  re-asserts the grant posture (`deploy/post-restore-grants.sql`) and verifies
+  forced RLS + immutability denies under `accord_app` and `accord_worker`.
+- **Visual parity** — `frontend/e2e/visual.spec.ts` covers the key surfaces
+  and skips each test whose baseline is missing until baselines are generated
+  on the release-evidence machine and committed (none are in the repo yet).
+- **Calculate idempotency** — `POST /payroll-runs/{id}/calculate` consumes an
+  optional `Idempotency-Key` through the shared claim table, matching the
+  other state-changing commands.
+- **Provisioning in the release bundle** — `deploy/provision/` ships the
+  organization/member CLIs the ADR-0011 bootstrap needs (previously staged but
+  absent from the tarball).
+- **Routine backups** — `deploy/backup.sh` produces paired Postgres + MinIO
+  snapshots with retention pruning.
+
 These are current implementation/evidence gaps, not missing-path aliases:
 
-1. **Synchronizer CSRF protection.** Session cookies are HTTP-only,
-   SameSite=Lax, and Secure in production, and OAuth `state` is signed. General
-   state-changing routes do not require a synchronizer token.
-2. **PII reveal audit.** Sensitive employee fields are masked by default and
-   `reveal=true` requires `reveal_sensitive_fields`, but the reveal itself does
-   not write an access audit event.
-3. **Fixture PII guard.** The committed June fixture is synthetic and has a
-   validator, but CI has no dedicated real-source hash/name guard.
-4. **Supply-chain evidence.** Dependency/container scanning and an SBOM are
-   policy requirements in `security.md`, but `.github/workflows/ci.yml` does
-   not produce them.
-5. **Support break-glass.** No elevation path exists, so support access fails
+1. **Fixture PII real-source guard.** The committed June fixture is synthetic
+   and its validator now runs in CI (`fixture-validation` job), but no
+   dedicated hash/name guard against real-source data exists.
+2. **Support break-glass.** No elevation path exists, so support access fails
    closed. A future path must be time-boxed, capability-checked, and audited.
-6. **Backup/restore RLS proof.** The logical backup/scratch-restore helper
-   checks restore integrity; release evidence must additionally prove the
-   restored database still enforces forced RLS under `accord_app` and
-   `accord_worker`.
-7. **Visual parity.** Playwright covers functional and accessibility paths but
-   has no current visual-baseline spec.
-8. **Calculate idempotency and audit.** The calculate route is capability
-   checked and row-locked, but it does not consume an `Idempotency-Key` or
-   write an audit event. A distinct retry can append another immutable run
-   version.
+3. **Non-Maharashtra portability.** GPF jurisdiction (`mumbai`/`nagpur`) and
+   government-quarters (`mumbai`/`worli`/`other`) enums are
+   Maharashtra-specific; a different state's deployment needs a schema/config
+   decision before go-live.
 
 These gaps require implementation or explicit, time-bounded release waivers;
 documentation changes cannot make them pass.
@@ -76,7 +87,7 @@ documentation changes cannot make them pass.
 | Capability matrix | `backend/app/auth/capabilities.py` |
 | Workflow behavior | `backend/app/services/run_calculation/`, `run_workflow.py`, `run_posting.py` |
 | Database schema | SQLModel definitions plus `backend/migrations/versions/` |
-| Current Alembic head | `a7d3e5f9b102_canonical_export_metadata.py` |
+| Current Alembic head | `g3h4i5j6k7l8_posture_and_outbox.py` |
 | Report catalog | `backend/app/reports/registry_setup.py` |
 | Canonical export | `backend/app/reports/canonical_*.py`, `backend/app/services/report_readiness.py` |
 | Local verification | `scripts/verify.sh` |

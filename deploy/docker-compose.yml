@@ -137,6 +137,7 @@ services:
       PGCONNECT_TIMEOUT: "10"
     volumes:
       - ./object-storage/sync-role-passwords.sh:/sync-role-passwords.sh:ro
+      - ./create_roles.sql:/roles/create_roles.sql:ro
     entrypoint: ["/bin/sh", "/sync-role-passwords.sh"]
     restart: "no"
     security_opt:
@@ -191,7 +192,7 @@ services:
       # Runtime uses only DATABASE_URL; the migrator DSN is intentionally not
       # injected here so the BYPASSRLS migrator credential stays out of the API.
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://accord_app:${ACCORD_APP_PASSWORD:-${ACCORD_ROLE_PASSWORD:-$ACCORD_DB_PASSWORD}}@postgres:5432/${ACCORD_DB_NAME:-accord}}
-      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:?WORKOS_CLIENT_ID is required}
       WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}
       WORKOS_WEBHOOK_SECRET: ${WORKOS_WEBHOOK_SECRET:?WORKOS_WEBHOOK_SECRET is required}
@@ -250,7 +251,7 @@ services:
     command: ["python", "worker.py"]
     environment:
       DATABASE_URL: ${WORKER_DATABASE_URL:-postgresql+asyncpg://accord_worker:${ACCORD_WORKER_PASSWORD:-${ACCORD_ROLE_PASSWORD:-$ACCORD_DB_PASSWORD}}@postgres:5432/${ACCORD_DB_NAME:-accord}}
-      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:?WORKOS_CLIENT_ID is required}
       WORKOS_API_KEY: ${WORKOS_API_KEY:?WORKOS_API_KEY is required}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:8000/api/auth/callback}
       WORKOS_WEBHOOK_SECRET: ${WORKOS_WEBHOOK_SECRET:?WORKOS_WEBHOOK_SECRET is required}
@@ -269,6 +270,12 @@ services:
       DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
       DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-60000}
       APP_VERSION: ${ACCORD_TAG:-latest}
+    healthcheck:
+      # The worker has no HTTP surface; liveness = main process alive.
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     security_opt:
       - no-new-privileges:true
     cap_drop:

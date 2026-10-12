@@ -180,8 +180,24 @@ async def create_artifact(
     row.object_version = meta.object_version
     await session.flush()
     row.status = "finalized"
+    await _emit_artifact_available(session, row)
     await session.commit()
     return row
+
+
+async def _emit_artifact_available(session: AsyncSession, artifact: ExportArtifact) -> None:
+    """Emit ``artifact.available`` on every pending/uploaded → finalized transition."""
+    await emit_event(
+        session,
+        organization_id=artifact.organization_id,
+        event_type="artifact.available",
+        payload={
+            "organization_id": str(artifact.organization_id),
+            "artifact_id": str(artifact.id),
+            "report_type": artifact.report_type,
+            "object_key": artifact.object_key,
+        },
+    )
 
 
 async def resume_artifact_upload(
@@ -218,6 +234,7 @@ async def resume_artifact_upload(
                 user_id=artifact.requested_by,
             )
             artifact.status = "finalized"
+            await _emit_artifact_available(session, artifact)
             await session.commit()
             return artifact
         expected_checksum = None
@@ -258,6 +275,10 @@ async def resume_artifact_upload(
     artifact.object_version = meta.object_version
     await session.flush()
     artifact.status = "finalized"
+    await _emit_artifact_available(
+        session,
+        artifact,
+    )
     await session.commit()
     return artifact
 
@@ -386,7 +407,8 @@ async def reconcile_orphans(
     """Reconcile this org's stuck ``pending`` artifact rows older than the cutoff.
 
     - Object exists and its body SHA-256 matches the stored checksum →
-      finalize (``uploaded`` → ``finalized``).
+      finalize (``uploaded`` → ``finalized``, emitting ``artifact.available``
+      like every finalize path).
     - Object missing → mark ``deleted``.
     - Object exists but the checksum diverges → leave ``pending`` and count
       under ``checksum_mismatch`` (never finalize over divergent bytes).
@@ -395,8 +417,10 @@ async def reconcile_orphans(
       mass-mark rows ``deleted`` (M-data-12/13).
 
     Scheduled via the ``artifacts.maintenance`` worker job; also callable
-    directly with an org-bound session.
+    directly with an org-bound session. Tenant GUCs are re-bound here because
+    a caller may already have committed on this session.
     """
+    await _rebind_tenant(session, organization_id=organization_id, user_id=None)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
     stmt = sa.select(ExportArtifact).where(
         ExportArtifact.organization_id == organization_id,
@@ -427,6 +451,7 @@ async def reconcile_orphans(
         row.size_bytes = len(body)
         await session.flush()
         row.status = "finalized"
+        await _emit_artifact_available(session, row)
         finalized += 1
     await session.commit()
     return OrphanReconcileCounts(
@@ -447,7 +472,11 @@ async def expire_artifacts(
     Metadata-only transition — the storage object is not deleted here. Each
     expiry writes an ``export_artifact.expire`` audit mutation and an
     ``artifact.purged`` outbox event in the same transaction (ADR 0009 §6).
+
+    Tenant GUCs are re-bound here because a caller (the maintenance job) may
+    already have committed on this session.
     """
+    await _rebind_tenant(session, organization_id=organization_id, user_id=None)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     stmt = sa.select(ExportArtifact).where(

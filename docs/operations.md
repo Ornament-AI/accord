@@ -127,10 +127,14 @@ is the liveness probe.
 | `jobs` | `ok` / `unavailable` (jobs table probe) |
 | `storage` | `ok` / `unconfigured` / `unavailable` |
 | `reports` | `ok` / `empty` / `missing` |
+| `organization` | `ok` / `pending` / `unavailable` — whether the ADR-0011
+  singleton org row exists. **Informational only**: it never flips the
+  response to 503, because the org row is provisioned *after* the stack
+  passes readyz on a fresh host. |
 
 Degraded rule: any component value other than `ok` or `unconfigured` yields
 HTTP 503 with `"status":"degraded"`. Unconfigured storage alone is still
-ready.
+ready; `organization` is excluded from the degraded rule on purpose.
 
 **Verbatim ready response from this rehearsal (HTTP 200):**
 
@@ -143,11 +147,42 @@ Compose marks `api` healthy only when `/api/readyz` succeeds (not merely
 
 ## Backup / PITR / restore
 
+### Routine scheduled backups
+
+Shipped helper: `deploy/backup.sh` (inside the release bundle). It takes a
+paired Postgres custom dump **and** a MinIO volume snapshot in one shot, with
+read-back verification, sha256 manifests, and bounded retention
+(`--keep N`, default 14). Point cron at it, e.g.:
+
+```bash
+30 3 * * * /opt/accord/deploy/backup.sh --keep 14 >>/var/log/accord-backup.log 2>&1
+```
+
+Overrides: `ACCORD_ROUTINE_BACKUP_DIR` (default `/opt/accord/backups/routine`),
+`ACCORD_LIVE_DEPLOY_DIR` (default `/opt/accord/deploy`).
+
+The script refuses to run concurrently (flock on
+`<backup dir>/.accord-routine.lock`) and aborts if a backup set with the same
+timestamp already exists. A failure before publication removes only its temp
+files; a failure during `mv` removes that run's partially published set — a
+completed backup is never deleted by a later run.
+
 ### Logical backup + scratch restore (Compose)
 
 Helper: [`scripts/backup-restore.sh`](../scripts/backup-restore.sh). Its
 subcommands are `backup`, `restore-scratch`, and `verify-counts`, each
-parameterized by container name, database name, user, and password.
+parameterized by container name, database name, user, and password. `backup`
+accepts `--minio-volume <name>` to tar the object-store volume alongside the
+database dump.
+
+The dump is taken **with ACLs** and `restore-scratch` additionally re-asserts
+the runtime grant posture from `deploy/post-restore-grants.sql`
+(`--grants-sql` to override) and then **proves forced RLS + immutability
+grants under `accord_app` and `accord_worker`** — every org-column table
+must return zero rows
+under a foreign organization context, and UPDATE/DELETE on the immutable
+tables plus all privileges on `alembic_version` must be denied. This is the
+release-acceptance RLS-under-runtime-role proof (gate K, item 11).
 
 Rehearsal (row counts before/after = **3** on `rehearsal_probe`):
 
@@ -188,9 +223,29 @@ A production restore into the live database (not scratch) should:
 1. Stop `api` / `worker` (and pause writers).
 2. Restore with `pg_restore` (or plain SQL) into a new database, then cut
    DNS/DSN over. Restore in place only during a declared maintenance window.
-3. Re-run `alembic current` and the smoke-test checklist below.
-4. Use backup credentials that are **not** `accord_app` (cluster superuser
+3. Re-assert the runtime grant posture — either restore a dump taken with
+   ACLs, or apply `deploy/post-restore-grants.sql` — and re-run the
+   `restore-scratch` verification against a scratch copy first.
+4. Re-run `alembic current` and the smoke-test checklist below.
+5. Use backup credentials that are **not** `accord_app` (cluster superuser
    or a dedicated backup role).
+
+### Organization bootstrap (ADR 0011)
+
+Organization and member creation are CLI-only; until an org row exists the
+app serves "Deployment Not Ready" and `readyz` reports
+`"organization":"pending"`. On a fresh host, after `deploy/setup.sh` and the
+compose stack is healthy:
+
+```bash
+cd /opt/accord/deploy
+./provision.sh organization "MSIDC" msidc admin@msidc.example
+./provision.sh member "checker@msidc.example" payroll_approver
+```
+
+`provision.sh` runs the provision CLIs shipped inside the bundle at
+`deploy/provision/` in an ephemeral api container. Memberships for emails
+with no user yet become pending invitations, claimed on first login.
 
 ### PITR (managed Postgres)
 

@@ -67,9 +67,10 @@ async def list_employees(
     search: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    reveal: bool = False,
 ) -> EmployeeListPage:
-    _require_reveal(principal, reveal=reveal)
+    # List items expose only non-sensitive fields (name, sevarth id, regime), so
+    # there is nothing to reveal here — the reveal capability applies to the
+    # detail and version endpoints below.
     return await employees_service.list_employees(
         db,
         organization_id=tenant_org_id(tenant),
@@ -77,7 +78,6 @@ async def list_employees(
         search=search,
         page=page,
         page_size=size,
-        reveal=reveal,
     )
 
 
@@ -97,6 +97,7 @@ async def get_employee(
         employee_id=employee_id,
         as_of=as_of or current_ist_date(),
         reveal=reveal,
+        actor_user_id=tenant_user_id(tenant),
     )
 
 
@@ -116,6 +117,7 @@ async def list_employee_versions(
         employee_id=employee_id,
         kind=kind,
         reveal=reveal,
+        actor_user_id=tenant_user_id(tenant),
     )
 
 

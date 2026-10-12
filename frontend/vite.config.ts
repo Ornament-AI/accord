@@ -43,7 +43,6 @@ export default defineConfig(({ mode }) => {
 								name: "ui-vendor",
 								test: /node_modules\/(@base-ui\/react|@tanstack\/react-table)\//,
 							},
-							{ name: "chart-vendor", test: /node_modules\/recharts\// },
 						],
 					},
 				},

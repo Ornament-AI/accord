@@ -89,6 +89,8 @@ def test_production_accepts_complete_auth_and_db_seams(monkeypatch):
     monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
     monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
     monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret-of-adequate-length")
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://payroll.example.gov.in")
+    monkeypatch.setenv("CORS_ORIGINS", "https://payroll.example.gov.in")
     monkeypatch.setenv(
         "MIGRATIONS_DATABASE_URL",
         "postgresql+asyncpg://accord_migrator@localhost/accord",
@@ -120,6 +122,8 @@ def test_environment_allowlist_accepts_known_values(monkeypatch, good_env):
         monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
         monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
         monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret-of-adequate-length")
+        monkeypatch.setenv("PUBLIC_APP_URL", "https://payroll.example.gov.in")
+        monkeypatch.setenv("CORS_ORIGINS", "https://payroll.example.gov.in")
         monkeypatch.setenv("MIGRATIONS_DATABASE_URL", "postgresql+asyncpg://m@localhost/accord")
 
     settings = Settings(_env_file=None)
@@ -162,7 +166,40 @@ def test_production_rejects_short_session_secret(monkeypatch):
     monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
     monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
     monkeypatch.setenv("SESSION_SECRET_KEY", "short")
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://payroll.example.gov.in")
+    monkeypatch.setenv("CORS_ORIGINS", "https://payroll.example.gov.in")
     monkeypatch.setenv("MIGRATIONS_DATABASE_URL", "postgresql+asyncpg://m@localhost/accord")
 
     with pytest.raises(ValidationError, match="SESSION_SECRET_KEY must be at least"):
         Settings(_env_file=None)
+
+
+def test_production_rejects_localhost_redirect_and_default_cors(monkeypatch):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "client")
+    monkeypatch.setenv("WORKOS_API_KEY", "key")
+    monkeypatch.setenv("WORKOS_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
+    monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret-of-adequate-length")
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://payroll.example.gov.in")
+    monkeypatch.setenv("CORS_ORIGINS", "https://payroll.example.gov.in")
+
+    with pytest.raises(ValidationError, match="WORKOS_REDIRECT_URI must not point at localhost"):
+        Settings(_env_file=None)
+
+
+def test_production_requires_public_app_url_and_cors(monkeypatch):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "client")
+    monkeypatch.setenv("WORKOS_API_KEY", "key")
+    monkeypatch.setenv("WORKOS_REDIRECT_URI", "https://example.com/callback")
+    monkeypatch.setenv("WORKOS_WEBHOOK_SECRET", "whsec")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "session-secret-of-adequate-length")
+
+    with pytest.raises(ValidationError, match="Missing required production settings") as exc_info:
+        Settings(_env_file=None)
+    message = str(exc_info.value)
+    assert "PUBLIC_APP_URL" in message
+    assert "CORS_ORIGINS" in message

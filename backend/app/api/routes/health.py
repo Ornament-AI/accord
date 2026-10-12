@@ -74,6 +74,19 @@ async def readiness_check(request: Request) -> dict[str, str] | JSONResponse:
     except Exception:
         components["jobs"] = "unavailable"
 
+    # ADR 0011 bootstrap is CLI-only; an unprovisioned stack is visible here
+    # instead of only through the frontend "Deployment Not Ready" gate. This
+    # is informational, not a readiness failure: the org row is created after
+    # the stack passes readyz on a fresh host.
+    try:
+        async with session_context() as session:
+            org_count = (
+                await session.execute(text("SELECT count(*) FROM organizations"))
+            ).scalar_one()
+        components["organization"] = "ok" if org_count else "pending"
+    except Exception:
+        components["organization"] = "unavailable"
+
     storage = getattr(request.app.state, "object_storage", None)
     if storage is None:
         components["storage"] = "unconfigured"
@@ -95,7 +108,11 @@ async def readiness_check(request: Request) -> dict[str, str] | JSONResponse:
     # Unconfigured storage is OK; any other non-ok component is degraded.
     # Return JSONResponse directly so component detail is not stringified by
     # the HTTPException → Problem Detail handler.
-    if any(value not in ("ok", "unconfigured") for value in components.values()):
+    if any(
+        value not in ("ok", "unconfigured")
+        for name, value in components.items()
+        if name != "organization"
+    ):
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "degraded", **components},

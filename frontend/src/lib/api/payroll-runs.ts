@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import { fetchJson, jsonRequest } from "@/lib/api/http";
 import { buildQueryString } from "@/lib/api/query-utils";
@@ -73,7 +74,8 @@ export const payrollRunQueryKeys = {
 };
 
 export function isCalculateAllowedStatus(status: string): boolean {
-	return status === "draft" || status === "calculated" || status === "rejected";
+	// Backend accepts draft|calculated only; rejected must go through Reopen.
+	return status === "draft" || status === "calculated";
 }
 
 export function isDraftStatus(status: string): boolean {
@@ -200,9 +202,10 @@ export function upsertPayrollRunInput(
 	);
 }
 
-export function calculatePayrollRun(runId: string) {
+export function calculatePayrollRun(runId: string, idempotencyKey?: string) {
 	return fetchJson<PayrollRunCalculateResult>(`/api/payroll-runs/${runId}/calculate`, {
 		method: "POST",
+		headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
 	});
 }
 
@@ -329,9 +332,18 @@ export function useUpsertPayrollRunInput(runId: string) {
 
 export function useCalculatePayrollRun(runId: string) {
 	const queryClient = useQueryClient();
+	const idempotencyKeyRef = useRef<string | null>(null);
 	return useMutation({
-		mutationFn: () => calculatePayrollRun(runId),
+		// One key per user-initiated calculate, held across retries: a failed
+		// server claim re-executes under the same key and a lost-response
+		// success replays it. Only a confirmed success rotates the key so the
+		// next click mints a fresh one.
+		mutationFn: () => {
+			idempotencyKeyRef.current ??= crypto.randomUUID();
+			return calculatePayrollRun(runId, idempotencyKeyRef.current);
+		},
 		onSuccess: () => {
+			idempotencyKeyRef.current = null;
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.run(runId) });
 			void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });

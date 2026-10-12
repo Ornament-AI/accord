@@ -95,7 +95,9 @@ function calculateDisabledReason(
 		return "Save or cancel payroll table edits before calculating.";
 	}
 	if (!isCalculateAllowedStatus(status)) {
-		return `Calculate is only available when status is draft, calculated, or rejected (current: ${status}).`;
+		return status === "rejected"
+			? "Rejected runs must be reopened before they can be recalculated."
+			: `Calculate is only available when status is draft or calculated (current: ${status}).`;
 	}
 	return null;
 }

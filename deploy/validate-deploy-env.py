@@ -40,6 +40,13 @@ ALLOWED = {
     "OBJECT_STORAGE_BUCKET",
     "OBJECT_STORAGE_ACCESS_KEY",
     "OBJECT_STORAGE_SECRET_KEY",
+    "MAX_REQUEST_BODY_BYTES",
+    "CSRF_COOKIE_NAME",
+    "SESSION_IDLE_TIMEOUT_SECONDS",
+    "WORKOS_WEBHOOK_TOLERANCE_SECONDS",
+    "DB_MAX_OVERFLOW",
+    "DB_POOL_TIMEOUT_SECONDS",
+    "DB_POOL_RECYCLE_SECONDS",
 }
 OBSOLETE = {
     "ACCORD_CONFIRMED_FRESH_INSTALL",
@@ -95,6 +102,17 @@ def sanitized(content: bytes) -> bytes:
         if key not in ALLOWED:
             raise SystemExit(
                 f"deployment environment line {lineno} uses unsupported variable {key}"
+            )
+        value = candidate.split("=", 1)[1].strip().strip('"').strip("'")
+        # The deploy path is production-only. Fail closed on the two values
+        # that would boot a fully unauthenticated or non-production stack.
+        if key == "DEV_AUTH_BYPASS" and value != "false":
+            raise SystemExit(
+                f"deployment environment line {lineno}: DEV_AUTH_BYPASS must be false"
+            )
+        if key == "ENVIRONMENT" and value != "production":
+            raise SystemExit(
+                f"deployment environment line {lineno}: ENVIRONMENT must be production"
             )
         retained.append(raw)
     return "".join(retained).encode("utf-8")

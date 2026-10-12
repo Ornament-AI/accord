@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse, http } from "msw";
 import type { ReactElement } from "react";
 import { Link, MemoryRouter, Route, Routes, useParams } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -618,7 +619,7 @@ describe("Pay run detail — calculate gating", () => {
 	it.each([
 		["draft", true],
 		["calculated", true],
-		["rejected", true],
+		["rejected", false],
 		["submitted", false],
 		["approved", false],
 		["posted", false],
@@ -719,6 +720,80 @@ describe("Pay run detail — calculate gating", () => {
 			expect(screen.queryByText(/Engine engine-/)).not.toBeInTheDocument();
 			expect(screen.queryByText("Payroll results")).not.toBeInTheDocument();
 			expect(screen.queryByText("Employee results")).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"reuses one Idempotency-Key across retries and mints a fresh key after success",
+		async () => {
+			const seenKeys: Array<string | null> = [];
+			let attempt = 0;
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				runs: [
+					buildRun({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "draft",
+					}),
+				],
+				details: {
+					"run-1": buildRunDetail({
+						id: "run-1",
+						period_id: "period-1",
+						period_year: 2026,
+						period_month: 7,
+						status: "draft",
+						current_version: null,
+					}),
+				},
+			});
+			server.use(
+				// First matching handler wins — override before the built-in
+				// pay-run calculate handler so we can see the request headers.
+				http.post("/api/payroll-runs/:runId/calculate", ({ request }) => {
+					seenKeys.push(request.headers.get("idempotency-key"));
+					attempt += 1;
+					if (attempt === 1) {
+						return HttpResponse.json({ detail: "engine exploded" }, { status: 500 });
+					}
+					return HttpResponse.json({
+						run_id: "run-1",
+						version_id: `ver-${attempt}`,
+						version_number: attempt,
+						engine_version: "engine-1.0.0",
+						content_hash: `hash-${attempt}`,
+						totals: { net_payable: "99000.00", gross_total: "112000.00" },
+					});
+				}),
+				...authHandlers,
+				...payHandlers,
+			);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			expect(
+				await screen.findByTestId("pay-run-detail-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+
+			// First attempt fails; the key must be retained for the retry.
+			fireEvent.click(screen.getByRole("button", { name: "Calculate Pay Run" }));
+			await waitFor(() => expect(seenKeys).toHaveLength(1));
+
+			fireEvent.click(screen.getByRole("button", { name: "Calculate Pay Run" }));
+			await waitFor(() => expect(seenKeys).toHaveLength(2));
+			expect(seenKeys[0]).toBeTruthy();
+			expect(seenKeys[1]).toBe(seenKeys[0]);
+
+			// The next user-initiated calculate after the success gets a new key.
+			fireEvent.click(screen.getByRole("button", { name: "Calculate Pay Run" }));
+			await waitFor(() => expect(seenKeys).toHaveLength(3));
+			expect(seenKeys[2]).toBeTruthy();
+			expect(seenKeys[2]).not.toBe(seenKeys[0]);
 		},
 		PAGE_TIMEOUT,
 	);

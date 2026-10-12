@@ -68,6 +68,11 @@ def _login(client: httpx.Client) -> None:
 		)
 	org = me["organization"]
 	print(f"Authenticated as {me.get('email')} in org {org.get('name')} ({org.get('slug')})")
+	# CSRF middleware: mutating calls must echo the accord_csrf cookie back
+	# in the X-CSRF-Token header.
+	csrf = client.cookies.get("accord_csrf")
+	if csrf:
+		client.headers["X-CSRF-Token"] = csrf
 
 
 def _assert_empty(client: httpx.Client) -> None:
@@ -185,6 +190,8 @@ def _profile_payload(employee: EmployeeSeed) -> dict[str, Any]:
 			profile["pran"] = employee.pran
 	elif regime == "nps":
 		profile["pran"] = employee.pran or f"9000{employee.fixture_id[-4:].zfill(8)}"
+		# Report readiness requires pension_account + sevarth_id + pran for NPS rows.
+		profile["pension_account"] = f"SYNPEN/{employee.fixture_id}"
 	elif regime == "epf":
 		profile["epf_number"] = employee.epf_number or f"SYNTEPF/{employee.fixture_id}/UAN"
 	return profile
@@ -296,6 +303,8 @@ def _seed_employee_amounts(
 					json={
 						"quarters_location": location,
 						"quarters_identifier": f"Q-{employee.fixture_id}",
+						# Report readiness requires a non-empty quarters address.
+						"quarters_address": f"{employee.accommodation.location} quarters {employee.fixture_id}",
 						"charge": charge,
 					},
 				),

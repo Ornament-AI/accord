@@ -126,6 +126,18 @@ def _new_sheet(title: str) -> tuple[Workbook, Worksheet]:
     return workbook, sheet
 
 
+def _reset_merges(sheet: Worksheet) -> None:
+    """Drop template merges so a renderer can lay out rows dynamically.
+
+    The canonical office-note/bank-advice templates pin prose and signature
+    merges at fixed rows; writing a cell that lands inside one of those
+    ranges raises ``AttributeError`` (read-only ``MergedCell``).  Each
+    dynamic renderer re-adds every merge it needs after this call.
+    """
+    for merged in list(sheet.merged_cells.ranges):
+        sheet.unmerge_cells(str(merged))
+
+
 def _append_row_break_once(sheet: Worksheet, row: int) -> None:
     if row not in {int(item.id) for item in sheet.row_breaks.brk}:
         sheet.row_breaks.append(Break(id=row))
@@ -195,6 +207,7 @@ def _employee_net(row: Mapping[str, Any]) -> Decimal:
 def office_tip_to_excel(approval: ReportDTO, pay_bill: ReportDTO | None = None) -> bytes:
     """Render the canonical office-note role with a dynamic beneficiary table."""
     workbook, sheet = _new_sheet("office tip")
+    _reset_merges(sheet)
     if pay_bill is None:
         rows = _rows_as_dicts(_section(approval, "Beneficiaries"))
     else:
@@ -308,6 +321,7 @@ def office_tip_to_excel(approval: ReportDTO, pay_bill: ReportDTO | None = None) 
 def bank_tip_to_excel(dto: ReportDTO) -> bytes:
     """Render canonical bank-advice stationery and payment rows."""
     workbook, sheet = _new_sheet("Bank Tip")
+    _reset_merges(sheet)
     recipient = _label_values(_section(dto, "Advice recipient"))
     credits = _rows_as_dicts(_section(dto, "Payment credits"))
     widths = (2.6640625, 5.1640625, 40, 37, 28.5, 23.1640625, 24.1640625)

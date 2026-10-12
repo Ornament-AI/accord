@@ -177,3 +177,33 @@ async def test_workos_magic_code_uses_headless_sdk_methods():
     adapter._client.user_management.create_magic_auth.assert_called_once()
     adapter._client.user_management.authenticate_with_magic_auth.assert_called_once()
     assert identity.subject_id == "user_magic"
+
+
+@pytest.mark.asyncio
+async def test_dev_adapter_password_login_derives_subject_for_unknown_email():
+    adapter = DevAuthAdapter(_settings())
+    identity = await adapter.authenticate_with_password(
+        email="e2e.checker@accord.local",
+        password="anything",
+        ip_address=None,
+        user_agent=None,
+    )
+    assert identity.subject_id == "dev-test-subject:e2e.checker@accord.local"
+    assert identity.email == "e2e.checker@accord.local"
+    assert identity.name == "E2E Checker"
+
+
+@pytest.mark.asyncio
+async def test_dev_adapter_password_login_returns_configured_identity():
+    adapter = DevAuthAdapter(
+        _settings(dev_auth_email="dev@accord.local", dev_auth_name="Dev Test User")
+    )
+    identity = await adapter.authenticate_with_password(
+        email="dev@accord.local",
+        password="anything",
+        ip_address=None,
+        user_agent=None,
+    )
+    assert identity.subject_id == DevAuthAdapter.DEV_SUBJECT_ID
+    assert identity.email == "dev@accord.local"
+    assert identity.name == "Dev Test User"

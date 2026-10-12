@@ -297,10 +297,11 @@ yet; these remain the policy for when it lands):
 ### CI (expensive)
 
 - A hash/name denylist guard for newly added fixtures is still missing from
-  CI. Until it lands, reviewers must inspect fixture changes and run the
-  synthetic validator; this is an acceptance gap, not an existing command.
-- When implemented, the CI guard should complement the proposed fast local
-  guard above; neither exists in the current tree.
+  CI. The sanitized fixture validator now runs as the `fixture-validation`
+  CI job and in `scripts/verify.sh`; a dedicated real-source hash/name guard
+  remains an acceptance gap, not an existing command.
+- The CI job complements a local pre-commit review of fixture changes; the
+  real-source guard described above still does not exist in the tree.
 
 ## CSRF and session proof points
 
@@ -311,10 +312,10 @@ Documented decision (see [security.md](security.md),
   redirect auth flow). The code sets these flags in
   `backend/app/auth/session.py` (`secure` only in production).
 - SameSite=Lax session cookie **plus** a synchronizer CSRF token on
-  state-changing routes (the header must match a server-issued token). The
-  synchronizer-token half is still contract text. Today the code signs an
-  anti-CSRF OAuth `state` value in `session.py`. No dedicated
-  synchronizer-token middleware or test suite has landed.
+  state-changing routes (the header must match a server-issued token).
+  Implemented by `backend/app/middleware/csrf.py`: the `accord_csrf` cookie is
+  a session-bound signed token that mutations must echo in `X-CSRF-Token`;
+  CSRF middleware tests cover issue/bind/reject paths.
 - Lax covers the cross-site cookie sends on top-level navigations that the
   WorkOS AuthKit redirects need. Synchronizer tokens defend state-changing
   POSTs/PUTs/PATCHes/DELETEs against CSRF, including same-site adjacent
