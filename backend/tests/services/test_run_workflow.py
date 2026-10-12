@@ -23,7 +23,7 @@ from app.models.payroll_runs import (
     PayrollRunInput,
     payroll_run_versions,
 )
-from app.models.platform import AuditEvent, PayrollApproval
+from app.models.platform import AuditEvent, OutboxEvent, PayrollApproval
 from app.models.recurring_instructions import (
     RecurringInstruction,
     recurring_instruction_versions,
@@ -819,3 +819,136 @@ def test_trace_from_row_preserves_legacy_unrounded_value():
     }
     trace = trace_from_row(row)
     assert trace.unrounded_value == "1E-8"
+
+
+async def _outbox_types(session: AsyncSession, *, run_id) -> list[str]:
+    rows = (
+        (
+            await session.execute(
+                sa.select(OutboxEvent.event_type)
+                .where(OutboxEvent.payload["run_id"].astext == str(run_id))
+                .order_by(OutboxEvent.occurred_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)
+
+
+@pytest.mark.asyncio
+async def test_submit_approve_reject_reopen_emit_outbox_events(session):
+    world = await _seed_world(session)
+    approver = await seed_user(session, workos_user_id=f"wf_ob_{uuid4().hex[:10]}")
+    await seed_membership(
+        session,
+        organization_id=world["org_id"],
+        user_id=approver.id,
+        role="payroll_approver",
+    )
+    await session.commit()
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await submit_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+        reason="ready",
+    )
+
+    await _bind(session, world["org_id"], approver.id)
+    await reject_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=approver.id,
+        reason="fix entries",
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await reopen_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+        reason="corrections applied",
+    )
+
+    # draft again — recalculate, resubmit, and approve to finish the journey.
+    await _bind(session, world["org_id"], world["user_id"])
+    await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+    await _bind(session, world["org_id"], world["user_id"])
+    await submit_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+        reason="resubmitted",
+    )
+    await _bind(session, world["org_id"], approver.id)
+    await approve_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=approver.id,
+        reason="ok",
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    types = await _outbox_types(session, run_id=world["run_id"])
+    assert types == [
+        "payroll_run.submitted",
+        "payroll_run.rejected",
+        "payroll_run.reopened",
+        "payroll_run.submitted",
+        "payroll_run.approved",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_withdraw_emits_outbox_event(session):
+    world = await _seed_world(session)
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await calculate_run_command(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await submit_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+        reason="ready",
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    await withdraw_run(
+        session,
+        organization_id=world["org_id"],
+        run_id=world["run_id"],
+        user_id=world["user_id"],
+        reason="needs edits",
+    )
+
+    await _bind(session, world["org_id"], world["user_id"])
+    types = await _outbox_types(session, run_id=world["run_id"])
+    assert types == ["payroll_run.submitted", "payroll_run.withdrawn"]

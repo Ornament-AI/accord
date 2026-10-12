@@ -81,11 +81,38 @@ pnpm --filter frontend e2e:ui
 
 Config: `frontend/playwright.config.ts` — `baseURL` `http://127.0.0.1:5173`, `retries: 1`, `trace: on-first-retry`, Chromium only.
 
+## Multi-identity (maker/checker) lane
+
+`DevAuthAdapter` derives a distinct subject per email submitted to
+`POST /api/auth/login/password`, so a second identity can sign in without
+restarting the backend. Provision the checker member once per database:
+
+```bash
+MIGRATIONS_DATABASE_URL=postgresql+asyncpg://accord_migrator:accord@127.0.0.1:5432/accord_e2e \
+backend/.venv/bin/python scripts/provision_member.py \
+  --email e2e.checker@accord.local --role organization_administrator
+```
+
+`reports.spec.ts` uses this identity (see `helpers/auth.ts#loginAsEmail`) to
+approve → post → export → download.
+
+## Visual regression
+
+`e2e/visual.spec.ts` compares screenshots against committed baselines in
+`visual.spec.ts-snapshots/`. On first run (or after intentional UI changes):
+
+```bash
+pnpm --filter frontend exec playwright test e2e/visual.spec.ts --update-snapshots
+```
+
+Commit the regenerated PNGs. Baselines are platform-sensitive — regenerate on
+the same machine class that produces release evidence.
+
 ## Coverage and tooling policy
 
 Hosted CI lints and format-checks only tracked E2E TypeScript, then runs `playwright test --list` to prove test discovery. It does not start the application stack or a browser. The full Chromium suite is local release-acceptance evidence against a freshly prepared real stack.
 
-The tracked-file selection excludes `.auth`, `playwright-report`, `test-results`, `blob-report`, and other generated or ignored artifacts. Never inspect, format, or commit authentication state. Report generation/download remains outside browser acceptance until the harness has a documented multi-identity and posted-run data strategy; API, service, and frontend integration tests remain the proof for that path.
+The tracked-file selection excludes `.auth`, `playwright-report`, `test-results`, `blob-report`, and other generated or ignored artifacts. Never inspect, format, or commit authentication state. Report generation/download is covered by `reports.spec.ts` via the multi-identity checker lane above; visual and axe suites cover the remaining gate-K surfaces.
 
 ## Stop
 

@@ -9,7 +9,7 @@ from datetime import timedelta
 import psycopg
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import event, select, text
+from sqlalchemy import event, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -17,7 +17,11 @@ from app.db import get_session_factory
 from app.exceptions import ConflictError
 from app.models.base import utcnow
 from app.models.identity import IdempotencyKey
-from app.services.idempotency import compute_request_hash, idempotent_command
+from app.services.idempotency import (
+    compute_request_hash,
+    idempotent_command,
+    purge_expired_keys,
+)
 from app.tenancy import set_config_local
 from tests.identity_helpers import seed_organization
 from tests.migrations.conftest import (
@@ -601,3 +605,34 @@ async def test_displaced_claimants_terminal_write_does_not_clobber(session):
     ).scalar_one()
     assert stored.status == "succeeded"
     assert stored.response_snapshot == {"winner": "B"}
+
+
+@pytest.mark.asyncio
+async def test_purge_expired_keys_removes_only_expired_rows(session):
+    org = await seed_organization(session, slug="idem-purge")
+    await session.commit()
+
+    async def executor():
+        return {"ok": True}
+
+    for key in ("k-old", "k-new"):
+        await idempotent_command(
+            session,
+            organization_id=org.id,
+            key=key,
+            request_payload={"action": "submit"},
+            executor=executor,
+        )
+
+    await session.execute(
+        update(IdempotencyKey)
+        .where(IdempotencyKey.key == "k-old")
+        .values(expires_at=utcnow() - timedelta(days=1))
+    )
+    await session.commit()
+
+    purged = await purge_expired_keys(session)
+    assert purged == 1
+
+    remaining = {r.key for r in (await session.execute(select(IdempotencyKey))).scalars().all()}
+    assert remaining == {"k-new"}

@@ -13,7 +13,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import Session, TenantCtx, require_capability, tenant_org_id
+from app.api.deps import (
+    Session,
+    TenantCtx,
+    require_any_capability,
+    tenant_org_id,
+)
 from app.auth.principal import AuthPrincipal
 from app.schemas.run_results import EmployeeResultDetail, RunResultsResponse
 from app.services import run_results as run_results_service
@@ -30,7 +35,18 @@ async def get_payroll_run_results(
     tenant: TenantCtx,
     db: Session,
     version_number: int | None = Query(default=None),
-    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+    # Match run detail/roster: the checker must read the numbers they approve
+    # without holding view_master_data.
+    _: AuthPrincipal = Depends(
+        require_any_capability(
+            "view_master_data",
+            "create_run",
+            "submit_run",
+            "approve_run",
+            "post_run",
+            "generate_reports",
+        )
+    ),
 ) -> dict[str, Any]:
     return await run_results_service.get_run_results(
         db,
@@ -50,7 +66,16 @@ async def get_payroll_run_employee_result(
     tenant: TenantCtx,
     db: Session,
     version_number: int | None = Query(default=None),
-    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+    _: AuthPrincipal = Depends(
+        require_any_capability(
+            "view_master_data",
+            "create_run",
+            "submit_run",
+            "approve_run",
+            "post_run",
+            "generate_reports",
+        )
+    ),
 ) -> dict[str, Any]:
     return await run_results_service.get_employee_result(
         db,

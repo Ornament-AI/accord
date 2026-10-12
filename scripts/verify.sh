@@ -66,6 +66,13 @@ else
 	skip_step "backend tests — backend/.venv or backend/tests not found"
 fi
 
+step "Validate sanitized golden fixture"
+if [[ -f "$ROOT/fixtures/sanitized/june-2026/validate.py" ]]; then
+	run_step "golden fixture validator" python3 "$ROOT/fixtures/sanitized/june-2026/validate.py"
+else
+	skip_step "golden fixture validator — fixtures/sanitized/june-2026/validate.py not found"
+fi
+
 step "Check report catalog against backend authority"
 if [[ -x "$PYTHON_BIN" && -f "$ROOT/scripts/generate-report-catalog.py" ]]; then
 	run_step "report catalog --check" "$PYTHON_BIN" "$ROOT/scripts/generate-report-catalog.py" --check

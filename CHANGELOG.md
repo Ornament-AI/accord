@@ -5,6 +5,48 @@ the authoritative release boundaries.
 
 ## Unreleased
 
+- Deployment-readiness hardening pass:
+  - Ship the ADR-0011 provisioning CLIs inside the release tarball
+    (`deploy/provision/`) and make the deploy contract test inspect the real
+    bundle — previously a fresh host could not create its organization.
+  - `scripts/backup-restore.sh` now keeps ACLs in dumps, re-asserts the
+    runtime grant posture post-restore (`deploy/post-restore-grants.sql`),
+    verifies forced RLS + immutability under `accord_app`, and can snapshot
+    the MinIO volume; new `deploy/backup.sh` for routine paired backups.
+  - `POST /payroll-runs/{id}/calculate` consumes an optional
+    `Idempotency-Key`; the frontend sends one per user-initiated calculate.
+  - PII `reveal=true` reads write an `employee.pii.reveal` access audit event.
+  - Outbox events for `payroll_run.submitted|withdrawn|approved|rejected|reopened`
+    and `artifact.available`; failed dispatches dead-letter after 50 attempts
+    (`last_error` recorded) instead of retrying forever.
+  - `POST /payroll-periods/{id}/close` makes the `closed` period status
+    reachable; posting/reversing into a closed period now fails.
+  - Expired `idempotency_keys` are purged by the hourly maintenance job.
+  - Run-results reads widen to the run-lifecycle capability set so approvers,
+    releasers, and auditors can read what they act on.
+  - Production boots now require `PUBLIC_APP_URL`/`CORS_ORIGINS` and a
+    non-localhost `WORKOS_REDIRECT_URI`; `MIN_SESSION_SECRET_LENGTH` is 32.
+  - Deploy hardening: `validate-deploy-env.py` rejects non-production
+    `ENVIRONMENT`/`DEV_AUTH_BYPASS`, `setup.sh` warns when all ADR roles share
+    one password, the bootstrap allowlist accepts the four role-password
+    variables, `WORKOS_CLIENT_ID` is compose-required, the worker gets a
+    healthcheck, and `sync-role-passwords` re-applies `create_roles.sql`.
+  - New migration `g3h4i5j6k7l8`: revokes runtime privileges on
+    `alembic_version`, adds outbox `last_error`/`dead_lettered_at`, and adds
+    missing FK/tenant indexes.
+  - Dev auth bypass derives a distinct subject per submitted email, enabling
+    the multi-identity maker/checker e2e lane (`e2e.checker@accord.local`);
+    the report generate→poll→download journey is un-skipped, and a
+    `visual.spec.ts` baseline suite + expanded axe coverage land gate K.
+  - UI fix: "Recalculate" is no longer offered on rejected runs (the correct
+    path is Reopen); new migration fix also repairs `alembic heads`/`history`
+    outside migration runs.
+  - CI gains `supply-chain` (pip-audit + pnpm audit + CycloneDX SBOM) and
+    `fixture-validation` jobs; the golden fixture validator is wired into
+    `scripts/verify.sh`.
+  - Docs reconciled with shipped code (CSRF middleware, reopen transition,
+    artifact maintenance, org bootstrap, readyz `organization` field,
+    current Alembic head).
 - Move the workspace, CI, and web image build to pnpm 12.1.0, upgrade Motion
   to 13.1.1 and the jsdom test stack to jest-dom 7.0.1 with jsdom 30.0.1,
   and update the backend WorkOS SDK to 10.2.0.

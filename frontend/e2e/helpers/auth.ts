@@ -100,3 +100,40 @@ export async function ensureSingletonOrganization(page: Page): Promise<string> {
 	const name = (await brand.innerText()).split("\n")[0]?.trim() ?? "Organization";
 	return name;
 }
+
+/**
+ * Second dev-bypass identity for maker/checker flows.
+ *
+ * DevAuthAdapter derives a distinct subject id per submitted email, so POSTing
+ * /api/auth/login/password with a different email establishes a real second
+ * user. The member must be provisioned first:
+ *   backend/.venv/bin/python scripts/provision_member.py \
+ *     --email e2e.checker@accord.local --role organization_administrator
+ */
+export const E2E_CHECKER_EMAIL = "e2e.checker@accord.local";
+
+export async function logoutViaApi(page: Page): Promise<void> {
+	const response = await page.request.post("/api/auth/logout");
+	expect(response.ok(), `logout failed: ${response.status()}`).toBeTruthy();
+}
+
+/**
+ * Sign in as an arbitrary dev-bypass email via the headless password endpoint.
+ * Returns the authenticated identity's email (from /api/auth/me).
+ */
+export async function loginAsEmail(page: Page, email: string): Promise<string> {
+	const response = await page.request.post("/api/auth/login/password", {
+		data: { email, password: "e2e-password" },
+	});
+	expect(response.ok(), `login as ${email} failed: ${response.status()}`).toBeTruthy();
+	const me = await page.request.get("/api/auth/me");
+	expect(me.ok(), "GET /api/auth/me failed after login").toBeTruthy();
+	const payload = (await me.json()) as { email?: string; access_state?: string };
+	expect(
+		payload.access_state,
+		`${email} is not provisioned. Run: ` +
+			"backend/.venv/bin/python scripts/provision_member.py " +
+			`--email ${email} --role organization_administrator`,
+	).toBe("active");
+	return payload.email ?? email;
+}

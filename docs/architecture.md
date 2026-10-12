@@ -70,6 +70,8 @@ stateDiagram-v2
   submitted --> approved: approve
   submitted --> rejected: reject
   approved --> posted: post
+  rejected --> draft: reopen
+  calculated --> draft: reopen
   posted --> reversed: reverse (linked draft counter-record)
 
   note right of calculated
@@ -85,6 +87,7 @@ stateDiagram-v2
 | `submit` | `services/run_workflow.py` | `calculated` → `submitted` |
 | `withdraw` | `services/run_workflow.py` | `submitted` → `calculated` |
 | `approve` / `reject` | `services/run_workflow.py` | `submitted` → `approved` / `rejected` |
+| `reopen` | `services/run_workflow.py` | `calculated`\|`rejected` → `draft` |
 | `post` | `services/run_posting.py` | `approved` → `posted` (+ audit + outbox) |
 | `reverse` | `services/run_posting.py` | `posted` → `reversed`; creates a linked `draft` counter-record |
 
@@ -94,7 +97,8 @@ stateDiagram-v2
   Validate does not set a status; withdraw lands on `calculated`.
 - The ADR allows `calculate` from `rejected`; the code allows only `draft`
   and `calculated` (`_ALLOWED_CALCULATE_STATUSES` in
-  `services/run_calculation/command.py`).
+  `services/run_calculation/command.py`) — a rejected run goes through
+  `reopen` (`rejected` → `draft`) before recalculating.
 - The ADR allows `withdraw` from `approved`; the code allows only `submitted`.
 - The code adds a transient `calculating` status during calculate. That
   status is not in the ADR's closed set.

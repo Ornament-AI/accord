@@ -102,14 +102,14 @@ differences called out there. The persisted status set is:
 | `calculated` | At least one immutable `payroll_run_version` has been produced for review. |
 | `submitted` | Maker has submitted a run version for checker approval. |
 | `approved` | Checker approved a specific run version. |
-| `rejected` | Checker rejected a submitted version. No implemented command returns it to `draft` or `calculated`, so this is currently a dead-end workflow state. |
+| `rejected` | Checker rejected a submitted version; `reopen` returns it to `draft` for correction (ADR 0008). |
 | `posted` | Approved version committed to books/remittance outputs; source version ids frozen by reference. |
 | `reversed` | Posted run was formally reversed without mutating the original version. |
 
 `validate` is a read-only check and does not create a `validated` status.
-`withdraw` moves `submitted` back to `calculated`; `reject` and `reverse` are
-commands whose results are the persisted statuses above. The missing recovery
-path from `rejected` is an implementation gap, not an available transition.
+`withdraw` moves `submitted` back to `calculated`; `reopen` moves
+`calculated`/`rejected` back to `draft`; `reject` and `reverse` are
+commands whose results are the persisted statuses above.
 
 Allowed transitions and authorization remain out of scope for this
 calculation-model ADR; use ADR 0008 for that contract.

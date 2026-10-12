@@ -180,8 +180,24 @@ async def create_artifact(
     row.object_version = meta.object_version
     await session.flush()
     row.status = "finalized"
+    await _emit_artifact_available(session, row)
     await session.commit()
     return row
+
+
+async def _emit_artifact_available(session: AsyncSession, artifact: ExportArtifact) -> None:
+    """Emit ``artifact.available`` on every pending/uploaded → finalized transition."""
+    await emit_event(
+        session,
+        organization_id=artifact.organization_id,
+        event_type="artifact.available",
+        payload={
+            "organization_id": str(artifact.organization_id),
+            "artifact_id": str(artifact.id),
+            "report_type": artifact.report_type,
+            "object_key": artifact.object_key,
+        },
+    )
 
 
 async def resume_artifact_upload(
@@ -218,6 +234,7 @@ async def resume_artifact_upload(
                 user_id=artifact.requested_by,
             )
             artifact.status = "finalized"
+            await _emit_artifact_available(session, artifact)
             await session.commit()
             return artifact
         expected_checksum = None
@@ -258,6 +275,10 @@ async def resume_artifact_upload(
     artifact.object_version = meta.object_version
     await session.flush()
     artifact.status = "finalized"
+    await _emit_artifact_available(
+        session,
+        artifact,
+    )
     await session.commit()
     return artifact
 

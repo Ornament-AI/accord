@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.employees import Employee
 from app.models.pay_components import PayComponent
+from app.exceptions import ConflictError
 from app.models.platform import AuditEvent
 from app.schemas.payroll_runs import (
     InputKind,
@@ -188,3 +189,62 @@ async def test_run_input_upsert_and_delete_audit(session):
     assert event.before_state["amount"] == "750.00"
     assert event.after_state == {}
     assert event.summary["component_code"] == "SVC_ADJ"
+
+
+@pytest.mark.asyncio
+async def test_close_period_open_to_closed_and_audit(session):
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=7),
+    )
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    closed = await payroll_runs_service.close_period(
+        session,
+        organization_id=org.id,
+        period_id=period["id"],
+        actor_user_id=user.id,
+    )
+    assert closed["status"] == "closed"
+
+    event = await _audit(
+        session,
+        organization_id=org.id,
+        command="payroll_period.close",
+        entity_id=period["id"],
+    )
+    assert event.before_state["status"] == "open"
+    assert event.after_state["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_close_period_rejects_non_open(session):
+    org, user, _employee = await _world(session)
+
+    period = await payroll_runs_service.create_period(
+        session,
+        organization_id=org.id,
+        actor_user_id=user.id,
+        body=PayrollPeriodCreate(period_year=2026, period_month=8),
+    )
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    await payroll_runs_service.close_period(
+        session,
+        organization_id=org.id,
+        period_id=period["id"],
+        actor_user_id=user.id,
+    )
+
+    await bind_tenant_context(session, organization_id=org.id, user_id=user.id)
+    with pytest.raises(ConflictError):
+        await payroll_runs_service.close_period(
+            session,
+            organization_id=org.id,
+            period_id=period["id"],
+            actor_user_id=user.id,
+        )

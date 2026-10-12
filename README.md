@@ -94,13 +94,14 @@ stateDiagram-v2
   submitted --> calculated: withdraw
   submitted --> approved: approve
   submitted --> rejected: reject
+  rejected --> draft: reopen
   approved --> posted: post
   posted --> reversed: reverse
 ```
 
-Validate is read-only and does not change status. Reject is a dead end in the
-current code. Reverse creates a linked draft counter-record. Details and ADR
-mismatches live in [`docs/architecture.md`](docs/architecture.md).
+Validate is read-only and does not change status. A rejected run goes back
+to `draft` via `reopen`. Reverse creates a linked draft counter-record.
+Details and ADR mismatches live in [`docs/architecture.md`](docs/architecture.md).
 
 ## Stack and runtime shape
 

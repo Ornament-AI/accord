@@ -4,15 +4,17 @@ Delivery is **at-least-once**: a dispatcher may crash after a successful sink
 call but before ``mark_processed``. Consumers **MUST** dedupe by
 ``outbox_events.id``.
 
-Unlike the fuller ADR status/dead-letter sketch, this service never moves rows
-to a dead-letter state — failed deliveries clear the lock and retry forever
-(``release_or_retry``). A WARNING is logged when ``attempts`` exceeds
-:data:`ATTEMPT_WARNING_THRESHOLD` so operators can investigate stuck sinks.
+Failed deliveries clear the lock and retry until ``attempts`` exceeds
+:data:`DEAD_LETTER_ATTEMPTS`, when the row is marked ``dead_lettered_at`` and
+leaves the claimable set permanently — an operator must then inspect and, if
+needed, re-drive the event manually. A WARNING is logged once ``attempts``
+exceeds :data:`ATTEMPT_WARNING_THRESHOLD` so stuck sinks surface early.
 """
 
 from __future__ import annotations
 
 import re
+import traceback
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import timedelta
 from typing import Any, TypedDict
@@ -28,8 +30,9 @@ from app.models.platform import OutboxEvent
 
 logger = structlog.get_logger()
 
-# Warn only — no dead-letter / give-up path (at-least-once forever).
+# Warn early, dead-letter after sustained failure.
 ATTEMPT_WARNING_THRESHOLD = 20
+DEAD_LETTER_ATTEMPTS = 50
 
 _EVENT_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 
@@ -88,6 +91,7 @@ async def claim_batch(
     claimable = (
         sa.select(OutboxEvent.id)
         .where(OutboxEvent.processed_at.is_(None))
+        .where(OutboxEvent.dead_lettered_at.is_(None))
         .where(
             sa.or_(
                 OutboxEvent.locked_until.is_(None),
@@ -142,12 +146,13 @@ async def release_or_retry(
     *,
     event_id: UUID,
     dispatcher_id: str,
+    error: str | None = None,
 ) -> None:
     """Increment ``attempts`` and clear the lock so the row can be retried.
 
-    There is **no** max-attempt dead-letter for the outbox (ADR 0009
-    at-least-once delivery; consumers must dedupe by event id). Rows remain
-    claimable forever after the lock is cleared or expires.
+    Once ``attempts`` exceeds :data:`DEAD_LETTER_ATTEMPTS` the row is marked
+    ``dead_lettered_at`` and is never claimed again — operators must triage it
+    out of band. Consumers must dedupe by event id (at-least-once delivery).
     """
     stmt = (
         sa.update(OutboxEvent)
@@ -158,6 +163,11 @@ async def release_or_retry(
             attempts=OutboxEvent.attempts + 1,
             locked_by=None,
             locked_until=None,
+            last_error=None if error is None else error[:2000],
+            dead_lettered_at=sa.case(
+                (OutboxEvent.attempts + 1 > DEAD_LETTER_ATTEMPTS, sa.func.now()),
+                else_=None,
+            ),
         )
         .returning(OutboxEvent.attempts)
     )
@@ -165,7 +175,14 @@ async def release_or_retry(
     attempts = result.scalar_one_or_none()
     if attempts is None:
         return
-    if attempts > ATTEMPT_WARNING_THRESHOLD:
+    if attempts > DEAD_LETTER_ATTEMPTS:
+        logger.error(
+            "outbox_event_dead_lettered",
+            event_id=str(event_id),
+            dispatcher_id=dispatcher_id,
+            attempts=attempts,
+        )
+    elif attempts > ATTEMPT_WARNING_THRESHOLD:
         logger.warning(
             "outbox_event_high_attempts",
             event_id=str(event_id),
@@ -209,6 +226,7 @@ async def dispatch_pending(
                 session,
                 event_id=event.id,
                 dispatcher_id=dispatcher_id,
+                error=traceback.format_exc(),
             )
             failed += 1
             continue

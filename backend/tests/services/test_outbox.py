@@ -386,3 +386,62 @@ async def test_claim_respects_raw_skip_locked_sql_shape(session):
     )
     assert result.first() is not None
     await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_release_or_retry_dead_letters_after_attempt_threshold(session):
+    org = await seed_organization(session, slug="outbox-dead-letter")
+    await session.commit()
+
+    event = await _emit(session, org.id)
+    await session.commit()
+
+    claimed = await outbox.claim_batch(session, dispatcher_id="d1", batch_size=1, lock_seconds=60)
+    assert claimed[0].id == event.id
+
+    # Push attempts to the dead-letter boundary minus one, then fail once more.
+    await session.execute(
+        update(OutboxEvent)
+        .where(OutboxEvent.id == event.id)
+        .values(attempts=outbox.DEAD_LETTER_ATTEMPTS)
+    )
+    await session.commit()
+
+    await outbox.release_or_retry(session, event_id=event.id, dispatcher_id="d1", error="boom")
+    await session.commit()
+
+    row = (
+        await session.execute(select(OutboxEvent).where(OutboxEvent.id == event.id))
+    ).scalar_one()
+    assert row.attempts == outbox.DEAD_LETTER_ATTEMPTS + 1
+    assert row.dead_lettered_at is not None
+    assert row.last_error == "boom"
+    assert row.locked_by is None
+
+    # Dead-lettered rows are never claimed again.
+    reclaim = await outbox.claim_batch(session, dispatcher_id="d2", batch_size=10, lock_seconds=60)
+    assert reclaim == []
+
+
+@pytest.mark.asyncio
+async def test_release_or_retry_below_threshold_stays_claimable(session):
+    org = await seed_organization(session, slug="outbox-retry-able")
+    await session.commit()
+
+    event = await _emit(session, org.id)
+    await session.commit()
+
+    claimed = await outbox.claim_batch(session, dispatcher_id="d1", batch_size=1, lock_seconds=60)
+    assert claimed[0].id == event.id
+
+    await outbox.release_or_retry(session, event_id=event.id, dispatcher_id="d1", error="flaky")
+    await session.commit()
+
+    row = (
+        await session.execute(select(OutboxEvent).where(OutboxEvent.id == event.id))
+    ).scalar_one()
+    assert row.dead_lettered_at is None
+    assert row.last_error == "flaky"
+
+    reclaim = await outbox.claim_batch(session, dispatcher_id="d2", batch_size=10, lock_seconds=60)
+    assert [r.id for r in reclaim] == [event.id]

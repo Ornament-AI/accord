@@ -497,6 +497,45 @@ async def create_period(
     return _period_response(period)
 
 
+async def close_period(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    period_id: UUID,
+    actor_user_id: UUID,
+) -> dict[str, Any]:
+    """Close an open payroll period (blocks new runs; posting stays open-gated).
+
+    This is the only write path to the ``closed`` status declared by the
+    schema — without it the enum value was unreachable.
+    """
+    period = await _get_period(db, organization_id=organization_id, period_id=period_id)
+    if period.status != "open":
+        raise ConflictError(
+            f"Payroll period cannot be closed from status {period.status!r}; status must be open."
+        )
+    before = audit_events.entity_snapshot(period)
+    period.status = "closed"
+    await db.flush()
+    await audit_events.write_mutation_event(
+        db,
+        organization_id=organization_id,
+        actor_user_id=actor_user_id,
+        command="payroll_period.close",
+        entity_type="payroll_period",
+        entity_id=period.id,
+        entity_label=f"Payroll period {period.period_year}-{period.period_month:02d}",
+        before_state=before,
+        after_state=audit_events.entity_snapshot(period),
+        summary={
+            "period_year": period.period_year,
+            "period_month": period.period_month,
+        },
+    )
+    await db.commit()
+    return _period_response(period)
+
+
 async def list_periods(
     db: AsyncSession,
     *,

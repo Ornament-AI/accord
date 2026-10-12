@@ -168,6 +168,14 @@ class OutboxEvent(UUIDPrimaryKeyMixin, OrganizationOwnedMixin, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
+    last_error: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    dead_lettered_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
 
 
 class PayrollApproval(UUIDPrimaryKeyMixin, OrganizationOwnedMixin, table=True):

@@ -244,8 +244,26 @@ class DevAuthAdapter:
         ip_address: str | None,
         user_agent: str | None,
     ) -> AuthenticatedIdentity:
-        _ = (email, password, ip_address, user_agent)
-        return self.identity()
+        """Dev harness identity = the submitted email.
+
+        The configured ``dev_auth_email`` keeps the stable ``DEV_SUBJECT_ID`` so
+        existing dev databases keep working; any *other* email gets a derived
+        subject so e2e/local runs can exercise maker-checker flows with two
+        real identities. Any password is accepted; an empty/malformed email
+        falls back to the configured identity. Still structurally unreachable
+        in production (``DEV_AUTH_BYPASS`` fails closed there).
+        """
+        _ = (password, ip_address, user_agent)
+        cleaned = email.strip().lower()
+        if "@" not in cleaned:
+            return self.identity()
+        if cleaned == self._email:
+            return self.identity()
+        return AuthenticatedIdentity(
+            subject_id=f"{self.DEV_SUBJECT_ID}:{cleaned}",
+            email=cleaned,
+            name=cleaned.split("@", 1)[0].replace(".", " ").title(),
+        )
 
     async def send_magic_code(
         self,

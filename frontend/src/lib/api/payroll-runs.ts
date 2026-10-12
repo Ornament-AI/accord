@@ -73,7 +73,8 @@ export const payrollRunQueryKeys = {
 };
 
 export function isCalculateAllowedStatus(status: string): boolean {
-	return status === "draft" || status === "calculated" || status === "rejected";
+	// Backend accepts draft|calculated only; rejected must go through Reopen.
+	return status === "draft" || status === "calculated";
 }
 
 export function isDraftStatus(status: string): boolean {
@@ -200,9 +201,10 @@ export function upsertPayrollRunInput(
 	);
 }
 
-export function calculatePayrollRun(runId: string) {
+export function calculatePayrollRun(runId: string, idempotencyKey?: string) {
 	return fetchJson<PayrollRunCalculateResult>(`/api/payroll-runs/${runId}/calculate`, {
 		method: "POST",
+		headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
 	});
 }
 
@@ -330,7 +332,9 @@ export function useUpsertPayrollRunInput(runId: string) {
 export function useCalculatePayrollRun(runId: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: () => calculatePayrollRun(runId),
+		// Fresh key per execution so a user retry cannot duplicate the
+		// immutable run-version append.
+		mutationFn: () => calculatePayrollRun(runId, crypto.randomUUID()),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.run(runId) });
 			void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });

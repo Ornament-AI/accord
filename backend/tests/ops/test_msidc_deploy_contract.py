@@ -106,24 +106,58 @@ def test_provisioning_scripts_can_import_the_container_app() -> None:
     provision = (ROOT / "deploy/provision.sh").read_text()
 
     assert provision.count("-e PYTHONPATH=/app") == 2
-    assert provision.count('-v "$ROOT/scripts:/provision/scripts:ro"') == 2
+    assert provision.count('-v "$PROVISION_DIR:/provision/scripts:ro"') == 2
 
 
-def test_release_bundle_ships_provisioning_files() -> None:
-    """provision.sh mounts $ROOT/scripts — the bundle must contain it."""
-    package = (ROOT / "deploy/package-release.sh").read_text()
-    deploy_files_block = package.split("DEPLOY_FILES=(", 1)[1].split(")", 1)[0]
+def test_release_bundle_ships_provisioning_files(tmp_path: Path) -> None:
+    """Build the real release tarball and assert the deploy host gets every
+    file it needs — staging lists are not the shipped artifact (regression:
+    provision CLIs were staged but never entered the tarball)."""
+    import tarfile
 
-    for entry in (
+    sha = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout.strip()
+    out_dir = tmp_path / "release-out"
+    out_dir.mkdir()
+    result = subprocess.run(
+        ["bash", str(ROOT / "deploy/package-release.sh"), str(out_dir)],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "SOURCE_SHA": sha,
+            "GITHUB_SHA": sha,
+            "ACCORD_RELEASE_SHA": sha,
+            "GITHUB_RUN_ID": "1",
+            "ACCORD_BACKEND_DIGEST": "sha256:" + "a" * 64,
+            "ACCORD_WEB_DIGEST": "sha256:" + "b" * 64,
+            "ACCORD_PREVIOUS_DEPLOYED_SHA": sha,
+        },
+    )
+    assert result.returncode == 0, result.stderr
+
+    archives = list(out_dir.glob("accord-deploy-sha-*.tar.gz"))
+    assert len(archives) == 1, f"expected one tarball, found {archives}"
+    with tarfile.open(archives[0]) as bundle:
+        names = set(bundle.getnames())
+
+    # Nothing outside deploy/ may ship; everything provision.sh needs must.
+    assert all(name == "deploy" or name.startswith("deploy/") for name in names), names
+    for required in (
         "deploy/provision.sh",
-        "scripts/provision_organization.py",
-        "scripts/provision_member.py",
+        "deploy/provision/provision_organization.py",
+        "deploy/provision/provision_member.py",
+        "deploy/smoke-test.sh",
+        "deploy/create_roles.sql",
+        "deploy/post-restore-grants.sql",
+        "deploy/backup.sh",
+        "deploy/onprem_release.py",
     ):
-        assert entry in deploy_files_block
-        assert (ROOT / entry).exists(), entry
-
-    # scripts/ must survive cleanup — provision.sh mounts it at $ROOT/scripts.
-    assert 'rmdir "$STAGE_ROOT/scripts"' not in package
+        assert required in names, f"{required} missing from release bundle"
 
 
 def test_setup_reports_missing_public_url_before_docker_mutation(tmp_path: Path) -> None:

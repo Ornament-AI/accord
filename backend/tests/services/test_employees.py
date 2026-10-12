@@ -419,3 +419,48 @@ def test_mask_value_helper():
     assert mask_value("1234") == "••••"
     assert mask_value("12") == "••••"
     assert mask_value("12345") == "••••2345"
+
+
+@pytest.mark.asyncio
+async def test_reveal_writes_pii_access_audit_event(session, clean_identity_tables):
+    org, user, _office, _post = await _world(session)
+    await _bind(session, org, user)
+    created = await create_employee(
+        session,
+        organization_id=org.id,
+        created_by=user.id,
+        body=CreateEmployeeRequest(
+            employee_number=f"E-{uuid4().hex[:6]}",
+            effective_from=date(2026, 1, 1),
+            profile=_profile(
+                RetirementRegime.NPS,
+                pan="ABCDE1234F",
+                pran="PRAN123",
+            ),
+            pay=PayInput(pay_matrix_level="L10", basic_pay=Decimal("50000.00")),
+        ),
+    )
+
+    await _bind(session, org, user)
+    detail = await get_employee_detail(
+        session,
+        organization_id=org.id,
+        employee_id=created.id,
+        as_of=date(2026, 6, 1),
+        reveal=True,
+        actor_user_id=user.id,
+    )
+    assert detail.profile is not None and detail.profile.pan == "ABCDE1234F"
+
+    event = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.organization_id == org.id,
+                AuditEvent.command == "employee.pii.reveal",
+                AuditEvent.entity_id == created.id,
+            )
+        )
+    ).scalar_one()
+    assert event.event_kind == "access"
+    assert event.actor_user_id == user.id
+    assert event.entity_type == "employee"

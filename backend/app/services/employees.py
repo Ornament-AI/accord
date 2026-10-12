@@ -37,7 +37,12 @@ from app.schemas.employees import (
     profile_from_row,
 )
 from app.schemas.pagination import page_count, page_offset
-from app.services.audit_events import entity_snapshot, row_snapshot, write_mutation_event
+from app.services.audit_events import (
+    entity_snapshot,
+    row_snapshot,
+    write_access_event,
+    write_mutation_event,
+)
 from app.services.versioning import (
     get_active_version,
     get_open_version,
@@ -273,10 +278,12 @@ async def list_employees(
     search: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    reveal: bool = False,
 ) -> EmployeeListPage:
-    """List employees with active profile as-of, optional ILIKE search, pagination."""
-    del reveal  # list items expose name/sevarth only; no sensitive fields
+    """List employees with active profile as-of, optional ILIKE search, pagination.
+
+    Only non-sensitive fields are returned; unmasked PII is served by the
+    detail/version endpoints and audited there.
+    """
     profile = employee_profile_versions
     offset = page_offset(page=page, page_size=page_size)
 
@@ -341,8 +348,20 @@ async def get_employee_detail(
     employee_id: UUID,
     as_of: date,
     reveal: bool = False,
+    actor_user_id: UUID | None = None,
 ) -> EmployeeDetail:
     employee = await _get_employee(db, organization_id=organization_id, employee_id=employee_id)
+    if reveal:
+        await write_access_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="employee.pii.reveal",
+            entity_type="employee",
+            entity_id=employee.id,
+            entity_label=f"Employee {employee.employee_number}",
+            resource_state={"employee_id": str(employee.id), "as_of": str(as_of)},
+        )
     profile_row = await get_active_version(
         db,
         employee_profile_versions,
@@ -392,8 +411,20 @@ async def get_employee_versions(
     employee_id: UUID,
     kind: str,
     reveal: bool = False,
+    actor_user_id: UUID | None = None,
 ) -> list[Any]:
-    await _get_employee(db, organization_id=organization_id, employee_id=employee_id)
+    employee = await _get_employee(db, organization_id=organization_id, employee_id=employee_id)
+    if reveal:
+        await write_access_event(
+            db,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            command="employee.pii.reveal",
+            entity_type="employee",
+            entity_id=employee.id,
+            entity_label=f"Employee {employee.employee_number}",
+            resource_state={"employee_id": str(employee.id), "versions": kind},
+        )
     parsed = _parse_kind(kind)
     table = VERSION_TABLES[parsed]
     rows = await list_versions(

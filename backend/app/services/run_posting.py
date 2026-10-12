@@ -357,6 +357,14 @@ async def reverse_run(
     if version is None:
         raise ConflictError("Current run version not found.")
 
+    period = await db.get(PayrollPeriod, run.period_id)
+    if period is None or period.organization_id != organization_id:
+        raise NotFoundError("Payroll period not found.")
+    if period.status != "open":
+        raise ConflictError(
+            f"Payroll period status must be open to reverse; found {period.status!r}."
+        )
+
     now = datetime.now(timezone.utc)
     before_state = entity_snapshot(run)
     reversal = PayrollRun(

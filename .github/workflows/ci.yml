@@ -274,6 +274,47 @@ jobs:
       - name: Build
         run: pnpm --filter frontend build
 
+  supply-chain:
+    name: Supply-chain audit + SBOM
+    needs: detect
+    if: github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true' || needs.detect.outputs.frontend_changed == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install backend dependencies
+        run: |
+          python -m venv backend/.venv-ci
+          backend/.venv-ci/bin/pip install -r backend/requirements.txt pip-audit
+      - name: pip-audit (backend dependencies)
+        run: backend/.venv-ci/bin/pip-audit --strict
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: pnpm audit (production deps, high+ severity)
+        run: pnpm --filter frontend audit --prod --audit-level=high
+      - name: Generate SBOM (CycloneDX)
+        run: npx --yes @cyclonedx/cdxgen --type js,python -o sbom.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 30
+
+  fixture-validation:
+    name: Sanitized fixture validation
+    needs: detect
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate golden payroll fixture
+        run: python fixtures/sanitized/june-2026/validate.py
+
   docker-backend:
     name: Docker build (backend)
     needs: detect

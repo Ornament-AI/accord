@@ -52,4 +52,16 @@ test.describe("axe a11y smoke", () => {
 		await expect(page.getByTestId("employee-list-page")).toBeVisible({ timeout: 30_000 });
 		await runAxe(page, "employees");
 	});
+
+	test("pay runs list has no serious/critical violations", async ({ page }) => {
+		await page.goto("/pay-runs");
+		await expect(page.getByTestId("pay-runs-page")).toBeVisible({ timeout: 30_000 });
+		await runAxe(page, "pay-runs");
+	});
+
+	test("reports page has no serious/critical violations", async ({ page }) => {
+		await page.goto("/reports");
+		await expect(page.getByTestId("reports-page")).toBeVisible({ timeout: 30_000 });
+		await runAxe(page, "reports");
+	});
 });

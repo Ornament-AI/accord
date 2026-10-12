@@ -30,7 +30,7 @@ from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,7 @@ from sqlalchemy import text
 
 from app.exceptions import ConflictError
 from app.models.base import utcnow
+from app.services.audit_events import json_safe
 from app.models.identity import IdempotencyKey
 from app.tenancy import set_config_local
 
@@ -305,7 +306,7 @@ async def _execute_claimed(
     gucs = await _snapshot_tenant_gucs(db)
     table = IdempotencyKey.__table__
     try:
-        snapshot = await executor()
+        snapshot = json_safe(await executor())
     except Exception:
         await db.rollback()
         # Rollback cleared tenant GUCs; rebind before any idempotency_keys touch.
@@ -337,3 +338,17 @@ async def _execute_claimed(
             "Idempotency key was reclaimed by a concurrent request during execution."
         )
     return snapshot
+
+
+async def purge_expired_keys(session: AsyncSession) -> int:
+    """Delete ``idempotency_keys`` rows whose TTL elapsed.
+
+    Terminal-claim semantics live in the stored response snapshot; once a key
+    is past ``expires_at`` its replay value is gone, so the row can go.
+    Org-scoped like every tenant table under RLS.
+    """
+    result = await session.execute(
+        delete(IdempotencyKey).where(IdempotencyKey.expires_at < func.now())
+    )
+    await session.commit()
+    return int(result.rowcount or 0)

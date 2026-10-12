@@ -92,6 +92,8 @@ DEPLOY_FILES=(
     deploy/nginx
     deploy/object-storage
     deploy/provision.sh
+    deploy/post-restore-grants.sql
+    deploy/backup.sh
     scripts/smoke-test.sh
     scripts/provision_organization.py
     scripts/provision_member.py
@@ -110,6 +112,13 @@ replace_exact_line \
 mv "$STAGE_ROOT/scripts/vendor/onprem_release.py" \
     "$STAGE_ROOT/deploy/onprem_release.py"
 mv "$STAGE_ROOT/scripts/smoke-test.sh" "$STAGE_ROOT/deploy/smoke-test.sh"
+# provision.sh mounts $ROOT/deploy/provision — the CLIs must ship inside the
+# tarball's deploy/ tree (ADR 0011 keeps org creation CLI-only).
+mkdir -p "$STAGE_ROOT/deploy/provision"
+mv "$STAGE_ROOT/scripts/provision_organization.py" \
+    "$STAGE_ROOT/deploy/provision/provision_organization.py"
+mv "$STAGE_ROOT/scripts/provision_member.py" \
+    "$STAGE_ROOT/deploy/provision/provision_member.py"
 # Single source of truth: backend/scripts/create_roles.sql is staged at the
 # bundle path docker-compose mounts (./create_roles.sql → /roles/...). This
 # overwrites the checked-in deploy/ mirror, so the bundle always ships the
@@ -117,8 +126,7 @@ mv "$STAGE_ROOT/scripts/smoke-test.sh" "$STAGE_ROOT/deploy/smoke-test.sh"
 mv "$STAGE_ROOT/backend/scripts/create_roles.sql" \
     "$STAGE_ROOT/deploy/create_roles.sql"
 rmdir "$STAGE_ROOT/backend/scripts" "$STAGE_ROOT/backend"
-# scripts/provision_*.py must stay at scripts/ — provision.sh mounts $ROOT/scripts.
-rmdir "$STAGE_ROOT/scripts/vendor"
+rmdir "$STAGE_ROOT/scripts/vendor" "$STAGE_ROOT/scripts"
 
 BACKEND_REF="ghcr.io/ornament-ai/accord/backend@$BACKEND_DIGEST"
 WEB_REF="ghcr.io/ornament-ai/accord/web@$WEB_DIGEST"

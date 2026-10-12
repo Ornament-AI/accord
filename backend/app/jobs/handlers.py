@@ -219,14 +219,17 @@ async def maybe_enqueue_maintenance(
 
 
 async def handle_artifact_maintenance(job: Job) -> dict[str, Any] | None:
-    """Reconcile orphaned artifacts and expire artifacts past retention."""
+    """Reconcile orphaned artifacts, expire retained artifacts, and purge
+    consumed idempotency keys past their TTL (all org-scoped)."""
     from datetime import UTC, datetime
 
     from app.services.artifacts import expire_artifacts, reconcile_orphans
+    from app.services.idempotency import purge_expired_keys
 
     session = current_job_session()
     storage, _registry, _engine_version = _require_generate_report_deps()
     counts = await reconcile_orphans(session, storage, organization_id=job.organization_id)
+    purged_keys = await purge_expired_keys(session)
     expired = await expire_artifacts(
         session, organization_id=job.organization_id, now=datetime.now(UTC)
     )
@@ -234,6 +237,7 @@ async def handle_artifact_maintenance(job: Job) -> dict[str, Any] | None:
         "reconciled": {
             "finalized": counts.finalized,
             "deleted": counts.deleted,
+            "idempotency_keys_purged": purged_keys,
             "checksum_mismatch": counts.checksum_mismatch,
         },
         "expired": expired,

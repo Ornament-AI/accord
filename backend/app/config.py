@@ -5,22 +5,20 @@ from functools import lru_cache
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-MIN_SESSION_SECRET_LENGTH = 16
+MIN_SESSION_SECRET_LENGTH = 32
 _ALLOWED_ENVIRONMENTS = frozenset({"development", "staging", "production"})
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "http://localhost:5174,http://127.0.0.1:5174,"
+    "http://localhost:5175,http://127.0.0.1:5175,"
+    "http://localhost:5176,http://127.0.0.1:5176"
+)
 
 
 class Settings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     migrations_database_url: str = Field(default="", alias="MIGRATIONS_DATABASE_URL")
-    cors_origins: str = Field(
-        default=(
-            "http://localhost:5173,http://127.0.0.1:5173,"
-            "http://localhost:5174,http://127.0.0.1:5174,"
-            "http://localhost:5175,http://127.0.0.1:5175,"
-            "http://localhost:5176,http://127.0.0.1:5176"
-        ),
-        alias="CORS_ORIGINS",
-    )
+    cors_origins: str = Field(default=DEFAULT_CORS_ORIGINS, alias="CORS_ORIGINS")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     app_version: str = Field(default="dev", alias="APP_VERSION")
@@ -138,6 +136,14 @@ class Settings(BaseSettings):
                 "WORKOS_REDIRECT_URI": self.workos_redirect_uri,
                 "WORKOS_WEBHOOK_SECRET": self.workos_webhook_secret,
                 "SESSION_SECRET_KEY": self.session_secret_key,
+                # PUBLIC_APP_URL/CORS_ORIGINS are required explicitly: the
+                # localhost defaults must never survive a production boot.
+                "PUBLIC_APP_URL": self.public_app_url,
+                # Non-default CORS list — the localhost dev defaults must not
+                # survive a production boot.
+                "CORS_ORIGINS": self.cors_origins
+                if self.cors_origins != DEFAULT_CORS_ORIGINS
+                else "",
             }
             # MIGRATIONS_DATABASE_URL is intentionally absent: only the
             # one-shot migrate task consumes it (alembic env.py raises when
@@ -146,6 +152,8 @@ class Settings(BaseSettings):
             missing = [name for name, value in required.items() if not value]
             if missing:
                 raise ValueError("Missing required production settings: " + ", ".join(missing))
+            if "localhost" in self.workos_redirect_uri or "127.0.0.1" in self.workos_redirect_uri:
+                raise ValueError("WORKOS_REDIRECT_URI must not point at localhost in production.")
             if len(self.session_secret_key) < MIN_SESSION_SECRET_LENGTH:
                 raise ValueError(
                     f"SESSION_SECRET_KEY must be at least {MIN_SESSION_SECRET_LENGTH} "
