@@ -204,6 +204,15 @@ class PostgresJobQueue:
             )
             session.add(row)
             try:
+                # Flush + refresh + snapshot *inside* the tenant-bound
+                # transaction: commit drops the transaction-local
+                # ``app.organization_id`` GUC, so a post-commit refresh or
+                # attribute reload sees zero rows under forced-RLS runtime
+                # roles (accord_app/accord_worker) and raised after the job
+                # had already committed.
+                await session.flush()
+                await session.refresh(row)
+                job = _row_to_job(row)
                 await session.commit()
             except IntegrityError as exc:
                 await session.rollback()
@@ -236,8 +245,7 @@ class PostgresJobQueue:
                 if found is None:
                     raise
                 return _row_to_job(found)
-            await session.refresh(row)
-            return _row_to_job(row)
+            return job
 
     async def reap_expired_leases(self) -> list[Job]:
         async with self._session_factory() as session:
