@@ -209,6 +209,26 @@ describe("Employee detail page", () => {
 		},
 		PAGE_TIMEOUT,
 	);
+
+	it(
+		"hides the reveal toggle when the employee fails to load",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers();
+			const { handlers: employeeHandlers } = createEmployeeHandlers({ employees: [] });
+			server.use(...authHandlers, ...employeeHandlers);
+
+			renderApp({ initialEntries: ["/employees/does-not-exist"] });
+
+			expect(
+				await screen.findByTestId("employee-detail-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(await screen.findByRole("button", { name: /retry/i })).toBeInTheDocument();
+			expect(
+				screen.queryByRole("button", { name: /Reveal sensitive fields/i }),
+			).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
 });
 
 describe("CreateEmployeeDialog", () => {

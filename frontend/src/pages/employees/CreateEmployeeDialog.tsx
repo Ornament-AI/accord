@@ -159,6 +159,10 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
 	const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
 		setForm((prev) => ({ ...prev, [key]: value }));
+		// Clear stale validation once the user starts correcting the form.
+		setFormError(null);
+		if (key === "employee_number") setEmployeeNumberError(null);
+		if (key === "gpf_jurisdiction") setGpfJurisdictionError(null);
 	};
 
 	const postingCatalogLoading = officesQuery.isLoading || postsQuery.isLoading;

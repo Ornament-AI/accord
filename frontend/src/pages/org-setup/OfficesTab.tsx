@@ -195,7 +195,10 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 							<Input
 								id="office-name"
 								value={form.name}
-								onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+								onChange={(event) => {
+									setForm((prev) => ({ ...prev, name: event.target.value }));
+									setFormError(null);
+								}}
 								disabled={isSubmitting}
 							/>
 						</div>
@@ -204,12 +207,13 @@ function OfficeFormDialog({ mode, open, onOpenChange, office }: OfficeFormDialog
 							<Label htmlFor="office-jurisdiction">Jurisdiction</Label>
 							<Select
 								value={form.jurisdiction}
-								onValueChange={(value) =>
+								onValueChange={(value) => {
 									setForm((prev) => ({
 										...prev,
 										jurisdiction: value as OfficeJurisdiction,
-									}))
-								}
+									}));
+									setFormError(null);
+								}}
 								disabled={isSubmitting}
 							>
 								<SelectTrigger id="office-jurisdiction" className="w-full">

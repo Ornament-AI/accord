@@ -257,7 +257,7 @@ export default function EmployeeDetailPage() {
 				title={employee ? <EmployeeBreadcrumb label={employee.employee_number} /> : "Employee"}
 				actions={
 					<div className="flex items-center gap-2">
-						{canReveal ? (
+						{canReveal && employee ? (
 							<Button
 								size="xs"
 								variant="outline"
