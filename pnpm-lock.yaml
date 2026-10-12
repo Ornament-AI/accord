@@ -62,8 +62,8 @@ importers:
         specifier: 19.2.7
         version: 19.2.7(react@19.2.7)
       react-router:
-        specifier: 8.0.1
-        version: 8.0.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: 8.4.0
+        version: 8.4.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       sonner:
         specifier: 2.0.7
         version: 2.0.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -557,6 +557,9 @@ packages:
   '@redocly/openapi-core@1.34.17':
     resolution: {integrity: sha512-wsV2keCt6B806XpSdezbWZ9aFJYf14YVh+XQf0ESt7M90yqVuxH9//PxvtC70sgj9OCkRM3nRaLfu4MsGQZRig==}
     engines: {node: '>=18.17.0', npm: '>=9.5.0'}
+
+  '@remix-run/route-pattern@0.22.1':
+    resolution: {integrity: sha512-czdGJWh09Lapvcqt7Vb09KlrU2PhRJ8xQaI+AItTuD9aDJ5MAgxnS38lnys6Ll+6RJEqPiaUqTwIQhVLwFvv+w==}
 
   '@rolldown/binding-android-arm64@1.1.5':
     resolution: {integrity: sha512-lZg8fqIv2v7FF237bwMgzGZEJvGL79/s5knJ/i6FmsGF4XXlzccZ4jb+TrFIxtSSxFtIpdsgrPZeMk1I9AFcyQ==}
@@ -1496,8 +1499,8 @@ packages:
   react-is@17.0.2:
     resolution: {integrity: sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w==}
 
-  react-router@8.0.1:
-    resolution: {integrity: sha512-5EL/fANovVUhRK50NLS8RYfX0BxrimoKsHWUPPy8v5UEl8i6vzF7e4POo3u+AhPItDwccUAJjMfIOmydxBJmQw==}
+  react-router@8.4.0:
+    resolution: {integrity: sha512-JtydAkBvU9UTEe5qNC+POhu+ZBNM7rlKY2IegwXc7Idj7xfRG16x5RZrw3mju+XlqBxfvb2ky9P3jUp9WyWC1g==}
     engines: {node: '>=22.22.0'}
     peerDependencies:
       react: '>=19.2.7'
@@ -2143,6 +2146,8 @@ snapshots:
       yaml-ast-parser: 0.0.43
     transitivePeerDependencies:
       - supports-color
+
+  '@remix-run/route-pattern@0.22.1': {}
 
   '@rolldown/binding-android-arm64@1.1.5':
     optional: true
@@ -2888,8 +2893,9 @@ snapshots:
 
   react-is@17.0.2: {}
 
-  react-router@8.0.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  react-router@8.4.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
+      '@remix-run/route-pattern': 0.22.1
       cookie-es: 3.1.1
       react: 19.2.7
     optionalDependencies:
