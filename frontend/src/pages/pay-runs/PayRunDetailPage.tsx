@@ -33,6 +33,7 @@ import {
 	isCalculateAllowedStatus,
 	isDraftStatus,
 	type PayrollRunCalculateResult,
+	type PayrollRunInputResponse,
 	type PayrollRunRosterHistoryResponse,
 	parsePayrollRunVersion,
 	payrollRunQueryKeys,
@@ -49,6 +50,7 @@ import { formatDateTime } from "@/lib/utils";
 
 import { PayrollRunRosterTable, type PayrollRunRosterTableHandle } from "./PayrollRunRosterTable";
 import { ReportMetadataSection } from "./ReportMetadataSection";
+import { RunInputsSection } from "./RunInputsSection";
 import { RunStatusBadge } from "./run-status-badge";
 import { UpsertInputDialog } from "./UpsertInputDialog";
 import { ValidationFindingsPanel, WorkflowActionBar } from "./workflow";
@@ -165,7 +167,10 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 	const [rosterEditing, setRosterEditing] = useState(false);
 	const [rosterDirty, setRosterDirty] = useState(false);
 	const [rosterSaving, setRosterSaving] = useState(false);
-	const [inputOpen, setInputOpen] = useState(false);
+	const [inputDialog, setInputDialog] = useState<{
+		open: boolean;
+		editing: PayrollRunInputResponse | null;
+	}>({ open: false, editing: null });
 	const rosterTableRef = useRef<PayrollRunRosterTableHandle>(null);
 
 	const runQuery = usePayrollRun(runId);
@@ -284,7 +289,11 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 								) : null}
 								{canEditInputs ? (
 									<>
-										<Button size="xs" variant="outline" onClick={() => setInputOpen(true)}>
+										<Button
+											size="xs"
+											variant="outline"
+											onClick={() => setInputDialog({ open: true, editing: null })}
+										>
 											Add Input
 										</Button>
 										{rosterEditing ? (
@@ -354,6 +363,12 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 								/>
 							</PageSection>
 
+							<RunInputsSection
+								runId={run.id}
+								editable={canEditInputs}
+								onEdit={(input) => setInputDialog({ open: true, editing: input })}
+							/>
+
 							<ReportMetadataSection
 								runId={run.id}
 								metadata={run.report_metadata ?? {}}
@@ -412,7 +427,12 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 							</PageSection>
 						</>
 					) : null}
-					<UpsertInputDialog open={inputOpen} onOpenChange={setInputOpen} runId={runId} />
+					<UpsertInputDialog
+						open={inputDialog.open}
+						onOpenChange={(open) => setInputDialog((prev) => ({ ...prev, open }))}
+						runId={runId}
+						editing={inputDialog.editing}
+					/>
 				</PageShell>
 			</AppLayout>
 		</CapabilityGate>

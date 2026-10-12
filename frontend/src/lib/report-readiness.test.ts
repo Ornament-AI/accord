@@ -97,6 +97,7 @@ describe("groupReadinessIssues", () => {
 			message: "Employee bank account is missing",
 			owner: "employee",
 			entity_id,
+			href: `/employees/${entity_id}`,
 		});
 		const grouped = groupReadinessIssues([makeIssue("emp-1"), makeIssue("emp-2")]);
 		expect(grouped).toHaveLength(2);
