@@ -62,7 +62,12 @@ services:
         max-file: "3"
 
   minio:
+    # MinIO community images were withdrawn from Docker Hub and quay.io now
+    # denies anonymous pulls, so the pinned digest must already exist on the
+    # host (it is cached on the deploy VM). Fresh hosts must side-load the
+    # image — see docs/operations.md.
     image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    pull_policy: missing
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -94,7 +99,10 @@ services:
   # Idempotent bucket bootstrap (OBJECT_STORAGE_BUCKET, default accord-artifacts).
   # See deploy/object-storage/create-bucket.sh.
   minio-init:
+    # Same constraint as the minio service: the pinned mc digest must be
+    # cached on the host; no public registry serves it anonymously anymore.
     image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3
+    pull_policy: missing
     depends_on:
       minio:
         condition: service_healthy

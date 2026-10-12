@@ -27,6 +27,13 @@ services:
 | `worker` | `python worker.py` durable-job loop |
 | `web` | nginx + SPA; publishes `127.0.0.1:${ACCORD_WEB_PORT:-8085}` |
 
+> MinIO community images are no longer distributed: they were removed from
+> Docker Hub and `quay.io/minio/*` now rejects anonymous pulls. The compose
+> services keep the pinned upstream digests but declare `pull_policy:
+> missing`, so deploys reuse the images already cached on the host. On a
+> **fresh** host, side-load them before bring-up, e.g. from a host that has
+> them: `docker save quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z | gzip | ssh TARGET 'docker load'`, or push them to a private mirror and update the `image:` refs.
+
 On first boot, Postgres runs `deploy/object-storage/postgres-init-roles.sh`.
 That script applies `backend/scripts/create_roles.sql` and sets passwords
 for `accord_migrator`, `accord_app`, and `accord_worker` (ADR-0001). Because
