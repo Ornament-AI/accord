@@ -214,6 +214,11 @@ fi
 
 if (( START_FRONTEND && !frontend_up )); then
 	resolve_pnpm
+	# env can only exec binaries; replace the corepack shell-function shim with
+	# the resolved corepack executable before detaching the frontend process.
+	if [[ ${#PNPM_CMD[@]} -eq 1 ]] && declare -F "${PNPM_CMD[0]}" >/dev/null 2>&1; then
+		PNPM_CMD=("$PNPM_COREPACK_BIN" pnpm --dir "$FRONTEND")
+	fi
 	if port_is_listening "$FRONTEND_PORT"; then
 		if port_matches_pidfile "$FRONTEND_PORT" "$STATE_DIR/frontend.pid"; then
 			stop_stale_pidfile frontend
