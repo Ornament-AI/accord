@@ -52,11 +52,17 @@ test.describe("reports", () => {
 				await expect(page.getByTestId("pay-run-totals")).toBeVisible({ timeout: 60_000 });
 			}
 			await confirmWorkflowAction(page, "submit");
+			// The badge refetch races the mutation's invalidateQueries — wait
+			// for submitted rather than reading a possibly-stale status once.
+			await expect(page.getByTestId("run-status-badge")).toHaveAttribute(
+				"data-status",
+				"submitted",
+				{ timeout: 30_000 },
+			);
+			status = "submitted";
 		}
-		status = await runStatus(page);
 		if (status !== "submitted" && status !== "approved" && status !== "posted") {
-			test.skip(true, `run could not be driven to submitted (status=${status})`);
-			return;
+			throw new Error(`run could not be driven to submitted (status=${status})`);
 		}
 
 		// Checker identity approves and posts — maker/checker demands a distinct
