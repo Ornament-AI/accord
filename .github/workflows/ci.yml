@@ -284,6 +284,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m venv backend/.venv-ci
+          backend/.venv-ci/bin/pip install --upgrade pip
           backend/.venv-ci/bin/pip install -r backend/requirements.txt pip-audit
       - name: pip-audit (backend dependencies)
         run: backend/.venv-ci/bin/pip-audit --strict
