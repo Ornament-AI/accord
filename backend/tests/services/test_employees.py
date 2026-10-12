@@ -27,6 +27,7 @@ from app.services.employees import (
     create_employee,
     create_employee_version,
     get_employee_detail,
+    get_employee_versions,
     list_employees,
 )
 from app.tenancy import bind_tenant_context
@@ -421,8 +422,86 @@ def test_mask_value_helper():
     assert mask_value("12345") == "••••2345"
 
 
+async def _reveal_event_count(session, org_id, employee_id) -> int:
+    return (
+        await session.execute(
+            sa.select(sa.func.count())
+            .select_from(AuditEvent)
+            .where(AuditEvent.organization_id == org_id)
+            .where(AuditEvent.command == "employee.pii.reveal")
+            .where(AuditEvent.entity_id == employee_id)
+        )
+    ).scalar_one()
+
+
 @pytest.mark.asyncio
 async def test_reveal_writes_pii_access_audit_event(session, clean_identity_tables):
+    org, user, _office, _post = await _world(session)
+    # rollback() expires ORM instances; capture ids before any rollback.
+    org_id = org.id
+    user_id = user.id
+    await _bind(session, org, user)
+    created = await create_employee(
+        session,
+        organization_id=org_id,
+        created_by=user_id,
+        body=CreateEmployeeRequest(
+            employee_number=f"E-{uuid4().hex[:6]}",
+            effective_from=date(2026, 1, 1),
+            profile=_profile(
+                RetirementRegime.NPS,
+                pan="ABCDE1234F",
+                pran="PRAN123",
+            ),
+            pay=PayInput(pay_matrix_level="L10", basic_pay=Decimal("50000.00")),
+        ),
+    )
+    employee_id = created.id
+
+    # A masked (non-reveal) read must not write an access audit row.
+    await _bind(session, org, user)
+    masked = await get_employee_detail(
+        session,
+        organization_id=org_id,
+        employee_id=employee_id,
+        as_of=date(2026, 6, 1),
+        reveal=False,
+        actor_user_id=user_id,
+    )
+    assert masked.profile is not None and masked.profile.pan == "••••234F"
+    await session.rollback()
+    assert await _reveal_event_count(session, org_id, employee_id) == 0
+
+    await bind_tenant_context(session, organization_id=org_id, user_id=user_id)
+    detail = await get_employee_detail(
+        session,
+        organization_id=org_id,
+        employee_id=employee_id,
+        as_of=date(2026, 6, 1),
+        reveal=True,
+        actor_user_id=user_id,
+    )
+    assert detail.profile is not None and detail.profile.pan == "ABCDE1234F"
+
+    # The reveal audit row must be durable: the service commits it, so a
+    # rollback after the call cannot undo it.
+    await session.rollback()
+    event = (
+        await session.execute(
+            sa.select(AuditEvent).where(
+                AuditEvent.organization_id == org_id,
+                AuditEvent.command == "employee.pii.reveal",
+                AuditEvent.entity_id == employee_id,
+            )
+        )
+    ).scalar_one()
+    assert event.event_kind == "access"
+    assert event.actor_user_id == user_id
+    assert event.entity_type == "employee"
+
+
+@pytest.mark.asyncio
+async def test_reveal_versions_persists_pii_access_audit_event(session, clean_identity_tables):
     org, user, _office, _post = await _world(session)
     await _bind(session, org, user)
     created = await create_employee(
@@ -437,30 +516,24 @@ async def test_reveal_writes_pii_access_audit_event(session, clean_identity_tabl
                 pan="ABCDE1234F",
                 pran="PRAN123",
             ),
-            pay=PayInput(pay_matrix_level="L10", basic_pay=Decimal("50000.00")),
         ),
     )
 
-    await _bind(session, org, user)
-    detail = await get_employee_detail(
-        session,
-        organization_id=org.id,
-        employee_id=created.id,
-        as_of=date(2026, 6, 1),
-        reveal=True,
-        actor_user_id=user.id,
-    )
-    assert detail.profile is not None and detail.profile.pan == "ABCDE1234F"
+    org_id = org.id
+    user_id = user.id
+    employee_id = created.id
 
-    event = (
-        await session.execute(
-            sa.select(AuditEvent).where(
-                AuditEvent.organization_id == org.id,
-                AuditEvent.command == "employee.pii.reveal",
-                AuditEvent.entity_id == created.id,
-            )
-        )
-    ).scalar_one()
-    assert event.event_kind == "access"
-    assert event.actor_user_id == user.id
-    assert event.entity_type == "employee"
+    await _bind(session, org, user)
+    rows = await get_employee_versions(
+        session,
+        organization_id=org_id,
+        employee_id=employee_id,
+        kind="profile",
+        reveal=True,
+        actor_user_id=user_id,
+    )
+    assert rows and rows[0].pan == "ABCDE1234F"
+
+    # Same durability contract as the detail read: committed, rollback-proof.
+    await session.rollback()
+    assert await _reveal_event_count(session, org_id, employee_id) == 1

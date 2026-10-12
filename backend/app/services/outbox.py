@@ -14,7 +14,6 @@ exceeds :data:`ATTEMPT_WARNING_THRESHOLD` so stuck sinks surface early.
 from __future__ import annotations
 
 import re
-import traceback
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import timedelta
 from typing import Any, TypedDict
@@ -215,7 +214,7 @@ async def dispatch_pending(
     for event in events:
         try:
             await handler(event)
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "outbox_handler_failed",
                 event_id=str(event.id),
@@ -226,7 +225,7 @@ async def dispatch_pending(
                 session,
                 event_id=event.id,
                 dispatcher_id=dispatcher_id,
-                error=traceback.format_exc(),
+                error=type(exc).__name__,
             )
             failed += 1
             continue

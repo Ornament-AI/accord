@@ -110,8 +110,9 @@ pg_exec() {
 
 pg_exec_stdin() {
   local db="$1"
+  shift
   docker exec -i -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER" \
-    psql -U "$DB_USER" -d "$db" -v ON_ERROR_STOP=1
+    psql -U "$DB_USER" -d "$db" -v ON_ERROR_STOP=1 "$@"
 }
 
 count_rows() {
@@ -127,8 +128,10 @@ count_rows() {
 # release-acceptance checklist restore-under-runtime-role RLS proof.
 verify_rls_posture() {
   local db="$1"
-  pg_exec_stdin "$db" <<'SQL'
-SET ROLE accord_app;
+  local role
+  for role in accord_app accord_worker; do
+    pg_exec_stdin "$db" -v "role_name=$role" <<'SQL'
+SET ROLE :"role_name";
 BEGIN;
 -- Tenant GUC is transaction-local in app code; a foreign org id must yield
 -- zero rows on every org-column table.
@@ -175,7 +178,8 @@ END $$;
 COMMIT;
 RESET ROLE;
 SQL
-  echo "[verify] forced RLS filters every org-column table under accord_app"
+    echo "[verify] forced RLS filters every org-column table under ${role}"
+  done
 
   # Immutability backstop: runtime roles must be denied UPDATE/DELETE on the
   # append-only tables (privilege check, independent of row presence).

@@ -98,15 +98,18 @@ approve → post → export → download.
 
 ## Visual regression
 
-`e2e/visual.spec.ts` compares screenshots against committed baselines in
-`visual.spec.ts-snapshots/`. On first run (or after intentional UI changes):
+`e2e/visual.spec.ts` compares screenshots against baselines in
+`visual.spec.ts-snapshots/`. **No baselines are committed yet** — until they
+exist, each test skips with a clear message (unless snapshots are being
+regenerated). Baselines are platform- and data-sensitive, so generate them
+deliberately on the machine that produces release evidence:
 
 ```bash
 pnpm --filter frontend exec playwright test e2e/visual.spec.ts --update-snapshots
 ```
 
-Commit the regenerated PNGs. Baselines are platform-sensitive — regenerate on
-the same machine class that produces release evidence.
+Commit the generated PNGs. Once baselines are in the repo, the suite compares
+screenshots on every run instead of skipping.
 
 ## Coverage and tooling policy
 
@@ -127,7 +130,7 @@ The tracked-file selection excludes `.auth`, `playwright-report`, `test-results`
 | `auth-and-org.spec.ts` | **Setup project**: dev-bypass login, reuse singleton org, save `e2e/.auth/user.json` + run context |
 | `master-data.spec.ts` | Office, pay component, employee (+ regime), schedule pay change, masked PAN |
 | `payroll-flow.spec.ts` | Period → run → input → Calculate → Validate → Submit → self-approve blocked |
-| `reports.spec.ts` | Empty posted-run state; generate-report journey `test.skip` (see below) |
+| `reports.spec.ts` | Empty posted-run state; multi-identity approve → post → export → auto-download journey |
 | `axe-a11y.spec.ts` | axe-core smoke on login, authenticated landing, employees list |
 
 Specs share one org per run via `storageState` and `e2e/.auth/run-context.json` (unique slug each process).
@@ -147,7 +150,7 @@ Consequences for this lane:
 
 1. **No second UI identity** without restarting the backend with a different `DEV_AUTH_EMAIL`.
 2. Org creator is `organization_administrator` (all capabilities). After **Submit**, the same user **Approve** is rejected with maker/checker (`urn:accord:workflow:maker_checker`) — covered in `payroll-flow.spec.ts`.
-3. **Posted runs** require a different approver, so the full report generate → poll → download path is `test.skip` in `reports.spec.ts`.
+3. **Posted runs** require a different approver — provided by the checker identity in the multi-identity lane above.
 
 ## Login redirect note
 
@@ -161,6 +164,6 @@ Consequences for this lane:
 ## Verification expectation
 
 Run the suite against a freshly prepared `accord_e2e` database for release
-evidence. The report generation/download test is intentionally skipped for
-the single-identity reason above; do not describe the browser lane as complete
-report-export proof. Backend report API/service tests provide that coverage.
+evidence. The report generate → poll → download journey in `reports.spec.ts`
+runs live via the checker identity and asserts the automatic `.xlsx`
+download.

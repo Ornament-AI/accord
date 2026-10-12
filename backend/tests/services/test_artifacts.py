@@ -213,6 +213,24 @@ async def test_reconcile_orphans_finalizes_and_deletes(session):
     assert present_row is not None and present_row.status == "finalized"
     assert missing_row is not None and missing_row.status == "deleted"
 
+    # Orphan recovery is a finalize path: exactly one artifact.available
+    # event for the row it finalized, in the same committed transaction.
+    events = (
+        (
+            await session.execute(
+                sa.select(OutboxEvent).where(
+                    OutboxEvent.organization_id == world["org_id"],
+                    OutboxEvent.event_type == "artifact.available",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(events) == 1
+    assert events[0].payload["artifact_id"] == str(present.id)
+    assert events[0].payload["object_key"] == key_ok
+
 
 @pytest.mark.asyncio
 async def test_expire_artifacts_past_retention(session):

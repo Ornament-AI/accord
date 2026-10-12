@@ -139,7 +139,7 @@ The release manager confirms each item before tagging.
 | 4 | **Every state-changing command** is authorized (capability/permission checks at the API layer), idempotent (idempotency keys), lock-protected where needed, and audited (append-only audit log tables) | gates H + C; [threat-model.md](threat-model.md) §5–6 |
 | 5 | **Posted results** are traceable to source data versions, approval who/when, and content hash | run posting/workflow suites plus immutable-grant/RLS tests |
 | 6 | **Every report type** has one DTO/source of truth for Excel+PDF, parity tested, reconciliation to source | gate J suites and canonical contract validator |
-| 7 | **UI visual regression** evidence exists when shell code changes | gate K; `frontend/e2e/visual.spec.ts` committed baselines |
+| 7 | **UI visual regression** evidence exists when shell code changes | gate K; `frontend/e2e/visual.spec.ts` baselines pending release-evidence generation — the suite skips each test whose baseline is missing until generated PNGs are committed |
 | 8 | **Session/CSRF baseline** matches [security.md](security.md) | session/auth + CSRF middleware tests cover cookie/session/synchronizer behavior |
 | 9 | **WorkOS webhook signature verification** enabled in all deployed environments | `backend/tests/api/test_webhooks_workos.py`; [threat-model.md](threat-model.md) §3 |
 | 10 | **Support break-glass** is time-boxed and audited; distinct from normal RLS | no elevation path exists today (fails closed); implementing it requires dedicated evidence |

@@ -11,17 +11,20 @@ the authoritative release boundaries.
     bundle — previously a fresh host could not create its organization.
   - `scripts/backup-restore.sh` now keeps ACLs in dumps, re-asserts the
     runtime grant posture post-restore (`deploy/post-restore-grants.sql`),
-    verifies forced RLS + immutability under `accord_app`, and can snapshot
-    the MinIO volume; new `deploy/backup.sh` for routine paired backups.
+    verifies forced RLS + immutability under `accord_app` and `accord_worker`,
+    and can snapshot the MinIO volume; new `deploy/backup.sh` for routine
+    paired backups (single-instance lock, same-timestamp collision guard).
   - `POST /payroll-runs/{id}/calculate` consumes an optional
     `Idempotency-Key`; the frontend sends one per user-initiated calculate.
   - PII `reveal=true` reads write an `employee.pii.reveal` access audit event.
   - Outbox events for `payroll_run.submitted|withdrawn|approved|rejected|reopened`
     and `artifact.available`; failed dispatches dead-letter after 50 attempts
     (`last_error` recorded) instead of retrying forever.
-  - `POST /payroll-periods/{id}/close` makes the `closed` period status
-    reachable; posting/reversing into a closed period now fails.
-  - Expired `idempotency_keys` are purged by the hourly maintenance job.
+  - `POST /payroll-periods/{id}/close` (`post_run` capability) makes the
+    `closed` period status reachable once every primary run is posted or
+    reversed; new runs cannot be created in a closed period.
+  - Expired non-`succeeded` `idempotency_keys` are purged by the hourly
+    maintenance job; `succeeded` rows are retained as durable replay records.
   - Run-results reads widen to the run-lifecycle capability set so approvers,
     releasers, and auditors can read what they act on.
   - Production boots now require `PUBLIC_APP_URL`/`CORS_ORIGINS` and a
@@ -37,7 +40,8 @@ the authoritative release boundaries.
   - Dev auth bypass derives a distinct subject per submitted email, enabling
     the multi-identity maker/checker e2e lane (`e2e.checker@accord.local`);
     the report generate→poll→download journey is un-skipped, and a
-    `visual.spec.ts` baseline suite + expanded axe coverage land gate K.
+    `visual.spec.ts` screenshot suite (baselines pending release-evidence
+    generation) + expanded axe coverage land gate K.
   - UI fix: "Recalculate" is no longer offered on rejected runs (the correct
     path is Reopen); new migration fix also repairs `alembic heads`/`history`
     outside migration runs.

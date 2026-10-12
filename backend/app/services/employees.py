@@ -390,7 +390,7 @@ async def get_employee_detail(
         organization_id=organization_id,
         on_date=as_of,
     )
-    return EmployeeDetail(
+    detail = EmployeeDetail(
         id=employee.id,
         employee_number=employee.employee_number,
         organization_id=employee.organization_id,
@@ -402,6 +402,11 @@ async def get_employee_detail(
         pay=pay_from_row(pay_row) if pay_row else None,
         bank=bank_from_row(bank_row, reveal=reveal) if bank_row else None,
     )
+    if reveal:
+        # Commit persists the pii.reveal audit row; it must come after every
+        # read because commit drops the SET LOCAL tenant GUCs.
+        await db.commit()
+    return detail
 
 
 async def get_employee_versions(
@@ -435,12 +440,18 @@ async def get_employee_versions(
         order="desc",
     )
     if parsed == "profile":
-        return [profile_from_row(row, reveal=reveal) for row in rows]
-    if parsed == "posting":
-        return [posting_from_row(row) for row in rows]
-    if parsed == "pay":
-        return [pay_from_row(row) for row in rows]
-    return [bank_from_row(row, reveal=reveal) for row in rows]
+        result: list[Any] = [profile_from_row(row, reveal=reveal) for row in rows]
+    elif parsed == "posting":
+        result = [posting_from_row(row) for row in rows]
+    elif parsed == "pay":
+        result = [pay_from_row(row) for row in rows]
+    else:
+        result = [bank_from_row(row, reveal=reveal) for row in rows]
+    if reveal:
+        # Commit persists the pii.reveal audit row; it must come after every
+        # read because commit drops the SET LOCAL tenant GUCs.
+        await db.commit()
+    return result
 
 
 async def create_employee_version(

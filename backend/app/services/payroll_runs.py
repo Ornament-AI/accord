@@ -406,6 +406,46 @@ async def _get_period(
     return period
 
 
+async def _get_period_for_update(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    period_id: UUID,
+) -> PayrollPeriod:
+    """Load a payroll period with a row lock for the close transition."""
+    period = (
+        await db.execute(
+            sa.select(PayrollPeriod)
+            .where(PayrollPeriod.id == period_id)
+            .where(PayrollPeriod.organization_id == organization_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if period is None:
+        raise NotFoundError("Payroll period not found.")
+    return period
+
+
+async def _get_period_for_share(
+    db: AsyncSession,
+    *,
+    organization_id: UUID,
+    period_id: UUID,
+) -> PayrollPeriod:
+    """Load a payroll period under ``FOR SHARE`` so close cannot race creation."""
+    period = (
+        await db.execute(
+            sa.select(PayrollPeriod)
+            .where(PayrollPeriod.id == period_id)
+            .where(PayrollPeriod.organization_id == organization_id)
+            .with_for_update(read=True)
+        )
+    ).scalar_one_or_none()
+    if period is None:
+        raise NotFoundError("Payroll period not found.")
+    return period
+
+
 async def _get_run(
     db: AsyncSession,
     *,
@@ -504,15 +544,32 @@ async def close_period(
     period_id: UUID,
     actor_user_id: UUID,
 ) -> dict[str, Any]:
-    """Close an open payroll period (blocks new runs; posting stays open-gated).
+    """Close an open payroll period once its primary runs are settled.
 
-    This is the only write path to the ``closed`` status declared by the
-    schema — without it the enum value was unreachable.
+    Locks the period row ``FOR UPDATE`` and requires every primary run
+    (``original_run_id IS NULL``) to be ``posted`` or ``reversed``; draft
+    reversal placeholders are ignored and an empty period may be closed.
+    Closing flips to ``closed`` — the only write path to that status — after
+    which ``create_run`` rejects new runs.
     """
-    period = await _get_period(db, organization_id=organization_id, period_id=period_id)
+    period = await _get_period_for_update(db, organization_id=organization_id, period_id=period_id)
     if period.status != "open":
         raise ConflictError(
             f"Payroll period cannot be closed from status {period.status!r}; status must be open."
+        )
+    unsettled = (
+        await db.execute(
+            sa.select(sa.func.count())
+            .select_from(PayrollRun)
+            .where(PayrollRun.organization_id == organization_id)
+            .where(PayrollRun.period_id == period_id)
+            .where(PayrollRun.original_run_id.is_(None))
+            .where(PayrollRun.status.notin_(("posted", "reversed")))
+        )
+    ).scalar_one()
+    if unsettled:
+        raise ConflictError(
+            f"Payroll period cannot be closed while {unsettled} run(s) are not posted or reversed."
         )
     before = audit_events.entity_snapshot(period)
     period.status = "closed"
@@ -557,7 +614,13 @@ async def create_run(
     actor_user_id: UUID,
     body: PayrollRunCreate,
 ) -> dict[str, Any]:
-    period = await _get_period(db, organization_id=organization_id, period_id=body.period_id)
+    period = await _get_period_for_share(
+        db, organization_id=organization_id, period_id=body.period_id
+    )
+    if period.status != "open":
+        raise ConflictError(
+            f"Payroll period status must be open to create a run; found {period.status!r}."
+        )
     run = PayrollRun(
         organization_id=organization_id,
         period_id=period.id,

@@ -30,6 +30,11 @@ LIVE_DEPLOY_DIR="${ACCORD_LIVE_DEPLOY_DIR:-/opt/accord/deploy}"
 umask 077
 install -d -m 0700 "$BACKUP_ROOT" 2>/dev/null || mkdir -p "$BACKUP_ROOT"
 
+# One routine backup at a time: overlapping runs (or a same-second retry)
+# must not interleave dumps or overwrite a completed artifact set.
+exec 9>"$BACKUP_ROOT/.accord-routine.lock"
+flock -n 9 || die "another routine backup is already running"
+
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 FINAL_DUMP="$BACKUP_ROOT/accord-routine-$TIMESTAMP.dump"
 FINAL_LIST="$FINAL_DUMP.list"
@@ -38,18 +43,28 @@ FINAL_OBJECTS="$FINAL_DUMP.minio.tar.gz"
 FINAL_OBJECTS_LIST="$FINAL_OBJECTS.list"
 FINAL_OBJECTS_CHECKSUM="$FINAL_OBJECTS.sha256"
 
+for existing in \
+    "$FINAL_DUMP" "$FINAL_LIST" "$FINAL_CHECKSUM" \
+    "$FINAL_OBJECTS" "$FINAL_OBJECTS_LIST" "$FINAL_OBJECTS_CHECKSUM"; do
+    [[ ! -e "$existing" ]] || die "backup target already exists: $existing"
+done
+
 TEMP_DUMP="$(mktemp "$BACKUP_ROOT/.accord-routine.XXXXXXXXXX.dump")"
 TEMP_LIST="$(mktemp "$BACKUP_ROOT/.accord-routine.XXXXXXXXXX.list")"
 TEMP_CHECKSUM="$(mktemp "$BACKUP_ROOT/.accord-routine.XXXXXXXXXX.sha256")"
 TEMP_OBJECTS="$(mktemp "$BACKUP_ROOT/.accord-routine-minio.XXXXXXXXXX.tar.gz")"
 TEMP_OBJECTS_LIST="$(mktemp "$BACKUP_ROOT/.accord-routine-minio.XXXXXXXXXX.list")"
 TEMP_OBJECTS_CHECKSUM="$(mktemp "$BACKUP_ROOT/.accord-routine-minio.XXXXXXXXXX.sha256")"
+PUBLISHING=""
 cleanup() {
     rm -f -- \
         "$TEMP_DUMP" "$TEMP_LIST" "$TEMP_CHECKSUM" \
-        "$TEMP_OBJECTS" "$TEMP_OBJECTS_LIST" "$TEMP_OBJECTS_CHECKSUM" \
-        "$FINAL_DUMP" "$FINAL_LIST" "$FINAL_CHECKSUM" \
-        "$FINAL_OBJECTS" "$FINAL_OBJECTS_LIST" "$FINAL_OBJECTS_CHECKSUM"
+        "$TEMP_OBJECTS" "$TEMP_OBJECTS_LIST" "$TEMP_OBJECTS_CHECKSUM"
+    if [[ "$PUBLISHING" == "1" ]]; then
+        rm -f -- \
+            "$FINAL_DUMP" "$FINAL_LIST" "$FINAL_CHECKSUM" \
+            "$FINAL_OBJECTS" "$FINAL_OBJECTS_LIST" "$FINAL_OBJECTS_CHECKSUM"
+    fi
 }
 trap cleanup EXIT
 
@@ -96,6 +111,9 @@ printf '%s  %s\n' "$OBJECTS_DIGEST" "$(basename "$FINAL_OBJECTS")" >"$TEMP_OBJEC
 
 chmod 0600 "$TEMP_DUMP" "$TEMP_LIST" "$TEMP_CHECKSUM" \
     "$TEMP_OBJECTS" "$TEMP_OBJECTS_LIST" "$TEMP_OBJECTS_CHECKSUM"
+# From here on a failure must also remove partially published FINAL_*
+# artifacts; before this point cleanup touches only TEMP_* files.
+PUBLISHING=1
 mv "$TEMP_DUMP" "$FINAL_DUMP"
 mv "$TEMP_LIST" "$FINAL_LIST"
 mv "$TEMP_CHECKSUM" "$FINAL_CHECKSUM"

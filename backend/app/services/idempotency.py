@@ -40,7 +40,7 @@ from app.exceptions import ConflictError
 from app.models.base import utcnow
 from app.services.audit_events import json_safe
 from app.models.identity import IdempotencyKey
-from app.tenancy import set_config_local
+from app.tenancy import bind_tenant_context, set_config_local
 
 _TENANT_GUCS = ("app.organization_id", "app.user_id", "app.request_id")
 
@@ -340,15 +340,25 @@ async def _execute_claimed(
     return snapshot
 
 
-async def purge_expired_keys(session: AsyncSession) -> int:
-    """Delete ``idempotency_keys`` rows whose TTL elapsed.
+async def purge_expired_keys(session: AsyncSession, *, organization_id: UUID) -> int:
+    """Delete this org's expired non-``succeeded`` ``idempotency_keys`` rows.
 
-    Terminal-claim semantics live in the stored response snapshot; once a key
-    is past ``expires_at`` its replay value is gone, so the row can go.
-    Org-scoped like every tenant table under RLS.
+    ``succeeded`` rows are durable replay records of completed commands —
+    TTL expiry bounds replay retention, never re-execution — so they are
+    kept; only expired ``in_progress``/``failed`` rows are removed.
+
+    The maintenance worker calls this after earlier steps may have committed,
+    so transaction-local tenant GUCs are re-bound here before the delete.
     """
+    if not session.in_transaction():
+        await session.begin()
+    await bind_tenant_context(session, organization_id=organization_id)
     result = await session.execute(
-        delete(IdempotencyKey).where(IdempotencyKey.expires_at < func.now())
+        delete(IdempotencyKey).where(
+            IdempotencyKey.organization_id == organization_id,
+            IdempotencyKey.expires_at < func.now(),
+            IdempotencyKey.status != "succeeded",
+        )
     )
     await session.commit()
     return int(result.rowcount or 0)

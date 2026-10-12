@@ -161,6 +161,12 @@ read-back verification, sha256 manifests, and bounded retention
 Overrides: `ACCORD_ROUTINE_BACKUP_DIR` (default `/opt/accord/backups/routine`),
 `ACCORD_LIVE_DEPLOY_DIR` (default `/opt/accord/deploy`).
 
+The script refuses to run concurrently (flock on
+`<backup dir>/.accord-routine.lock`) and aborts if a backup set with the same
+timestamp already exists. A failure before publication removes only its temp
+files; a failure during `mv` removes that run's partially published set — a
+completed backup is never deleted by a later run.
+
 ### Logical backup + scratch restore (Compose)
 
 Helper: [`scripts/backup-restore.sh`](../scripts/backup-restore.sh). Its
@@ -172,7 +178,8 @@ database dump.
 The dump is taken **with ACLs** and `restore-scratch` additionally re-asserts
 the runtime grant posture from `deploy/post-restore-grants.sql`
 (`--grants-sql` to override) and then **proves forced RLS + immutability
-grants under `accord_app`** — every org-column table must return zero rows
+grants under `accord_app` and `accord_worker`** — every org-column table
+must return zero rows
 under a foreign organization context, and UPDATE/DELETE on the immutable
 tables plus all privileges on `alembic_version` must be denied. This is the
 release-acceptance RLS-under-runtime-role proof (gate K, item 11).

@@ -67,7 +67,7 @@ async def close_payroll_period(
     period_id: UUID,
     tenant: TenantCtx,
     db: Session,
-    _: AuthPrincipal = Depends(require_capability("create_run")),
+    _: AuthPrincipal = Depends(require_capability("post_run")),
 ) -> dict[str, Any]:
     return await payroll_runs_service.close_period(
         db,

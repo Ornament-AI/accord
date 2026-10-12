@@ -96,14 +96,16 @@ test.describe("reports", () => {
 		await runSelect.click();
 		await page.getByRole("option").first().click();
 
+		// The completed export auto-downloads via ReportsLayout's download
+		// mutation — register the listener before clicking Export so the
+		// asserted handoff is the automatic download, not a manual click.
+		const downloadPromise = page.waitForEvent("download", { timeout: 180_000 });
 		await page.getByRole("button", { name: /Export/ }).click();
-		const artifactRow = page.getByTestId("artifacts-section").locator("table tbody tr").first();
-		await expect(artifactRow).toBeVisible({ timeout: 120_000 });
-
-		const downloadPromise = page.waitForEvent("download", { timeout: 60_000 });
-		await artifactRow.getByRole("button", { name: /Download artifact/ }).click();
 		const download = await downloadPromise;
 		expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+
+		const artifactRow = page.getByTestId("artifacts-section").locator("table tbody tr").first();
+		await expect(artifactRow).toBeVisible({ timeout: 120_000 });
 	});
 
 	test("reports page shows empty posted-run state without a posted run", async ({ page }) => {

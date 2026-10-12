@@ -442,3 +442,64 @@ async def test_calculate_idempotency_key_conflict_on_different_run(client, sessi
         headers={"Idempotency-Key": "calc-key-shared"},
     )
     assert conflict.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_calculate_idempotency_key_replay_by_other_actor_conflicts(
+    client, session, dev_settings
+):
+    """The actor is part of command identity: a second user reusing a key gets
+    the 409 payload-mismatch, never a silent replay of the first user's result
+    (which would leave them no audit row)."""
+    org_id, user_id = await _create_org_as_admin(client, session)
+
+    period = await client.post(
+        "/api/payroll-periods",
+        json={"period_year": 2026, "period_month": 6},
+    )
+    assert period.status_code == 201, period.text
+    run = await client.post(
+        "/api/payroll-runs",
+        json={"period_id": period.json()["id"]},
+    )
+    assert run.status_code == 201, run.text
+    run_id = run.json()["id"]
+
+    employee_id = await _seed_calculate_world(session, org_id=org_id, user_id=user_id)
+    await _restore_admin_cookie(client, session, dev_settings, org_id=org_id, user_id=user_id)
+
+    roster = await client.put(
+        f"/api/payroll-runs/{run_id}/roster",
+        json={"employees": [{"employee_id": str(employee_id), "payable_days": "30.00"}]},
+    )
+    assert roster.status_code == 200, roster.text
+
+    first = await client.post(
+        f"/api/payroll-runs/{run_id}/calculate",
+        headers={"Idempotency-Key": "calc-key-actor"},
+    )
+    assert first.status_code == 200, first.text
+
+    if session.in_transaction():
+        await session.rollback()
+    other = await seed_user(session, email="other-actor@example.com", name="Other Actor")
+    await seed_membership(
+        session,
+        organization_id=org_id,
+        user_id=other.id,
+        role="payroll_preparer",
+    )
+    await session.commit()
+    cookie = await mint_session_cookie(
+        session,
+        dev_settings,
+        user_id=other.id,
+        active_organization_id=org_id,
+    )
+    apply_session_cookie(client, cookie)
+
+    conflict = await client.post(
+        f"/api/payroll-runs/{run_id}/calculate",
+        headers={"Idempotency-Key": "calc-key-actor"},
+    )
+    assert conflict.status_code == 409

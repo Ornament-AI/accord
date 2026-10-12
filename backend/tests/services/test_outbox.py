@@ -322,6 +322,8 @@ async def test_dispatch_pending_mixed_success_failure(session):
     assert bad_row.processed_at is None
     assert bad_row.attempts == 1
     assert bad_row.locked_by is None
+    # last_error records the exception type only — no traceback or message.
+    assert bad_row.last_error == "RuntimeError"
 
 
 @pytest.mark.asyncio

@@ -50,6 +50,10 @@ async def calculate_payroll_run(
         db,
         organization_id=org_id,
         key=idempotency_key,
-        request_payload={"command": "calculate", "run_id": str(run_id)},
+        request_payload={
+            "command": "calculate",
+            "run_id": str(run_id),
+            "actor_user_id": str(user_id),
+        },
         executor=_execute,
     )

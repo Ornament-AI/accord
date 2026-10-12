@@ -229,7 +229,7 @@ async def handle_artifact_maintenance(job: Job) -> dict[str, Any] | None:
     session = current_job_session()
     storage, _registry, _engine_version = _require_generate_report_deps()
     counts = await reconcile_orphans(session, storage, organization_id=job.organization_id)
-    purged_keys = await purge_expired_keys(session)
+    purged_keys = await purge_expired_keys(session, organization_id=job.organization_id)
     expired = await expire_artifacts(
         session, organization_id=job.organization_id, now=datetime.now(UTC)
     )

@@ -31,7 +31,7 @@ and any required runtime/restore evidence.
 | **H — Workflow integrity** | **met** | Workflow/posting/idempotency service and API suites cover maker/checker, submit/approve/post/reverse/reopen, audit/outbox, and SQL immutability. `calculate` accepts `Idempotency-Key` like the other commands. | ADR 0008 records a stronger DB-trigger/GUC enforcement target than the service-layer guards implemented; treat as a documented design decision or ADR amendment, not a code gap. |
 | **I — Export durability** | **met** | Storage protocol/S3 adapter tests and artifact service/API tests cover keys, checksums, state transitions, authorization, and audited streaming. The hourly `artifacts.maintenance` job reconciles orphans and expires retained artifacts. | Attach an environment-level object persistence/restart rehearsal as release evidence. |
 | **J — Reports** | **met** | Report family/formatter suites, report service/API tests, canonical contract tests, and the independent validator under `scripts/validate_canonical_export.py`. | Re-run the canonical validator and relevant render checks for changes to report mappings/layout. |
-| **K — Deploy / restore / E2E** | **met** | Immutable tag workflow, production deploy contract test (asserts the real tarball), `scripts/deploy.sh`, `scripts/smoke-test.sh`, `scripts/backup-restore.sh` with runtime-role RLS proof, `deploy/backup.sh` routine backups, and Playwright critical/a11y/visual specs incl. the multi-identity report-download journey. | — |
+| **K — Deploy / restore / E2E** | **met** | Immutable tag workflow, production deploy contract test (asserts the real tarball), `scripts/deploy.sh`, `scripts/smoke-test.sh`, `scripts/backup-restore.sh` with runtime-role RLS proof, `deploy/backup.sh` routine backups, and Playwright critical/a11y/visual specs incl. the multi-identity report-download journey. | Visual baselines are pending release-evidence generation; until committed, `visual.spec.ts` skips each test whose baseline is missing. |
 
 There is no gate G.
 
@@ -49,9 +49,10 @@ implemented and verified:
   CycloneDX SBOM (`.github/workflows/ci.yml`, `supply-chain` job).
 - **Backup/restore RLS proof** — `scripts/backup-restore.sh restore-scratch`
   re-asserts the grant posture (`deploy/post-restore-grants.sql`) and verifies
-  forced RLS + immutability denies under `accord_app`.
-- **Visual parity** — `frontend/e2e/visual.spec.ts` holds committed
-  screenshot baselines for the key surfaces.
+  forced RLS + immutability denies under `accord_app` and `accord_worker`.
+- **Visual parity** — `frontend/e2e/visual.spec.ts` covers the key surfaces
+  and skips each test whose baseline is missing until baselines are generated
+  on the release-evidence machine and committed (none are in the repo yet).
 - **Calculate idempotency** — `POST /payroll-runs/{id}/calculate` consumes an
   optional `Idempotency-Key` through the shared claim table, matching the
   other state-changing commands.
