@@ -322,7 +322,18 @@ async def list_payroll_run_inputs(
     run_id: UUID,
     tenant: TenantCtx,
     db: Session,
-    _: AuthPrincipal = Depends(require_capability("view_master_data")),
+    # Match run detail/roster: approvers and releasers must review exceptions
+    # and overrides on the runs they approve or post (maker-checker).
+    _: AuthPrincipal = Depends(
+        require_any_capability(
+            "view_master_data",
+            "create_run",
+            "submit_run",
+            "approve_run",
+            "post_run",
+            "generate_reports",
+        )
+    ),
 ) -> list[dict[str, Any]]:
     return await payroll_runs_service.list_run_inputs(
         db,

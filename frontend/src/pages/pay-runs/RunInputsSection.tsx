@@ -135,7 +135,11 @@ export function RunInputsSection({ runId, editable, onEdit }: RunInputsSectionPr
 	};
 
 	const inputs = inputsQuery.data ?? [];
-	if (!editable && inputs.length === 0 && !inputsQuery.isLoading) return null;
+	// Collapse only an empty read-only section — a failed read must surface its
+	// retry affordance to every role, not vanish silently.
+	if (!editable && !inputsQuery.isLoading && !inputsQuery.isError && inputs.length === 0) {
+		return null;
+	}
 
 	return (
 		<PageSection className="gap-3" data-testid="run-inputs-section">

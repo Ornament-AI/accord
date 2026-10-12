@@ -220,10 +220,14 @@ export function UpsertInputDialog({
 									<SelectValue placeholder="Select employee">
 										{(value: string | null) => {
 											const employee = employees.find((item) => item.id === value);
+											const detail = editingEmployeeQuery.data;
 											const display =
 												employee ??
-												(editing && editingEmployeeQuery.data?.id === value
-													? editingEmployeeQuery.data
+												(editing && detail?.id === value
+													? {
+															name: detail.profile?.name,
+															employee_number: detail.employee_number,
+														}
 													: null);
 											return display
 												? employeeEntityLabel(display, "Select employee")

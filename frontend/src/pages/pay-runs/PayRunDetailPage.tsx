@@ -380,10 +380,10 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 									<h2 className="text-base font-semibold">Report export needs attention</h2>
 									<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
 										{groupReadinessIssues(readinessQuery.data.issues).map(
-											({ issue, sheetCount }) => {
+											({ issue, sheetCount, key }) => {
 												const action = reportReadinessAction(issue, run.id);
 												return (
-													<li key={`${issue.code}-${issue.entity_id ?? ""}`}>
+													<li key={key}>
 														{issue.message}{" "}
 														{sheetCount > 1 ? `(${sheetCount} sheets affected) ` : null}
 														<Link className="underline underline-offset-4" to={action.to}>

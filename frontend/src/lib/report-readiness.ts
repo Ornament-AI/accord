@@ -105,7 +105,10 @@ export function reportReadinessAction(
 
 export type GroupedReadinessIssue = {
 	issue: ReportReadinessIssue;
+	/** Number of distinct report sheets carrying this issue. */
 	sheetCount: number;
+	/** Identity of the group — safe to use as a React key. */
+	key: string;
 };
 
 /**
@@ -119,15 +122,21 @@ export type GroupedReadinessIssue = {
 export function groupReadinessIssues(
 	issues: readonly ReportReadinessIssue[],
 ): GroupedReadinessIssue[] {
-	const groups = new Map<string, GroupedReadinessIssue>();
+	const groups = new Map<string, { issue: ReportReadinessIssue; reportTypes: Set<string> }>();
 	for (const issue of issues) {
 		const key = `${issue.code}|${issue.entity_id ?? ""}|${issue.message}`;
 		const existing = groups.get(key);
 		if (existing) {
-			existing.sheetCount += 1;
+			// The same defect can be re-emitted per result line for one sheet
+			// (e.g. NPS employee + employer lines) — count sheets, not rows.
+			existing.reportTypes.add(issue.report_type);
 		} else {
-			groups.set(key, { issue, sheetCount: 1 });
+			groups.set(key, { issue, reportTypes: new Set([issue.report_type]) });
 		}
 	}
-	return [...groups.values()];
+	return [...groups.entries()].map(([key, { issue, reportTypes }]) => ({
+		issue,
+		sheetCount: reportTypes.size,
+		key,
+	}));
 }

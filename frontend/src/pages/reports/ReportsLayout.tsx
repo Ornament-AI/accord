@@ -291,10 +291,10 @@ export default function ReportsLayout() {
 										<p className="font-medium">Complete report fields before export</p>
 										<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
 											{groupReadinessIssues(readinessQuery.data.issues).map(
-												({ issue, sheetCount }) => {
+												({ issue, sheetCount, key }) => {
 													const action = reportReadinessAction(issue, selectedRunId);
 													return (
-														<li key={`${issue.code}-${issue.entity_id ?? ""}`}>
+														<li key={key}>
 															{issue.message}{" "}
 															{sheetCount > 1 ? `(${sheetCount} sheets affected) ` : null}
 															<Link

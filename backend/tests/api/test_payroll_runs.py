@@ -653,6 +653,13 @@ async def test_approver_and_releaser_can_read_but_not_write_runs(
     get_run = await client.get(f"/api/payroll-runs/{run['id']}")
     assert get_run.status_code == 200
 
+    roster = await client.get(f"/api/payroll-runs/{run['id']}/roster")
+    assert roster.status_code == 200
+
+    inputs = await client.get(f"/api/payroll-runs/{run['id']}/inputs")
+    assert inputs.status_code == 200
+    assert inputs.json() == []
+
     post_run = await client.post(
         "/api/payroll-runs",
         json={"period_id": period["id"]},

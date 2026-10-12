@@ -5,12 +5,13 @@ Scales the synthetic June 2026 golden fixture (fixtures/sanitized/june-2026/)
 to a municipal-council-sized organization: each of the 32 sanitized employee
 templates is cloned into many synthetic employees (no real PII — PANs, bank
 accounts, IFSCs and identifiers are generated from reserved synthetic
-prefixes). Six payroll periods are then driven through every workflow state by
+prefixes). Eight payroll periods are then driven through every workflow state by
 the real role users, so maker-checker and capability gates are exercised:
 
-  2026-04  posted, period closed       2026-07  submitted (awaiting approval)
-  2026-05  posted                      2026-08  rejected
-  2026-06  approved (awaiting post)    2026-09  calculated, with run inputs
+  2026-04  posted, period closed        2026-08  rejected
+  2026-05  posted                       2026-09  calculated, with run inputs
+  2026-06  approved (awaiting post)     2026-10  draft, roster + inputs only
+  2026-07  submitted (awaiting approval) 2026-11 posted then reversed
 
 Requires a dev-auth backend (DEV_AUTH_BYPASS=true): role users sign in with
 their email through the password login endpoint, exactly like the UI. Provision
@@ -105,6 +106,7 @@ REPORT_PROFILE = {
     "address_lines": ["Municipal Bhavan, Station Road", "Shaharpur 442001, Maharashtra"],
     "phone": "07162-234567",
     "website": "https://shaharpurmc.example.gov.in",
+    "cin": "U75110MH2001SGC100001",
     "ddo_name": "Chief Officer, Shaharpur Municipal Council",
     "ddo_code": "SMC-DDO-1101",
     "department_code": "UD-32",
@@ -176,6 +178,8 @@ PERIOD_PLAN: tuple[tuple[int, int, str], ...] = (
     (2026, 7, "submitted"),
     (2026, 8, "rejected"),
     (2026, 9, "calculated"),
+    (2026, 10, "draft"),
+    (2026, 11, "reversed"),
 )
 
 
@@ -346,7 +350,7 @@ def _prepare_runs(
             client.put(f"/api/payroll-runs/{run_id}/roster", json={"employees": roster}),
             context=f"roster {key}",
         )
-        if key == "2026-09":
+        if key in {"2026-09", "2026-10"}:
             # ``one_time`` and ``exception`` must target a component absent from
             # the employee's instructions (they add a line; a second source for
             # one code duplicates); ``override`` must target a component already
@@ -383,6 +387,10 @@ def _prepare_runs(
                     ),
                     context=f"input {key} {employee_id}",
                 )
+        if run["target"] == "draft":
+            # Draft keeps its roster and run inputs but is never calculated —
+            # the only state where roster edits and input writes stay open.
+            continue
         started = time.monotonic()
         calc = _require(
             client.post(
@@ -417,7 +425,7 @@ def _prepare_runs(
 
 def _approve_runs(client: httpx.Client, runs: dict[str, dict[str, str]]) -> None:
     for key, run in runs.items():
-        if run["target"] in {"posted_closed", "posted", "approved"}:
+        if run["target"] in {"posted_closed", "posted", "approved", "reversed"}:
             _require(
                 client.post(
                     f"/api/payroll-runs/{run['run_id']}/approve", json={"reason": f"{key} approved"}
@@ -436,7 +444,7 @@ def _approve_runs(client: httpx.Client, runs: dict[str, dict[str, str]]) -> None
 
 def _post_runs(client: httpx.Client, runs: dict[str, dict[str, str]]) -> None:
     for key, run in runs.items():
-        if run["target"] not in {"posted_closed", "posted"}:
+        if run["target"] not in {"posted_closed", "posted", "reversed"}:
             continue
         _require(
             client.post(
@@ -449,6 +457,17 @@ def _post_runs(client: httpx.Client, runs: dict[str, dict[str, str]]) -> None:
             _require(
                 client.post(f"/api/payroll-periods/{run['period_id']}/close"),
                 context=f"close {key}",
+            )
+        if run["target"] == "reversed":
+            # Post-then-reverse exercises the reversed state (and leaves the
+            # linked draft counter-record the reversal creates).
+            _require(
+                client.post(
+                    f"/api/payroll-runs/{run['run_id']}/reverse",
+                    json={"reason": f"{key} reversed: supplementary bill issued"},
+                    headers={"Idempotency-Key": f"seed-reverse-{uuid.uuid4()}"},
+                ),
+                context=f"reverse {key}",
             )
         print(f"  {key} {run['target']}")
 

@@ -73,21 +73,43 @@ describe("reportReadinessAction", () => {
 
 describe("groupReadinessIssues", () => {
 	it("collapses identical issues retagged per sheet into one row with a count", () => {
-		const makeIssue = (message: string): ReportReadinessIssue => ({
-			report_type: "pay_bill",
+		const makeIssue = (report_type: string, message: string): ReportReadinessIssue => ({
+			report_type,
 			code: "approving_officer_signatory_missing",
 			message,
 			owner: "organization_export_settings",
 			href: "/pay-components?reportDefaults=1",
 		});
 		const issues = [
-			makeIssue("Approving officer signatory name and designation are required."),
-			makeIssue("Approving officer signatory name and designation are required."),
-			makeIssue("Approving officer signatory name and designation are required."),
-			makeIssue("Final approver signatory name and designation are required."),
-			makeIssue("Final approver signatory name and designation are required."),
+			makeIssue("treasury_face", "Approving officer signatory name and designation are required."),
+			makeIssue(
+				"bank_rtgs_advice",
+				"Approving officer signatory name and designation are required.",
+			),
+			makeIssue("approval_note", "Approving officer signatory name and designation are required."),
+			makeIssue("treasury_face", "Final approver signatory name and designation are required."),
+			makeIssue("payslips", "Final approver signatory name and designation are required."),
 		];
 		expect(groupReadinessIssues(issues).map(({ sheetCount }) => sheetCount)).toEqual([3, 2]);
+	});
+
+	it("counts distinct report sheets, not duplicate lines on one sheet", () => {
+		const makeIssue = (report_type: string): ReportReadinessIssue => ({
+			report_type,
+			code: "employee_nps_identifier_missing",
+			message: "Employee S0001 is missing pension account.",
+			owner: "employee",
+			entity_id: "emp-1",
+			href: "/employees/emp-1",
+		});
+		// The readiness API re-emits the same defect for each NPS result line —
+		// both land on the same sheet, so the count must stay 1.
+		const grouped = groupReadinessIssues([
+			makeIssue("nps_contribution_schedule"),
+			makeIssue("nps_contribution_schedule"),
+		]);
+		expect(grouped).toHaveLength(1);
+		expect(grouped[0].sheetCount).toBe(1);
 	});
 
 	it("keeps per-entity issues separate so each fix stays actionable", () => {
@@ -102,5 +124,22 @@ describe("groupReadinessIssues", () => {
 		const grouped = groupReadinessIssues([makeIssue("emp-1"), makeIssue("emp-2")]);
 		expect(grouped).toHaveLength(2);
 		expect(grouped.every(({ sheetCount }) => sheetCount === 1)).toBe(true);
+	});
+
+	it("gives each group a stable key that separates same-code different-message rows", () => {
+		const makeIssue = (message: string): ReportReadinessIssue => ({
+			report_type: "pay_bill",
+			code: "pay_bill_page_capacity",
+			message,
+			owner: "post_catalog",
+			href: "/organization/posts",
+			entity_id: "run-1",
+		});
+		const grouped = groupReadinessIssues([
+			makeIssue("Pay Bill pages after serial 8 overflow."),
+			makeIssue("Pay Bill pages after serial 18 overflow."),
+		]);
+		expect(grouped).toHaveLength(2);
+		expect(new Set(grouped.map(({ key }) => key)).size).toBe(2);
 	});
 });

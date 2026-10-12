@@ -470,6 +470,62 @@ describe("Run inputs list", () => {
 		},
 		PAGE_TIMEOUT,
 	);
+
+	it(
+		"lists inputs read-only for approver roles without edit affordances",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("payroll_approver"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				inputs: { "run-1": [seededInput()] },
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const section = await screen.findByTestId(
+				"run-inputs-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			await within(section).findByText(/E-001/);
+			expect(within(section).getByText("DA arrears")).toBeInTheDocument();
+			expect(within(section).queryByRole("button", { name: /Edit input/ })).not.toBeInTheDocument();
+			expect(
+				within(section).queryByRole("button", { name: /Delete input/ }),
+			).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"surfaces the inputs load error to read-only viewers instead of hiding",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("payroll_approver"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers();
+			server.use(
+				// Earlier handlers win — the 403 override must precede payHandlers.
+				http.get("/api/payroll-runs/:runId/inputs", () =>
+					HttpResponse.json({ detail: "Forbidden" }, { status: 403 }),
+				),
+				...authHandlers,
+				...payHandlers,
+			);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const section = await screen.findByTestId(
+				"run-inputs-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			expect(
+				await within(section).findByText("Forbidden", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
 });
 
 describe("Pay run detail — calculate gating", () => {
