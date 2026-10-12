@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { reportReadinessAction } from "./report-readiness";
+import type { ReportReadinessIssue } from "./report-readiness";
+import { groupReadinessIssues, reportReadinessAction } from "./report-readiness";
 
 describe("reportReadinessAction", () => {
 	it.each([
@@ -67,5 +68,38 @@ describe("reportReadinessAction", () => {
 				"run-1",
 			),
 		).toEqual({ label: "Open post catalog", to: "/organization/posts" });
+	});
+});
+
+describe("groupReadinessIssues", () => {
+	it("collapses identical issues retagged per sheet into one row with a count", () => {
+		const makeIssue = (message: string): ReportReadinessIssue => ({
+			report_type: "pay_bill",
+			code: "approving_officer_signatory_missing",
+			message,
+			owner: "organization_export_settings",
+			href: "/pay-components?reportDefaults=1",
+		});
+		const issues = [
+			makeIssue("Approving officer signatory name and designation are required."),
+			makeIssue("Approving officer signatory name and designation are required."),
+			makeIssue("Approving officer signatory name and designation are required."),
+			makeIssue("Final approver signatory name and designation are required."),
+			makeIssue("Final approver signatory name and designation are required."),
+		];
+		expect(groupReadinessIssues(issues).map(({ sheetCount }) => sheetCount)).toEqual([3, 2]);
+	});
+
+	it("keeps per-entity issues separate so each fix stays actionable", () => {
+		const makeIssue = (entity_id: string): ReportReadinessIssue => ({
+			report_type: "pay_bill",
+			code: "employee_bank_account_missing",
+			message: "Employee bank account is missing",
+			owner: "employee",
+			entity_id,
+		});
+		const grouped = groupReadinessIssues([makeIssue("emp-1"), makeIssue("emp-2")]);
+		expect(grouped).toHaveLength(2);
+		expect(grouped.every(({ sheetCount }) => sheetCount === 1)).toBe(true);
 	});
 });
