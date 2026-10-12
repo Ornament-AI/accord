@@ -22,6 +22,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from app.reports.amount_in_words import amount_in_words
 from app.reports.base import ReportDTO, TableSection
 from app.reports.excel import MONEY_FORMAT, sanitize_excel_text
+from app.reports._xlsx_fast_merge import merge_cells_fast
 from app.reports.canonical_schedules import clone_canonical_sheet_structure
 
 _THIN = Side(style="thin", color="000000")
@@ -468,24 +469,30 @@ _PAYSLIP_WIDTHS = (
 
 
 def _merge_payslip_block(sheet: Worksheet, start: int) -> None:
-    sheet.merge_cells(start_row=start, start_column=1, end_row=start + 16, end_column=1)
+    merge_cells_fast(sheet, start_row=start, start_column=1, end_row=start + 16, end_column=1)
     for min_col, max_col in ((2, 4), (5, 7), (8, 10), (11, 12), (14, 15), (16, 19), (20, 24)):
-        sheet.merge_cells(start_row=start, start_column=min_col, end_row=start, end_column=max_col)
+        merge_cells_fast(
+            sheet, start_row=start, start_column=min_col, end_row=start, end_column=max_col
+        )
     for min_col, max_col in ((2, 12), (13, 14), (15, 18), (19, 24)):
-        sheet.merge_cells(
-            start_row=start + 1, start_column=min_col, end_row=start + 1, end_column=max_col
+        merge_cells_fast(
+            sheet, start_row=start + 1, start_column=min_col, end_row=start + 1, end_column=max_col
         )
     for min_col, max_col in ((2, 7), (8, 16), (17, 24)):
-        sheet.merge_cells(
-            start_row=start + 2, start_column=min_col, end_row=start + 2, end_column=max_col
+        merge_cells_fast(
+            sheet, start_row=start + 2, start_column=min_col, end_row=start + 2, end_column=max_col
         )
     for row in range(start + 3, start + 14):
         for min_col, max_col in ((2, 5), (6, 7), (8, 11), (12, 13), (14, 16), (17, 21), (22, 24)):
-            sheet.merge_cells(start_row=row, start_column=min_col, end_row=row, end_column=max_col)
-    sheet.merge_cells(start_row=start + 14, start_column=2, end_row=start + 15, end_column=5)
-    sheet.merge_cells(start_row=start + 14, start_column=6, end_row=start + 15, end_column=7)
-    sheet.merge_cells(start_row=start + 14, start_column=8, end_row=start + 15, end_column=15)
-    sheet.merge_cells(start_row=start + 14, start_column=16, end_row=start + 15, end_column=23)
+            merge_cells_fast(
+                sheet, start_row=row, start_column=min_col, end_row=row, end_column=max_col
+            )
+    merge_cells_fast(sheet, start_row=start + 14, start_column=2, end_row=start + 15, end_column=5)
+    merge_cells_fast(sheet, start_row=start + 14, start_column=6, end_row=start + 15, end_column=7)
+    merge_cells_fast(sheet, start_row=start + 14, start_column=8, end_row=start + 15, end_column=15)
+    merge_cells_fast(
+        sheet, start_row=start + 14, start_column=16, end_row=start + 15, end_column=23
+    )
 
 
 def payslip_to_excel(dto: ReportDTO) -> bytes:
