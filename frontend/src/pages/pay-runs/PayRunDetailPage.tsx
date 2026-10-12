@@ -44,7 +44,7 @@ import {
 import { PAY_RUN_READ_CAPABILITIES, PAY_RUN_REPORT_READ_CAPABILITIES } from "@/lib/capabilities";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
-import { reportReadinessAction } from "@/lib/report-readiness";
+import { groupReadinessIssues, reportReadinessAction } from "@/lib/report-readiness";
 import { formatDateTime } from "@/lib/utils";
 
 import { PayrollRunRosterTable, type PayrollRunRosterTableHandle } from "./PayrollRunRosterTable";
@@ -364,17 +364,20 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 								<PageSection className="grid gap-2 border-destructive/40 bg-destructive/5">
 									<h2 className="text-base font-semibold">Report export needs attention</h2>
 									<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-										{readinessQuery.data.issues.map((issue) => {
-											const action = reportReadinessAction(issue, run.id);
-											return (
-												<li key={`${issue.report_type}-${issue.code}`}>
-													{issue.message}{" "}
-													<Link className="underline underline-offset-4" to={action.to}>
-														{action.label}
-													</Link>
-												</li>
-											);
-										})}
+										{groupReadinessIssues(readinessQuery.data.issues).map(
+											({ issue, sheetCount }) => {
+												const action = reportReadinessAction(issue, run.id);
+												return (
+													<li key={`${issue.code}-${issue.entity_id ?? ""}`}>
+														{issue.message}{" "}
+														{sheetCount > 1 ? `(${sheetCount} sheets affected) ` : null}
+														<Link className="underline underline-offset-4" to={action.to}>
+															{action.label}
+														</Link>
+													</li>
+												);
+											},
+										)}
 									</ul>
 									<p className="text-sm">Resolve each item, then recalculate the run.</p>
 								</PageSection>

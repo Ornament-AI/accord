@@ -102,3 +102,32 @@ export function reportReadinessAction(
 	}
 	return { label: "Open run report details", to: href ?? `/pay-runs/${runId}` };
 }
+
+export type GroupedReadinessIssue = {
+	issue: ReportReadinessIssue;
+	sheetCount: number;
+};
+
+/**
+ * Collapse issues that share a code into a single display row.
+ *
+ * The readiness API retags one missing field (e.g. a signatory) to every
+ * report sheet that renders it, so the raw list repeats the same message once
+ * per affected sheet. Issues that differ by employee or entity keep separate
+ * rows because they need separate fixes.
+ */
+export function groupReadinessIssues(
+	issues: readonly ReportReadinessIssue[],
+): GroupedReadinessIssue[] {
+	const groups = new Map<string, GroupedReadinessIssue>();
+	for (const issue of issues) {
+		const key = `${issue.code}|${issue.entity_id ?? ""}|${issue.message}`;
+		const existing = groups.get(key);
+		if (existing) {
+			existing.sheetCount += 1;
+		} else {
+			groups.set(key, { issue, sheetCount: 1 });
+		}
+	}
+	return [...groups.values()];
+}

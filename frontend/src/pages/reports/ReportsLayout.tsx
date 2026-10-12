@@ -41,7 +41,7 @@ import {
 import { PAY_RUN_REPORT_READ_CAPABILITIES } from "@/lib/capabilities";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
-import { reportReadinessAction } from "@/lib/report-readiness";
+import { groupReadinessIssues, reportReadinessAction } from "@/lib/report-readiness";
 
 import { ArtifactsSection } from "./ArtifactsSection";
 
@@ -290,22 +290,23 @@ export default function ReportsLayout() {
 									>
 										<p className="font-medium">Complete report fields before export</p>
 										<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-											{readinessQuery.data.issues.map((issue) => {
-												const action = reportReadinessAction(issue, selectedRunId);
-												return (
-													<li
-														key={`${issue.report_type}-${issue.code}-${issue.entity_id ?? issue.href}-${issue.message}`}
-													>
-														{issue.message}{" "}
-														<Link
-															className="font-medium underline underline-offset-4"
-															to={action.to}
-														>
-															{action.label}
-														</Link>
-													</li>
-												);
-											})}
+											{groupReadinessIssues(readinessQuery.data.issues).map(
+												({ issue, sheetCount }) => {
+													const action = reportReadinessAction(issue, selectedRunId);
+													return (
+														<li key={`${issue.code}-${issue.entity_id ?? ""}`}>
+															{issue.message}{" "}
+															{sheetCount > 1 ? `(${sheetCount} sheets affected) ` : null}
+															<Link
+																className="font-medium underline underline-offset-4"
+																to={action.to}
+															>
+																{action.label}
+															</Link>
+														</li>
+													);
+												},
+											)}
 										</ul>
 									</div>
 								) : null}

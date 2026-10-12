@@ -91,6 +91,83 @@ DESIGNATIONS = (
     ("Synthetic Sanitation Inspector", "III"),
     ("Synthetic Peon", "IV"),
 )
+# Pay Bill grouping export fields, applied to DESIGNATIONS in order.
+POST_EXPORT_FIELDS = (
+    ("Group A - Officers", 100, 8, "15600-39100 GP 6600"),
+    ("Group B - Senior Clerks", 150, 12, "9300-34800 GP 4400"),
+    ("Group C - Clerks", 220, 18, "5200-20200 GP 2800"),
+    ("Group D - Support Staff", 90, 7, "4440-7440 GP 1650"),
+    ("Group E - Field Staff", 40, 4, "4440-7440 GP 1300"),
+)
+REPORT_PROFILE = {
+    "legal_name": "Shaharpur Municipal Council",
+    "office_name": "Office of the Chief Officer, Shaharpur Municipal Council",
+    "address_lines": ["Municipal Bhavan, Station Road", "Shaharpur 442001, Maharashtra"],
+    "phone": "07162-234567",
+    "website": "https://shaharpurmc.example.gov.in",
+    "ddo_name": "Chief Officer, Shaharpur Municipal Council",
+    "ddo_code": "SMC-DDO-1101",
+    "department_code": "UD-32",
+    "administrative_department": "Urban Development Department, Maharashtra",
+    "treasury_code": "TRC-1101",
+    "fund_source": "Municipal Fund (0100)",
+    "plan_status": "Non-Plan",
+    "salary_reference_prefix": "SMC/PAY",
+    "pay_bill_footer_text": "Generated under the signature of the Chief Officer.",
+    "nps_employee_account_head": "8342-NPS-EMP",
+    "nps_employer_account_head": "8342-NPS-EMR",
+    "head_of_account": {
+        "demand_number": "D-08",
+        "major_head": "2217",
+        "sub_head": "05",
+        "detailed_head": "01",
+    },
+    "bank_advice_recipient": {
+        "bank_name": "Bank of Maharashtra",
+        "branch": "Shaharpur Main",
+        "address_lines": ["Gandhi Chowk, Shaharpur 442001"],
+    },
+    "gpf_remittance_profiles": {
+        "mumbai": {
+            "office_name": "Accounts Officer (GPF), Mumbai",
+            "address_lines": ["GPF Bhavan, Bandra (E), Mumbai 400051"],
+            "account_code": "8009-GPF-MUM",
+            "authority_text": "GPF (CS) Rules",
+        },
+        "nagpur": {
+            "office_name": "Accounts Officer (GPF), Nagpur",
+            "address_lines": ["Civil Lines, Nagpur 440001"],
+            "account_code": "8009-GPF-NAG",
+            "authority_text": "GPF (CS) Rules",
+        },
+    },
+    "signatories": [
+        {"role": "maker", "name": "S. Deshmukh", "designation": "Senior Clerk (Accounts)"},
+        {"role": "checker", "name": "R. Kulkarni", "designation": "Accountant"},
+        {"role": "approving_officer", "name": "A. Pawar", "designation": "Chief Accounts Officer"},
+        {"role": "final_approver", "name": "M. Shah", "designation": "Chief Officer"},
+    ],
+}
+
+
+def _run_metadata(key: str) -> dict[str, Any]:
+    """Complete per-run report metadata so canonical export readiness passes."""
+    year, month = int(key[:4]), int(key[5:7])
+    return {
+        "bill_number": f"PB-{key}-001",
+        "bill_date": f"{year}-{month:02d}-10",
+        "payment_date": f"{year}-{month:02d}-15",
+        "token_number": f"TKN-{year % 100}{month:02d}1",
+        "token_date": f"{year}-{month:02d}-11",
+        "voucher_number": f"VCH-{year % 100}{month:02d}1",
+        "voucher_date": f"{year}-{month:02d}-12",
+        "bank_advice_number": f"BA-{year % 100}{month:02d}1",
+        "bank_advice_date": f"{year}-{month:02d}-12",
+        "approval_note_number": f"AN-{year % 100}{month:02d}1",
+        "approval_note_date": f"{year}-{month:02d}-09",
+    }
+
+
 # One run per period; the dict value is the workflow state the seed leaves it in.
 PERIOD_PLAN: tuple[tuple[int, int, str], ...] = (
     (2026, 4, "posted_closed"),
@@ -146,9 +223,22 @@ def _create_org_structure(client: httpx.Client) -> tuple[dict[str, UUID], list[U
         context="create empty office",
     )
     post_ids: list[UUID] = []
-    for designation, class_name in DESIGNATIONS:
+    for index, ((designation, class_name), (heading, strength, vacant, scale)) in enumerate(
+        zip(DESIGNATIONS, POST_EXPORT_FIELDS), start=1
+    ):
         body = _require(
-            client.post("/api/posts", json={"designation": designation, "class_name": class_name}),
+            client.post(
+                "/api/posts",
+                json={
+                    "designation": designation,
+                    "class_name": class_name,
+                    "pay_bill_heading": heading,
+                    "display_order": index,
+                    "sanctioned_strength": strength,
+                    "vacant_count": vacant,
+                    "pay_scale": scale,
+                },
+            ),
             context=f"create post {designation}",
         )
         assert isinstance(body, dict)
@@ -257,16 +347,31 @@ def _prepare_runs(
             context=f"roster {key}",
         )
         if key == "2026-09":
-            # ``one_time`` must target a component absent from the employee's
-            # instructions (a second source for one code duplicates); ``exception``
-            # and ``override`` must target a component that is already calculated
-            # (they replace it). OTHER_ALLOWANCE is seeded for every template.
+            # ``one_time`` and ``exception`` must target a component absent from
+            # the employee's instructions (they add a line; a second source for
+            # one code duplicates); ``override`` must target a component already
+            # calculated (it replaces it). employee_ids are seeded in template
+            # order, so an override goes on OTHER_ALLOWANCE only for employees
+            # whose template has that line.
+            templates = load_june_fixture().employees
+            override_pool = [
+                eid
+                for i, eid in enumerate(employee_ids)
+                if any(
+                    line.component_code == "OTHER_ALLOWANCE"
+                    for line in templates[i % len(templates)].lines
+                )
+            ]
             for i, employee_id in enumerate(employee_ids[:12]):
                 kind, code, amount = (
                     ("one_time", "WASH_ALLOWANCE", "2500.00"),
-                    ("exception", "OTHER_ALLOWANCE", "0.00"),
+                    ("exception", "CLA", "750.00"),
                     ("override", "OTHER_ALLOWANCE", "1500.00"),
                 )[i % 3]
+                if kind == "override":
+                    if not override_pool:
+                        break
+                    employee_id = override_pool.pop(0)
                 _require(
                     client.put(
                         f"/api/payroll-runs/{run_id}/inputs/{employee_id}/{code}",
@@ -295,6 +400,12 @@ def _prepare_runs(
         if run["target"] == "calculated":
             continue
         _require(client.post(f"/api/payroll-runs/{run_id}/validate"), context=f"validate {key}")
+        # Posted runs freeze the report snapshot at post time, so the export
+        # metadata must be written before the run leaves the preparer.
+        _require(
+            client.put(f"/api/payroll-runs/{run_id}/report-metadata", json=_run_metadata(key)),
+            context=f"report metadata {key}",
+        )
         _require(
             client.post(
                 f"/api/payroll-runs/{run_id}/submit",
@@ -356,6 +467,7 @@ def seed(args: argparse.Namespace) -> None:
             )
         print("Org structure…")
         office_ids, post_ids = _create_org_structure(client)
+        _require(client.put("/api/report-profile", json=REPORT_PROFILE), context="report profile")
         print("Pay components…")
         component_ids = _create_components(client, fixture)
         print(f"Employees ({args.employees})…")
