@@ -33,6 +33,7 @@ import {
 	isCalculateAllowedStatus,
 	isDraftStatus,
 	type PayrollRunCalculateResult,
+	type PayrollRunInputResponse,
 	type PayrollRunRosterHistoryResponse,
 	parsePayrollRunVersion,
 	payrollRunQueryKeys,
@@ -44,11 +45,12 @@ import {
 import { PAY_RUN_READ_CAPABILITIES, PAY_RUN_REPORT_READ_CAPABILITIES } from "@/lib/capabilities";
 import { getErrorMessage } from "@/lib/errors";
 import { periodLabel } from "@/lib/payroll-display";
-import { reportReadinessAction } from "@/lib/report-readiness";
+import { groupReadinessIssues, reportReadinessAction } from "@/lib/report-readiness";
 import { formatDateTime } from "@/lib/utils";
 
 import { PayrollRunRosterTable, type PayrollRunRosterTableHandle } from "./PayrollRunRosterTable";
 import { ReportMetadataSection } from "./ReportMetadataSection";
+import { RunInputsSection } from "./RunInputsSection";
 import { RunStatusBadge } from "./run-status-badge";
 import { UpsertInputDialog } from "./UpsertInputDialog";
 import { ValidationFindingsPanel, WorkflowActionBar } from "./workflow";
@@ -165,7 +167,10 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 	const [rosterEditing, setRosterEditing] = useState(false);
 	const [rosterDirty, setRosterDirty] = useState(false);
 	const [rosterSaving, setRosterSaving] = useState(false);
-	const [inputOpen, setInputOpen] = useState(false);
+	const [inputDialog, setInputDialog] = useState<{
+		open: boolean;
+		editing: PayrollRunInputResponse | null;
+	}>({ open: false, editing: null });
 	const rosterTableRef = useRef<PayrollRunRosterTableHandle>(null);
 
 	const runQuery = usePayrollRun(runId);
@@ -284,7 +289,11 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 								) : null}
 								{canEditInputs ? (
 									<>
-										<Button size="xs" variant="outline" onClick={() => setInputOpen(true)}>
+										<Button
+											size="xs"
+											variant="outline"
+											onClick={() => setInputDialog({ open: true, editing: null })}
+										>
 											Add Input
 										</Button>
 										{rosterEditing ? (
@@ -354,6 +363,12 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 								/>
 							</PageSection>
 
+							<RunInputsSection
+								runId={run.id}
+								editable={canEditInputs}
+								onEdit={(input) => setInputDialog({ open: true, editing: input })}
+							/>
+
 							<ReportMetadataSection
 								runId={run.id}
 								metadata={run.report_metadata ?? {}}
@@ -364,17 +379,20 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 								<PageSection className="grid gap-2 border-destructive/40 bg-destructive/5">
 									<h2 className="text-base font-semibold">Report export needs attention</h2>
 									<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-										{readinessQuery.data.issues.map((issue) => {
-											const action = reportReadinessAction(issue, run.id);
-											return (
-												<li key={`${issue.report_type}-${issue.code}`}>
-													{issue.message}{" "}
-													<Link className="underline underline-offset-4" to={action.to}>
-														{action.label}
-													</Link>
-												</li>
-											);
-										})}
+										{groupReadinessIssues(readinessQuery.data.issues).map(
+											({ issue, sheetCount, key }) => {
+												const action = reportReadinessAction(issue, run.id);
+												return (
+													<li key={key}>
+														{issue.message}{" "}
+														{sheetCount > 1 ? `(${sheetCount} sheets affected) ` : null}
+														<Link className="underline underline-offset-4" to={action.to}>
+															{action.label}
+														</Link>
+													</li>
+												);
+											},
+										)}
 									</ul>
 									<p className="text-sm">Resolve each item, then recalculate the run.</p>
 								</PageSection>
@@ -409,7 +427,12 @@ function PayRunDetailContent({ runId }: { runId: string }) {
 							</PageSection>
 						</>
 					) : null}
-					<UpsertInputDialog open={inputOpen} onOpenChange={setInputOpen} runId={runId} />
+					<UpsertInputDialog
+						open={inputDialog.open}
+						onOpenChange={(open) => setInputDialog((prev) => ({ ...prev, open }))}
+						runId={runId}
+						editing={inputDialog.editing}
+					/>
 				</PageShell>
 			</AppLayout>
 		</CapabilityGate>

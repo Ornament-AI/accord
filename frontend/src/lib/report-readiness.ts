@@ -102,3 +102,41 @@ export function reportReadinessAction(
 	}
 	return { label: "Open run report details", to: href ?? `/pay-runs/${runId}` };
 }
+
+export type GroupedReadinessIssue = {
+	issue: ReportReadinessIssue;
+	/** Number of distinct report sheets carrying this issue. */
+	sheetCount: number;
+	/** Identity of the group — safe to use as a React key. */
+	key: string;
+};
+
+/**
+ * Collapse issues that share a code into a single display row.
+ *
+ * The readiness API retags one missing field (e.g. a signatory) to every
+ * report sheet that renders it, so the raw list repeats the same message once
+ * per affected sheet. Issues that differ by employee or entity keep separate
+ * rows because they need separate fixes.
+ */
+export function groupReadinessIssues(
+	issues: readonly ReportReadinessIssue[],
+): GroupedReadinessIssue[] {
+	const groups = new Map<string, { issue: ReportReadinessIssue; reportTypes: Set<string> }>();
+	for (const issue of issues) {
+		const key = `${issue.code}|${issue.entity_id ?? ""}|${issue.message}`;
+		const existing = groups.get(key);
+		if (existing) {
+			// The same defect can be re-emitted per result line for one sheet
+			// (e.g. NPS employee + employer lines) — count sheets, not rows.
+			existing.reportTypes.add(issue.report_type);
+		} else {
+			groups.set(key, { issue, reportTypes: new Set([issue.report_type]) });
+		}
+	}
+	return [...groups.entries()].map(([key, { issue, reportTypes }]) => ({
+		issue,
+		sheetCount: reportTypes.size,
+		key,
+	}));
+}

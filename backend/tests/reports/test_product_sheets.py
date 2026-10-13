@@ -171,6 +171,44 @@ def test_consolidated_v3_copies_dynamic_overflow_without_stale_template_merges()
     assert bank.print_area == "'Bank Tip'!$A$1:$G$200"
 
 
+def test_consolidated_v3_stacks_many_source_sheets_without_quadratic_merges() -> None:
+    """Regression: per-employee payslip worksheets fan merges into one target.
+
+    ``merge_cells`` rescans the whole ranges set for every merge, which made
+    consolidated exports spend minutes inside openpyxl once a report workbook
+    contributed hundreds of merged source worksheets.  Merges must be
+    translated, preserved, and keep their borders — at scale.
+    """
+    per_sheet_merges = ("B3:E3", "A9:B9", "C9:E9", "A30:E30")
+    source = Workbook()
+    source.remove(source.active)
+    sheet_count = 150
+    for index in range(sheet_count):
+        sheet = source.create_sheet(f"slip-{index}")
+        sheet["B3"] = f"PAYSLIP {index}"
+        for coord in per_sheet_merges:
+            sheet.merge_cells(coord)
+    output = io.BytesIO()
+    source.save(output)
+
+    target = Workbook().create_sheet("PaySlip")
+    from app.reports.canonical_workbook import _copy_workbook_into_sheet
+
+    _copy_workbook_into_sheet(output.getvalue(), target)
+
+    merged = {str(item) for item in target.merged_cells.ranges}
+    assert len(merged) == sheet_count * len(per_sheet_merges)
+    # Second payslip's merges land at the translated row offsets
+    # (first sheet max_row 30 + 2 blank spacer rows => offset 32).
+    assert "B35:E35" in merged
+    assert "A41:B41" in merged
+    assert "A62:E62" in merged
+    # Interior merge cells exist so later copies skip them safely.
+    from openpyxl.cell.cell import MergedCell
+
+    assert isinstance(target["C3"], MergedCell)
+
+
 def test_dynamic_front_sheets_render_past_template_pinned_merges() -> None:
     """Regression: rows past the canonical layout must not hit stale template merges.
 

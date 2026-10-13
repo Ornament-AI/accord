@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 
-import { fetchJson, jsonRequest } from "@/lib/api/http";
+import { fetchJson, fetchVoid, jsonRequest } from "@/lib/api/http";
 import { buildQueryString } from "@/lib/api/query-utils";
 import type { components } from "@/types/api.generated";
 
@@ -189,6 +189,10 @@ export function getPayrollRunResults(runId: string) {
 	return fetchJson<PayrollRunResults>(`/api/payroll-runs/${runId}/results`);
 }
 
+export function listPayrollRunInputs(runId: string) {
+	return fetchJson<PayrollRunInputResponse[]>(`/api/payroll-runs/${runId}/inputs`);
+}
+
 export function upsertPayrollRunInput(
 	runId: string,
 	employeeId: string,
@@ -308,6 +312,26 @@ export function usePayrollRunResults(runId: string | undefined, enabled: boolean
 		queryKey: payrollRunQueryKeys.results(runId ?? ""),
 		queryFn: () => getPayrollRunResults(runId!),
 		enabled: Boolean(runId) && enabled,
+	});
+}
+
+export function usePayrollRunInputs(runId: string | undefined, enabled = true) {
+	return useQuery({
+		queryKey: payrollRunQueryKeys.inputs(runId ?? ""),
+		queryFn: () => listPayrollRunInputs(runId!),
+		enabled: Boolean(runId) && enabled,
+	});
+}
+
+export function useDeletePayrollRunInput(runId: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (inputId: string) =>
+			fetchVoid(`/api/payroll-runs/${runId}/inputs/${inputId}`, { method: "DELETE" }),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.inputs(runId) });
+			void queryClient.invalidateQueries({ queryKey: payrollRunQueryKeys.results(runId) });
+		},
 	});
 }
 

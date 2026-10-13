@@ -19,6 +19,7 @@ import {
 	buildRosterRow,
 	buildRun,
 	buildRunDetail,
+	buildRunInput,
 	createPayRunHandlers,
 } from "@/test/msw/pay-run-handlers";
 import { server } from "@/test/msw-server";
@@ -343,6 +344,188 @@ describe("Run input dialog", () => {
 			"Service period start must be on or before service period end.",
 		);
 	});
+});
+
+describe("Run inputs list", () => {
+	beforeEach(() => {
+		queryClient.clear();
+	});
+
+	const seededInput = () =>
+		buildRunInput({
+			id: "input-1",
+			run_id: "run-1",
+			employee_id: "emp-1",
+			component_code: "BASIC",
+			input_kind: "exception",
+			amount: "5000.00",
+			reason: "DA arrears",
+			version: 1,
+		});
+
+	it(
+		"lists run inputs with the roster employee label",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				inputs: { "run-1": [seededInput()] },
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const section = await screen.findByTestId(
+				"run-inputs-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			expect(await within(section).findByText(/E-001/)).toBeInTheDocument();
+			expect(within(section).getByText("BASIC")).toBeInTheDocument();
+			expect(within(section).getByText("DA arrears")).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"deletes a run input after confirmation",
+		async () => {
+			const onDeleteInput = vi.fn();
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				inputs: { "run-1": [seededInput()] },
+				onDeleteInput,
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const section = await screen.findByTestId(
+				"run-inputs-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			// The roster query rebuilds the columns once it resolves — wait for the
+			// employee label so the clicked button isn't a detached pre-resolution node.
+			await within(section).findByText(/E-001/);
+			fireEvent.click(within(section).getByRole("button", { name: "Delete input BASIC" }));
+			fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+			await waitFor(() => expect(onDeleteInput).toHaveBeenCalledWith("run-1", "input-1"));
+			await waitFor(() =>
+				expect(within(section).queryByText("DA arrears")).not.toBeInTheDocument(),
+			);
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"opens the edit dialog prefilled with locked identity fields and saves with expected_version",
+		async () => {
+			const onUpsertInput = vi.fn();
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("organization_administrator"),
+			});
+			const { handlers: employeeHandlers } = createEmployeeHandlers();
+			const { handlers: componentHandlers } = createPayComponentHandlers();
+			const { handlers: payRunHandlers } = createPayRunHandlers({
+				inputs: { "run-1": [seededInput()] },
+				onUpsertInput,
+			});
+			server.use(...authHandlers, ...employeeHandlers, ...componentHandlers, ...payRunHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const section = await screen.findByTestId(
+				"run-inputs-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			await within(section).findByText(/E-001/);
+			fireEvent.click(within(section).getByRole("button", { name: "Edit input BASIC" }));
+
+			expect(
+				await screen.findByRole("heading", { name: "Edit Run Input" }, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+			expect(screen.getByLabelText("Employee")).toBeDisabled();
+			expect(screen.getByLabelText("Component")).toBeDisabled();
+			expect(screen.getByLabelText("Input Kind")).toBeDisabled();
+			expect(screen.getByLabelText("Amount")).toHaveValue("5000.00");
+			expect(screen.getByLabelText("Reason")).toHaveValue("DA arrears");
+
+			fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "6000" } });
+			fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+			await waitFor(() => expect(onUpsertInput).toHaveBeenCalledOnce());
+			expect(onUpsertInput).toHaveBeenCalledWith(
+				"run-1",
+				"emp-1",
+				"BASIC",
+				expect.objectContaining({
+					amount: "6000",
+					reason: "DA arrears",
+					expected_version: 1,
+				}),
+			);
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"lists inputs read-only for approver roles without edit affordances",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("payroll_approver"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers({
+				inputs: { "run-1": [seededInput()] },
+			});
+			server.use(...authHandlers, ...payHandlers);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const section = await screen.findByTestId(
+				"run-inputs-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			await within(section).findByText(/E-001/);
+			expect(within(section).getByText("DA arrears")).toBeInTheDocument();
+			expect(within(section).queryByRole("button", { name: /Edit input/ })).not.toBeInTheDocument();
+			expect(
+				within(section).queryByRole("button", { name: /Delete input/ }),
+			).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
+		"surfaces the inputs load error to read-only viewers instead of hiding",
+		async () => {
+			const { handlers: authHandlers } = createAuthHandlers({
+				me: buildRoleAuthMe("payroll_approver"),
+			});
+			const { handlers: payHandlers } = createPayRunHandlers();
+			server.use(
+				// Earlier handlers win — the 403 override must precede payHandlers.
+				http.get("/api/payroll-runs/:runId/inputs", () =>
+					HttpResponse.json({ detail: "Forbidden" }, { status: 403 }),
+				),
+				...authHandlers,
+				...payHandlers,
+			);
+
+			renderPayRunRoutes("/pay-runs/run-1");
+			const section = await screen.findByTestId(
+				"run-inputs-section",
+				{},
+				{ timeout: PAGE_TIMEOUT },
+			);
+			expect(
+				await within(section).findByText("Forbidden", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
 });
 
 describe("Pay run detail — calculate gating", () => {

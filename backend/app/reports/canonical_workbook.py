@@ -13,6 +13,8 @@ from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import range_boundaries
 from openpyxl.worksheet.worksheet import Worksheet
 
+from app.reports._xlsx_fast_merge import merge_cells_fast
+
 CANONICAL_PRODUCT_SHEETS: tuple[tuple[str, str, str], ...] = (
     ("office tip", "approval_note", "visible"),
     ("Bank Tip", "bank_rtgs_advice", "visible"),
@@ -79,7 +81,8 @@ def _copy_workbook_into_sheet(source_bytes: bytes, target: Worksheet) -> None:
                 if source_cell.number_format:
                     target_cell.number_format = source_cell.number_format
         for merged in source_sheet.merged_cells.ranges:
-            target.merge_cells(
+            merge_cells_fast(
+                target,
                 start_row=merged.min_row + row_offset,
                 start_column=merged.min_col,
                 end_row=merged.max_row + row_offset,

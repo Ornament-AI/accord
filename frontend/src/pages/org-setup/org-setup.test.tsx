@@ -82,6 +82,26 @@ describe("Org setup catalog pages", () => {
 	);
 
 	it(
+		"clears the required-name error as soon as the field is edited",
+		async () => {
+			await setupPage("/organization/offices", "organization_administrator");
+			expect(
+				await screen.findByTestId("offices-page", {}, { timeout: PAGE_TIMEOUT }),
+			).toBeInTheDocument();
+
+			fireEvent.click(screen.getByRole("button", { name: /^Add$/i }));
+			expect(await screen.findByRole("heading", { name: "Add Office" })).toBeInTheDocument();
+
+			fireEvent.click(screen.getByRole("button", { name: "Create Office" }));
+			expect(await screen.findByText("Name is required.")).toBeInTheDocument();
+
+			fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Branch Office" } });
+			expect(screen.queryByText("Name is required.")).not.toBeInTheDocument();
+		},
+		PAGE_TIMEOUT,
+	);
+
+	it(
 		"keeps the empty-state Add action in the page header only",
 		async () => {
 			await setupPage("/organization/posts", "organization_administrator", {

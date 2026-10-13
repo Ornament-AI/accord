@@ -20,9 +20,14 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { useEmployeesList } from "@/lib/api/employees";
+import { useEmployeeDetail, useEmployeesList } from "@/lib/api/employees";
 import { usePayComponentsList } from "@/lib/api/pay-setup";
-import { INPUT_KINDS, type InputKind, useUpsertPayrollRunInput } from "@/lib/api/payroll-runs";
+import {
+	INPUT_KINDS,
+	type InputKind,
+	type PayrollRunInputResponse,
+	useUpsertPayrollRunInput,
+} from "@/lib/api/payroll-runs";
 import { parseApiDate, toApiDate } from "@/lib/calendar-date";
 import { DIALOG_CONTENT_CLASSNAMES } from "@/lib/dialog-sizes";
 import { employeeEntityLabel, payComponentEntityLabel } from "@/lib/entity-labels";
@@ -32,6 +37,8 @@ type UpsertInputDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	runId: string;
+	/** Existing input to edit; null opens the dialog in "add" mode. */
+	editing?: PayrollRunInputResponse | null;
 };
 
 type FormState = {
@@ -58,7 +65,12 @@ const emptyForm = (): FormState => ({
 	employee_search: "",
 });
 
-export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDialogProps) {
+export function UpsertInputDialog({
+	open,
+	onOpenChange,
+	runId,
+	editing = null,
+}: UpsertInputDialogProps) {
 	const upsertInput = useUpsertPayrollRunInput(runId);
 	const componentsQuery = usePayComponentsList();
 	const [form, setForm] = useState<FormState>(emptyForm);
@@ -71,15 +83,35 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 	});
 	const employees = employeesQuery.data?.items ?? [];
 	const components = (componentsQuery.data ?? []).filter((component) => component.is_active);
+	// The edited employee may not be in the paged search results — fetch it by id
+	// so the (locked) select can render its label.
+	const editingEmployeeQuery = useEmployeeDetail(
+		open && editing ? editing.employee_id : undefined,
+		{},
+	);
 
 	useEffect(() => {
 		if (!open) {
 			setFormError(null);
 			return;
 		}
-		setForm(emptyForm());
+		setForm(
+			editing
+				? {
+						employee_id: editing.employee_id,
+						component_code: editing.component_code,
+						input_kind: editing.input_kind as InputKind,
+						amount: editing.amount ?? "",
+						rate: editing.rate ?? "",
+						service_period_start: editing.service_period_start ?? "",
+						service_period_end: editing.service_period_end ?? "",
+						reason: editing.reason,
+						employee_search: "",
+					}
+				: emptyForm(),
+		);
 		setFormError(null);
-	}, [open]);
+	}, [open, editing]);
 
 	const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
 		setForm((prev) => ({ ...prev, [key]: value }));
@@ -137,7 +169,7 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 					reason: form.reason.trim(),
 					service_period_start: form.service_period_start || null,
 					service_period_end: form.service_period_end || null,
-					expected_version: null,
+					expected_version: editing?.version ?? null,
 				},
 			});
 			onOpenChange(false);
@@ -152,9 +184,11 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className={DIALOG_CONTENT_CLASSNAMES.compactForm}>
 				<DialogHeader className="px-6 pt-5 pb-3">
-					<DialogTitle>Add Run Input</DialogTitle>
+					<DialogTitle>{editing ? "Edit Run Input" : "Add Run Input"}</DialogTitle>
 					<DialogDescription>
-						Add an exception, override, or one-time input for a draft run.
+						{editing
+							? "Update this exception, override, or one-time input for a draft run."
+							: "Add an exception, override, or one-time input for a draft run."}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -169,7 +203,7 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 								id="upsert-input-employee-search"
 								value={form.employee_search}
 								onChange={(event) => setField("employee_search", event.target.value)}
-								disabled={isSubmitting}
+								disabled={isSubmitting || Boolean(editing)}
 								placeholder="Name, number, or Sevarth ID"
 								autoComplete="off"
 							/>
@@ -180,14 +214,23 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 							<Select
 								value={form.employee_id || null}
 								onValueChange={(value) => setField("employee_id", value ?? "")}
-								disabled={isSubmitting || employeesQuery.isLoading}
+								disabled={isSubmitting || employeesQuery.isLoading || Boolean(editing)}
 							>
 								<SelectTrigger id="upsert-input-employee" className="w-full">
 									<SelectValue placeholder="Select employee">
 										{(value: string | null) => {
 											const employee = employees.find((item) => item.id === value);
-											return employee
-												? employeeEntityLabel(employee, "Select employee")
+											const detail = editingEmployeeQuery.data;
+											const display =
+												employee ??
+												(editing && detail?.id === value
+													? {
+															name: detail.profile?.name,
+															employee_number: detail.employee_number,
+														}
+													: null);
+											return display
+												? employeeEntityLabel(display, "Select employee")
 												: "Select employee";
 										}}
 									</SelectValue>
@@ -207,7 +250,7 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 							<Select
 								value={form.component_code || null}
 								onValueChange={(value) => setField("component_code", value ?? "")}
-								disabled={isSubmitting || componentsQuery.isLoading}
+								disabled={isSubmitting || componentsQuery.isLoading || Boolean(editing)}
 							>
 								<SelectTrigger id="upsert-input-component" className="w-full">
 									<SelectValue placeholder="Select component">
@@ -239,7 +282,7 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 										rate: inputKind === "override" ? previous.rate : "",
 									}));
 								}}
-								disabled={isSubmitting}
+								disabled={isSubmitting || Boolean(editing)}
 							>
 								<SelectTrigger id="upsert-input-kind" className="w-full">
 									<SelectValue>
@@ -357,7 +400,7 @@ export function UpsertInputDialog({ open, onOpenChange, runId }: UpsertInputDial
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isSubmitting}>
-							{isSubmitting ? "Saving…" : "Add"}
+							{isSubmitting ? "Saving…" : editing ? "Save" : "Add"}
 						</Button>
 					</DialogFooter>
 				</form>

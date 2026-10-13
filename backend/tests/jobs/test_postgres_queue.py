@@ -611,3 +611,43 @@ async def test_rls_wrong_guc_cannot_claim_job(
     claimed = await ok_queue.claim("worker-rls")
     assert claimed is not None
     assert claimed.organization_id == org
+
+
+@pytest.mark.asyncio
+async def test_enqueue_under_accord_worker_survives_post_commit_rls(
+    pg_env: tuple[PostgresJobQueue, async_sessionmaker[AsyncSession], str],
+) -> None:
+    """Enqueue must not SELECT after commit: ``app.organization_id`` is
+    transaction-local, so under the forced-RLS ``accord_worker`` role a
+    post-commit ``session.refresh`` sees zero rows and raised *after* the job
+    had already committed (production worker loop logged
+    ``Could not refresh instance``)."""
+    _, factory, _ = pg_env
+    org = await _create_org(factory)
+
+    class _WorkerFactory:
+        """Session factory that SETs ROLE accord_worker (production worker DSN)."""
+
+        def __init__(self, inner: async_sessionmaker[AsyncSession]) -> None:
+            self._inner = inner
+
+        def __call__(self) -> AsyncIterator[AsyncSession]:
+            return self._cm()
+
+        @asynccontextmanager
+        async def _cm(self) -> AsyncIterator[AsyncSession]:
+            async with self._inner() as session:
+                await session.execute(text("SET ROLE accord_worker"))
+                yield session
+
+    worker_queue = PostgresJobQueue(_WorkerFactory(factory))  # type: ignore[arg-type]
+    job = await worker_queue.for_organization(org).enqueue(
+        org,
+        "artifacts.maintenance",
+        {},
+        dedupe_key="artifacts.maintenance:regression",
+    )
+    assert job.organization_id == org
+    assert job.job_type == "artifacts.maintenance"
+    assert job.status == JobStatus.queued
+    assert job.dedupe_key == "artifacts.maintenance:regression"
