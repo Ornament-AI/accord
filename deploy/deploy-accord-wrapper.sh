@@ -334,6 +334,10 @@ entry_overhead = 1536
 if not database_bytes.isdigit():
     raise SystemExit(f"live database size is not a byte count: {database_bytes}")
 
+def scan_error(error):
+    raise SystemExit(f"cannot scan backup source: {error}")
+
+
 expected = int(database_bytes)
 for source in live:
     try:
@@ -342,7 +346,7 @@ for source in live:
         is_directory = False
     if not is_directory:
         raise SystemExit(f"live uploaded-file directory is missing: {source}")
-    for parent, directories, names in os.walk(source):
+    for parent, directories, names in os.walk(source, onerror=scan_error):
         expected += entry_overhead * len(directories)
         for name in names:
             try:

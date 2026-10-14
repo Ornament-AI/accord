@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 WRAPPER = ROOT / "deploy" / "deploy-accord-wrapper.sh"
@@ -157,6 +160,23 @@ def test_backup_capacity_uses_live_files_and_newest_real_set(tmp_path: Path):
     _backup_set(root, "20261002T000000Z", completed=True, archive_bytes=1 << 42)
     refused = capacity(uploads, restore_points)
     assert refused.returncode != 0 and "bytes free" in refused.stderr
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses directory read permissions")
+def test_capacity_refuses_an_unreadable_storage_subdirectory(tmp_path: Path):
+    storage = tmp_path / "storage"
+    blocked = storage / "bucket"
+    blocked.mkdir(parents=True)
+    (blocked / "object").write_bytes(b"data")
+    blocked.chmod(0)
+    try:
+        result = _run_retention(
+            "require_backup_capacity", str(tmp_path / "backups"), "1024", str(storage)
+        )
+    finally:
+        blocked.chmod(0o700)
+    assert result.returncode != 0
+    assert "cannot scan backup source" in result.stderr
 
 
 def test_wrapper_checks_capacity_before_downtime_and_prunes_only_after_the_receipt():
