@@ -64,7 +64,7 @@ def test_successful_deploy_keeps_two_completed_backup_sets_and_failed_attempts_b
     assert not _set_files(root, superseded) and not _set_files(root, legacy)
     assert len(_set_files(root, previous)) == 5
     assert len(_set_files(root, failed_attempt)) == 4
-    assert Path(f"{current}.completed").read_text(encoding="utf-8") == "completed\n"
+    assert Path(f"{current}.completed").read_text(encoding="utf-8") == "completed 1\n"
     assert unrelated.is_file() and linked.is_symlink() and outside.is_file()
 
 
@@ -91,6 +91,22 @@ def test_retention_removes_side_files_left_by_an_interrupted_prune(tmp_path: Pat
     assert _run_retention("prune_release_backups", str(root), str(current)).returncode == 0
     assert not _set_files(root, interrupted)
     assert len(_set_files(root, previous)) == 5
+
+
+def test_retention_orders_completed_sets_by_deployment_not_wall_clock(tmp_path: Path):
+    root = tmp_path / "releases"
+    root.mkdir()
+    first = _backup_set(root, "20261001T100000Z", completed=False)
+    after_clock_rollback = _backup_set(root, "20261001T090000Z", completed=False)
+    current = _backup_set(root, "20261001T110000Z", completed=False)
+    for dump in (first, after_clock_rollback, current):
+        assert _run_retention("record_backup_completed", str(dump), ".minio.tar.gz").returncode == 0
+
+    assert _run_retention("prune_release_backups", str(root), str(current)).returncode == 0
+
+    assert not _set_files(root, first)
+    assert Path(f"{after_clock_rollback}.completed").read_text(encoding="ascii") == "completed 2\n"
+    assert Path(f"{current}.completed").read_text(encoding="ascii") == "completed 3\n"
 
 
 def test_database_only_set_from_an_older_release_never_anchors_retention(tmp_path: Path):

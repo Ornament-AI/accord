@@ -180,18 +180,38 @@ live_container_id() {
 # A backup set is one accord-pre-migrate-<timestamp>-<sha>.dump plus every
 # <dump>.* file beside it. A successful deploy marks its set <dump>.completed
 # only when the set holds every required archive, so a database-only set from an
-# older release's backup helper never becomes a retention anchor. Retention keeps
-# the current set, the previous completed set and any unmarked sets between
-# them; older sets are superseded by both.
+# older release's backup helper never becomes a retention anchor. Each marker
+# records a sequence one above every existing marker, so completed sets are
+# ordered by deployment, not by the wall clock in their names. Retention keeps
+# the current set, the latest other completed set and any unmarked sets newer
+# than either of them; older sets are superseded.
 record_backup_completed() {
     /usr/bin/python3 - "$@" <<'PY'
 import os
+import re
 import stat
 import sys
 
 path, *required = sys.argv[1:]
 parent, name = os.path.split(path)
+pattern = re.compile(r"accord-pre-migrate-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{40}\.dump")
 directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+
+
+def sequence(owner):
+    try:
+        descriptor = os.open(f"{owner}.completed", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+    except OSError:
+        return None
+    try:
+        words = os.read(descriptor, 64).decode("ascii", "replace").split()
+    finally:
+        os.close(descriptor)
+    if words[:1] != ["completed"]:
+        return None
+    return int(words[1]) if len(words) > 1 and words[1].isdigit() else 0
+
+
 try:
     for suffix in required:
         try:
@@ -200,6 +220,8 @@ try:
             present = False
         if not present:
             raise SystemExit(f"backup set lacks {name}{suffix}; it was not marked completed")
+    ranks = [sequence(owner) for owner in os.listdir(directory) if pattern.fullmatch(owner) and owner != name]
+    next_sequence = 1 + max((rank for rank in ranks if rank is not None), default=0)
     descriptor = os.open(
         f"{name}.completed",
         os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
@@ -207,7 +229,7 @@ try:
         dir_fd=directory,
     )
     try:
-        os.write(descriptor, b"completed\n")
+        os.write(descriptor, f"completed {next_sequence}\n".encode("ascii"))
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
@@ -236,26 +258,49 @@ def is_file(name: str) -> bool:
         return False
 
 
+def sequence(owner):
+    try:
+        descriptor = os.open(f"{owner}.completed", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+    except OSError:
+        return None
+    try:
+        words = os.read(descriptor, 64).decode("ascii", "replace").split()
+    finally:
+        os.close(descriptor)
+    if words[:1] != ["completed"]:
+        return None
+    return int(words[1]) if len(words) > 1 and words[1].isdigit() else 0
+
+
 try:
     entries = os.listdir(directory)
     sets = sorted(name for name in entries if pattern.fullmatch(name) and is_file(name))
     if current not in sets:
         raise SystemExit(f"current backup set is missing: {current}")
-    older = sets[: sets.index(current)]
-    completed = [name for name in older if is_file(f"{name}.completed")]
+    ranks = {name: sequence(name) for name in sets}
+    completed = [name for name in sets if name != current and ranks[name] is not None]
     if completed:
-        anchor = completed[-1]
-        superseded = set(older[: older.index(anchor)])
+        anchor = max(completed, key=lambda name: (ranks[name], name))
+        boundary = min(anchor, current)
+        superseded = {
+            name
+            for name in sets
+            if name not in (current, anchor)
+            and (
+                (ranks[name] is not None and (ranks[name], name) < (ranks[anchor], anchor))
+                or (ranks[name] is None and name < boundary)
+            )
+        }
         # Remove each set's side files before its dump so an interrupted prune
         # leaves a dump that the next run rediscovers. Side files whose dump is
-        # already gone and that predate the anchor are removed as well.
+        # already gone and that predate the boundary are removed as well.
         sidecars, dumps = [], []
         for name in entries:
             owner = name.split(".dump.", 1)[0] + ".dump"
             if name in superseded:
                 dumps.append(name)
             elif name != owner and pattern.fullmatch(owner) and (
-                owner in superseded or (owner not in sets and owner < anchor)
+                owner in superseded or (owner not in sets and owner < boundary)
             ):
                 sidecars.append(name)
         for name in sidecars + dumps:
