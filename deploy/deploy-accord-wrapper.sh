@@ -176,6 +176,216 @@ live_container_id() {
     printf '%s\n' "$output"
 }
 
+# BEGIN TESTABLE RELEASE BACKUP RETENTION
+# A backup set is one accord-pre-migrate-<timestamp>-<sha>.dump plus every
+# <dump>.* file beside it. A successful deploy marks its set <dump>.completed
+# only when the set holds every required archive, so a database-only set from an
+# older release's backup helper never becomes a retention anchor. Each marker
+# records a sequence one above every existing marker, so completed sets are
+# ordered by deployment, not by the wall clock in their names. Retention keeps
+# the current set, the latest other completed set and any unmarked sets newer
+# than either of them; older sets are superseded.
+record_backup_completed() {
+    /usr/bin/python3 - "$@" <<'PY'
+import os
+import re
+import stat
+import sys
+
+path, *required = sys.argv[1:]
+parent, name = os.path.split(path)
+pattern = re.compile(r"accord-pre-migrate-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{40}\.dump")
+directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+
+
+def sequence(owner):
+    try:
+        descriptor = os.open(f"{owner}.completed", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+    except OSError:
+        return None
+    try:
+        words = os.read(descriptor, 64).decode("ascii", "replace").split()
+    finally:
+        os.close(descriptor)
+    if words[:1] != ["completed"]:
+        return None
+    return int(words[1]) if len(words) > 1 and words[1].isdigit() else 0
+
+
+try:
+    for suffix in required:
+        try:
+            present = stat.S_ISREG(os.stat(f"{name}{suffix}", dir_fd=directory, follow_symlinks=False).st_mode)
+        except FileNotFoundError:
+            present = False
+        if not present:
+            raise SystemExit(f"backup set lacks {name}{suffix}; it was not marked completed")
+    ranks = [sequence(owner) for owner in os.listdir(directory) if pattern.fullmatch(owner) and owner != name]
+    next_sequence = 1 + max((rank for rank in ranks if rank is not None), default=0)
+    descriptor = os.open(
+        f"{name}.completed",
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=directory,
+    )
+    try:
+        os.write(descriptor, f"completed {next_sequence}\n".encode("ascii"))
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+}
+
+prune_release_backups() {
+    /usr/bin/python3 - "$1" "$2" <<'PY'
+import os
+import re
+import stat
+import sys
+
+root, current = sys.argv[1], os.path.basename(sys.argv[2])
+pattern = re.compile(r"accord-pre-migrate-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{40}\.dump")
+directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+
+
+def is_file(name: str) -> bool:
+    try:
+        return stat.S_ISREG(os.stat(name, dir_fd=directory, follow_symlinks=False).st_mode)
+    except FileNotFoundError:
+        return False
+
+
+def sequence(owner):
+    try:
+        descriptor = os.open(f"{owner}.completed", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+    except OSError:
+        return None
+    try:
+        words = os.read(descriptor, 64).decode("ascii", "replace").split()
+    finally:
+        os.close(descriptor)
+    if words[:1] != ["completed"]:
+        return None
+    return int(words[1]) if len(words) > 1 and words[1].isdigit() else 0
+
+
+try:
+    entries = os.listdir(directory)
+    sets = sorted(name for name in entries if pattern.fullmatch(name) and is_file(name))
+    if current not in sets:
+        raise SystemExit(f"current backup set is missing: {current}")
+    ranks = {name: sequence(name) for name in sets}
+    completed = [name for name in sets if name != current and ranks[name] is not None]
+    if completed:
+        anchor = max(completed, key=lambda name: (ranks[name], name))
+        boundary = min(anchor, current)
+        superseded = {
+            name
+            for name in sets
+            if name not in (current, anchor)
+            and (
+                (ranks[name] is not None and (ranks[name], name) < (ranks[anchor], anchor))
+                or (ranks[name] is None and name < boundary)
+            )
+        }
+        # Remove each set's side files before its dump so an interrupted prune
+        # leaves a dump that the next run rediscovers. Side files whose dump is
+        # already gone and that predate the boundary are removed as well.
+        sidecars, dumps = [], []
+        for name in entries:
+            owner = name.split(".dump.", 1)[0] + ".dump"
+            if name in superseded:
+                dumps.append(name)
+            elif name != owner and pattern.fullmatch(owner) and (
+                owner in superseded or (owner not in sets and owner < boundary)
+            ):
+                sidecars.append(name)
+        for name in sidecars + dumps:
+            if is_file(name):
+                os.unlink(name, dir_fd=directory)
+        for name in sorted(superseded):
+            print(f"deploy-accord-wrapper: removed superseded backup set {name}", file=sys.stderr)
+        os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+}
+
+# The next backup is about the size of the live database plus the live uploaded
+# files it archives, or of the newest backup set if that is larger. Require twice
+# that estimate, and at least 1 GiB, on the backup filesystem before any service
+# is stopped.
+require_backup_capacity() {
+    /usr/bin/python3 - "$@" <<'PY'
+import os
+import re
+import stat
+import sys
+
+root, database_bytes, *live = sys.argv[1:]
+pattern = re.compile(r"accord-pre-migrate-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{40}\.dump")
+minimum = 1 << 30
+# Each archived entry also costs a 512-byte tar header, up to 511 bytes of
+# padding and a listing line, which dominate for many small files.
+entry_overhead = 1536
+if not database_bytes.isdigit():
+    raise SystemExit(f"live database size is not a byte count: {database_bytes}")
+
+def scan_error(error):
+    raise SystemExit(f"cannot scan backup source: {error}")
+
+
+expected = int(database_bytes)
+for source in live:
+    try:
+        is_directory = stat.S_ISDIR(os.lstat(source).st_mode)
+    except FileNotFoundError:
+        is_directory = False
+    if not is_directory:
+        raise SystemExit(f"live uploaded-file directory is missing: {source}")
+    for parent, directories, names in os.walk(source, onerror=scan_error):
+        expected += entry_overhead * len(directories)
+        for name in names:
+            try:
+                details = os.lstat(os.path.join(parent, name))
+            except FileNotFoundError:
+                continue
+            if stat.S_ISREG(details.st_mode):
+                expected += details.st_size + entry_overhead
+
+existing = root
+while not os.path.lexists(existing):
+    existing = os.path.dirname(existing)
+directory = os.open(existing, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    if existing == root:
+        sizes = {}
+        for name in os.listdir(directory):
+            details = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if stat.S_ISREG(details.st_mode):
+                sizes[name] = details.st_size
+        sets = sorted(name for name in sizes if pattern.fullmatch(name))
+        if sets:
+            newest = sets[-1]
+            previous = sum(size for name, size in sizes.items() if name == newest or name.startswith(f"{newest}."))
+            expected = max(expected, previous)
+    filesystem = os.fstatvfs(directory)
+    available = filesystem.f_bavail * filesystem.f_frsize
+    required = max(2 * expected, minimum)
+    if available < required:
+        raise SystemExit(
+            f"backup filesystem has {available} bytes free; the next backup needs {required} bytes "
+            f"(twice the estimated {expected}-byte backup, at least {minimum})"
+        )
+finally:
+    os.close(directory)
+PY
+}
+# END TESTABLE RELEASE BACKUP RETENTION
+
 LIVE_ROOT="/opt/accord/deploy"
 CANDIDATE_ROOT="/opt/accord/.release-candidate-$SHA-$$"
 BACKUP_ROOT="/opt/accord/.deploy-previous-$(date -u +%Y%m%d%H%M%S)-$$"
@@ -513,6 +723,16 @@ else
         && "$WORKER_CID" != "$MINIO_CID" && "$WEB_CID" != "$MINIO_CID" ]] \
         || die "application services resolved to duplicate containers"
     APP_CONTAINER_IDS=("$API_CID" "$WORKER_CID" "$WEB_CID" "$MINIO_CID")
+    MINIO_DATA_ROOT="$(docker inspect \
+        --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{println .Source}}{{end}}{{end}}' \
+        "$MINIO_CID")"
+    [[ "$MINIO_DATA_ROOT" == /* && "$MINIO_DATA_ROOT" != *".."* && "$MINIO_DATA_ROOT" != *$'\n'* ]] \
+        || die "MinIO must have exactly one /data mount to size the object backup"
+    DATABASE_BYTES="$(docker exec "$(live_container_id postgres)" \
+        sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT pg_database_size(current_database())"')" \
+        || die "could not measure the live Accord database before backup"
+    require_backup_capacity /opt/accord/backups/releases "$DATABASE_BYTES" "$MINIO_DATA_ROOT" \
+        || die "insufficient free space for a verified pre-migration backup; the live release was not changed"
     APP_QUIESCED=true
     docker stop "${APP_CONTAINER_IDS[@]}" >/dev/null \
         || die "could not quiesce the existing Accord application and object store before backup"
@@ -547,6 +767,14 @@ if ACCORD_RELEASE_BACKUP_DIR=/opt/accord/backups/releases \
         || die "live proof passed, but protected deployed-state evidence was not acknowledged"
     [[ "$RECEIPT_ACKNOWLEDGEMENT" == "ACCORD_RELEASE_RECEIPT=$SHA:$RECEIPT_NONCE" ]] \
         || die "protected deployed-state evidence acknowledgement is invalid"
+    if [[ "$BOOTSTRAP_MODE" != "true" ]]; then
+        if record_backup_completed "$BACKUP_EVIDENCE" .minio.tar.gz; then
+            prune_release_backups /opt/accord/backups/releases "$BACKUP_EVIDENCE" \
+                || echo "deploy-accord-wrapper: warning: superseded backup sets could not be pruned" >&2
+        else
+            echo "deploy-accord-wrapper: warning: the completed backup set could not be marked; older sets were kept" >&2
+        fi
+    fi
     exit 0
 fi
 
