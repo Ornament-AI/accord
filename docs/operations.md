@@ -423,6 +423,13 @@ tags as signing inputs.
    `MSIDC_SSH_TARGET=msidc ./scripts/repair-release-receipt.sh <exact-live-sha>`.
    The repair reacquires the same root lock, proves the running `APP_VERSION`,
    and completes the nonce-bound receipt without rerunning deployment.
+   Before quiescing anything, the wrapper refuses to deploy unless
+   `/opt/accord/backups/releases` has twice the larger of the live database plus
+   MinIO data and the newest backup set free (at least 1 GiB). Only after the
+   receipt is acknowledged does it mark the set `<dump>.completed` (when it
+   holds `<dump>.minio.tar.gz`) and keep that set, the previous completed set
+   and any unmarked sets between them, removing older sets. Failed deploys and
+   receipt repairs never remove backups.
 
 The normal signed updater is deliberately not an empty-host bootstrapper: it
 requires the existing root-owned `.env`, live Accord stack, PostgreSQL volume,
