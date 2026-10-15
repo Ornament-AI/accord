@@ -35,7 +35,8 @@ services:
 > them: `docker save quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z | gzip | ssh TARGET 'docker load'`, or push them to a private mirror and update the `image:` refs.
 
 On first boot, Postgres runs `deploy/object-storage/postgres-init-roles.sh`.
-That script applies `backend/scripts/create_roles.sql` and sets passwords
+That script applies the packaged `deploy/create_roles.sql` mirror of
+`backend/scripts/create_roles.sql` and sets passwords
 for `accord_migrator`, `accord_app`, and `accord_worker` (ADR-0001). Because
 `initdb.d` hooks only run on a fresh volume, the one-shot `role-sync`
 service re-asserts the same role passwords after Postgres is healthy on
@@ -130,8 +131,8 @@ is the liveness probe.
 |---|---|
 | `status` | `ok` (HTTP 200) or `degraded` (HTTP 503) |
 | `database` | `ok` or hard-fail 503 `"Database connection is not ready."` |
-| `auth` | `ok` or hard-fail 503 `"Auth provider is not ready."` |
-| `jobs` | `ok` / `unavailable` (jobs table probe) |
+| `auth` | Local configured-adapter readiness flag; hard-fail 503 if false. No live WorkOS request. |
+| `jobs` | `ok` / `unavailable` (jobs table query, not worker execution proof) |
 | `storage` | `ok` / `unconfigured` / `unavailable` |
 | `reports` | `ok` / `empty` / `missing` |
 | `organization` | `ok` / `pending` / `unavailable` — whether the ADR-0011
@@ -142,6 +143,10 @@ is the liveness probe.
 Degraded rule: any component value other than `ok` or `unconfigured` yields
 HTTP 503 with `"status":"degraded"`. Unconfigured storage alone is still
 ready; `organization` is excluded from the degraded rule on purpose.
+The storage probe calls `ensure_bucket()` when provided; the S3 adapter may
+create a missing bucket. A 200 response does not prove a provisioned user can
+sign in or a worker can complete a report. Compose worker health is only a
+process-liveness check (`kill -0 1`).
 
 **Verbatim ready response from this rehearsal (HTTP 200):**
 
@@ -157,7 +162,7 @@ Compose marks `api` healthy only when `/api/readyz` succeeds (not merely
 ### Routine scheduled backups
 
 Shipped helper: `deploy/backup.sh` (inside the release bundle). It takes a
-paired Postgres custom dump **and** a MinIO volume snapshot in one shot, with
+Postgres custom dump **and** a MinIO volume archive in one invocation, with
 read-back verification, sha256 manifests, and bounded retention
 (`--keep N`, default 14). Point cron at it, e.g.:
 
@@ -167,6 +172,12 @@ read-back verification, sha256 manifests, and bounded retention
 
 Overrides: `ACCORD_ROUTINE_BACKUP_DIR` (default `/opt/accord/backups/routine`),
 `ACCORD_LIVE_DEPLOY_DIR` (default `/opt/accord/deploy`).
+
+The routine helper does not stop application writers or MinIO: its sequential
+database dump and filesystem archive are not a coordinated cross-store
+recovery point. Use the quiesced release-backup path for that guarantee.
+Read-back listings and hashes prove artifact readability/integrity, not a
+successful restore.
 
 The script refuses to run concurrently (flock on
 `<backup dir>/.accord-routine.lock`) and aborts if a backup set with the same

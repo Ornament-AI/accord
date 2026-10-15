@@ -29,7 +29,7 @@ gaps instead of being assigned hypothetical filenames. The dated
 | No commit of secrets | `.env`, private keys, WorkOS secrets, DB/S3 credentials are gitignored and must stay out of history. | No dedicated secret-scanning CI job is currently wired. Review changes for secret-shaped values and rotate immediately if one leaks. |
 | Rotation | Support rotation without downtime where possible (dual-key session accept window, staged DB password rotate). | Documented rotation runbook; post-incident rotation is mandatory. |
 | Least privilege | Distinct credentials per role/purpose. | Migrator ≠ app ≠ worker ≠ backup reader (see DB role separation). |
-| Production fail-closed settings | `backend/app/config.py` (`_validate_production_invariants`) refuses empty `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, `SESSION_SECRET_KEY`, and `MIGRATIONS_DATABASE_URL`; it rejects `DEV_AUTH_BYPASS` in production. The redirect has a localhost default, so omission is not detected and operators must override it with the registered production callback. | Secret/auth omissions fail at startup; deployment validation must separately prove the redirect URI is production-safe. |
+| Production fail-closed settings | `backend/app/config.py` (`_validate_production_invariants`) refuses empty `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, `SESSION_SECRET_KEY`, `PUBLIC_APP_URL`, and default/empty `CORS_ORIGINS`; it rejects localhost WorkOS callbacks, weak session secrets, `DEV_AUTH_BYPASS`, and `ACCORD_ALLOW_WEAK_SECRETS` in staging and production. The privileged migrator DSN is required by Alembic, not by the API/worker settings validator. | Keep migration credentials out of long-lived runtime containers; use the stricter deployment environment validator for host configuration. |
 
 ---
 
@@ -43,7 +43,7 @@ Browsers never receive bearer JWTs for ordinary sessions.
 | Control | Behavior | Expectation |
 | --- | --- | --- |
 | HTTP-only | Cookie not readable from JavaScript (`httponly=True` in `backend/app/auth/session.py`). | XSS cannot exfiltrate `accord_session` via `document.cookie`. |
-| Secure | Cookie is marked Secure when `ENVIRONMENT=production`. A staging deployment using another environment value does not receive that flag; the [security review](security-review.md) records this gap. | Run internet-facing staging with the production security mode, or close the environment-policy gap before relying on a separate staging value. |
+| Secure | Cookie is marked Secure in both `staging` and `production`; only explicit `development` relaxes it. Unknown environment values are rejected. | The old staging-cookie finding in the dated security review is resolved by `Settings.is_production`. |
 | SameSite=Lax | Cookie sent on top-level navigations; withheld on most cross-site subrequests. | **Why Lax, not Strict:** the AuthKit login/callback flow needs top-level cross-site redirects that must carry the session cookie; `Strict` breaks that flow. Lax alone is **not** enough CSRF defense for APIs. |
 | Synchronizer CSRF | Cookie-authenticated mutations (POST/PUT/PATCH/DELETE) must echo the non-HttpOnly `accord_csrf` cookie in the `X-CSRF-Token` header; the cookie value is a server-signed token bound to the SHA-256 of the session cookie (`backend/app/middleware/csrf.py`, `backend/app/auth/session.py`). | Enforced by `CsrfMiddleware`; requests without a session cookie pass through to fail closed at auth. |
 | Expiry / refresh | Absolute 12-hour TTL (`SESSION_MAX_AGE_SECONDS`) plus an idle timeout (`SESSION_IDLE_TIMEOUT_SECONDS`, default 2 h). A fresh session row is minted at login; logout revokes the row. | Covered by `backend/tests/auth/test_session.py` and `backend/tests/gate_d/test_session_adversarial.py`. |
@@ -78,7 +78,7 @@ Browsers never receive bearer JWTs for ordinary sessions.
 | --- | --- | --- |
 | `accord_migrator` | Schema owner; may `BYPASSRLS` for migrations/DDL | Alembic migrations and controlled data migrations only |
 | `accord_app` | `NOSUPERUSER NOBYPASSRLS` runtime database role | API request transactions |
-| `accord_worker` | `NOSUPERUSER NOBYPASSRLS` runtime database role | Background jobs; must `SET LOCAL` tenant context after claim |
+| `accord_worker` | `NOSUPERUSER NOBYPASSRLS` runtime database role | Background jobs; bind context for queue claims and handler transactions |
 
 Roles are bootstrapped by `backend/scripts/create_roles.sql` (never by
 Alembic).
@@ -101,8 +101,8 @@ Alembic).
   `bind_tenant_context` in `backend/app/tenancy.py`. That helper uses
   `set_config(..., true)`, the `SET LOCAL` form that is safe with pooled
   connections.
-- If the GUC is unset, the system fails closed: RLS matches no rows and
-  rejects writes.
+- If the GUC is unset, the system fails closed: RLS matches no rows for reads/updates/deletes and rejects inserts
+  that violate the policy.
 - Current coverage: `backend/tests/rls/` (identity, master-data, payroll-run,
   platform, helper, and immutable-grant suites) plus `backend/tests/gate_d/`,
   which connect as the restricted runtime roles and exercise empty/wrong GUCs.
@@ -200,7 +200,7 @@ Gate checklist item in [release-acceptance.md](release-acceptance.md).
 | --- | --- |
 | Identity | WorkOS AuthKit; memberships/roles in Accord Postgres. Login paths: hosted redirect, password, and magic-code — all server-side (`backend/app/api/routes/auth.py`, `backend/app/auth/adapters.py`). |
 | Roles | Membership roles (`backend/app/auth/capabilities.py`): `organization_administrator`, `payroll_preparer`, `payroll_reviewer`, `payroll_approver`, `report_releaser` (payment/report releaser), `auditor`. Platform support administrator is display-only this phase — it is not a membership role and grants no capabilities. |
-| Commands | `calculate`, `submit`, `withdraw`, `approve`, `reject`, `post`, `reverse` are capability-checked. Workflow/posting commands use the idempotency/audit services; `calculate` currently does neither and can append another version on a distinct retry. `reverse` reuses `post_run`; there is no separate reverse capability. |
+| Commands | `calculate`, `submit`, `withdraw`, `approve`, `reject`, `post`, `reverse` are capability-checked. Workflow/posting commands use the idempotency/audit services. `calculate` also writes an audit event and uses idempotency when an `Idempotency-Key` is supplied; without a key, another successful call can append a version. `reverse` reuses `post_run`; there is no separate reverse capability. |
 | Tenancy | `organization_id` on tenant rows; forced RLS; `SET LOCAL` per-request tenant context via `backend/app/api/deps.py` + `backend/app/tenancy.py`. |
 | Webhooks | WorkOS webhook signature verification in `backend/app/auth/webhooks.py`; covered by `backend/tests/api/test_webhooks_workos.py`. |
 | Money | Decimal / minor-units only (`backend/app/schemas/money.py`); enforced by `backend/tests/domain/test_no_float_guard.py` and money/property suites. |
@@ -211,14 +211,14 @@ Gate checklist item in [release-acceptance.md](release-acceptance.md).
 
 | Area | Current coverage | Remaining gap |
 | --- | --- | --- |
-| Session hardening | `backend/tests/auth/test_session.py`, `backend/tests/gate_d/test_session_adversarial.py` | Secure-cookie behavior treats staging as non-production |
+| Session hardening | `backend/tests/auth/test_session.py`, `backend/tests/gate_d/test_session_adversarial.py` | Staging and production both enforce Secure cookies; rerun for the release commit |
 | CSRF | Signed OAuth-state + session-bound synchronizer token (`CsrfMiddleware`); auth/API suites exercise the echo contract | None identified in current contract |
 | WorkOS webhooks | `backend/tests/api/test_webhooks_workos.py` | None identified in current contract |
 | Privilege escalation | `backend/tests/gate_d/test_capability_matrix.py`, `backend/tests/api/test_deps_capabilities.py` | Support elevation is intentionally absent |
 | PII masking / reveal | Employee API/service suites | — |
 | Support break-glass | Default deny; no capability bypass | No time-boxed audited support path |
 | Posted SQL immutability | `backend/tests/rls/test_immutable_grants.py`, `backend/tests/rls/test_payroll_run_rls.py` | None identified in current contract |
-| Backup/restore RLS | Runtime-role and RLS suites; `scripts/backup-restore.sh` integrity rehearsal | No automated combined restore-under-runtime-role proof |
+| Backup/restore RLS | Runtime-role and RLS suites; `scripts/backup-restore.sh` integrity rehearsal | Scratch-restore helper includes runtime-role proof; attach its execution evidence for the release |
 | Fail-closed RLS | `backend/tests/rls/`, `backend/tests/gate_d/`, tenant-context API tests | Re-run against the release commit |
 | PII fixture guard | Synthetic validator and review policy | No dedicated CI hash/name guard |
 | Float ban | `backend/tests/domain/test_no_float_guard.py` | None identified in current contract |

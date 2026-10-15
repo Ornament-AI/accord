@@ -156,8 +156,9 @@ GUCs remain **kernel debt** until Phase 2 removes them. They are not a
 multi-org product surface.
 
 Two terms first. RLS is PostgreSQL row-level security: the database itself
-filters rows per organization, and "forced" means even the table owner
-cannot skip it. A GUC is a PostgreSQL session setting; Accord uses GUCs to
+filters rows per organization. FORCE RLS subjects ordinary table owners to
+policies too; superusers and roles with BYPASSRLS still bypass them. A GUC is a
+PostgreSQL session setting; Accord uses GUCs to
 tell the database which organization and user a transaction acts for.
 
 Verified against `backend/app/api/deps.py`, `backend/app/tenancy.py`,
@@ -175,10 +176,40 @@ passes four steps:
    `app.user_id`, and the optional `app.request_id`. These settings are
    transaction-local, so they are safe with asyncpg connection pooling.
 4. **RLS** — tenant tables use forced row-level security keyed on those GUCs
-   (ADR 0001). Missing context fails closed: no context means zero rows.
+   (ADR 0001). Missing context filters reads/updates/deletes to zero matching rows and
+   rejects inserts that violate the policy.
 
-Workers bind org context after claiming a job (`app/jobs/worker.py` →
-`bind_tenant_context`).
+Workers bind organization context inside queue transactions before claiming
+and again in the handler session (`app/jobs/postgres.py`, `app/jobs/worker.py`).
+Commits and rollbacks clear transaction-local GUCs; code continuing on the
+same session must rebind them. Leaving `tenant_context()` alone does not end
+the transaction or clear its GUCs.
+
+---
+
+## Runtime boundaries
+
+`create_app()` assembles the app, but settings, the database engine/session
+factory, logging and metrics have process-level state. Importing `app.main`
+constructs the module-level app; this is not an isolated runtime per factory call.
+
+Inbound user middleware runs in this order: Prometheus metrics → request
+context/body-header check → security headers → CORS → CSRF → SlowAPI → routes.
+CORS preflights can finish before CSRF/rate-limit handling. Early body-header
+rejections finish before the inner CORS/security-header middleware. The body
+check validates declared Content-Length and rejects unsafe chunked requests
+without it; it is not a streaming byte counter.
+
+The worker's outbox sink currently logs and marks events processed. It does
+not deliver external webhooks. Failed deliveries warn after 20 attempts and
+become dead letters when attempts exceed 50. Audit rows are written directly
+by instrumented services; the outbox is not a universal audit interceptor.
+
+Artifact creation deliberately commits the pending intent before storage
+upload, then commits finalization and `artifact.available` together. Worker
+job completion occurs afterward in a separate queue transaction. This is a
+recoverable multi-step protocol, not one database/object-store transaction.
+Retention expiry marks metadata expired; it does not delete object bytes.
 
 ---
 
