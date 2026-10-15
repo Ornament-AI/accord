@@ -53,7 +53,7 @@ summarized in [release-readiness.md](release-readiness.md).
 | SET LOCAL per-request tenant context | Transaction-local GUCs (`app.organization_id`, etc.) bound by `backend/app/api/deps.py` via `backend/app/tenancy.py` |
 | HTTP-only + Secure-in-production + SameSite=Lax cookies (justify Lax for WorkOS redirect auth) | Opaque `accord_session` cookie flags (`backend/app/auth/session.py`) |
 | WorkOS webhook signature verification | Reject forged/replayed provider callbacks (`backend/app/auth/webhooks.py`) |
-| idempotency keys | Deduplicate workflow/posting commands per org (`backend/app/services/idempotency.py`); calculate is a current gap |
+| idempotency keys | Deduplicate keyed workflow/posting/calculation commands per org (`backend/app/services/idempotency.py`); omitted keys do not provide replay protection |
 | append-only audit log tables | `audit_events` never updated/deleted in place (triggers + revoked DML) |
 | immutability triggers | Block UPDATE/DELETE on posted `payroll_run_version` rows; runtime DML on snapshot tables is also revoked |
 | capability/permission checks at the API layer | Role/capability enforcement before commands (`require_capability` in `backend/app/api/deps.py`) |
@@ -140,7 +140,7 @@ approve it.
 | --- | --- |
 | **Vector** | Same actor performs prepare and approve; skip `submit`; direct `post` without approvals; race that collapses dual control. |
 | **Impact** | Fraudulent or erroneous payroll posts without independent review. |
-| **Mitigations** | Maker/checker workflow enforced in domain + API (`backend/app/services/run_workflow.py`); distinct capabilities for preparer vs approver; reject self-approval; locking where needed; idempotency and append-only audit for workflow/posting commands. Calculate is row-locked but lacks idempotency and audit. |
+| **Mitigations** | Maker/checker workflow enforced in domain + API (`backend/app/services/run_workflow.py`); distinct capabilities for preparer vs approver; reject self-approval; locking where needed; idempotency and append-only audit for workflow/posting commands. Calculate is row-locked, emits a mutation audit event, and supports optional idempotency keys; omitted keys do not provide replay protection. |
 | **Proven-by** | `backend/tests/services/test_run_workflow.py`; `backend/tests/api/test_run_workflow.py`; `backend/tests/services/test_idempotency.py` |
 
 ---
@@ -162,7 +162,7 @@ approve it.
 | --- | --- |
 | **Vector** | PAN/bank/PRAN/GPF/full name in API responses by default, logs, fixtures, screenshots, or golden artifacts; overly broad list endpoints. |
 | **Impact** | Regulatory/privacy breach; irreversible identifier leakage. |
-| **Mitigations** | masked fields with capability-gated reveal; structured log redaction ([security.md](security.md)); sanitized fixtures only (`fixtures/sanitized/june-2026/`); never commit real June 2026 workbook PII. Reveal auditing and a dedicated fixture-PII CI guard remain gaps. |
+| **Mitigations** | masked fields with capability-gated reveal; structured log redaction ([security.md](security.md)); sanitized fixtures only (`fixtures/sanitized/june-2026/`); never commit real June 2026 workbook PII. Employee reveal auditing is implemented; a dedicated real-source fixture-PII CI guard remains a gap. |
 | **Proven-by** | Employee API/service suites; `backend/tests/test_log_redaction.py`; synthetic fixture validator |
 
 ---
@@ -207,7 +207,7 @@ approve it.
 | **Vector** | Unencrypted backups; restore into shared DB without RLS; backup bucket world-readable; PITR clone reused without credential rotation. |
 | **Impact** | Bulk disclosure of payroll data; long-lived credential reuse. |
 | **Mitigations** | Encrypted backups; restricted backup credentials; restore rehearsals prove forced RLS and NOSUPERUSER NOBYPASSRLS runtime database role still hold; SET LOCAL per-request tenant context required after restore; gate K in [release-acceptance.md](release-acceptance.md). |
-| **Proven-by** | `scripts/backup-restore.sh` covers restore integrity; RLS/runtime-role suites exist separately. A combined post-restore RLS rehearsal remains a gap. |
+| **Proven-by** | `scripts/backup-restore.sh restore-scratch` verifies restore integrity and runtime-role RLS/immutable-table privileges; execution evidence is required for the release. |
 
 ---
 
@@ -234,18 +234,18 @@ approve it.
 
 | Threat | Current proof | Gap |
 | --- | --- | --- |
-| Session fixation / hijack | Session/auth and adversarial tests | Staging cookie security remains environment-dependent |
+| Session fixation / hijack | Session/auth and adversarial tests | Staging and production both require Secure cookies; re-run auth suites for the release commit |
 | CSRF | Signed OAuth-state tests + `CsrfMiddleware` session-bound synchronizer token on mutations | None identified in current contract |
 | WorkOS webhook replay/forgery | WorkOS webhook API suite | None identified in current contract |
 | Org confusion / IDOR | RLS, gate D, tenant-context, and artifact suites | Re-run for the release commit |
 | Privilege escalation | Capability matrix and API dependency suites | Support elevation is intentionally absent |
-| Maker/checker bypass | Workflow/idempotency API and service suites | Calculate lacks idempotency and audit |
+| Maker/checker bypass | Workflow/idempotency API and service suites | Optional keys must be supplied for replay protection; re-run calculation/audit suites |
 | Posted-data tampering | Posting plus immutable-grant/RLS suites | None identified in current contract |
-| Sensitive-PII exposure | Employee masking, log-redaction, fixture validation | Reveal audit and fixture-PII CI guard |
+| Sensitive-PII exposure | Employee masking, log-redaction, fixture validation | Dedicated real-source fixture-PII CI guard |
 | Object storage leak | Storage/artifact suites with audited backend streaming | Environment persistence rehearsal |
 | Support abuse | Default deny | No time-boxed audited support path |
 | Supply chain | Pinned manifests/lockfile | No scanner or SBOM CI evidence |
-| Backup / restore | Backup helper plus separate RLS/runtime-role suites | No combined post-restore RLS automation |
+| Backup / restore | `restore-scratch` combines restore with runtime-role RLS/immutable-privilege probes | Execute and retain evidence for the release commit |
 
 ---
 

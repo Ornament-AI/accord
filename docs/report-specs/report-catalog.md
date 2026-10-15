@@ -44,7 +44,7 @@ There is **no** separate data-fetching path per output format. Formatters may ch
 
 ### Snapshot-only reads
 
-Report builders read **only** posted immutable data:
+Financial and employee-master report values use posted immutable data:
 
 - Pay lines, component classifications, and totals come from the posted run version (`payroll_employee_results`, `payroll_result_lines`, run-version `totals`).
 - For the register, payments, recovery, and approval-note families, display data comes from the **immutable report snapshot** (`payroll_report_snapshots`). It is written at posting from the calc-time `inputs_snapshot`. It holds the component catalog (code, name, display order, classification), employee identity (name, designation, PAN, PRAN, GPF account number, bank account), the report profile (DDO code, heads, signatories, bank advice recipient), recovery sources, and run metadata.
@@ -55,6 +55,11 @@ Report builders read **only** posted immutable data:
 - Rate and rule snapshots are captured at calculation time (see [ADR 0007](../adr/0007-payroll-run-calculation-model.md) and [payroll-domain.md](../payroll-domain.md)).
 
 Builders **never** read live master data for amounts, rates, bank accounts, or remittance routing. If a field was not snapshotted, it is absent or null in the DTO. It is never backfilled from today. A posted run with no report snapshot fails with a clear error. It needs an explicit audited backfill first (`backend/app/reports/snapshots.py`).
+
+Approval-note workflow evidence joins approval records to the current `User`
+row for actor display names. That label lookup is separate from the frozen
+employee identity, signatories and monetary snapshot; do not describe every
+report query as a snapshot-only read.
 
 ### Artifact recording
 
@@ -241,3 +246,25 @@ Resolved since the first draft of this catalog:
 - The v3 single-workbook decision and exact sheet topology are recorded in the
   canonical export contract.
 - Job-based async builds (ADR 0010) and live preview both exist. Preview is not limited to the product allowlist.
+
+## Generation and numeric boundaries
+
+The default consolidated v3 export is one XLSX workbook. Explicit v2 requests
+produce a ZIP of separate workbooks. Product catalog order and v3 workbook
+sheet order have distinct authorities (`registry_setup.py` and
+`canonical_excel.py`). The renderer revision participates in dedupe/artifact
+identity; it does not make timestamp-bearing XLSX/ZIP bytes deterministic.
+
+Generation has three separate retry boundaries: the HTTP routes optionally
+use the shared command idempotency table when a key is supplied; queue enqueue
+uses organization-scoped in-flight deduplication; execution can reuse artifacts. Pending/uploaded
+intents can be resumed with the same object key. Finalized reuse is selected
+from artifact metadata; it is not a fresh object-read/checksum verification.
+
+The generic Excel writer converts quantized Decimal amounts to numeric cells
+at the output boundary. Excel's numeric precision limit still applies; exact
+Decimal calculation does not establish arbitrary-precision XLSX storage.
+`#,##,##0.00` is the chosen display format, not a guarantee of unlimited Indian
+grouping in every spreadsheet viewer. The generic PDF fallback uses Helvetica
+with Latin-1 replacement when bundled fonts are unavailable; correct Unicode
+output depends on the font assets being present.

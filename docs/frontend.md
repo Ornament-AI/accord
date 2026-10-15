@@ -87,7 +87,7 @@ is normal there. The shared HTTP layer:
 - includes the session cookie by default;
 - converts failed responses into `ApiError` values;
 - understands the backend Problem Detail envelope;
-- redirects an expired session to `/login`; and
+- redirects authenticated-call 401s to `/login` (public calls surface an error); and
 - handles binary downloads and `Content-Disposition` filenames.
 
 Server-state domain modules under `frontend/src/lib/api/`, such as employees,
@@ -100,7 +100,7 @@ payroll runs, reports, and audit, follow one pattern:
 
 The shared client in `frontend/src/lib/query-client.ts` treats data as fresh for
 30 seconds and keeps unused cache entries for 30 minutes. Queries may retry
-network errors, HTTP 408/429, and server errors at most twice. Mutations never
+network errors, HTTP 408/429, server errors, and non-`ApiError` failures at most twice. Mutations never
 retry automatically. Preserve that rule for financial commands: an automatic
 mutation retry can duplicate work unless the command's idempotency contract
 explicitly makes it safe.
@@ -114,7 +114,9 @@ pnpm generate:api
 ```
 
 Commit the backend schema change and the regenerated TypeScript contract
-together.
+together. Generated types provide compile-time checks; `fetchJson<T>` casts
+parsed JSON and does not validate every response at runtime. Session bootstrap
+uses its own explicit response parser.
 
 ## Components and styling
 
@@ -141,13 +143,17 @@ pnpm --filter frontend build
 ```
 
 Vitest and Testing Library cover utilities, providers, UI primitives, and page
-modules. MSW supplies API behavior for component tests. Playwright covers the
-signed-in setup, master data, the payroll workflow through submit and the
-self-approval denial, the reports empty state, and automated accessibility
-checks. The report generate, poll, and download journey is intentionally
-skipped because the local dev-auth harness supplies only one identity and
-cannot produce a posted run through the UI. API, service, and frontend
-integration tests remain the evidence for report generation and download.
+modules. MSW supplies API behavior for component tests. Playwright includes
+signed-in setup, master data, workflow/self-approval denial,
+and a multi-identity approve → post → export → download journey in
+`frontend/e2e/reports.spec.ts`. Provision `E2E_CHECKER_EMAIL` first as described
+in the E2E README. This is an implemented test scenario, not passing execution
+evidence: `logoutViaApi` currently omits `X-CSRF-Token`, so the session-bearing
+logout receives 403 and blocks the checker transition. Fix that helper and run
+the full journey before relying on its coverage. The empty-state test skips
+if a posted run already exists.
+The CI frontend job discovers these tests with `--list`; it does not execute
+the browser journeys. Visual tests also skip when their baseline PNG is absent.
 Playwright runs against a separately prepared full stack:
 
 ```bash

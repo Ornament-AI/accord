@@ -25,13 +25,13 @@ toolchain variable.
 ## HTTP API
 
 `backend/app/main.py` creates the FastAPI app and mounts all application
-routers under `/api`. In non-production environments FastAPI also exposes:
+routers under `/api`. Only in `ENVIRONMENT=development`, FastAPI also exposes:
 
 - `/docs` — Swagger UI
 - `/redoc` — ReDoc
 - `/openapi.json` — the generated schema
 
-Those three endpoints are disabled when `ENVIRONMENT=production`. The
+Those three endpoints are disabled in both staging and production. The
 unauthenticated `/metrics` endpoint is intentionally outside `/api`; keep it
 on a private network or behind an internal scraper.
 
@@ -84,20 +84,22 @@ unprovisioned access states before rendering the protected application.
 ## Application configuration
 
 `Settings` in `backend/app/config.py` is the complete API/worker settings
-contract. `DATABASE_URL` is the only field with no code default. Production
-absence-checks `MIGRATIONS_DATABASE_URL`, `WORKOS_CLIENT_ID`,
-`WORKOS_API_KEY`, `WORKOS_WEBHOOK_SECRET`, and `SESSION_SECRET_KEY`, and
-rejects `DEV_AUTH_BYPASS=true`. `WORKOS_REDIRECT_URI` is checked for a
-nonempty value but has a localhost code default, so operators must explicitly
-override it with the registered production callback; omission does not
-currently fail startup.
+contract. `DATABASE_URL` has no code default. Both staging and production
+require WorkOS client/API/webhook settings, a callback string without literal
+`localhost` or `127.0.0.1`, a session
+secret of at least 32 characters, `PUBLIC_APP_URL`, and non-default
+`CORS_ORIGINS`. They reject development auth bypass and weak-secret overrides.
+The callback check is case-sensitive substring matching, not parsed hostname
+validation; uppercase localhost and IPv6 loopback are not rejected by it.
+`MIGRATIONS_DATABASE_URL` belongs to the one-shot Alembic task and is not
+required or injected into the long-lived API/worker containers.
 
 | Group | Variables |
 | --- | --- |
 | Database | `DATABASE_URL`, `MIGRATIONS_DATABASE_URL`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, `DB_POOL_RECYCLE_SECONDS`, `DB_STATEMENT_TIMEOUT_MS` |
 | Runtime | `ENVIRONMENT`, `LOG_LEVEL`, `APP_VERSION`, `BASE_URL`, `PUBLIC_APP_URL`, `CORS_ORIGINS`, `MAX_REQUEST_BODY_BYTES` |
 | WorkOS | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_WEBHOOK_SECRET`, `WORKOS_WEBHOOK_TOLERANCE_SECONDS` |
-| Session | `SESSION_SECRET_KEY`, `SESSION_COOKIE_NAME`, `SESSION_IDLE_TIMEOUT_SECONDS` |
+| Session | `SESSION_SECRET_KEY`, `SESSION_COOKIE_NAME`, `CSRF_COOKIE_NAME`, `SESSION_IDLE_TIMEOUT_SECONDS` |
 | Local identity | `DEV_AUTH_BYPASS`, `DEV_AUTH_EMAIL`, `DEV_AUTH_NAME`, `ACCORD_ALLOW_WEAK_SECRETS` |
 | Object storage | `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY`, `OBJECT_STORAGE_SECRET_KEY` |
 
@@ -106,6 +108,11 @@ Compose adds operator variables rather than application settings:
 `ACCORD_DB_PASSWORD`, `GHCR_USERNAME`, and `GHCR_TOKEN`.
 `WORKER_DATABASE_URL` is a Compose-only override that is passed to the worker
 container as its `DATABASE_URL`.
+
+Development password login uses the submitted email (with a derived local
+subject for other emails); hosted dev login and magic-code login use the
+configured development identity. Provision each identity needed for maker/checker
+tests. This bypass is available only in explicit development mode.
 
 For development, run `./scripts/dev-setup.sh` and `./scripts/start.sh` rather
 than copying production Compose settings. `start.sh` enables the local auth

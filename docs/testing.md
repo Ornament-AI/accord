@@ -19,9 +19,9 @@ The canonical local check is one script, run from the repo root:
 
 It runs these steps in order: shell syntax checks (`bash -n` over `scripts/`
 and `deploy/`); backend lint (`ruff check` and `ruff format --check`); the
-full backend pytest suite; the generated API type drift check
+full backend pytest suite; sanitized fixture validation; report-catalog drift; the generated API type drift check
 (`scripts/generate-api-types.sh` plus a `git diff` on
-`frontend/src/types/api.generated.ts`); then frontend lint, format check,
+`frontend/src/types/api.generated.ts`); then frontend lint, anti-slop CI/smoke checks, format check,
 typecheck, Vitest tests, and the production build. Any failing step fails
 the whole script. A step whose inputs are missing prints a `skip:` line.
 
@@ -57,7 +57,7 @@ CI (`.github/workflows/ci.yml`) runs backend/frontend equivalents plus
 migration and image-build jobs. The `backend`
 job runs ruff and pytest against a Postgres 18 service container. The
 `migrations` job runs `alembic upgrade head` plus `alembic check` on a fresh
-database. The `frontend` job runs lint and format checks over source plus tracked E2E TypeScript, typecheck, Playwright test discovery, Vitest, and the production build. The dedicated `api-type-drift` job regenerates `frontend/src/types/api.generated.ts` and fails on a diff. Two more jobs build the backend and web Docker images. On pull requests, lane-specific jobs are skipped when their lane did not change; API drift remains unconditional. Shell-syntax validation remains a local `verify.sh` check.
+database. The `frontend` job runs lint and format checks over source plus tracked E2E TypeScript, typecheck, Playwright test discovery, Vitest, and the production build. The dedicated `api-type-drift` job regenerates `frontend/src/types/api.generated.ts` and fails on a diff. Two more jobs build the backend and web Docker images. On pull requests, lane-specific jobs are skipped when their lane did not change; API drift remains unconditional. The unconditional API-type job also checks shell syntax and report-catalog drift. Sanitized fixture validation runs separately on every CI invocation. The frontend job only discovers browser tests; execute Playwright against a prepared stack for actual browser evidence.
 
 ## Test pyramid
 
@@ -202,14 +202,13 @@ There is no `backend/tests/security/` directory. Current coverage:
   `backend/tests/api/test_deps_capabilities.py`.
 - PII masking and capability-gated reveal (`reveal_sensitive_fields`):
   `backend/tests/api/test_employees.py`,
-  `backend/tests/services/test_employees.py`. The reveal read is not yet
-  audit-logged.
+  `backend/tests/services/test_employees.py`. Reveal reads write
+  `employee.pii.reveal` access events.
 - Log redaction: `backend/tests/test_log_redaction.py`.
 - Posted SQL immutability: `backend/tests/rls/test_immutable_grants.py`.
 - Deploy hardening contract: `backend/tests/ops/test_msidc_deploy_contract.py`.
-- Not yet landed (named in the original contract): a dedicated CSRF
-  synchronizer-token suite, a support break-glass suite, and a
-  backup/restore RLS rehearsal suite.
+- Not yet landed (named in the original contract): a support break-glass suite. CSRF coverage lives in auth/session
+  and API tests; the scratch-restore helper includes runtime-role RLS proof.
 
 ### Frontend
 
@@ -226,8 +225,11 @@ There is no `backend/tests/security/` directory. Current coverage:
   `frontend/e2e/README.md` for setup and the `accord_e2e` database):
   `frontend/e2e/auth-and-org.spec.ts`, `frontend/e2e/master-data.spec.ts`,
   `frontend/e2e/payroll-flow.spec.ts` (run creation and maker/checker
-  denial), `frontend/e2e/reports.spec.ts` (empty state; generation/download
-  is explicitly skipped because one dev identity cannot produce a posted run).
+  denial), `frontend/e2e/reports.spec.ts` (multi-identity approval, posting,
+  export/download, and an empty-state test that skips when posted runs exist).
+  The multi-identity journey is currently blocked at `logoutViaApi`: its
+  session-bearing POST omits the CSRF header and is rejected with 403. Correct
+  the helper and execute the scenario before claiming end-to-end coverage.
 - Accessibility (axe-core): `frontend/e2e/axe-a11y.spec.ts`.
 ## Conventions
 
@@ -310,7 +312,7 @@ Documented decision (see [security.md](security.md),
 
 - HTTP-only + Secure + SameSite=Lax cookies (Lax is justified by the WorkOS
   redirect auth flow). The code sets these flags in
-  `backend/app/auth/session.py` (`secure` only in production).
+  `backend/app/auth/session.py` (`secure` in staging and production).
 - SameSite=Lax session cookie **plus** a synchronizer CSRF token on
   state-changing routes (the header must match a server-issued token).
   Implemented by `backend/app/middleware/csrf.py`: the `accord_csrf` cookie is
@@ -336,5 +338,18 @@ Documented decision (see [security.md](security.md),
 | append-only audit log tables | workflow suites; `backend/tests/api/test_audit_read.py` |
 | SQL immutability of posted data | `backend/tests/rls/test_immutable_grants.py` |
 | capability/permission checks at the API layer | `backend/tests/gate_d/test_capability_matrix.py`, `backend/tests/api/test_deps_capabilities.py` |
-| masked fields with capability-gated reveal | `backend/tests/api/test_employees.py`, `backend/tests/services/test_employees.py` (reveal audit remains a gap) |
+| masked fields with capability-gated reveal | `backend/tests/api/test_employees.py`, `backend/tests/services/test_employees.py` (including reveal access events) |
 | log redaction of sensitive fields | `backend/tests/test_log_redaction.py` |
+
+## Lint and evidence limits
+
+`lint:anti-slop:ci` uses `--quiet`: configured errors fail, while warning-only
+rules do not become merge blockers. `lint:anti-slop:strict` uses
+`--deny-warnings` and is a different contract. The vendored Effect rules are
+not registered by this application.
+
+Domain functions are dependency-light, but the normal `backend/tests` run loads
+an autouse PostgreSQL/Alembic fixture even for domain tests. An isolated domain
+run with a narrower `--confcutdir` is useful supplemental evidence, not a
+replacement for the canonical database-backed suite. Dated React Doctor logs
+and screenshots are historical evidence, not current release attestations.
