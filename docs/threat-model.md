@@ -140,7 +140,7 @@ approve it.
 | --- | --- |
 | **Vector** | Same actor performs prepare and approve; skip `submit`; direct `post` without approvals; race that collapses dual control. |
 | **Impact** | Fraudulent or erroneous payroll posts without independent review. |
-| **Mitigations** | Maker/checker workflow enforced in domain + API (`backend/app/services/run_workflow.py`); distinct capabilities for preparer vs approver; reject self-approval; locking where needed; idempotency and append-only audit for workflow/posting commands. Calculate is row-locked but lacks idempotency and audit. |
+| **Mitigations** | Maker/checker workflow enforced in domain + API (`backend/app/services/run_workflow.py`); distinct capabilities for preparer vs approver; reject self-approval; locking where needed; idempotency and append-only audit for workflow/posting commands. Calculate is row-locked, emits a mutation audit event, and supports optional idempotency keys; omitted keys do not provide replay protection. |
 | **Proven-by** | `backend/tests/services/test_run_workflow.py`; `backend/tests/api/test_run_workflow.py`; `backend/tests/services/test_idempotency.py` |
 
 ---
@@ -234,18 +234,18 @@ approve it.
 
 | Threat | Current proof | Gap |
 | --- | --- | --- |
-| Session fixation / hijack | Session/auth and adversarial tests | Staging cookie security remains environment-dependent |
+| Session fixation / hijack | Session/auth and adversarial tests | Staging and production both require Secure cookies; re-run auth suites for the release commit |
 | CSRF | Signed OAuth-state tests + `CsrfMiddleware` session-bound synchronizer token on mutations | None identified in current contract |
 | WorkOS webhook replay/forgery | WorkOS webhook API suite | None identified in current contract |
 | Org confusion / IDOR | RLS, gate D, tenant-context, and artifact suites | Re-run for the release commit |
 | Privilege escalation | Capability matrix and API dependency suites | Support elevation is intentionally absent |
-| Maker/checker bypass | Workflow/idempotency API and service suites | Calculate lacks idempotency and audit |
+| Maker/checker bypass | Workflow/idempotency API and service suites | Optional keys must be supplied for replay protection; re-run calculation/audit suites |
 | Posted-data tampering | Posting plus immutable-grant/RLS suites | None identified in current contract |
-| Sensitive-PII exposure | Employee masking, log-redaction, fixture validation | Reveal audit and fixture-PII CI guard |
+| Sensitive-PII exposure | Employee masking, log-redaction, fixture validation | Dedicated real-source fixture-PII CI guard |
 | Object storage leak | Storage/artifact suites with audited backend streaming | Environment persistence rehearsal |
 | Support abuse | Default deny | No time-boxed audited support path |
 | Supply chain | Pinned manifests/lockfile | No scanner or SBOM CI evidence |
-| Backup / restore | Backup helper plus separate RLS/runtime-role suites | No combined post-restore RLS automation |
+| Backup / restore | `restore-scratch` combines restore with runtime-role RLS/immutable-privilege probes | Execute and retain evidence for the release commit |
 
 ---
 

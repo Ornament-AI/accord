@@ -85,9 +85,12 @@ unprovisioned access states before rendering the protected application.
 
 `Settings` in `backend/app/config.py` is the complete API/worker settings
 contract. `DATABASE_URL` has no code default. Both staging and production
-require WorkOS client/API/webhook settings, a non-localhost callback, a session
+require WorkOS client/API/webhook settings, a callback string without literal
+`localhost` or `127.0.0.1`, a session
 secret of at least 32 characters, `PUBLIC_APP_URL`, and non-default
 `CORS_ORIGINS`. They reject development auth bypass and weak-secret overrides.
+The callback check is case-sensitive substring matching, not parsed hostname
+validation; uppercase localhost and IPv6 loopback are not rejected by it.
 `MIGRATIONS_DATABASE_URL` belongs to the one-shot Alembic task and is not
 required or injected into the long-lived API/worker containers.
 

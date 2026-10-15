@@ -147,7 +147,11 @@ modules. MSW supplies API behavior for component tests. Playwright includes
 signed-in setup, master data, workflow/self-approval denial,
 and a multi-identity approve → post → export → download journey in
 `frontend/e2e/reports.spec.ts`. Provision `E2E_CHECKER_EMAIL` first as described
-in the E2E README. The empty-state test skips if a posted run already exists.
+in the E2E README. This is an implemented test scenario, not passing execution
+evidence: `logoutViaApi` currently omits `X-CSRF-Token`, so the session-bearing
+logout receives 403 and blocks the checker transition. Fix that helper and run
+the full journey before relying on its coverage. The empty-state test skips
+if a posted run already exists.
 The CI frontend job discovers these tests with `--list`; it does not execute
 the browser journeys. Visual tests also skip when their baseline PNG is absent.
 Playwright runs against a separately prepared full stack:

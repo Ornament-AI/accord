@@ -227,6 +227,9 @@ There is no `backend/tests/security/` directory. Current coverage:
   `frontend/e2e/payroll-flow.spec.ts` (run creation and maker/checker
   denial), `frontend/e2e/reports.spec.ts` (multi-identity approval, posting,
   export/download, and an empty-state test that skips when posted runs exist).
+  The multi-identity journey is currently blocked at `logoutViaApi`: its
+  session-bearing POST omits the CSRF header and is rejected with 403. Correct
+  the helper and execute the scenario before claiming end-to-end coverage.
 - Accessibility (axe-core): `frontend/e2e/axe-a11y.spec.ts`.
 ## Conventions
 

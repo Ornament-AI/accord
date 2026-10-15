@@ -131,7 +131,7 @@ is the liveness probe.
 |---|---|
 | `status` | `ok` (HTTP 200) or `degraded` (HTTP 503) |
 | `database` | `ok` or hard-fail 503 `"Database connection is not ready."` |
-| `auth` | Local configured-adapter readiness flag; hard-fail 503 if false. No live WorkOS request. |
+| `auth` | Startup configuration flag; hard-fail 503 if false. Explicit development returns true even with bypass disabled and missing WorkOS credentials, although login then fails. No live WorkOS request or adapter-construction proof. |
 | `jobs` | `ok` / `unavailable` (jobs table query, not worker execution proof) |
 | `storage` | `ok` / `unconfigured` / `unavailable` |
 | `reports` | `ok` / `empty` / `missing` |
