@@ -1,66 +1,40 @@
-# AGENTS.md
+# Accord agent guide
 
-## Cursor Cloud specific instructions
+Read [README](README.md) for setup and the payroll hard rules,
+[developer reference](docs/developer-reference.md) for implementation, and
+[security](docs/security.md) for identity, capabilities and database roles.
 
-Environment notes for future cloud agents. System deps (Node 24.18.0, Python 3.14,
-PostgreSQL 18) are already baked into the VM snapshot; the startup update script only
-refreshes project dependencies (`pnpm install` + backend venv `pip install`). Standard
-run/verify commands live in `README.md`, root `package.json` scripts, and `scripts/`.
+## Setup and verification
 
-### Services and how to run them
+- Use the checked-in manifests, lockfile and CI toolchain; root `package.json`
+  pins pnpm. Do not assume a particular Cursor snapshot, PATH symlink or database
+  has already been provisioned.
+- From the root, `./scripts/dev-setup.sh` prepares local dependencies/databases;
+  `./scripts/start.sh` applies migrations and starts the API and Vite. Use
+  `./scripts/status.sh` and `./scripts/stop.sh` for the managed processes.
+  macOS Homebrew provisioning may use `./scripts/dev-setup.sh --start`.
+  Follow the selected environment's startup instructions on Linux.
+- `pnpm verify` is the combined local gate. Focused frontend checks are
+  `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
+  See [testing](docs/testing.md) for backend and browser prerequisites.
+- Backend tests require an explicitly verified disposable test database; the
+  name containing `test` is not proof of a safe host. Never use the local dev
+  superuser role in a shared, staging or production environment.
+- Organization bootstrap is CLI-only (ADR 0011). A fresh database needs an org
+  and matching admin before login; use README's first-sign-in procedure rather
+  than assuming a pre-seeded VM. Dev auth bypass is local/test only.
 
-- **Start everything:** `./scripts/start.sh` (defaults to backend on `:8000` and
-  frontend/Vite on `:5173`, choosing another free port if either is busy;
-  `DEV_AUTH_BYPASS=true`; it also runs `alembic upgrade head`). Stop with
-  `./scripts/stop.sh`. See `README.md` "Quick start" for flags and port overrides.
-- **PostgreSQL is NOT auto-started on a fresh VM.** The cluster data dir (roles, DBs,
-  `pg_hba.conf`) persists in the snapshot, but the server process does not. Start it
-  each session before running the app or tests:
-  `sudo pg_ctlcluster 18 main start`.
+## Code Review Rules
 
-### Non-obvious gotchas
-
-- **Node/pnpm PATH shadowing:** `/exec-daemon/node` is an older Node 22.14 that is
-  earlier in `PATH`. It is overridden by symlinks in `/usr/local/cargo/bin` (first in
-  `PATH`) pointing at Node 24.18.0. Corepack resolves the repository's pinned pnpm
-  12.1.0. Do not "fix" this with nvm.
-- **Backend venv is Python 3.14** at `backend/.venv` (deadsnakes `python3.14`). The
-  repo's `dev-setup.sh`/`start.sh` fall back to `python3 -m venv`, which would be the
-  system 3.12 — the venv is intentionally created with `python3.14` instead.
-- **Postgres auth:** `pg_hba.conf` is set to `trust` for `127.0.0.1`. An `ubuntu`
-  superuser role exists for admin `psql`. The dev-only bootstrap role `accord`
-  (password `accord`) has `LOGIN SUPERUSER CREATEDB`; never use it in shared,
-  staging, or production environments. Least-privilege app roles (`accord_app`,
-  `accord_migrator`, and `accord_worker`) plus the `accord` and `accord_test`
-  databases are already provisioned.
-- **Organization bootstrap is CLI-only (ADR 0011).** Until an org row exists the app
-  shows "Deployment Not Ready". An org (`Dev Org`, admin `dev@accord.local`, which
-  matches `DEV_AUTH_EMAIL`) is already provisioned in the snapshot DB. If the DB is
-  reset, re-run:
-  ```bash
-  DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:5432/accord" \
-  ENVIRONMENT=development DEV_AUTH_BYPASS=true \
-  SESSION_SECRET_KEY=dev-only-local-session-secret ACCORD_ALLOW_WEAK_SECRETS=1 \
-  backend/.venv/bin/python scripts/provision_organization.py \
-    --name "Dev Org" --slug dev-org --admin-email dev@accord.local
-  ```
-- **Dev login:** on `/login`, any email/password works (auth bypass); the session
-  identity is fixed from `DEV_AUTH_EMAIL` at backend startup.
-
-### Verify / test
-
-- **Frontend:** `pnpm --filter frontend lint` / `format:check` / `typecheck` /
-  `test:run` / `build` (see `.github/workflows/ci.yml`). `./scripts/verify.sh` runs the
-  combined lanes.
-- **Backend:** from `backend/`, `.venv/bin/ruff check app tests`,
-  `.venv/bin/ruff format --check app tests`, and pytest. The test conftests
-  default `TEST_DATABASE_URL` to the local `accord_test` DSN; the database name
-  must contain `test`. Set it explicitly when in doubt:
-  ```bash
-  cd backend
-  TEST_DATABASE_URL="postgresql+asyncpg://accord:accord@127.0.0.1:5432/accord_test" \
-  PYTHONPATH=. .venv/bin/pytest tests -q
-  ```
-- **Playwright E2E** (`pnpm --filter frontend e2e`) additionally requires browser
-  binaries (`pnpm --filter frontend exec playwright install`), which are not part of the
-  standard update script.
+- Flag binary floats in payroll calculations or money transport. Use Decimal /
+  PostgreSQL NUMERIC and decimal-string API values.
+- Flag edits or deletion of posted payroll and loss of the dated master-data
+  versions/snapshots it used. Withdraw before posting; reverse after posting.
+- Commit required audit evidence and integration-worthy outbox events atomically
+  with the mutation. Follow [ADR 0009's audit/outbox matrix](docs/adr/0009-audit-outbox.md#6-what-gets-audit-vs-outbox):
+  monthly exceptions, master-data version appends and artifact downloads are
+  audit-only unless their integration contract adds a sink. Do not require
+  unnecessary outbox rows or make a spreadsheet the system of record.
+- Preserve the one-organization-per-deployment boundary, WorkOS identity,
+  membership capabilities, session-bound CSRF and least-privilege database roles.
+  UI visibility alone is not authorization; follow the security doc's exceptions.

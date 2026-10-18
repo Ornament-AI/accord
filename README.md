@@ -80,7 +80,7 @@ These are product constraints, not style preferences.
 | Temporal truth | Master data changes are dated versions. A posted run stores the version ids and snapshots it used. |
 | Immutable posting | Posted results are never edited or deleted. Withdraw before post, or reverse after. |
 | Single organization | Each deployment serves one organization ([ADR 0011](docs/adr/0011-single-organization.md)). |
-| Transactional evidence | Every business change commits with an append-only audit event and an outbox event. |
+| Transactional evidence | Commit required audit evidence and integration-worthy outbox events atomically with the business change. [ADR 0009](docs/adr/0009-audit-outbox.md#6-what-gets-audit-vs-outbox) defines audit-only exceptions. |
 
 ## Pay-run statuses
 
