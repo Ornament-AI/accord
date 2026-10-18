@@ -30,8 +30,11 @@ Read [README](README.md) for setup and the payroll hard rules,
   PostgreSQL NUMERIC and decimal-string API values.
 - Flag edits or deletion of posted payroll and loss of the dated master-data
   versions/snapshots it used. Withdraw before posting; reverse after posting.
-- Every business mutation must commit its append-only audit and outbox evidence
-  atomically. Do not make a spreadsheet the system of record.
+- Commit required audit evidence and integration-worthy outbox events atomically
+  with the mutation. Follow [ADR 0009's audit/outbox matrix](docs/adr/0009-audit-outbox.md#6-what-gets-audit-vs-outbox):
+  monthly exceptions, master-data version appends and artifact downloads are
+  audit-only unless their integration contract adds a sink. Do not require
+  unnecessary outbox rows or make a spreadsheet the system of record.
 - Preserve the one-organization-per-deployment boundary, WorkOS identity,
   membership capabilities, session-bound CSRF and least-privilege database roles.
   UI visibility alone is not authorization; follow the security doc's exceptions.
