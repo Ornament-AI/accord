@@ -48,7 +48,7 @@ class PreparationTests(unittest.TestCase):
         )
         self.boot.start()
         self.addCleanup(self.boot.stop)
-        for name in ("prepare-release.py", "phase_timing.py"):
+        for name in ("prepare-release.py", "phase_timing.py", ".env.example"):
             shutil.copyfile(ROOT / "deploy" / name, self.root / name)
         shutil.copyfile(ROOT / "scripts/vendor/onprem_release.py", self.root / "onprem_release.py")
         (self.root / "docker-compose.yml").write_text(

@@ -29,7 +29,7 @@ def _write_fake_docker(fake_bin: Path, docker_log: Path) -> None:
 
 
 def _install_setup(deploy_dir: Path) -> None:
-    for name in ("setup.sh", "prepare-release.py"):
+    for name in ("setup.sh", "prepare-release.py", ".env.example"):
         (deploy_dir / name).write_text((ROOT / "deploy" / name).read_text())
     (deploy_dir / "onprem_release.py").write_text(
         (ROOT / "scripts/vendor/onprem_release.py").read_text()

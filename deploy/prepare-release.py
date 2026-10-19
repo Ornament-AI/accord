@@ -95,6 +95,21 @@ def read_input(path: Path):
 def environment_file(root: Path):
     data, _ = read_input(root / ".env")
     values = {}
+    compose_source = (root / "docker-compose.yml").read_text()
+    example = (root / ".env.example").read_text()
+    allowed = set(re.findall(r"(?<!\$)\$(?:\{)?([A-Za-z_][A-Za-z0-9_]*)", compose_source))
+    allowed.update(re.findall(r"(?m)^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=", example))
+    # Existing retired registry/bootstrap settings remain ignored by setup.
+    allowed.update(
+        {
+            "GHCR_TOKEN",
+            "GHCR_TOKEN_FILE",
+            "GHCR_USERNAME",
+            "ACCORD_RELEASE_GHCR_USERNAME",
+            "ACCORD_RELEASE_GHCR_TOKEN",
+            "ACCORD_CONFIRMED_FRESH_INSTALL",
+        }
+    )
     for line in data.decode().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -104,6 +119,7 @@ def environment_file(root: Path):
         key, value = (part.strip() for part in line.split("=", 1))
         require(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) is not None, "invalid environment key")
         require(key not in values, "duplicate environment key")
+        require(key in allowed, "untracked environment key")
         require(
             not key.startswith(("COMPOSE_", "DOCKER_", "RELEASE_PREPARATION_", "PYTHON", "LD_"))
             and key
