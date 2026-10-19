@@ -6,10 +6,13 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import uuid
+
+sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("preparation", ROOT / "deploy/prepare-release.py")
@@ -152,6 +155,21 @@ class PreparationTests(unittest.TestCase):
         with patch.dict(os.environ, {"RELEASE_PREPARATION_ATTEMPT": str(uuid.uuid4())}):
             with self.assertRaises(PREP.PreparationError):
                 self.verify()
+
+    def test_changed_boot_identity_fails(self):
+        self.prepare()
+        with patch.object(
+            PREP,
+            "proof_context",
+            return_value=(os.environ["RELEASE_PREPARATION_ATTEMPT"], "different-boot"),
+        ):
+            with self.assertRaises(PREP.PreparationError):
+                self.verify()
+
+    def test_untracked_empty_directory_fails(self):
+        (self.root / "untracked-config").mkdir()
+        with self.assertRaises(PREP.PreparationError):
+            self.prepare()
 
     def test_directory_promotion_keeps_file_identity_proof_valid(self):
         self.prepare()

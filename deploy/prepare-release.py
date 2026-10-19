@@ -261,8 +261,17 @@ def inputs(root: Path, release):
             "signed deployment input changed",
         )
         paths[str(relative)] = identity
+    allowed_directories = {".prepared-secrets"} if SECRET_FILES else set()
+    for path in paths:
+        allowed_directories.update(
+            str(parent) for parent in Path(path).parents if str(parent) != "."
+        )
     for current, directories, files in os.walk(root, followlinks=False):
         for name in directories:
+            require(
+                str((Path(current) / name).relative_to(root)) in allowed_directories,
+                "untracked deployment directory",
+            )
             require(not (Path(current) / name).is_symlink(), "symlinked input directory")
         for name in files:
             relative = (Path(current) / name).relative_to(root)
@@ -319,7 +328,7 @@ def stage(root: Path):
             )
             data, identity = read_input(source)
             require(data, "empty credential input")
-            # Private directory, original file ownership/mode; live sources are
+            # Private directory and root-owned copies with existing modes; live sources are
             # never chmod/chown'ed. Compose mounts each isolated file read-only.
             fd = os.open(
                 target / filename,

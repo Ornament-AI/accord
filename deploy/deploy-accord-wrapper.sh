@@ -698,8 +698,6 @@ install -d -o root -g root -m 0700 "$RELEASE_PREPARATION_EVIDENCE"
 prepare_candidate() {
     ACCORD_EXPECTED_SHA="$SHA" bash "$EXTRACTED/deploy/setup.sh" --prepare \
         || die "candidate preparation failed; application writers were not stopped"
-    ACCORD_EXPECTED_SHA="$SHA" bash "$EXTRACTED/deploy/setup.sh" --verify-prepared \
-        || die "candidate preparation changed before drain; application writers were not stopped"
 }
 BOOTSTRAP_MARKER="/opt/accord/.allow-first-release-$SHA"
 BOOTSTRAP_MODE=false
@@ -720,6 +718,8 @@ if [[ -f "$BOOTSTRAP_MARKER" && ! -L "$BOOTSTRAP_MARKER" \
     prepare_candidate
     require_backup_capacity /opt/accord/backups/releases 0 \
         || die "insufficient capacity after preparing a fresh release"
+    ACCORD_EXPECTED_SHA="$SHA" bash "$EXTRACTED/deploy/setup.sh" --verify-prepared \
+        || die "candidate preparation changed before drain; application writers were not stopped"
     printf '%s\n' "$SHA" >"$EXTRACTED/deploy/release-bootstrap-evidence"
     chmod 0600 "$EXTRACTED/deploy/release-bootstrap-evidence"
 else
@@ -772,6 +772,8 @@ else
         || die "could not remeasure database capacity before drain"
     require_backup_capacity /opt/accord/backups/releases "$DATABASE_BYTES" "$MINIO_DATA_ROOT" \
         || die "backup reserve no longer fits after staging; application writers were not stopped"
+    ACCORD_EXPECTED_SHA="$SHA" bash "$EXTRACTED/deploy/setup.sh" --verify-prepared \
+        || die "candidate preparation changed before drain; application writers were not stopped"
     APP_QUIESCED=true
     docker stop "${APP_CONTAINER_IDS[@]}" >/dev/null \
         || die "could not quiesce the existing Accord application and object store before backup"
