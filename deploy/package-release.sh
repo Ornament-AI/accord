@@ -141,6 +141,30 @@ replace_compose_image \
     "$STAGE_ROOT/deploy/docker-compose.yml" \
     'ghcr.io/ornament-ai/accord/web:${ACCORD_TAG:-latest}' \
     "$WEB_REF" 1
+# Source checkouts support local builds; a signed release contains only images.
+# Strip the four service build mappings before hashing the packaged Compose file.
+python3 - "$STAGE_ROOT/deploy/docker-compose.yml" <<'PYBUILD'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+lines = path.read_text().splitlines(keepends=True)
+output = []
+skipping = False
+removed = 0
+for line in lines:
+    if line.rstrip() == "    build:":
+        skipping = True
+        removed += 1
+        continue
+    if skipping and (not line.strip() or line.startswith("      ")):
+        continue
+    skipping = False
+    output.append(line)
+if removed != 4:
+    raise SystemExit("expected exactly four development build mappings")
+path.write_text("".join(output))
+PYBUILD
 python3 "$STAGE_ROOT/deploy/onprem_release.py" build \
     --adapter "$SCRIPT_DIR/onprem-release-adapter.json" \
     --bundle-root "$STAGE_ROOT" \

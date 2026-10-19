@@ -74,11 +74,30 @@ compose() { /usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" compose "$SCRIPT_D
 PREVIOUS_API_IMAGE=""
 PREVIOUS_WEB_IMAGE=""
 REGISTRY_CONFIG=""
+PREPARATION_CHILD=""
+run_preparation_child() {
+    # An asynchronous wait lets catchable signals interrupt login/pull promptly.
+    # The private process group includes the helper's Docker descendants.
+    local status=0
+    setsid "$@" <&0 &
+    PREPARATION_CHILD=$!
+    wait "$PREPARATION_CHILD" || status=$?
+    PREPARATION_CHILD=""
+    return "$status"
+}
+stop_preparation_child() {
+    if [[ -n "$PREPARATION_CHILD" ]]; then
+        kill -TERM -- "-$PREPARATION_CHILD" 2>/dev/null || true
+        wait "$PREPARATION_CHILD" 2>/dev/null || true
+        PREPARATION_CHILD=""
+    fi
+}
 DEPLOY_MUTATED=false
 DEPLOY_SUCCEEDED=false
 diagnose_failure() {
 	local code=$?
-	trap - EXIT
+	trap - EXIT HUP INT TERM
+	stop_preparation_child
 	if (( code != 0 )) && $DEPLOY_MUTATED && ! $DEPLOY_SUCCEEDED; then
 		warn "Deployment failed. Accord was not declared healthy."
 		compose ps 2>/dev/null || true
@@ -91,6 +110,9 @@ diagnose_failure() {
 	exit "$code"
 }
 trap diagnose_failure EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 guard_persistent_volume_ownership() {
 	local current_count=0 legacy_found=false
@@ -194,14 +216,15 @@ if [[ "$MODE" == "--prepare" ]]; then
 		REGISTRY_CONFIG="$(mktemp -d /tmp/accord-docker-config.XXXXXXXXXX)"
 		chmod 0700 "$REGISTRY_CONFIG"
 		export DOCKER_CONFIG="$REGISTRY_CONFIG"
-		printf '%s' "$EPHEMERAL_GHCR_TOKEN" | docker login ghcr.io \
-			-u "$EPHEMERAL_GHCR_USERNAME" --password-stdin >/dev/null \
+		command -v setsid >/dev/null || die "setsid is required for cancellable preparation"
+		run_preparation_child docker login ghcr.io \
+			-u "$EPHEMERAL_GHCR_USERNAME" --password-stdin <<<"$EPHEMERAL_GHCR_TOKEN" >/dev/null \
 			|| die "GHCR login failed"
 		info "GHCR login ready"
 	else
 		die "ephemeral GHCR credentials were not provided by the operator command"
 	fi
-	/usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" prepare "$SCRIPT_DIR"
+	run_preparation_child /usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" prepare "$SCRIPT_DIR"
 else
 	/usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" verify "$SCRIPT_DIR"
 fi

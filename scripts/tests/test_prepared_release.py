@@ -67,13 +67,7 @@ class PreparationTests(unittest.TestCase):
             )
         )
         shutil.copyfile(path, self.root / "release-manifest.json")
-        lines = []
-        for variable, name in PREP.SECRET_FILES.items():
-            source = Path(self.temp.name) / name
-            source.write_text("private-fixture-value")
-            source.chmod(0o444)
-            lines.append(f"{variable}={source}")
-        (self.root / ".env").write_text("\n".join(lines) + "\n")
+        (self.root / ".env").write_text("SESSION_SECRET_KEY=private-fixture-value\n")
         PREP.stage(self.root)
         self.config = {"services": {name: {"image": REFERENCE} for name in PREP.SERVICES}}
         self.docker = patch.object(PREP, "docker_output", side_effect=self.output)
@@ -186,15 +180,35 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaises(PREP.PreparationError):
             self.prepare()
 
-    def test_changed_credential_source_fails(self):
+    def test_rotated_environment_credential_invalidates_proof(self):
         self.prepare()
-        if not PREP.SECRET_FILES:
-            return  # Accord credentials are literal values in the isolated .env.
-        source = Path(self.temp.name) / next(iter(PREP.SECRET_FILES.values()))
-        source.chmod(0o600)
-        source.write_text("rotated")
+        (self.root / ".env").write_text("SESSION_SECRET_KEY=rotated\n")
         with self.assertRaises(PREP.PreparationError):
             self.verify()
+
+    def test_all_installer_keys_are_accepted(self):
+        spec = importlib.util.spec_from_file_location(
+            "env_validator", ROOT / "deploy/validate-deploy-env.py"
+        )
+        validator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(validator)
+        shutil.copyfile(ROOT / "deploy/docker-compose.yml", self.root / "docker-compose.yml")
+        (self.root / ".env").write_text("\n".join(f"{key}=fixture" for key in validator.ALLOWED))
+        self.assertEqual(set(PREP.environment_file(self.root)), validator.ALLOWED)
+
+    def test_external_secrets_and_configs_are_rejected(self):
+        for section in ("secrets", "configs"):
+            with self.subTest(section=section):
+                self.config[section] = {"unknown": {"file": "/outside/secret"}}
+                with self.assertRaises(PREP.PreparationError):
+                    self.prepare()
+                del self.config[section]
+                shutil.rmtree(Path(os.environ["RELEASE_PREPARATION_EVIDENCE"]) / "configuration")
+
+    def test_credential_copy_artifacts_are_not_accepted(self):
+        (self.root / ".prepared-secrets").mkdir()
+        with self.assertRaises(PREP.PreparationError):
+            self.prepare()
 
     def test_timing_failure_before_start_cannot_write_proof_or_pull(self):
         Path(os.environ["RELEASE_PREPARATION_EVIDENCE"], "configuration").mkdir()

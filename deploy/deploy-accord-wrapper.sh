@@ -393,6 +393,7 @@ FAILED_ROOT="/opt/accord/.deploy-failed-$SHA-$$"
 TRUSTED_PUBLIC_KEY=""
 APP_CONTAINER_IDS=()
 CANDIDATE_PROMOTED=false
+PREPARATION_PID=""
 ACTIVATION_PID=""
 APP_QUIESCED=false
 secure_root_directory /opt \
@@ -410,6 +411,10 @@ secure_root_directory "$LIVE_ROOT" \
 # preserving any staging ownership, mode, ACL, or directory metadata.
 install -d -o root -g root -m 0700 "$CANDIDATE_ROOT"
 cleanup_wrapper() {
+    if [[ -n "$PREPARATION_PID" ]]; then
+        kill -TERM -- "-$PREPARATION_PID" 2>/dev/null || true
+        wait "$PREPARATION_PID" 2>/dev/null || true
+    fi
     if [[ -n "$ACTIVATION_PID" ]]; then
         # Stop the entire activation process group before fencing its containers;
         # otherwise a surviving Compose child could create writers after the fence.
@@ -432,6 +437,7 @@ cleanup_wrapper() {
     fi
 }
 trap cleanup_wrapper EXIT
+trap 'exit 129' HUP
 trap 'exit 143' TERM
 trap 'exit 130' INT
 /usr/bin/python3 - "$STAGED_ROOT" "$CANDIDATE_ROOT" "$SHA" <<'PY'
@@ -696,8 +702,11 @@ export RELEASE_PREPARATION_ATTEMPT="$(/usr/bin/python3 -c 'import uuid; print(uu
 export RELEASE_PREPARATION_EVIDENCE="/opt/accord/backups/releases/preparation-$RELEASE_PREPARATION_ATTEMPT"
 install -d -o root -g root -m 0700 "$RELEASE_PREPARATION_EVIDENCE"
 prepare_candidate() {
-    ACCORD_EXPECTED_SHA="$SHA" bash "$EXTRACTED/deploy/setup.sh" --prepare \
+    ACCORD_EXPECTED_SHA="$SHA" setsid bash "$EXTRACTED/deploy/setup.sh" --prepare &
+    PREPARATION_PID=$!
+    wait "$PREPARATION_PID" \
         || die "candidate preparation failed; application writers were not stopped"
+    PREPARATION_PID=""
 }
 BOOTSTRAP_MARKER="/opt/accord/.allow-first-release-$SHA"
 BOOTSTRAP_MODE=false

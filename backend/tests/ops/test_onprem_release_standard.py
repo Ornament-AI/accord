@@ -129,6 +129,10 @@ def test_package_builds_self_contained_digest_release(tmp_path: Path) -> None:
         extracted = tmp_path / "extracted"
         bundle.extractall(extracted, filter="data")
         assert (extracted / "deploy/release-rehearsed-from-sha").read_text() == f"{'c' * 40}\n"
+        compose = (extracted / "deploy/docker-compose.yml").read_text()
+        assert "    build:" not in compose
+        assert "      context:" not in compose
+        assert "      dockerfile:" not in compose
 
     manifest_path = tmp_path / f"onprem-release-{sha}.json"
     (extracted / "deploy/setup.sh").write_text("tampered\n")

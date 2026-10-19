@@ -3,7 +3,7 @@
 
 The wrapper authenticates the v2 bundle before this adapter runs. This record
 is neither a shared release contract nor evidence for a no-op. Secret contents
-and their hashes are never stored; isolated file identity binds runtime inputs.
+and their hashes are never stored; candidate .env identity binds credential inputs.
 """
 
 from __future__ import annotations
@@ -24,9 +24,7 @@ sys.dont_write_bytecode = True
 APPLICATION = "accord"
 TAG_VARIABLE = "ACCORD_TAG"
 SERVICES = {"web", "role-sync", "worker", "api", "migrations", "minio", "postgres", "minio-init"}
-SECRET_FILES = {}
 PROOF = ".release-prepared.json"
-SOURCES = ".prepared-credential-sources.json"
 ATTEMPT_VARIABLE = "RELEASE_PREPARATION_ATTEMPT"
 RUNTIME_FILES = {
     ".env",
@@ -36,7 +34,6 @@ RUNTIME_FILES = {
     "release-backup-evidence",
     "release-bootstrap-evidence",
     PROOF,
-    SOURCES,
 }
 
 
@@ -103,11 +100,22 @@ def environment_file(root: Path):
     allowed.update(
         {
             "GHCR_TOKEN",
-            "GHCR_TOKEN_FILE",
             "GHCR_USERNAME",
             "ACCORD_RELEASE_GHCR_USERNAME",
             "ACCORD_RELEASE_GHCR_TOKEN",
             "ACCORD_CONFIRMED_FRESH_INSTALL",
+        }
+    )
+    # Optional keys accepted by the existing trusted environment installer.
+    allowed.update(
+        {
+            "SESSION_IDLE_TIMEOUT_SECONDS",
+            "WORKOS_WEBHOOK_TOLERANCE_SECONDS",
+            "DB_MAX_OVERFLOW",
+            "DB_POOL_TIMEOUT_SECONDS",
+            "DB_POOL_RECYCLE_SECONDS",
+            "CSRF_COOKIE_NAME",
+            "MAX_REQUEST_BODY_BYTES",
         }
     )
     for line in data.decode().splitlines():
@@ -277,7 +285,7 @@ def inputs(root: Path, release):
             "signed deployment input changed",
         )
         paths[str(relative)] = identity
-    allowed_directories = {".prepared-secrets"} if SECRET_FILES else set()
+    allowed_directories = set()
     for path in paths:
         allowed_directories.update(
             str(parent) for parent in Path(path).parents if str(parent) != "."
@@ -293,15 +301,7 @@ def inputs(root: Path, release):
             relative = (Path(current) / name).relative_to(root)
             if str(relative) in paths:
                 continue
-            require(
-                str(relative) in RUNTIME_FILES
-                or (
-                    relative.parts[0] == ".prepared-secrets"
-                    and len(relative.parts) == 2
-                    and relative.name in SECRET_FILES.values()
-                ),
-                "untracked deployment file",
-            )
+            require(str(relative) in RUNTIME_FILES, "untracked deployment file")
             if str(relative) in {PROOF, "release-backup-evidence", "release-bootstrap-evidence"}:
                 continue
             paths[str(relative)] = metadata(root / relative)
@@ -326,37 +326,10 @@ def write_private(path: Path, value):
 def stage(root: Path):
     _, release = manifest(root)
     values = environment_file(root)
-    sources = {}
     replacements = {TAG_VARIABLE: "sha-" + release["source"]["commit_sha"]}
     for key in ("PUBLIC_APP_URL", "BASE_URL"):
         if key in values:
             replacements[key] = values[key].removesuffix("/")
-    if SECRET_FILES:
-        target = root / ".prepared-secrets"
-        target.mkdir(mode=0o700)
-        for variable, filename in SECRET_FILES.items():
-            source = Path(values.get(variable, ""))
-            require(
-                source.is_absolute()
-                and not source.is_relative_to(root)
-                and not source.is_relative_to(Path("/opt") / APPLICATION / "deploy"),
-                "credential source must be an explicit absolute file outside deployment trees",
-            )
-            data, identity = read_input(source)
-            require(data, "empty credential input")
-            # Private directory and root-owned copies with existing modes; live sources are
-            # never chmod/chown'ed. Compose mounts each isolated file read-only.
-            fd = os.open(
-                target / filename,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                stat.S_IMODE(identity["st_mode"]),
-            )
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            sources[str(source)] = identity
-            replacements[variable] = f"./.prepared-secrets/{filename}"
     original = (root / ".env").read_text()
     lines = [
         line
@@ -371,44 +344,6 @@ def stage(root: Path):
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, root / ".env")
-    write_private(root / SOURCES, sources)
-
-
-def prove_credential_readability(root: Path, config):
-    for service in config["services"].values():
-        secrets = service.get("secrets", [])
-        if not secrets:
-            continue
-        command = [
-            "docker",
-            "run",
-            "--rm",
-            "--pull=never",
-            "--network=none",
-            "--read-only",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--entrypoint=/bin/sh",
-        ]
-        if service.get("user"):
-            command.extend(["--user", service["user"]])
-        targets = []
-        for item in secrets:
-            source = config["secrets"][item["source"]]["file"]
-            target = "/run/secrets/" + item.get("target", item["source"])
-            require("," not in source and "," not in target, "unsupported credential path")
-            command.extend(["--mount", f"type=bind,src={source},dst={target},readonly"])
-            targets.append(target)
-        command.extend(
-            [
-                service["image"],
-                "-ec",
-                'for path do test -r "$path" && test -s "$path" || exit 1; done',
-                "credential-probe",
-                *targets,
-            ]
-        )
-        docker_output(root, command)
 
 
 def proof_context(root: Path):
@@ -423,15 +358,10 @@ def prepare_or_verify(root: Path, prepare: bool):
     module, release = manifest(root)
     if prepare:
         with phase(root, "configuration", "configuration-validation"):
-            config, bindings = configuration(root, module, release)
+            _, bindings = configuration(root, module, release)
     else:
-        config, bindings = configuration(root, module, release)
+        _, bindings = configuration(root, module, release)
     before = inputs(root, release)
-    sources = json.loads((root / SOURCES).read_text())
-    require(
-        all(metadata(Path(path)) == identity for path, identity in sources.items()),
-        "source credentials changed",
-    )
 
     def inspect_images():
         images = {}
@@ -447,15 +377,9 @@ def prepare_or_verify(root: Path, prepare: bool):
     if prepare:
         with phase(root, "images", "image-preparation"):
             images = inspect_images()
-        with phase(root, "credentials", "credential-preparation"):
-            prove_credential_readability(root, config)
     else:
         images = inspect_images()
     require(inputs(root, release) == before, "candidate inputs changed during preparation")
-    require(
-        all(metadata(Path(path)) == identity for path, identity in sources.items()),
-        "source credentials changed during preparation",
-    )
     attempt, boot = proof_context(root)
     proof = {
         "application": APPLICATION,
@@ -466,7 +390,6 @@ def prepare_or_verify(root: Path, prepare: bool):
         ).hexdigest(),
         "inputs": before,
         "images": images,
-        "credential_sources": sources,
     }
     if prepare:
         write_private(root / PROOF, proof)
@@ -489,7 +412,7 @@ def main():
         root = args.root.absolute()
         require(root.is_dir() and not root.is_symlink(), "invalid candidate directory")
         if args.mode == "stage":
-            with phase(root, "credential-copy", "credential-preparation"):
+            with phase(root, "environment", "credential-preparation"):
                 stage(root)
         elif args.mode == "compose":
             # Thin environment adapter; lifecycle decisions stay in setup.sh.

@@ -27,12 +27,16 @@ services:
 | `worker` | `python worker.py` durable-job loop |
 | `web` | nginx + SPA; publishes `127.0.0.1:${ACCORD_WEB_PORT:-8085}` |
 
-> MinIO community images are no longer distributed: they were removed from
-> Docker Hub and `quay.io/minio/*` now rejects anonymous pulls. The compose
-> services keep the pinned upstream digests but declare `pull_policy:
-> missing`, so deploys reuse the images already cached on the host. On a
-> **fresh** host, side-load them before bring-up, e.g. from a host that has
-> them: `docker save quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z | gzip | ssh TARGET 'docker load'`, or push them to a private mirror and update the `image:` refs.
+> The pinned MinIO registry references may deny anonymous pulls (the exact
+> server digest returned HTTP 401 in the disposable rehearsal). Preparation
+> requires the signed `repository@sha256:digest` reference to resolve locally
+> with that digest in Docker's `RepoDigests`; a tag or image ID alone is not proof.
+> The former `docker save repo:tag | docker load` recommendation is insufficient:
+> image archives may lose the repository-digest association. A fresh host needs
+> authorized access to the pinned digest or a separately reviewed digest-preserving
+> distribution/import procedure. Do not invent a digest alias or silently fall
+> back to a mutable tag. Missing verified images abort before stopping services.
+> No new mirror, credential change or unsigned import path is introduced here.
 
 On first boot, Postgres runs `deploy/object-storage/postgres-init-roles.sh`.
 That script applies the packaged `deploy/create_roles.sql` mirror of
