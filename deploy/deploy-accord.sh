@@ -171,7 +171,8 @@ cd "$DEPLOY_DIR"
 EXPECTED_BACKEND="$(compose_service_image api)"
 EXPECTED_WEB="$(compose_service_image web)"
 MIGRATION_STATE_FILE="/run/accord-release-migration-$SHA"
-rm -f -- "$MIGRATION_STATE_FILE"
+[[ ! -e "$MIGRATION_STATE_FILE" && ! -L "$MIGRATION_STATE_FILE" ]] \
+    || die "unresolved migration evidence exists; reconcile recovery before retrying"
 ACCORD_EXPECTED_SHA="$SHA" ACCORD_TAG="$TARGET_TAG" \
     ACCORD_MIGRATION_STATE_FILE="$MIGRATION_STATE_FILE" bash setup.sh
 

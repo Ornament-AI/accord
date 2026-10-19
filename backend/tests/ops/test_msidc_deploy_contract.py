@@ -1,6 +1,7 @@
 """Regression checks for the shared-host MSIDC deployment contract."""
 
 import os
+import shlex
 from pathlib import Path
 import subprocess
 
@@ -12,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 def _write_fake_docker(fake_bin: Path, docker_log: Path) -> None:
     (fake_bin / "docker").write_text(
         "#!/bin/sh\n"
-        'printf "%s\\n" "$*" >> "$FAKE_DOCKER_LOG"\n'
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(docker_log))}\n'
         'if [ "$1 $2" = "compose version" ]; then exit 0; fi\n'
         'if [ "$1 $2" = "volume inspect" ]; then\n'
         '  case "$3" in\n'
@@ -25,6 +26,15 @@ def _write_fake_docker(fake_bin: Path, docker_log: Path) -> None:
         "exit 0\n"
     )
     (fake_bin / "docker").chmod(0o755)
+
+
+def _install_setup(deploy_dir: Path) -> None:
+    for name in ("setup.sh", "prepare-release.py"):
+        (deploy_dir / name).write_text((ROOT / "deploy" / name).read_text())
+    (deploy_dir / "onprem_release.py").write_text(
+        (ROOT / "scripts/vendor/onprem_release.py").read_text()
+    )
+    (deploy_dir / "docker-compose.yml").write_text("services: {}\n")
 
 
 def _valid_env_lines() -> list[str]:
@@ -165,7 +175,7 @@ def test_setup_reports_missing_public_url_before_docker_mutation(tmp_path: Path)
     fake_bin = tmp_path / "bin"
     deploy_dir.mkdir()
     fake_bin.mkdir()
-    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _install_setup(deploy_dir)
     docker_log = tmp_path / "docker.log"
     _write_fake_docker(fake_bin, docker_log)
     (deploy_dir / ".env").write_text(
@@ -196,7 +206,7 @@ def test_setup_accepts_default_web_port_when_env_omits_it(tmp_path: Path) -> Non
     docker_log = tmp_path / "docker.log"
     deploy_dir.mkdir()
     fake_bin.mkdir()
-    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _install_setup(deploy_dir)
     _write_fake_docker(fake_bin, docker_log)
     (deploy_dir / ".env").write_text(
         "\n".join(line for line in _valid_env_lines() if not line.startswith("ACCORD_WEB_PORT="))
@@ -214,16 +224,18 @@ def test_setup_accepts_default_web_port_when_env_omits_it(tmp_path: Path) -> Non
     )
 
     assert "ACCORD_WEB_PORT" not in result.stderr
-    assert "compose --env-file .env pull --quiet" in docker_log.read_text()
+    assert "prepare-release: input, image or preparation proof failed validation" in result.stderr
+    assert "login ghcr.io" not in docker_log.read_text()
+    assert "pull --quiet" not in docker_log.read_text()
 
 
-def test_fresh_install_without_legacy_volumes_reaches_image_pull(tmp_path: Path) -> None:
+def test_fresh_install_without_legacy_volumes_requires_prepared_proof(tmp_path: Path) -> None:
     deploy_dir = tmp_path / "deploy"
     fake_bin = tmp_path / "bin"
     docker_log = tmp_path / "docker.log"
     deploy_dir.mkdir()
     fake_bin.mkdir()
-    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _install_setup(deploy_dir)
     _write_fake_docker(fake_bin, docker_log)
     (deploy_dir / ".env").write_text("\n".join(_valid_env_lines()))
 
@@ -239,7 +251,9 @@ def test_fresh_install_without_legacy_volumes_reaches_image_pull(tmp_path: Path)
     )
 
     assert result.returncode == 1
-    assert "compose --env-file .env pull --quiet" in docker_log.read_text()
+    assert "prepare-release: input, image or preparation proof failed validation" in result.stderr
+    assert "login ghcr.io" not in docker_log.read_text()
+    assert "pull --quiet" not in docker_log.read_text()
 
 
 @pytest.mark.parametrize(
@@ -255,7 +269,7 @@ def test_legacy_volume_bypass_is_obsolete(
     docker_log = tmp_path / "docker.log"
     deploy_dir.mkdir()
     fake_bin.mkdir()
-    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _install_setup(deploy_dir)
     _write_fake_docker(fake_bin, docker_log)
     (deploy_dir / ".env").write_text(
         "\n".join([*_valid_env_lines(), f"ACCORD_CONFIRMED_FRESH_INSTALL={persisted_value}"])
@@ -274,7 +288,7 @@ def test_legacy_volume_bypass_is_obsolete(
 
     assert result.returncode == 1
     docker_calls = docker_log.read_text()
-    assert "compose --env-file .env pull --quiet" not in docker_calls
+    assert "pull --quiet" not in docker_calls
     assert "Legacy deploy_* volumes exist" in result.stderr
 
 
@@ -284,7 +298,7 @@ def test_persisted_registry_credentials_are_ignored(tmp_path: Path) -> None:
     docker_log = tmp_path / "docker.log"
     deploy_dir.mkdir()
     fake_bin.mkdir()
-    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _install_setup(deploy_dir)
     _write_fake_docker(fake_bin, docker_log)
     (deploy_dir / ".env").write_text(
         "\n".join(
@@ -307,7 +321,9 @@ def test_persisted_registry_credentials_are_ignored(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "Ignoring registry credential GHCR_TOKEN" in result.stdout
     assert "Ignoring registry credential ACCORD_RELEASE_GHCR_TOKEN" in result.stdout
-    assert "compose --env-file .env pull --quiet" in docker_log.read_text()
+    assert "prepare-release: input, image or preparation proof failed validation" in result.stderr
+    assert "login ghcr.io" not in docker_log.read_text()
+    assert "pull --quiet" not in docker_log.read_text()
 
 
 def test_process_control_environment_is_rejected_before_docker_mutation(tmp_path: Path) -> None:
@@ -316,7 +332,7 @@ def test_process_control_environment_is_rejected_before_docker_mutation(tmp_path
     docker_log = tmp_path / "docker.log"
     deploy_dir.mkdir()
     fake_bin.mkdir()
-    (deploy_dir / "setup.sh").write_text((ROOT / "deploy/setup.sh").read_text())
+    _install_setup(deploy_dir)
     _write_fake_docker(fake_bin, docker_log)
     (deploy_dir / ".env").write_text(
         "\n".join([*_valid_env_lines(), "DOCKER_HOST=tcp://attacker:2375"])

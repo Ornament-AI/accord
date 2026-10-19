@@ -508,3 +508,54 @@ These were required for a clean bring-up (see `deploy/docker-compose.yml`):
 3. **ADR role bootstrap** — `postgres-init-roles.sh` plus DSN defaults to
    `accord_migrator` / `accord_app` / `accord_worker`, so the Alembic RLS
    policies and the runtime roles succeed on first boot.
+
+
+## Prepared offline activation
+
+The authenticated release wrapper now prepares its private candidate under the
+existing VM lock while the old application serves. It validates the complete
+signed service inventory, resolves the candidate configuration, stages missing
+exact digest images, and records their local image IDs. Preparation binds the
+candidate files and isolated credentials to one attempt UUID and the Linux boot
+identity. It rejects changed files, unknown Compose inputs, missing images and
+changed credential sources before stopping writers. The same proof is verified
+after promotion. This proof is local to one attempt and does not authorize a
+no-op, incremental release, overlapping backend or backup reduction.
+
+`setup.sh --prepare` and `--verify-prepared` are wrapper implementation steps;
+operators continue using the signed full-SHA release command. Direct setup now
+requires the wrapper's prepared attempt. Activation performs no registry login
+or image pull; all startup and migration image consumers explicitly forbid
+pulling and building. A missing cache entry after the drain fails closed. There
+is no fallback to a pulling deploy path. The existing complete quiesced backup,
+integrity checks, health/version proof and recovery ownership remain in place.
+
+Preparation records separate configuration-validation, image-preparation and
+credential-preparation measurements below the private
+`/opt/accord/backups/releases/preparation-<attempt>/` directory using the byte-exact
+shared timing helper documented in `deploy/PHASE_TIMING_SOURCE`. These records
+contain no command arguments, environment, secret values or secret hashes.
+Missing or incomplete timing/proof records are failures; retries require a fresh
+candidate and attempt. They do not establish downtime, backup freshness or a
+recovery objective. Drain, backup, migration and observation timing remain a
+later integration, preserving their existing transaction ownership.
+
+Cancellation stops the activation process group before fencing every data job
+and application writer. A provisioning or migration attempt whose outcome is
+uncertain never triggers an automatic old-application restart or data restore.
+Full host loss/SIGKILL still requires the existing operator recovery procedure;
+local fixture tests do not prove production recovery time or restore health.
+
+Accord retains its paired database/MinIO backup and singleton worker path. A
+running prior role-sync, migration or bucket-initialization job aborts before
+drain. Failed or interrupted activation fences API, worker, web, MinIO,
+role-sync, migrations and minio-init. Unresolved migration evidence is retained
+and prevents a blind retry. `setsid` must be available before preparation; it
+keeps cancellation scoped to the activation process group. Cached pinned MinIO
+images can be reused when their public registry is unavailable, but missing
+images still abort before stopping the old application.
+
+No new RPO/RTO, scheduled-backup freshness, restore-drill age or retention policy
+is approved by this batch. The routine backup examples and WAL/PITR policy in
+`docs/security.md` still require reconciliation with actual installed coverage
+before any reduction in release backups can be considered.

@@ -67,6 +67,9 @@ safe_source_env() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
+MODE="${1:---activate}"
+case "$MODE" in --prepare|--verify-prepared|--activate) ;; *) die "unsupported setup mode" ;; esac
+compose() { /usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" compose "$SCRIPT_DIR" "$@"; }
 
 PREVIOUS_API_IMAGE=""
 PREVIOUS_WEB_IMAGE=""
@@ -78,8 +81,8 @@ diagnose_failure() {
 	trap - EXIT
 	if (( code != 0 )) && $DEPLOY_MUTATED && ! $DEPLOY_SUCCEEDED; then
 		warn "Deployment failed. Accord was not declared healthy."
-		docker compose --env-file .env ps 2>/dev/null || true
-		docker compose --env-file .env logs --tail 80 2>/dev/null || true
+		compose ps 2>/dev/null || true
+		compose logs --tail 80 2>/dev/null || true
 		[[ -z "$PREVIOUS_API_IMAGE" ]] || warn "Previous backend image: $PREVIOUS_API_IMAGE"
 		[[ -z "$PREVIOUS_WEB_IMAGE" ]] || warn "Previous web image: $PREVIOUS_WEB_IMAGE"
 		warn "Do not downgrade Alembic automatically. Restore the prior tag only after checking migration compatibility."
@@ -114,6 +117,9 @@ REQUESTED_SHA="${ACCORD_EXPECTED_SHA:-}"
 EPHEMERAL_GHCR_USERNAME="${ACCORD_RELEASE_GHCR_USERNAME:-}"
 EPHEMERAL_GHCR_TOKEN="${ACCORD_RELEASE_GHCR_TOKEN:-}"
 [[ -f .env && ! -L .env ]] || die "$SCRIPT_DIR/.env must be a regular non-symlink file"
+if [[ "$MODE" == "--prepare" ]]; then
+    /usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" stage "$SCRIPT_DIR"
+fi
 safe_source_env .env
 unset GHCR_USERNAME GHCR_TOKEN ACCORD_RELEASE_GHCR_USERNAME ACCORD_RELEASE_GHCR_TOKEN
 if [[ -n "$REQUESTED_SHA" ]]; then
@@ -171,34 +177,37 @@ BASE_URL="${BASE_URL%/}"
 [[ "$WORKOS_REDIRECT_URI" == "$PUBLIC_APP_URL/api/auth/callback" ]] \
 	|| die "WORKOS_REDIRECT_URI must be PUBLIC_APP_URL/api/auth/callback"
 
-if [[ -n "$EPHEMERAL_GHCR_TOKEN" ]]; then
-	REGISTRY_CONFIG="$(mktemp -d /tmp/accord-docker-config.XXXXXXXXXX)"
-	chmod 0700 "$REGISTRY_CONFIG"
-	export DOCKER_CONFIG="$REGISTRY_CONFIG"
-	printf '%s' "$EPHEMERAL_GHCR_TOKEN" | docker login ghcr.io \
-		-u "$EPHEMERAL_GHCR_USERNAME" --password-stdin >/dev/null \
-		|| die "GHCR login failed"
-	info "GHCR login ready"
-else
-	die "ephemeral GHCR credentials were not provided by the operator command"
-fi
 
-docker compose --env-file .env config -q
+compose config -q
 info "Compose configuration is valid"
 guard_persistent_volume_ownership
 
-PREVIOUS_API_CID="$(docker compose --env-file .env ps -q api 2>/dev/null || true)"
-PREVIOUS_WEB_CID="$(docker compose --env-file .env ps -q web 2>/dev/null || true)"
+PREVIOUS_API_CID="$(compose ps -q api 2>/dev/null || true)"
+PREVIOUS_WEB_CID="$(compose ps -q web 2>/dev/null || true)"
 [[ -z "$PREVIOUS_API_CID" ]] \
 	|| PREVIOUS_API_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$PREVIOUS_API_CID" 2>/dev/null || true)"
 [[ -z "$PREVIOUS_WEB_CID" ]] \
 	|| PREVIOUS_WEB_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$PREVIOUS_WEB_CID" 2>/dev/null || true)"
 
-info "Pulling Accord $ACCORD_TAG images"
-docker compose --env-file .env pull --quiet
+if [[ "$MODE" == "--prepare" ]]; then
+	if [[ -n "$EPHEMERAL_GHCR_TOKEN" ]]; then
+		REGISTRY_CONFIG="$(mktemp -d /tmp/accord-docker-config.XXXXXXXXXX)"
+		chmod 0700 "$REGISTRY_CONFIG"
+		export DOCKER_CONFIG="$REGISTRY_CONFIG"
+		printf '%s' "$EPHEMERAL_GHCR_TOKEN" | docker login ghcr.io \
+			-u "$EPHEMERAL_GHCR_USERNAME" --password-stdin >/dev/null \
+			|| die "GHCR login failed"
+		info "GHCR login ready"
+	else
+		die "ephemeral GHCR credentials were not provided by the operator command"
+	fi
+	/usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" prepare "$SCRIPT_DIR"
+else
+	/usr/bin/python3 "$SCRIPT_DIR/prepare-release.py" verify "$SCRIPT_DIR"
+fi
 
 compose_image() {
-	docker compose --env-file .env config --format json \
+	compose config --format json \
 		| python3 -c 'import json,sys; print(json.load(sys.stdin)["services"][sys.argv[1]]["image"])' "$1"
 }
 for service in api worker web; do
@@ -209,12 +218,13 @@ for service in api worker web; do
 	[[ "$revision" == "${ACCORD_TAG#sha-}" ]] \
 		|| die "$ref has revision $revision instead of ${ACCORD_TAG#sha-}; production was not changed"
 done
-info "Pulled images have the expected revision label"
+info "Cached images have the expected revision label"
+[[ "$MODE" == "--activate" ]] || exit 0
 
 info "Starting Accord"
 DEPLOY_MUTATED=true
 [[ -z "${ACCORD_MIGRATION_STATE_FILE:-}" ]] || : >"$ACCORD_MIGRATION_STATE_FILE"
-docker compose --env-file .env up -d --no-build
+compose up -d --no-build --pull never
 
 for _ in $(seq 1 60); do
 	if curl -fsS --max-time 5 \
@@ -225,10 +235,10 @@ for _ in $(seq 1 60); do
 done
 curl -fsS --max-time 5 \
 	"http://127.0.0.1:${ACCORD_WEB_PORT:-8085}/api/readyz" >/dev/null \
-	|| { docker compose --env-file .env ps; docker compose --env-file .env logs --tail 80; die "Accord readiness failed"; }
+	|| { compose ps; compose logs --tail 80; die "Accord readiness failed"; }
 
 for service in api worker web; do
-	cid="$(docker compose --env-file .env ps -q "$service")"
+	cid="$(compose ps -q "$service")"
 	[[ -n "$cid" ]] || die "$service container is missing"
 	actual="$(docker inspect --format '{{.Config.Image}}' "$cid")"
 	expected="$(compose_image "$service")"
@@ -242,12 +252,12 @@ info "Backend, worker, and web are pinned to $ACCORD_TAG with matching revision 
 
 # Capture-then-grep: a `| grep -q` pipeline can SIGPIPE the producer and
 # false-fail under `set -o pipefail`.
-ALEMBIC_CURRENT="$(docker compose --env-file .env run --rm --no-deps migrations alembic current)"
+ALEMBIC_CURRENT="$(compose run --rm --no-deps --pull never migrations alembic current)"
 grep -q '(head)' <<<"$ALEMBIC_CURRENT" || die "Alembic is not at head"
 info "Waiting for worker startup proof..."
 WORKER_READY=false
 for _ in $(seq 1 15); do
-	WORKER_LOGS="$(docker compose --env-file .env logs worker 2>&1 || true)"
+	WORKER_LOGS="$(compose logs worker 2>&1 || true)"
 	if grep -q 'worker_started' <<<"$WORKER_LOGS"; then
 		WORKER_READY=true
 		break

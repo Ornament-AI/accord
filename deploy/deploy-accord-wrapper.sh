@@ -392,6 +392,8 @@ BACKUP_ROOT="/opt/accord/.deploy-previous-$(date -u +%Y%m%d%H%M%S)-$$"
 FAILED_ROOT="/opt/accord/.deploy-failed-$SHA-$$"
 TRUSTED_PUBLIC_KEY=""
 APP_CONTAINER_IDS=()
+CANDIDATE_PROMOTED=false
+ACTIVATION_PID=""
 APP_QUIESCED=false
 secure_root_directory /opt \
     || die "/opt must be a real root-owned directory without group/world write access"
@@ -408,7 +410,17 @@ secure_root_directory "$LIVE_ROOT" \
 # preserving any staging ownership, mode, ACL, or directory metadata.
 install -d -o root -g root -m 0700 "$CANDIDATE_ROOT"
 cleanup_wrapper() {
-    if [[ "$APP_QUIESCED" == "true" && ${#APP_CONTAINER_IDS[@]} -eq 4 ]]; then
+    if [[ -n "$ACTIVATION_PID" ]]; then
+        # Stop the entire activation process group before fencing its containers;
+        # otherwise a surviving Compose child could create writers after the fence.
+        kill -TERM -- "-$ACTIVATION_PID" 2>/dev/null || true
+        wait "$ACTIVATION_PID" 2>/dev/null || true
+    fi
+    if [[ "$CANDIDATE_PROMOTED" == "true" && "$APP_QUIESCED" == "true" ]]; then
+        /usr/bin/python3 "$LIVE_ROOT/prepare-release.py" compose "$LIVE_ROOT" \
+            stop api worker web minio role-sync migrations minio-init >/dev/null 2>&1 \
+            || echo "deploy-accord-wrapper: could not fence all activation writers" >&2
+    elif [[ "$APP_QUIESCED" == "true" && ${#APP_CONTAINER_IDS[@]} -eq 4 ]]; then
         docker start "${APP_CONTAINER_IDS[@]}" >/dev/null 2>&1 \
             || echo "deploy-accord-wrapper: could not restart the previous application containers" >&2
     fi
@@ -420,6 +432,8 @@ cleanup_wrapper() {
     fi
 }
 trap cleanup_wrapper EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 /usr/bin/python3 - "$STAGED_ROOT" "$CANDIDATE_ROOT" "$SHA" <<'PY'
 import os
 import stat
@@ -677,6 +691,16 @@ chown -R root:root "$EXTRACTED/deploy"
 find "$EXTRACTED/deploy" -type d -exec chmod go-w {} +
 find "$EXTRACTED/deploy" -type f -exec chmod go-w {} +
 
+command -v setsid >/dev/null || die "setsid is required for cancellable activation"
+export RELEASE_PREPARATION_ATTEMPT="$(/usr/bin/python3 -c 'import uuid; print(uuid.uuid4())')"
+export RELEASE_PREPARATION_EVIDENCE="/opt/accord/backups/releases/preparation-$RELEASE_PREPARATION_ATTEMPT"
+install -d -o root -g root -m 0700 "$RELEASE_PREPARATION_EVIDENCE"
+prepare_candidate() {
+    ACCORD_EXPECTED_SHA="$SHA" bash "$EXTRACTED/deploy/setup.sh" --prepare \
+        || die "candidate preparation failed; application writers were not stopped"
+    ACCORD_EXPECTED_SHA="$SHA" bash "$EXTRACTED/deploy/setup.sh" --verify-prepared \
+        || die "candidate preparation changed before drain; application writers were not stopped"
+}
 BOOTSTRAP_MARKER="/opt/accord/.allow-first-release-$SHA"
 BOOTSTRAP_MODE=false
 if [[ -f "$BOOTSTRAP_MARKER" && ! -L "$BOOTSTRAP_MARKER" \
@@ -691,6 +715,11 @@ if [[ -f "$BOOTSTRAP_MARKER" && ! -L "$BOOTSTRAP_MARKER" \
         ! docker volume inspect "$volume" >/dev/null 2>&1 \
             || die "fresh-host bootstrap found existing volume $volume"
     done
+    require_backup_capacity /opt/accord/backups/releases 0 \
+        || die "insufficient capacity before preparing a fresh release"
+    prepare_candidate
+    require_backup_capacity /opt/accord/backups/releases 0 \
+        || die "insufficient capacity after preparing a fresh release"
     printf '%s\n' "$SHA" >"$EXTRACTED/deploy/release-bootstrap-evidence"
     chmod 0600 "$EXTRACTED/deploy/release-bootstrap-evidence"
 else
@@ -733,6 +762,16 @@ else
         || die "could not measure the live Accord database before backup"
     require_backup_capacity /opt/accord/backups/releases "$DATABASE_BYTES" "$MINIO_DATA_ROOT" \
         || die "insufficient free space for a verified pre-migration backup; the live release was not changed"
+    for service in role-sync migrations minio-init; do
+        [[ -z "$(docker ps -q --filter "label=com.docker.compose.service=$service" --filter "label=com.docker.compose.project.working_dir=/opt/accord/deploy")" ]] \
+            || die "prior data job is still running; refusing to stop application writers"
+    done
+    prepare_candidate
+    DATABASE_BYTES="$(docker exec "$(live_container_id postgres)" \
+        sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT pg_database_size(current_database())"')" \
+        || die "could not remeasure database capacity before drain"
+    require_backup_capacity /opt/accord/backups/releases "$DATABASE_BYTES" "$MINIO_DATA_ROOT" \
+        || die "backup reserve no longer fits after staging; application writers were not stopped"
     APP_QUIESCED=true
     docker stop "${APP_CONTAINER_IDS[@]}" >/dev/null \
         || die "could not quiesce the existing Accord application and object store before backup"
@@ -755,9 +794,14 @@ if ! mv "$EXTRACTED/deploy" "$LIVE_ROOT"; then
     mv "$BACKUP_ROOT" "$LIVE_ROOT"
     die "could not activate the authenticated release bundle"
 fi
+CANDIDATE_PROMOTED=true
+APP_QUIESCED=true
 MIGRATION_STATE_FILE="/run/accord-release-migration-$SHA"
-if ACCORD_RELEASE_BACKUP_DIR=/opt/accord/backups/releases \
-    bash "$LIVE_ROOT/deploy-accord.sh" "$SHA"; then
+ACCORD_RELEASE_BACKUP_DIR=/opt/accord/backups/releases \
+    setsid bash "$LIVE_ROOT/deploy-accord.sh" "$SHA" &
+ACTIVATION_PID=$!
+if wait "$ACTIVATION_PID"; then
+    ACTIVATION_PID=""
     APP_QUIESCED=false
     [[ "$BOOTSTRAP_MODE" != "true" ]] || rm -f -- "$BOOTSTRAP_MARKER"
     rm -f -- "$MIGRATION_STATE_FILE"
@@ -778,10 +822,10 @@ if ACCORD_RELEASE_BACKUP_DIR=/opt/accord/backups/releases \
     exit 0
 fi
 
+ACTIVATION_PID=""
 if [[ -f "$MIGRATION_STATE_FILE" ]]; then
-    APP_QUIESCED=false
     docker compose -f "$LIVE_ROOT/docker-compose.yml" --env-file "$LIVE_ROOT/.env" \
-        stop api worker web minio >/dev/null 2>&1 \
+        stop api worker web minio role-sync migrations minio-init >/dev/null 2>&1 \
         || echo "deploy-accord-wrapper: could not stop failed application and object-store services" >&2
     if [[ "$BOOTSTRAP_MODE" == "true" ]]; then
         mv "$BOOTSTRAP_MARKER" "/opt/accord/.first-release-attempted-$SHA"
@@ -791,4 +835,5 @@ fi
 FAILURE_DETAIL="migrations were not attempted, so the previous application containers will be restarted"
 mv "$LIVE_ROOT" "$FAILED_ROOT"
 mv "$BACKUP_ROOT" "$LIVE_ROOT"
+CANDIDATE_PROMOTED=false
 die "Accord rollout failed after the verified backup; the previous deploy files were restored, $FAILURE_DETAIL, and the failed bundle is at $FAILED_ROOT"
