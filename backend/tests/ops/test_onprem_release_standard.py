@@ -493,7 +493,7 @@ def test_fresh_host_bootstrap_is_separate_authenticated_and_empty_only() -> None
 def test_migration_marker_precedes_compose_mutation() -> None:
     setup = (ROOT / "deploy/setup.sh").read_text()
     assert setup.index(': >"$ACCORD_MIGRATION_STATE_FILE"') < setup.index(
-        "docker compose --env-file .env up -d --no-build"
+        "compose up -d --no-build --pull never"
     )
     assert "ACCORD_SMOKE_REQUIRE_DOCKER=true" in setup
     assert "/api/auth/me" in setup
