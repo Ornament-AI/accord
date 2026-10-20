@@ -16,7 +16,7 @@ import sys
 import time
 import uuid
 from contextlib import contextmanager, suppress
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 PHASES = (
@@ -28,7 +28,7 @@ RECORD_FAILURE = 125
 
 
 def utc_now() -> str:
-    return datetime.now(UTC).isoformat(timespec="microseconds")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def sync_directory(path: Path) -> None:

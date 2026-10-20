@@ -245,10 +245,16 @@ class PreparationTests(unittest.TestCase):
     def test_timing_vendor_provenance(self):
         import hashlib
 
+        pin = "dd113b9e1448b504e709daa55f8a1db63fc80f9d4b0391c13c4c97a874e67fc9"
         self.assertEqual(
-            hashlib.sha256((ROOT / "deploy/phase_timing.py").read_bytes()).hexdigest(),
-            "1c0088f8757c5fae97fa90141c8d421a7c9c2655f9a5e4bc2fb7343a3a2cbafa",
+            hashlib.sha256((ROOT / "deploy/phase_timing.py").read_bytes()).hexdigest(), pin
         )
+        source = dict(
+            line.split("=", 1)
+            for line in (ROOT / "deploy/PHASE_TIMING_SOURCE").read_text().splitlines()
+        )
+        self.assertEqual(source["sha256"], pin)
+        self.assertEqual(source["commit"], "86fb618d9687f604b780234ae6f02254a65edbff")
 
 
 if __name__ == "__main__":
