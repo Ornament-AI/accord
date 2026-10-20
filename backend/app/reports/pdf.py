@@ -6,15 +6,15 @@ title, and period/subtitle; footer uses fpdf2 ``alias_nb_pages`` mechanics for
 :func:`app.reports.formatting.format_inr`.
 
 NotoSans embedding is parameterized by ``font_path`` (default:
-``backend/app/assets/fonts/NotoSans-Regular.ttf``). If the font file is absent,
-``add_font`` is skipped and fpdf2 built-in Helvetica is used. When present,
-NotoSansDevanagari is registered as a fallback so Devanagari text renders.
+``backend/app/assets/fonts/NotoSans-Regular.ttf``). Both Unicode faces and
+HarfBuzz are required; missing assets must not silently replace user text.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from unicodedata import category
 
 from fpdf import FPDF
 
@@ -39,9 +39,36 @@ MAX_COLUMNS_PER_TABLE = 12
 def _resolve_font_path(font_path: Path | None) -> tuple[str, Path | None]:
     """Return ``(font_family, path_to_add_or_None)``."""
     path = DEFAULT_FONT_PATH if font_path is None else Path(font_path)
-    if path.is_file():
-        return UNICODE_FONT_FAMILY, path
-    return FALLBACK_FONT_FAMILY, None
+    if not path.is_file():
+        raise FileNotFoundError(f"PDF generation requires the Unicode font {path}.")
+    return UNICODE_FONT_FAMILY, path
+
+
+def select_pdf_font(pdf: FPDF, family: str, *, style: str = "", size: float) -> None:
+    """Select and emit the primary font outside fpdf2's local shaped-line scope."""
+    pdf.set_font("Helvetica", size=size)
+    pdf.set_font(family, style=style, size=size)
+    if pdf.page:
+        # A shaped fallback line can restore its Tf operator with Q but leave
+        # fpdf2's selection flag set. Prime the real page state before drawing.
+        pdf.text(0, 0, "")
+
+
+def unicode_clusters(text: str) -> list[str]:
+    """Keep Devanagari conjuncts and marks together when a long word wraps."""
+    clusters: list[str] = []
+    previous = ""
+    for char in text:
+        if clusters and (
+            category(char) in {"Mn", "Mc", "Me"}
+            or char in {"\u200c", "\u200d"}
+            or previous in {"\u094d", "\u200d"}
+        ):
+            clusters[-1] += char
+        else:
+            clusters.append(char)
+        previous = char
+    return clusters
 
 
 def _pdf_text(text: str, *, unicode_font: bool) -> str:
@@ -100,7 +127,7 @@ class _TabularReportPDF(FPDF):
 
     def header(self) -> None:
         unicode_font = self._unicode_font
-        self.set_font(self._font_family, size=9)
+        select_pdf_font(self, self._font_family, size=9)
         self.cell(
             0,
             5,
@@ -108,7 +135,7 @@ class _TabularReportPDF(FPDF):
             new_x="LMARGIN",
             new_y="NEXT",
         )
-        self.set_font(self._font_family, style="B", size=12)
+        select_pdf_font(self, self._font_family, style="B", size=12)
         self.cell(
             0,
             6,
@@ -116,7 +143,7 @@ class _TabularReportPDF(FPDF):
             new_x="LMARGIN",
             new_y="NEXT",
         )
-        self.set_font(self._font_family, size=8)
+        select_pdf_font(self, self._font_family, size=8)
         self.cell(
             0,
             5,
@@ -127,10 +154,13 @@ class _TabularReportPDF(FPDF):
         self.ln(2)
 
     def footer(self) -> None:
+        shaping = bool(self.text_shaping)
+        self.set_text_shaping(False)
         self.set_y(-12)
-        self.set_font(self._font_family, size=8)
+        select_pdf_font(self, self._font_family, size=8)
         # alias_nb_pages() replaces "{nb}" with the total page count on output.
         self.cell(0, 8, f"Page {self.page_no()} of {{nb}}", align="C")
+        self.set_text_shaping(shaping)
 
 
 def _column_widths(pdf: FPDF, section: TableSection) -> list[float]:
@@ -145,7 +175,7 @@ def _draw_table_header(
     widths: list[float],
 ) -> None:
     unicode_font = pdf._unicode_font
-    pdf.set_font(pdf._font_family, style="B", size=TABLE_HEADER_FONT_PT)
+    select_pdf_font(pdf, pdf._font_family, style="B", size=TABLE_HEADER_FONT_PT)
     for column, width in zip(section.columns, widths, strict=True):
         pdf.cell(
             width,
@@ -167,7 +197,7 @@ def _draw_row(
 ) -> None:
     style = "B" if bold else ""
     unicode_font = pdf._unicode_font
-    pdf.set_font(pdf._font_family, style=style, size=BODY_FONT_PT)
+    select_pdf_font(pdf, pdf._font_family, style=style, size=BODY_FONT_PT)
     for column, value, width in zip(section.columns, row, widths, strict=True):
         text = _format_cell(value, column.kind, unicode_font=unicode_font)
         align = "R" if column.kind is ColumnKind.MONEY else "L"
@@ -177,7 +207,7 @@ def _draw_row(
 
 def _render_section(pdf: _TabularReportPDF, section: TableSection) -> None:
     if section.title:
-        pdf.set_font(pdf._font_family, style="B", size=9)
+        select_pdf_font(pdf, pdf._font_family, style="B", size=9)
         pdf.cell(
             0,
             6,
@@ -244,6 +274,8 @@ def _split_wide_section(section: TableSection) -> tuple[TableSection, ...]:
 def to_pdf(dto: ReportDTO, *, font_path: Path | None = None) -> bytes:
     """Render a tabular report DTO to paginated landscape A4 PDF bytes."""
     font_family, resolved_path = _resolve_font_path(font_path)
+    if not DEVANAGARI_FONT_PATH.is_file():
+        raise FileNotFoundError(f"PDF generation requires the Unicode font {DEVANAGARI_FONT_PATH}.")
     doc = _TabularReportPDF(
         organization_name=dto.organization_name,
         title=dto.title,
@@ -265,6 +297,8 @@ def to_pdf(dto: ReportDTO, *, font_path: Path | None = None) -> bytes:
                 fname=str(DEVANAGARI_FONT_PATH),
             )
             doc.set_fallback_fonts([UNICODE_FALLBACK_FONT_FAMILY], exact_match=False)
+
+    doc.set_text_shaping(True)
 
     doc.set_creator("accord-backend")
     doc.set_producer("accord-fpdf2/1.0")

@@ -76,7 +76,7 @@ SUPPORTED_TEMPLATE_VERSIONS = frozenset({"v2", "v3"})
 DEFAULT_ENGINE_VERSION = "0.1.0"
 # Immutable identity for the canonical source contract and renderer behavior.
 # Bump whenever a v3 mapping/layout fix can change output bytes.
-CANONICAL_RENDERER_REVISION = "june-2026-contract-r5"
+CANONICAL_RENDERER_REVISION = "june-2026-contract-r6"
 
 SUPPORTED_FORMATS = frozenset({"excel", "pdf", "json"})
 JOB_TYPE_GENERATE_REPORT = "generate_report"

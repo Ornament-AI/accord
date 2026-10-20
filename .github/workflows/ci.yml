@@ -129,6 +129,8 @@ jobs:
             backend/requirements-dev.txt
       - name: Install backend dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes poppler-utils
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt -r backend/requirements-dev.txt
       - name: ruff check
