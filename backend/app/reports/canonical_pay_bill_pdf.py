@@ -21,15 +21,20 @@ from app.reports.pdf import (
     DEFAULT_FONT_PATH,
     DEVANAGARI_FONT_PATH,
     UNICODE_FALLBACK_FONT_FAMILY,
+    select_pdf_font,
+    unicode_clusters,
 )
 from app.reports.posted_run import money
 
 
 class _CanonicalPayBillPDF(FPDF):
     def footer(self) -> None:
+        shaping = bool(self.text_shaping)
+        self.set_text_shaping(False)
         self.set_y(-7)
-        self.set_font(_PDF_FONT_FAMILY, size=5)
+        select_pdf_font(self, _PDF_FONT_FAMILY, size=5)
         self.cell(0, 4, f"Page {self.page_no()} of {{nb}}", align="R")
+        self.set_text_shaping(shaping)
 
 
 def _pdf_money(value) -> str:
@@ -57,11 +62,11 @@ def _pdf_wrap_lines(pdf: _CanonicalPayBillPDF, value: str, width: float) -> list
                 wrapped.append(current)
                 current = ""
             chunk = ""
-            for character in word:
-                candidate_chunk = f"{chunk}{character}"
+            for cluster in unicode_clusters(word):
+                candidate_chunk = f"{chunk}{cluster}"
                 if chunk and pdf.get_string_width(candidate_chunk) > width:
                     wrapped.append(chunk)
-                    chunk = character
+                    chunk = cluster
                 else:
                     chunk = candidate_chunk
             current = chunk
@@ -93,19 +98,20 @@ def _pdf_cells(
         fitted_size = font_size
         lines: list[str] = []
         while fitted_size >= 2.4:
-            pdf.set_font(_PDF_FONT_FAMILY, style=style, size=fitted_size)
+            select_pdf_font(pdf, _PDF_FONT_FAMILY, style=style, size=fitted_size)
             line_height = max(min(fitted_size * 0.38, 2.1), 1.15)
             lines = _pdf_wrap_lines(pdf, value, text_width)
             if len(lines) * line_height <= available_height:
                 break
             fitted_size -= 0.2
-        pdf.set_font(_PDF_FONT_FAMILY, style=style, size=max(fitted_size, 2.4))
+        select_pdf_font(pdf, _PDF_FONT_FAMILY, style=style, size=max(fitted_size, 2.4))
         line_height = max(min(max(fitted_size, 2.4) * 0.38, 2.1), 1.15)
         max_lines = max(1, int(available_height // line_height))
         visible_lines = lines[:max_lines]
         if len(lines) > max_lines and visible_lines:
             last_line = visible_lines[-1].rstrip()
-            visible_lines[-1] = f"{last_line[:-3]}..." if len(last_line) > 3 else "..."
+            clusters = unicode_clusters(last_line)
+            visible_lines[-1] = f"{''.join(clusters[:-3])}..." if len(clusters) > 3 else "..."
         page_before = pdf.page_no()
         pdf.multi_cell(
             text_width,
@@ -194,11 +200,11 @@ def _pdf_page_header(
     widths: list[float],
 ) -> None:
     pdf.add_page()
-    pdf.set_font(_PDF_FONT_FAMILY, style="B", size=7)
+    select_pdf_font(pdf, _PDF_FONT_FAMILY, style="B", size=7)
     pdf.cell(0, 3.5, _organization_label(dto), new_x="LMARGIN", new_y="NEXT", align="C")
-    pdf.set_font(_PDF_FONT_FAMILY, style="B", size=8)
+    select_pdf_font(pdf, _PDF_FONT_FAMILY, style="B", size=8)
     pdf.cell(0, 4, dto.title, new_x="LMARGIN", new_y="NEXT", align="C")
-    pdf.set_font(_PDF_FONT_FAMILY, size=6)
+    select_pdf_font(pdf, _PDF_FONT_FAMILY, size=6)
     pdf.cell(0, 3.5, dto.subtitle, new_x="LMARGIN", new_y="NEXT", align="C")
     _pdf_table_header(pdf, widths)
 
@@ -238,6 +244,9 @@ def pay_bill_v3_to_pdf(dto: ReportDTO) -> bytes:
             fname=str(DEVANAGARI_FONT_PATH),
         )
         pdf.set_fallback_fonts([UNICODE_FALLBACK_FONT_FAMILY], exact_match=False)
+    else:
+        raise FileNotFoundError(f"PDF generation requires the Unicode font {DEVANAGARI_FONT_PATH}.")
+    pdf.set_text_shaping(True)
     pdf.alias_nb_pages()
     pdf.set_margins(4.5, 4.5, 4.5)
     pdf.set_auto_page_break(False)
