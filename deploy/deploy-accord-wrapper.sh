@@ -386,6 +386,20 @@ PY
 }
 # END TESTABLE RELEASE BACKUP RETENTION
 
+# BEGIN TESTABLE RELEASE CAPABILITY CHECK
+# This wrapper runs the candidate's setup.sh --prepare while the old release
+# still serves. A bundle built before prepared activation ignores that argument
+# and starts the live Compose project, migrations included, without a backup.
+# Only a bundle whose signed deploy tree declares the contract may run any of
+# its scripts.
+RELEASE_CAPABILITY="prepared-activation-v1"
+require_release_capability() {
+    local marker="$1/release-capabilities"
+    [[ -f "$marker" && ! -L "$marker" ]] || return 1
+    cmp -s -- "$marker" <(printf '%s\n' "$RELEASE_CAPABILITY")
+}
+# END TESTABLE RELEASE CAPABILITY CHECK
+
 LIVE_ROOT="/opt/accord/deploy"
 CANDIDATE_ROOT="/opt/accord/.release-candidate-$SHA-$$"
 BACKUP_ROOT="/opt/accord/.deploy-previous-$(date -u +%Y%m%d%H%M%S)-$$"
@@ -588,6 +602,9 @@ MANIFEST_SHA="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.a
 [[ "$MANIFEST_SHA" == "$SHA" ]] || die "release manifest does not match requested SHA"
 [[ "$(cat "$EXTRACTED/deploy/release-source-sha")" == "$SHA" ]] \
     || die "release bundle identity does not match requested SHA"
+# The validator above proved release-capabilities is a signed bundle file.
+require_release_capability "$EXTRACTED/deploy" \
+    || die "release bundle does not declare $RELEASE_CAPABILITY; it predates prepared activation and was not run. Deploy a bundle built by current release tooling, such as the signed transition rollback bundle"
 [[ -f "$EXTRACTED/deploy/release-tooling-source-sha" \
     && ! -L "$EXTRACTED/deploy/release-tooling-source-sha" ]] \
     || die "release tooling identity is missing or unsafe"

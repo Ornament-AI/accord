@@ -477,6 +477,16 @@ the paired PostgreSQL and MinIO backup path. Neither path accepts the legacy
    release. The operator stages that exact `current -> previous` evidence;
    rollback uses the same verified installer and proof path as forward
    deployment. Chained rollbacks proceed one release at a time.
+   Bundles built by tooling from before prepared offline activation lack the
+   signed `prepared-activation-v1` marker, and the wrapper refuses them before
+   running any bundled script (see below). To return to such a release, use
+   the `current -> previous` transition bundle signed into a running release
+   that has prepared activation: it is packaged by the running release's
+   tooling with the previous release's image digests, so it carries the marker.
+   A further rollback from that older release is refused, because its own
+   transition bundle predates the marker. Recover from there with a new
+   forward release (for example a revert) or the backup procedure in step 3;
+   never reinstall an older wrapper to bypass the check.
 3. **Do not** auto-downgrade Alembic. If the new release's migrations
    already applied and are incompatible with the old app, keep API, worker,
    web, and MinIO stopped. Verify both checksum files in the SHA-bound release
@@ -525,6 +535,16 @@ identity. It rejects changed files, unknown Compose inputs, missing images and
 changed credential sources before stopping writers. The same proof is verified
 after promotion. This proof is local to one attempt and does not authorize a
 no-op, incremental release, overlapping backend or backup reduction.
+
+The wrapper runs the candidate's `setup.sh --prepare` while the old release
+serves. A bundle built before this contract ignores that argument and would
+start the live Compose project, migrations included, without a backup. Before
+running any bundled script other than the hash-pinned validator, the wrapper
+therefore requires the signed bundle file `deploy/release-capabilities` to be a
+regular file containing exactly `prepared-activation-v1`. Otherwise it stops
+before any registry login, image pull or service stop, on both the update and
+fresh-host bootstrap paths. The release manifest lists the marker like every
+other deploy file, so it cannot be added to an already signed bundle.
 
 `setup.sh --prepare` and `--verify-prepared` are wrapper implementation steps;
 operators continue using the signed full-SHA release command. Direct setup now

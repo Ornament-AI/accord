@@ -87,6 +87,7 @@ DEPLOY_FILES=(
     deploy/prepare-release.py
     deploy/phase_timing.py
     deploy/PHASE_TIMING_SOURCE
+    deploy/release-capabilities
     deploy/deploy-accord.sh
     deploy/deploy-accord-wrapper.sh
     deploy/backup-before-migrate.sh
