@@ -484,7 +484,8 @@ async def test_execute_generate_report_reuses_finalized_artifact(session):
 
 
 @pytest.mark.asyncio
-async def test_revisioned_v3_does_not_reuse_pre_fix_artifact(session, monkeypatch):
+@pytest.mark.parametrize("legacy_version", ["v3", "v3+june-2026-contract-r5"])
+async def test_revisioned_v3_does_not_reuse_pre_fix_artifact(session, monkeypatch, legacy_version):
     async def ready(*_args, **_kwargs):
         return None
 
@@ -498,7 +499,7 @@ async def test_revisioned_v3_does_not_reuse_pre_fix_artifact(session, monkeypatc
         storage,
         organization_id=world["org_id"],
         report_type="pay_bill",
-        template_version="v3",
+        template_version=legacy_version,
         content=PDF_BYTES,
         content_type=CONTENT_TYPES["pdf"],
         requested_by=world["user_id"],
