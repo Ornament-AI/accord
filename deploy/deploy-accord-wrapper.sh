@@ -595,14 +595,11 @@ cmp -s "$TRUSTED_PUBLIC_KEY" "$EXTRACTED/deploy/onprem-release-signing-public.pe
 EXPECTED_VALIDATOR_SHA256="dfd6920f7f591cc337e834c771a22c0e458210db4aa0e0de592fc0df1522863b"
 [[ "$(/usr/bin/sha256sum "$EXTRACTED/deploy/onprem_release.py" | awk '{print $1}')" == "$EXPECTED_VALIDATOR_SHA256" ]] \
     || die "release validator does not match the reviewed source"
-/usr/bin/python3 "$EXTRACTED/deploy/onprem_release.py" validate \
-    "$MANIFEST" --bundle-root "$EXTRACTED" >/dev/null \
-    || die "release evidence is invalid"
 MANIFEST_SHA="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"]["commit_sha"])' "$MANIFEST")"
 [[ "$MANIFEST_SHA" == "$SHA" ]] || die "release manifest does not match requested SHA"
 [[ "$(cat "$EXTRACTED/deploy/release-source-sha")" == "$SHA" ]] \
     || die "release bundle identity does not match requested SHA"
-# The validator above proved release-capabilities is a signed bundle file.
+# The signature/checksums above authenticate the archive, including this marker.
 require_release_capability "$EXTRACTED/deploy" \
     || die "release bundle does not declare $RELEASE_CAPABILITY; it predates prepared activation and was not run. Deploy a bundle built by current release tooling, such as the signed transition rollback bundle"
 [[ -f "$EXTRACTED/deploy/release-tooling-source-sha" \
@@ -618,6 +615,10 @@ REHEARSED_FROM_SHA="$(cat "$EXTRACTED/deploy/release-rehearsed-from-sha")"
     || die "release migration-baseline evidence is invalid"
 [[ -x "$EXTRACTED/deploy/verify-release-baseline.py" ]] \
     || die "release migration-baseline verifier is missing or not executable"
+/usr/bin/python3 "$EXTRACTED/deploy/onprem_release.py" validate \
+    "$MANIFEST" --bundle-root "$EXTRACTED" >/dev/null \
+    || die "release evidence is invalid"
+
 # Preserve the live environment only after opening it below the already trusted
 # live directory. Refuse to launder unsafe ownership or permissions into the
 # authenticated candidate, and prove the source did not change while copied.
