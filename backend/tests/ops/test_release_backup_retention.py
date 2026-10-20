@@ -186,7 +186,7 @@ def test_wrapper_checks_capacity_before_downtime_and_prunes_only_after_the_recei
     )
     assert capacity_call < wrapper.index('docker stop "${APP_CONTAINER_IDS[@]}"')
     receipt = wrapper.index('|| die "protected deployed-state evidence acknowledgement is invalid"')
-    failure = wrapper.index('if [[ -f "$MIGRATION_STATE_FILE" ]]; then\n    APP_QUIESCED=false')
+    failure = wrapper.index('if [[ -f "$MIGRATION_STATE_FILE" ]]; then')
     for call in (
         'record_backup_completed "$BACKUP_EVIDENCE" .minio.tar.gz',
         'prune_release_backups /opt/accord/backups/releases "$BACKUP_EVIDENCE"',

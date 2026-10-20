@@ -27,12 +27,16 @@ services:
 | `worker` | `python worker.py` durable-job loop |
 | `web` | nginx + SPA; publishes `127.0.0.1:${ACCORD_WEB_PORT:-8085}` |
 
-> MinIO community images are no longer distributed: they were removed from
-> Docker Hub and `quay.io/minio/*` now rejects anonymous pulls. The compose
-> services keep the pinned upstream digests but declare `pull_policy:
-> missing`, so deploys reuse the images already cached on the host. On a
-> **fresh** host, side-load them before bring-up, e.g. from a host that has
-> them: `docker save quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z | gzip | ssh TARGET 'docker load'`, or push them to a private mirror and update the `image:` refs.
+> The pinned MinIO registry references may deny anonymous pulls (the exact
+> server digest returned HTTP 401 in the disposable rehearsal). Preparation
+> requires the signed `repository@sha256:digest` reference to resolve locally
+> with that digest in Docker's `RepoDigests`; a tag or image ID alone is not proof.
+> The former `docker save repo:tag | docker load` recommendation is insufficient:
+> image archives may lose the repository-digest association. A fresh host needs
+> authorized access to the pinned digest or a separately reviewed digest-preserving
+> distribution/import procedure. Do not invent a digest alias or silently fall
+> back to a mutable tag. Missing verified images abort before stopping services.
+> No new mirror, credential change or unsigned import path is introduced here.
 
 On first boot, Postgres runs `deploy/object-storage/postgres-init-roles.sh`.
 That script applies the packaged `deploy/create_roles.sql` mirror of
@@ -473,6 +477,16 @@ the paired PostgreSQL and MinIO backup path. Neither path accepts the legacy
    release. The operator stages that exact `current -> previous` evidence;
    rollback uses the same verified installer and proof path as forward
    deployment. Chained rollbacks proceed one release at a time.
+   Bundles built by tooling from before prepared offline activation lack the
+   signed `prepared-activation-v1` marker, and the wrapper refuses them before
+   running any bundled script (see below). To return to such a release, use
+   the `current -> previous` transition bundle signed into a running release
+   that has prepared activation: it is packaged by the running release's
+   tooling with the previous release's image digests, so it carries the marker.
+   A further rollback from that older release is refused, because its own
+   transition bundle predates the marker. Recover from there with a new
+   forward release (for example a revert) or the backup procedure in step 3;
+   never reinstall an older wrapper to bypass the check.
 3. **Do not** auto-downgrade Alembic. If the new release's migrations
    already applied and are incompatible with the old app, keep API, worker,
    web, and MinIO stopped. Verify both checksum files in the SHA-bound release
@@ -508,3 +522,64 @@ These were required for a clean bring-up (see `deploy/docker-compose.yml`):
 3. **ADR role bootstrap** — `postgres-init-roles.sh` plus DSN defaults to
    `accord_migrator` / `accord_app` / `accord_worker`, so the Alembic RLS
    policies and the runtime roles succeed on first boot.
+
+
+## Prepared offline activation
+
+The authenticated release wrapper now prepares its private candidate under the
+existing VM lock while the old application serves. It validates the complete
+signed service inventory, resolves the candidate configuration, stages missing
+exact digest images, and records their local image IDs. Preparation binds the
+candidate files and isolated credentials to one attempt UUID and the Linux boot
+identity. It rejects changed files, unknown Compose inputs, missing images and
+changed credential sources before stopping writers. The same proof is verified
+after promotion. This proof is local to one attempt and does not authorize a
+no-op, incremental release, overlapping backend or backup reduction.
+
+The wrapper runs the candidate's `setup.sh --prepare` while the old release
+serves. A bundle built before this contract ignores that argument and would
+start the live Compose project, migrations included, without a backup. Before
+running any bundled script other than the hash-pinned validator, the wrapper
+therefore requires the signed bundle file `deploy/release-capabilities` to be a
+regular file containing exactly `prepared-activation-v1`. Otherwise it stops
+before any registry login, image pull or service stop, on both the update and
+fresh-host bootstrap paths. The release manifest lists the marker like every
+other deploy file, so it cannot be added to an already signed bundle.
+
+`setup.sh --prepare` and `--verify-prepared` are wrapper implementation steps;
+operators continue using the signed full-SHA release command. Direct setup now
+requires the wrapper's prepared attempt. Activation performs no registry login
+or image pull; all startup and migration image consumers explicitly forbid
+pulling and building. A missing cache entry after the drain fails closed. There
+is no fallback to a pulling deploy path. The existing complete quiesced backup,
+integrity checks, health/version proof and recovery ownership remain in place.
+
+Preparation records separate configuration-validation, image-preparation and
+credential-preparation measurements below the private
+`/opt/accord/backups/releases/preparation-<attempt>/` directory using the byte-exact
+shared timing helper documented in `deploy/PHASE_TIMING_SOURCE`. These records
+contain no command arguments, environment, secret values or secret hashes.
+Missing or incomplete timing/proof records are failures; retries require a fresh
+candidate and attempt. They do not establish downtime, backup freshness or a
+recovery objective. Drain, backup, migration and observation timing remain a
+later integration, preserving their existing transaction ownership.
+
+Cancellation stops the activation process group before fencing every data job
+and application writer. A provisioning or migration attempt whose outcome is
+uncertain never triggers an automatic old-application restart or data restore.
+Full host loss/SIGKILL still requires the existing operator recovery procedure;
+local fixture tests do not prove production recovery time or restore health.
+
+Accord retains its paired database/MinIO backup and singleton worker path. A
+running prior role-sync, migration or bucket-initialization job aborts before
+drain. Failed or interrupted activation fences API, worker, web, MinIO,
+role-sync, migrations and minio-init. Unresolved migration evidence is retained
+and prevents a blind retry. `setsid` must be available before preparation; it
+keeps cancellation scoped to the activation process group. Cached pinned MinIO
+images can be reused when their public registry is unavailable, but missing
+images still abort before stopping the old application.
+
+No new RPO/RTO, scheduled-backup freshness, restore-drill age or retention policy
+is approved by this batch. The routine backup examples and WAL/PITR policy in
+`docs/security.md` still require reconciliation with actual installed coverage
+before any reduction in release backups can be considered.

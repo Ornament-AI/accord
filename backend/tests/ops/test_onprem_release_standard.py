@@ -129,8 +129,20 @@ def test_package_builds_self_contained_digest_release(tmp_path: Path) -> None:
         extracted = tmp_path / "extracted"
         bundle.extractall(extracted, filter="data")
         assert (extracted / "deploy/release-rehearsed-from-sha").read_text() == f"{'c' * 40}\n"
+        # The fixed wrapper refuses bundles without this signed capability marker.
+        capabilities = (extracted / "deploy/release-capabilities").read_bytes()
+        assert capabilities == b"prepared-activation-v1\n"
+        compose = (extracted / "deploy/docker-compose.yml").read_text()
+        assert "    build:" not in compose
+        assert "      context:" not in compose
+        assert "      dockerfile:" not in compose
 
     manifest_path = tmp_path / f"onprem-release-{sha}.json"
+    signed = {item["path"]: item for item in manifest["artifact"]["files"]}
+    assert (
+        signed["deploy/release-capabilities"]["sha256"]
+        == hashlib.sha256(b"prepared-activation-v1\n").hexdigest()
+    )
     (extracted / "deploy/setup.sh").write_text("tampered\n")
     tampered_file = subprocess.run(
         [
@@ -161,6 +173,30 @@ def test_package_builds_self_contained_digest_release(tmp_path: Path) -> None:
     )
     assert rejected.returncode != 0
     assert any(word in rejected.stderr.lower() for word in ("digest", "invalid format"))
+
+    # A bundle signed without the marker cannot gain it after signing.
+    unsigned = json.loads(manifest_path.read_text())
+    unsigned["artifact"]["files"] = [
+        item
+        for item in unsigned["artifact"]["files"]
+        if item["path"] != "deploy/release-capabilities"
+    ]
+    unsigned_path = tmp_path / "unsigned-capability.json"
+    unsigned_path.write_text(json.dumps(unsigned))
+    added_marker = subprocess.run(
+        [
+            "python3",
+            str(VALIDATOR),
+            "validate",
+            str(unsigned_path),
+            "--bundle-root",
+            str(extracted),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert added_marker.returncode != 0
+    assert "unlisted deploy files: deploy/release-capabilities" in added_marker.stderr
 
 
 def test_release_workflow_is_exact_main_signed_and_durable() -> None:
@@ -493,7 +529,7 @@ def test_fresh_host_bootstrap_is_separate_authenticated_and_empty_only() -> None
 def test_migration_marker_precedes_compose_mutation() -> None:
     setup = (ROOT / "deploy/setup.sh").read_text()
     assert setup.index(': >"$ACCORD_MIGRATION_STATE_FILE"') < setup.index(
-        "docker compose --env-file .env up -d --no-build"
+        "compose up -d --no-build --pull never"
     )
     assert "ACCORD_SMOKE_REQUIRE_DOCKER=true" in setup
     assert "/api/auth/me" in setup
