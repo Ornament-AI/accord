@@ -1,0 +1,190 @@
+{
+  "schema": 1,
+  "repository": "Ornament-AI/accord",
+  "components": {
+    "api": {
+      "inputs": [
+        "backend/"
+      ],
+      "shared_inputs": [
+        "backend/requirements.txt"
+      ]
+    },
+    "migrations": {
+      "inputs": [
+        "backend/"
+      ],
+      "shared_inputs": [
+        "backend/requirements.txt"
+      ]
+    },
+    "worker": {
+      "inputs": [
+        "backend/"
+      ],
+      "shared_inputs": [
+        "backend/requirements.txt"
+      ]
+    },
+    "web": {
+      "inputs": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        ".dockerignore",
+        "deploy/Dockerfile.web",
+        "frontend/",
+        "deploy/nginx/"
+      ],
+      "shared_inputs": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml"
+      ]
+    },
+    "postgres": {
+      "inputs": [
+        "deploy/docker-compose.yml",
+        "backend/scripts/create_roles.sql",
+        "deploy/object-storage/postgres-init-roles.sh"
+      ],
+      "shared_inputs": [
+        "deploy/docker-compose.yml"
+      ]
+    },
+    "role-sync": {
+      "inputs": [
+        "deploy/docker-compose.yml",
+        "backend/scripts/create_roles.sql",
+        "deploy/object-storage/sync-role-passwords.sh"
+      ],
+      "shared_inputs": [
+        "deploy/docker-compose.yml"
+      ]
+    },
+    "minio": {
+      "inputs": [
+        "deploy/docker-compose.yml"
+      ],
+      "shared_inputs": [
+        "deploy/docker-compose.yml"
+      ]
+    },
+    "minio-init": {
+      "inputs": [
+        "deploy/docker-compose.yml",
+        "deploy/object-storage/create-bucket.sh"
+      ],
+      "shared_inputs": [
+        "deploy/docker-compose.yml"
+      ]
+    }
+  },
+  "roots": {
+    "deployment": [
+      "deploy/",
+      ".github/workflows/deploy.yml"
+    ],
+    "proxy": [
+      "deploy/nginx/"
+    ],
+    "shared_runtime": [
+      ".dockerignore",
+      "backend/requirements.txt"
+    ],
+    "storage": [
+      "backend/app/services/",
+      "backend/app/storage/",
+      "deploy/object-storage/"
+    ],
+    "auth": [
+      "backend/app/auth/",
+      "backend/app/config.py"
+    ],
+    "shared_dependencies": [
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "backend/requirements.txt"
+    ]
+  },
+  "effects": {
+    "migration": {
+      "inputs": [
+        "backend/migrations/",
+        "backend/alembic.ini"
+      ],
+      "behavior": "mutating",
+      "runs_on_start": true,
+      "owner": "migrations"
+    },
+    "seed": {
+      "inputs": [
+        "scripts/provision_organization.py",
+        "scripts/provision_member.py",
+        "backend/app/services/bootstrap.py"
+      ],
+      "behavior": "mutating",
+      "runs_on_start": false,
+      "owner": "migrations"
+    },
+    "recovery": {
+      "inputs": [
+        "backend/app/jobs/",
+        "backend/app/services/artifacts.py",
+        "backend/app/services/outbox.py"
+      ],
+      "behavior": "mutating",
+      "runs_on_start": true,
+      "owner": "worker"
+    },
+    "startup": {
+      "inputs": [
+        "backend/app/main.py",
+        "deploy/setup.sh",
+        "deploy/object-storage/",
+        "backend/scripts/create_roles.sql"
+      ],
+      "behavior": "mutating",
+      "runs_on_start": true,
+      "owner": "role-sync"
+    },
+    "jobs": {
+      "inputs": [
+        "backend/app/jobs/",
+        "backend/app/services/outbox.py"
+      ],
+      "behavior": "mutating",
+      "runs_on_start": true,
+      "owner": "worker"
+    },
+    "file_layout": {
+      "inputs": [
+        "backend/app/services/",
+        "backend/app/models/"
+      ],
+      "behavior": "read-only",
+      "runs_on_start": false,
+      "owner": "api"
+    },
+    "writes": {
+      "inputs": [
+        "backend/app/api/",
+        "backend/app/services/",
+        "backend/app/models/"
+      ],
+      "behavior": "mutating",
+      "runs_on_start": false,
+      "owner": "api"
+    },
+    "api": {
+      "inputs": [
+        "backend/app/api/",
+        "backend/app/schemas/"
+      ],
+      "behavior": "read-only",
+      "runs_on_start": false,
+      "owner": "api"
+    }
+  }
+}

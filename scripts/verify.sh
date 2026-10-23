@@ -54,6 +54,9 @@ done < <(find scripts deploy -type f -name '*.sh' -print0 2>/dev/null)
 step "Test offline release preparation"
 run_step "prepared release proof" "$PYTHON_BIN" "$ROOT/scripts/tests/test_prepared_release.py"
 
+step "Test committed release source evidence"
+run_step "source input evidence" "$PYTHON_BIN" "$ROOT/scripts/tests/test_release_input_evidence.py"
+
 step "Lint backend"
 if [[ -x "$PYTHON_BIN" && -f "$ROOT/backend/requirements.txt" ]]; then
 	run_step "ruff check" "$PYTHON_BIN" -m ruff check backend/app backend/tests

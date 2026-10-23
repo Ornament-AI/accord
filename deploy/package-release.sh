@@ -102,6 +102,8 @@ DEPLOY_FILES=(
     scripts/provision_organization.py
     scripts/provision_member.py
     scripts/vendor/onprem_release.py
+    deploy/release-inputs.json
+    scripts/recovery
 )
 git -C "$REPO_ROOT" archive --format=tar "$TOOLING_SHA" "${DEPLOY_FILES[@]}" \
     | tar -xf - -C "$STAGE_ROOT"
@@ -130,7 +132,7 @@ mv "$STAGE_ROOT/scripts/provision_member.py" \
 mv "$STAGE_ROOT/backend/scripts/create_roles.sql" \
     "$STAGE_ROOT/deploy/create_roles.sql"
 rmdir "$STAGE_ROOT/backend/scripts" "$STAGE_ROOT/backend"
-rmdir "$STAGE_ROOT/scripts/vendor" "$STAGE_ROOT/scripts"
+rmdir "$STAGE_ROOT/scripts/vendor"
 
 BACKEND_REF="ghcr.io/ornament-ai/accord/backend@$BACKEND_DIGEST"
 WEB_REF="ghcr.io/ornament-ai/accord/web@$WEB_DIGEST"
@@ -166,6 +168,17 @@ if removed != 4:
     raise SystemExit("expected exactly four development build mappings")
 path.write_text("".join(output))
 PYBUILD
+# Bind source evidence only for the normal exact-source publisher. Historical
+# rollback bundles retain their existing contract and gain no eligibility claim.
+if [[ "$COMMIT_SHA" == "$TOOLING_SHA" ]]; then
+    python3 "$STAGE_ROOT/scripts/recovery/build_release_inputs.py" \
+        --repository "$REPO_ROOT" --source "$COMMIT_SHA" \
+        --output "$STAGE_ROOT/deploy/release-build-inputs.json"
+fi
+# Build-only evidence tooling never becomes deployed executable surface.
+rm -rf "$STAGE_ROOT/scripts/recovery"
+rmdir "$STAGE_ROOT/scripts"
+
 python3 "$STAGE_ROOT/deploy/onprem_release.py" build \
     --adapter "$SCRIPT_DIR/onprem-release-adapter.json" \
     --bundle-root "$STAGE_ROOT" \

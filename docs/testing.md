@@ -353,3 +353,7 @@ an autouse PostgreSQL/Alembic fixture even for domain tests. An isolated domain
 run with a narrower `--confcutdir` is useful supplemental evidence, not a
 replacement for the canonical database-backed suite. Dated React Doctor logs
 and screenshots are historical evidence, not current release attestations.
+
+## Offline release source evidence
+
+See [release source evidence](release-source-evidence.md) for the inactive adapter, exact committed-input checks and remaining activation gates. Run `python3 scripts/tests/test_release_input_evidence.py` without database or Docker access.

@@ -1,4 +1,5 @@
 [tool.ruff]
+extend-exclude = ["scripts/recovery/vendor"]
 # CI and backend images run Python 3.14, but formatting targets 3.13 so Ruff
 # does not emit optional 3.14-only syntax that looks like older invalid Python.
 target-version = "py313"
