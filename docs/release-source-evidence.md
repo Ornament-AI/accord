@@ -4,7 +4,7 @@ This is an offline, inactive adapter. `activation_allowed` is always `false`. It
 
 `deploy/release-inputs.json` declares component build inputs, shared dependencies, deployment/config/proxy/storage/auth roots and migration/seed/recovery/startup/job/file/write/API effects. The canonical reader hashes committed Git blobs and executable modes. It reads neither dirty working files nor ambient credentials. Missing declared paths, symlinks/submodules and invalid declarations fail closed. Unassigned tracked files enter the conservative shared-runtime fingerprint; this intentionally overclassifies changes until reviewed rather than granting a frontend shortcut.
 
-The three canonical modules and app profile under `scripts/recovery/vendor/` are byte-for-byte copies of `Ornament-AI/msidc-infra` commit `63fecf4a62ffd6b8d3f553eef57c5342b5b1482d`. `SOURCE.json` pins every copied hash. Do not locally reformat them or invent app policy.
+The three canonical modules and app profile under `scripts/recovery/vendor/` are byte-for-byte copies of `Ornament-AI/msidc-infra` commit `9e2f12bfa3f602d352ee9af9ac2d65db93a47c16`. `SOURCE.json` pins every copied hash. Do not locally reformat them or invent app policy.
 
 ## Local use
 

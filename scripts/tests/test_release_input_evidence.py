@@ -65,7 +65,7 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
         vendor = ROOT / "scripts/recovery/vendor"
         pin = json.loads((vendor / "SOURCE.json").read_text())
         self.assertEqual(pin["repository"], "Ornament-AI/msidc-infra")
-        self.assertEqual(pin["commit"], "63fecf4a62ffd6b8d3f553eef57c5342b5b1482d")
+        self.assertEqual(pin["commit"], "9e2f12bfa3f602d352ee9af9ac2d65db93a47c16")
         for name, digest in pin["files"].items():
             self.assertEqual(hashlib.sha256((vendor / name).read_bytes()).hexdigest(), digest)
 
