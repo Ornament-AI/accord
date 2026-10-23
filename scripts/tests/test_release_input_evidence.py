@@ -1,10 +1,13 @@
 """Offline source/packaging checks; no Docker, database, network or credentials."""
 
+import ast
 import copy
+import fnmatch
 import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/recovery/vendor"))
 
 import release_inputs as inputs  # noqa: E402 - load the pinned local vendor directory
+import release_classification as classification  # noqa: E402 - pinned local vendor
 from release_profiles import EvidenceError  # noqa: E402 - load the pinned local vendor directory
 
 APP = "accord"
@@ -41,6 +45,24 @@ CONFIG = {
 }
 
 
+AUTH_MUTATIONS = (
+    "backend/app/api/deps.py",
+    "backend/app/tenancy.py",
+    "backend/app/db.py",
+    "backend/app/services/identity.py",
+    "backend/app/services/members.py",
+    "backend/app/services/bootstrap.py",
+    "backend/app/models/identity.py",
+    "backend/app/models/base.py",
+    "backend/app/middleware/csrf.py",
+    "backend/app/main.py",
+    "backend/app/services/run_workflow.py",
+    "backend/app/jobs/worker.py",
+    "backend/app/services/artifacts.py",
+    "backend/app/api/routes/payroll_runs.py",
+)
+
+
 class ReleaseInputEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -61,11 +83,93 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
         inventory[path]["sha256"] = "f" * 64
         return self.build(inventory)
 
+    def assessment(self, candidate, *, frontend_review=False):
+        # Protocol-only fixture. These numbers are not deployment policy choices.
+        digest = classification.fingerprint
+        images = {name: digest(name) for name in self.evidence["components"]}
+        runtime = {
+            "components": {
+                name: {
+                    "config": digest("config"),
+                    "secret_versions": {"database": "version:fixture"},
+                }
+                for name in images
+            }
+        }
+        baseline = inputs.bind_runtime_inputs(self.evidence, images, runtime)
+        target = inputs.bind_runtime_inputs(candidate, images, runtime)
+        receipt = {
+            "manifest_digest": digest(baseline),
+            "status": "committed",
+            "inventory": baseline["inventory"],
+            "identities": {name: digest(name + "-instance") for name in images},
+            "effect_state": {name: digest(name) for name in classification.EFFECTS},
+            "singleton_owners": {
+                name: effect["owner"]
+                for name, effect in self.evidence["effects"].items()
+                if effect["owner"] is not None
+            },
+            "committed_at": 800,
+        }
+        observation = {
+            key: copy.deepcopy(receipt[key])
+            for key in ("inventory", "identities", "effect_state", "singleton_owners")
+        }
+        observation.update(
+            receipt_digest=digest(receipt), healthy=True, journal="resolved", observed_at=990
+        )
+        policy = {
+            "repository": baseline["repository"],
+            "approval": digest("synthetic-policy"),
+            "max_backup_age_s": 100,
+            "max_restore_age_s": 500,
+            "max_observation_age_s": 20,
+            "old_client_window_s": 200,
+        }
+        backup = {
+            "repository": baseline["repository"],
+            "policy_digest": digest(policy),
+            "recovery_set": digest("pair"),
+            "completed_at": 950,
+            "readable": True,
+            "restore_set": digest("restored-pair"),
+            "restored_at": 700,
+            "restore_passed": True,
+            "evidence": digest("restore-evidence"),
+        }
+        review = None
+        if frontend_review:
+            review = {
+                "baseline": digest(baseline),
+                "candidate": digest(target),
+                "evidence": digest("synthetic-review"),
+                "checks": dict.fromkeys(classification.FRONTEND_CHECKS, True),
+                "retained": {
+                    name: images[name]
+                    for name, item in self.evidence["components"].items()
+                    if item["role"] != "web"
+                },
+                "asset_window_s": 200,
+            }
+        return classification.assess(
+            {
+                "baseline": baseline,
+                "candidate": target,
+                "receipt": receipt,
+                "observation": observation,
+                "policy": policy,
+                "backup": backup,
+                "frontend_review": review,
+                "backend_review": None,
+                "now": 1000,
+            }
+        )
+
     def test_canonical_vendor_pin(self):
         vendor = ROOT / "scripts/recovery/vendor"
         pin = json.loads((vendor / "SOURCE.json").read_text())
         self.assertEqual(pin["repository"], "Ornament-AI/msidc-infra")
-        self.assertEqual(pin["commit"], "9e2f12bfa3f602d352ee9af9ac2d65db93a47c16")
+        self.assertEqual(pin["commit"], "f08c8d70799b0f0d6c4535a2397496793ec082d0")
         for name, digest in pin["files"].items():
             self.assertEqual(hashlib.sha256((vendor / name).read_bytes()).hexdigest(), digest)
 
@@ -99,6 +203,194 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
         self.assertNotEqual(changed["components"]["web"], self.evidence["components"]["web"])
         for name in CONFIG["backend"]:
             self.assertEqual(changed["components"][name], self.evidence["components"][name])
+        self.assertEqual(changed["roots"], self.evidence["roots"])
+        self.assertEqual(changed["effects"], self.evidence["effects"])
+        result = self.assessment(changed, frontend_review=True)
+        self.assertEqual(result["classification"], "frontend-only", result)
+        self.assertFalse(result["activation_allowed"])
+
+    def test_auth_helpers_require_dedicated_infrastructure_plan(self):
+        for path in AUTH_MUTATIONS:
+            with self.subTest(path=path):
+                changed = self.changed(path)
+                self.assertNotEqual(changed["roots"]["auth"], self.evidence["roots"]["auth"])
+                result = self.assessment(changed)
+                self.assertEqual(result["classification"], "infrastructure", result)
+                self.assertIn("dedicated_infrastructure_plan", result["required_controls"])
+                self.assertFalse(result["activation_allowed"])
+
+    def test_auth_local_import_closure_is_declared(self):
+        paths = self.declaration["roots"]["auth"]
+        selected = {
+            path
+            for path in self.inventory
+            if any(
+                path == prefix or (prefix.endswith("/") and path.startswith(prefix))
+                for prefix in paths
+            )
+        }
+        for path in sorted(selected):
+            if not path.endswith(".py"):
+                continue
+            content = subprocess.check_output(["git", "show", f"{self.source}:{path}"], cwd=ROOT)
+            modules = []
+            for node in ast.walk(ast.parse(content)):
+                if isinstance(node, ast.Import):
+                    modules.extend(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    module = node.module or ""
+                    if node.level:
+                        parent = path.removeprefix("backend/").removesuffix(".py").split("/")[:-1]
+                        module = ".".join(
+                            parent[: len(parent) - node.level + 1] + ([module] if module else [])
+                        )
+                    modules.append(module)
+                    modules.extend(module + "." + alias.name for alias in node.names)
+            for module in modules:
+                if not module.startswith("app."):
+                    continue
+                parts = module.split(".")
+                candidates = ["backend/" + module.replace(".", "/") + ".py"]
+                candidates.extend(
+                    "backend/" + "/".join(parts[:length]) + "/__init__.py"
+                    for length in range(1, len(parts) + 1)
+                )
+                for dependency in candidates:
+                    if dependency in self.inventory:
+                        with self.subTest(source=path, dependency=dependency):
+                            self.assertIn(dependency, selected)
+
+    def test_committed_backend_helper_mutations_change_effect_evidence(self):
+        # Change real committed blob bytes in a disposable Git object database.
+        # No application source, test fixture database or worktree is modified.
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary)
+            subprocess.run(["git", "init", "-q", str(repository)], check=True)
+            objects = subprocess.check_output(
+                ["git", "rev-parse", "--path-format=absolute", "--git-path", "objects"],
+                cwd=ROOT,
+                text=True,
+            ).strip()
+            (repository / ".git/objects/info/alternates").write_text(objects + "\n")
+            for path in AUTH_MUTATIONS + (
+                "backend/app/domain/payroll/engine.py",
+                "backend/app/future/nested/helper.py",
+            ):
+                with self.subTest(path=path):
+                    subprocess.run(["git", "read-tree", self.source], cwd=repository, check=True)
+                    content = (
+                        subprocess.check_output(
+                            ["git", "show", f"{self.source}:{path}"],
+                            cwd=repository,
+                        )
+                        if path in self.inventory
+                        else b""
+                    ) + b"\n# source-evidence mutation fixture\n"
+                    blob = (
+                        subprocess.check_output(
+                            ["git", "hash-object", "-w", "--stdin"],
+                            input=content,
+                            cwd=repository,
+                        )
+                        .decode()
+                        .strip()
+                    )
+                    subprocess.run(
+                        ["git", "update-index", "--add", "--cacheinfo", f"100644,{blob},{path}"],
+                        cwd=repository,
+                        check=True,
+                    )
+                    tree = (
+                        subprocess.check_output(["git", "write-tree"], cwd=repository)
+                        .decode()
+                        .strip()
+                    )
+                    source = (
+                        subprocess.check_output(
+                            [
+                                "git",
+                                "-c",
+                                "user.name=Synthetic fixture",
+                                "-c",
+                                "user.email=fixture@example.invalid",
+                                "commit-tree",
+                                tree,
+                                "-p",
+                                self.source,
+                                "-m",
+                                "Synthetic helper mutation",
+                            ],
+                            cwd=repository,
+                        )
+                        .decode()
+                        .strip()
+                    )
+                    changed = inputs.build_source_manifest(repository, source, self.declaration)
+                    for name in ("writes", "api", "jobs", "recovery", "startup"):
+                        self.assertNotEqual(
+                            changed["effects"][name]["version"],
+                            self.evidence["effects"][name]["version"],
+                        )
+                    self.assertFalse(changed["activation_allowed"])
+                    if path in AUTH_MUTATIONS:
+                        self.assertNotEqual(
+                            changed["roots"]["auth"], self.evidence["roots"]["auth"]
+                        )
+                        result = self.assessment(changed)
+                        self.assertEqual(result["classification"], "infrastructure", result)
+                        self.assertIn("dedicated_infrastructure_plan", result["required_controls"])
+                        self.assertFalse(result["activation_allowed"])
+
+    def test_new_nested_backend_helper_is_semantically_covered(self):
+        path = "backend/app/future/nested/helper.py"
+        inventory = dict(
+            self.inventory,
+            **{
+                path: {
+                    "mode": "100644",
+                    "sha256": hashlib.sha256(b"new helper").hexdigest(),
+                    "size": 10,
+                }
+            },
+        )
+        changed = self.build(inventory)
+        for name in ("writes", "api", "jobs", "recovery", "startup"):
+            self.assertNotEqual(
+                changed["effects"][name]["version"], self.evidence["effects"][name]["version"]
+            )
+        result = self.assessment(changed)
+        self.assertEqual(result["classification"], "data-changing", result)
+        self.assertFalse(result["activation_allowed"])
+
+    def test_each_evidence_path_runs_backend_checks_on_pull_request(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        # This workflow deliberately uses a literal list of simple positive
+        # glob filters; reject a shape change rather than silently misparse it.
+        block = re.search(
+            r"^            backend:\n((?:              - .+\n)+)", workflow, re.MULTILINE
+        )
+        self.assertIsNotNone(block)
+        filters = [ast.literal_eval(line.split("- ", 1)[1]) for line in block.group(1).splitlines()]
+        self.assertTrue(all(not pattern.startswith("!") for pattern in filters))
+        backend = workflow.split("\n  backend:\n", 1)[1].split("\n  migrations:\n", 1)[0]
+        self.assertIn("needs.detect.outputs.backend_changed == 'true'", backend)
+        self.assertIn("github.event_name != 'pull_request'", backend)
+        self.assertIn(
+            "- name: Source input evidence\n        run: python scripts/tests/test_release_input_evidence.py",
+            backend,
+        )
+        for path in (
+            "scripts/recovery/build_release_inputs.py",
+            "scripts/recovery/vendor/release_inputs.py",
+            "scripts/tests/test_release_input_evidence.py",
+            "deploy/release-inputs.json",
+            "deploy/package-release.sh",
+        ):
+            with self.subTest(event="pull_request", changed_paths=[path]):
+                self.assertTrue(any(fnmatch.fnmatchcase(path, pattern) for pattern in filters))
+        self.assertFalse(
+            any(fnmatch.fnmatchcase("frontend/src/main.tsx", pattern) for pattern in filters)
+        )
 
     def test_unmapped_source_is_conservative_and_missing_input_rejected(self):
         inventory = dict(

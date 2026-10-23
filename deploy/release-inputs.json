@@ -99,7 +99,25 @@
     ],
     "auth": [
       "backend/app/auth/",
-      "backend/app/config.py"
+      "backend/app/config.py",
+      "backend/app/api/",
+      "backend/app/main.py",
+      "backend/app/middleware/",
+      "backend/app/services/",
+      "backend/app/models/",
+      "backend/app/tenancy.py",
+      "backend/app/db.py",
+      "backend/app/domain/",
+      "backend/app/reports/",
+      "backend/app/schemas/",
+      "backend/app/jobs/",
+      "backend/app/storage/",
+      "backend/app/__init__.py",
+      "backend/app/exceptions.py",
+      "backend/app/timezone.py",
+      "backend/app/logging_config.py",
+      "backend/app/observability.py",
+      "backend/app/platform_setup.py"
     ],
     "shared_dependencies": [
       "package.json",
@@ -112,7 +130,8 @@
     "migration": {
       "inputs": [
         "backend/migrations/",
-        "backend/alembic.ini"
+        "backend/alembic.ini",
+        "backend/app/"
       ],
       "behavior": "mutating",
       "runs_on_start": true,
@@ -122,7 +141,8 @@
       "inputs": [
         "scripts/provision_organization.py",
         "scripts/provision_member.py",
-        "backend/app/services/bootstrap.py"
+        "backend/app/services/bootstrap.py",
+        "backend/app/"
       ],
       "behavior": "mutating",
       "runs_on_start": false,
@@ -132,7 +152,8 @@
       "inputs": [
         "backend/app/jobs/",
         "backend/app/services/artifacts.py",
-        "backend/app/services/outbox.py"
+        "backend/app/services/outbox.py",
+        "backend/app/"
       ],
       "behavior": "mutating",
       "runs_on_start": true,
@@ -143,7 +164,8 @@
         "backend/app/main.py",
         "deploy/setup.sh",
         "deploy/object-storage/",
-        "backend/scripts/create_roles.sql"
+        "backend/scripts/create_roles.sql",
+        "backend/app/"
       ],
       "behavior": "mutating",
       "runs_on_start": true,
@@ -152,7 +174,8 @@
     "jobs": {
       "inputs": [
         "backend/app/jobs/",
-        "backend/app/services/outbox.py"
+        "backend/app/services/outbox.py",
+        "backend/app/"
       ],
       "behavior": "mutating",
       "runs_on_start": true,
@@ -161,7 +184,8 @@
     "file_layout": {
       "inputs": [
         "backend/app/services/",
-        "backend/app/models/"
+        "backend/app/models/",
+        "backend/app/"
       ],
       "behavior": "read-only",
       "runs_on_start": false,
@@ -171,7 +195,8 @@
       "inputs": [
         "backend/app/api/",
         "backend/app/services/",
-        "backend/app/models/"
+        "backend/app/models/",
+        "backend/app/"
       ],
       "behavior": "mutating",
       "runs_on_start": false,
@@ -180,7 +205,8 @@
     "api": {
       "inputs": [
         "backend/app/api/",
-        "backend/app/schemas/"
+        "backend/app/schemas/",
+        "backend/app/"
       ],
       "behavior": "read-only",
       "runs_on_start": false,

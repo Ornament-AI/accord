@@ -65,6 +65,10 @@ jobs:
             backend:
               - 'backend/**'
               - 'pyproject.toml'
+              - 'scripts/recovery/**'
+              - 'scripts/tests/test_release_input_evidence.py'
+              - 'deploy/release-inputs.json'
+              - 'deploy/package-release.sh'
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'

@@ -70,17 +70,20 @@ def build_source_manifest(repository, source, declaration):
     fields(declaration["roots"], ROOTS)
     fields(declaration["effects"], EFFECTS)
     inventory = committed_inventory(repository, source)
-    covered = set()
+    semantic_coverage = set()
+    web_inputs, non_web_inputs, shared_inputs = set(), set(), set()
     components, roots, effects = {}, {}, {}
     for name, spec in declaration["components"].items():
         fields(spec, {"inputs", "shared_inputs"})
         inputs, shared = _select(inventory, spec["inputs"]), _select(inventory, spec["shared_inputs"])
-        covered.update(inputs); covered.update(shared)
-        components[name] = {"role": profile["components"][name], "build_inputs": fingerprint(inputs),
+        role = profile["components"][name]
+        (web_inputs if role == "web" else non_web_inputs).update(inputs)
+        shared_inputs.update(shared)
+        components[name] = {"role": role, "build_inputs": fingerprint(inputs),
                             "shared_dependencies": fingerprint(shared)}
     for name, paths in declaration["roots"].items():
         selected = _select(inventory, paths)
-        covered.update(selected)
+        semantic_coverage.update(selected)
         roots[name] = selected
     for name, spec in declaration["effects"].items():
         fields(spec, {"inputs", "behavior", "runs_on_start", "owner"})
@@ -89,12 +92,18 @@ def build_source_manifest(repository, source, declaration):
         require((spec["behavior"] == "none" and spec["owner"] is None and not spec["runs_on_start"])
                 or (spec["behavior"] != "none" and spec["owner"] in profile["components"]), "unknown_effect_owner")
         selected = _select(inventory, spec["inputs"])
-        covered.update(selected)
+        semantic_coverage.update(selected)
         effects[name] = {key: spec[key] for key in ("behavior", "runs_on_start", "owner")}
         effects[name]["version"] = fingerprint(selected)
-    unassigned = {name: value for name, value in inventory.items() if name not in covered}
-    # New/unmapped source is conservatively shared-runtime affecting. No
-    # filename heuristic silently labels it documentation or frontend-only.
+    # A broad component build directory proves packaging coverage, not which
+    # runtime roots/effects its helpers can change. Only root/effect declarations
+    # provide semantic coverage. The sole exemption is declared web input that
+    # no non-web component or shared dependency consumes; this preserves an
+    # isolated frontend change without a filename heuristic. Any new backend or
+    # shared helper omitted from semantic declarations changes shared_runtime.
+    web_only = web_inputs - non_web_inputs - shared_inputs
+    unassigned = {name: value for name, value in inventory.items()
+                  if name not in semantic_coverage and name not in web_only}
     roots["shared_runtime"] = {"declared": roots["shared_runtime"], "unassigned": unassigned}
     return {"schema": 1, "repository": declaration["repository"], "source": source,
             "profile_digest": fingerprint(profile), "declaration_digest": fingerprint(declaration),
