@@ -38,7 +38,10 @@ and imported model definitions. Authorization is also enforced inside payroll
 maker/checker services and tenant-scoped workers/artifact operations. Their
 service, domain, report, job and storage dependencies therefore remain in the
 conservative auth boundary; the import-closure regression prevents an imported
-local helper from silently disappearing from that boundary. Those changes require a dedicated infrastructure
+local helper from silently disappearing from that boundary. Operator membership
+and organization bootstrap entrypoints, plus the SQL defining database roles,
+RLS bypass and grants, also belong to auth alongside their seed/startup effects.
+Those changes require a dedicated infrastructure
 plan even when another effect already includes the file. Frontend-only source
 changes do not enter these roots or effects.
 

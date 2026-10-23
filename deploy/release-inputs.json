@@ -117,7 +117,10 @@
       "backend/app/timezone.py",
       "backend/app/logging_config.py",
       "backend/app/observability.py",
-      "backend/app/platform_setup.py"
+      "backend/app/platform_setup.py",
+      "scripts/provision_member.py",
+      "scripts/provision_organization.py",
+      "backend/scripts/create_roles.sql"
     ],
     "shared_dependencies": [
       "package.json",

@@ -45,7 +45,14 @@ CONFIG = {
 }
 
 
+OPERATOR_AUTH_MUTATIONS = {
+    "scripts/provision_member.py": ("seed",),
+    "scripts/provision_organization.py": ("seed",),
+    "backend/scripts/create_roles.sql": ("startup",),
+}
+
 AUTH_MUTATIONS = (
+    *OPERATOR_AUTH_MUTATIONS,
     "backend/app/api/deps.py",
     "backend/app/tenancy.py",
     "backend/app/db.py",
@@ -260,7 +267,7 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
                         with self.subTest(source=path, dependency=dependency):
                             self.assertIn(dependency, selected)
 
-    def test_committed_backend_helper_mutations_change_effect_evidence(self):
+    def test_committed_auth_and_backend_mutations_change_evidence(self):
         # Change real committed blob bytes in a disposable Git object database.
         # No application source, test fixture database or worktree is modified.
         with tempfile.TemporaryDirectory() as temporary:
@@ -285,7 +292,11 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
                         )
                         if path in self.inventory
                         else b""
-                    ) + b"\n# source-evidence mutation fixture\n"
+                    ) + (
+                        b"\n-- source-evidence mutation fixture\n"
+                        if path.endswith(".sql")
+                        else b"\n# source-evidence mutation fixture\n"
+                    )
                     blob = (
                         subprocess.check_output(
                             ["git", "hash-object", "-w", "--stdin"],
@@ -296,7 +307,13 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
                         .strip()
                     )
                     subprocess.run(
-                        ["git", "update-index", "--add", "--cacheinfo", f"100644,{blob},{path}"],
+                        [
+                            "git",
+                            "update-index",
+                            "--add",
+                            "--cacheinfo",
+                            f"{self.inventory.get(path, {'mode': '100644'})['mode']},{blob},{path}",
+                        ],
                         cwd=repository,
                         check=True,
                     )
@@ -326,7 +343,10 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
                         .strip()
                     )
                     changed = inputs.build_source_manifest(repository, source, self.declaration)
-                    for name in ("writes", "api", "jobs", "recovery", "startup"):
+                    effects = OPERATOR_AUTH_MUTATIONS.get(
+                        path, ("writes", "api", "jobs", "recovery", "startup")
+                    )
+                    for name in effects:
                         self.assertNotEqual(
                             changed["effects"][name]["version"],
                             self.evidence["effects"][name]["version"],
@@ -383,6 +403,8 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
             "scripts/recovery/build_release_inputs.py",
             "scripts/recovery/vendor/release_inputs.py",
             "scripts/tests/test_release_input_evidence.py",
+            "scripts/provision_member.py",
+            "scripts/provision_organization.py",
             "deploy/release-inputs.json",
             "deploy/package-release.sh",
         ):

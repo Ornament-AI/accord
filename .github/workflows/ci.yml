@@ -67,6 +67,8 @@ jobs:
               - 'pyproject.toml'
               - 'scripts/recovery/**'
               - 'scripts/tests/test_release_input_evidence.py'
+              - 'scripts/provision_member.py'
+              - 'scripts/provision_organization.py'
               - 'deploy/release-inputs.json'
               - 'deploy/package-release.sh'
               - '.github/workflows/ci.yml'
