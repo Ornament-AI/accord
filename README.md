@@ -149,7 +149,7 @@ end.
 You need:
 
 1. **pnpm 12.1.0.** Version pinned in root `package.json` (`packageManager`)
-2. **Node.js 24** (CI); the frontend also supports Node 22.22.2+ and 26+
+2. **Node.js 24.22.1** (CI); the frontend also supports Node 22.23.4+ and 26.12.1+ within those supported majors
 3. **Python 3.14.** Same as CI
 4. **PostgreSQL 18** running locally
 
