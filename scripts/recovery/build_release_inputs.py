@@ -28,7 +28,14 @@ def main():
         require(re.fullmatch(r"[0-9a-f]{40}", args.source), "invalid_source")
         # The declaration and every input come from the same immutable commit.
         result = subprocess.run(
-            ["git", "-C", str(args.repository), "show", f"{args.source}:{DECLARATION}"],
+            [
+                "git",
+                "--no-replace-objects",
+                "-C",
+                str(args.repository),
+                "show",
+                f"{args.source}:{DECLARATION}",
+            ],
             capture_output=True,
             check=False,
         )

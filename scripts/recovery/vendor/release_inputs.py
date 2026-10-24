@@ -17,7 +17,9 @@ from release_classification import EFFECTS, ROOTS, fields, manifest
 
 
 def _git(repository, *arguments):
-    result = subprocess.run(["git", "-C", str(repository), *arguments], capture_output=True, check=False)
+    # Local replacement refs must not substitute a different commit, tree or
+    # blob while evidence still claims the requested immutable object identity.
+    result = subprocess.run(["git", "--no-replace-objects", "-C", str(repository), *arguments], capture_output=True, check=False)
     require(result.returncode == 0, "source_git_unavailable")
     return result.stdout
 

@@ -4,7 +4,7 @@ This is an offline, inactive adapter. `activation_allowed` is always `false`. It
 
 `deploy/release-inputs.json` declares component build inputs, shared dependencies, deployment/config/proxy/storage/auth roots and migration/seed/recovery/startup/job/file/write/API effects. The canonical reader hashes committed Git blobs and executable modes. It reads neither dirty working files nor ambient credentials. Missing declared paths, symlinks/submodules and invalid declarations fail closed. Unassigned tracked files enter the conservative shared-runtime fingerprint; this intentionally overclassifies changes until reviewed rather than granting a frontend shortcut.
 
-The three canonical modules and app profile under `scripts/recovery/vendor/` are byte-for-byte copies of `Ornament-AI/msidc-infra` commit `f08c8d70799b0f0d6c4535a2397496793ec082d0`. `SOURCE.json` pins every copied hash. Do not locally reformat them or invent app policy.
+The three canonical modules and app profile under `scripts/recovery/vendor/` are byte-for-byte copies of `Ornament-AI/msidc-infra` commit `4fe908d73ff7a5cc3336c2f21812809260967c5c`. `SOURCE.json` pins every copied hash. Do not locally reformat them or invent app policy.
 
 ## Local use
 
@@ -57,8 +57,23 @@ not approved backup or retention thresholds.
 
 Personal exact-head review, configured CI, authoritative runtime config/secret versions, authenticated prior successful receipt and current locked observation, approved backup/restore-health policy, compatible old clients and full application failure/paired-restore rehearsals remain required before any new execution path. Numeric thresholds remain undecided. Preserve existing full deployment backups, scheduled full daily copies and retention. No new fast path, reduced backup, overlap, pruning or automatic fallback is enabled by this change.
 
-Merge the canonical [infra #15](https://github.com/Ornament-AI/msidc-infra/pull/15)
+Merge the canonical [infra #17](https://github.com/Ornament-AI/msidc-infra/pull/17)
 correction first, then this adapter PR and the other dependent source-evidence
 PRs. Keep the vendor commit and hashes aligned with that reviewed canonical
 commit; merging these offline adapters does not authorize installation or
 activation.
+
+## Immutable Git objects and publisher runtime
+
+Source inventory reads, committed-declaration reads and release packaging Git
+reads all disable replacement refs with `--no-replace-objects`. Local commit,
+tree or blob substitution must not change bytes while the evidence claims an
+unchanged source SHA. A disposable-clone regression creates a real replacement
+commit with a changed nginx file and invalid declaration, then verifies that
+the actual package contains the original source bytes. No production refs or
+application data are modified by that test.
+
+The publisher and canonical modules retain Python 3.12 compatibility for the
+existing runner's system interpreter. The helper has a per-file Ruff target;
+the regression suite parses all publisher/vendor Python with the 3.12 grammar.
+Application runtime and Node pins are independent of this publisher minimum.

@@ -172,11 +172,105 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
             }
         )
 
+    def test_publisher_and_vendor_support_python312_syntax(self):
+        publisher = ROOT / "scripts/recovery"
+        for path in sorted(publisher.rglob("*.py")):
+            with self.subTest(path=str(path.relative_to(ROOT))):
+                ast.parse(path.read_text(), filename=str(path), feature_version=(3, 12))
+
+    def test_real_replacement_ref_cannot_substitute_published_source_bytes(self):
+        # Keep replacement refs entirely inside a disposable local clone. The
+        # clone reads existing objects but writes no refs into the source repo.
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repository"
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--shared",
+                    "--no-checkout",
+                    "--quiet",
+                    str(ROOT),
+                    str(repository),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            def git(*arguments):
+                return subprocess.check_output(
+                    ["git", "-C", str(repository), *arguments], text=True
+                ).strip()
+
+            git("checkout", "--quiet", "--detach", self.source)
+            declaration = repository / "deploy/release-inputs.json"
+            nginx = repository / "deploy/nginx/nginx.conf"
+            original_declaration = declaration.read_bytes()
+            original_nginx = nginx.read_bytes()
+            replacement = json.loads(original_declaration)
+            replacement["schema"] = 999
+            declaration.write_text(json.dumps(replacement))
+            nginx.write_bytes(original_nginx + b"\n# substituted release source\n")
+            git("add", "deploy/release-inputs.json", "deploy/nginx/nginx.conf")
+            git(
+                "-c",
+                "user.name=Source Evidence Test",
+                "-c",
+                "user.email=evidence@example.invalid",
+                "commit",
+                "-qm",
+                "replacement fixture",
+            )
+            substituted = git("rev-parse", "HEAD")
+            git("checkout", "--quiet", "--detach", self.source)
+            git("replace", self.source, substituted)
+            self.assertEqual(
+                json.loads(git("show", f"{self.source}:deploy/release-inputs.json"))["schema"], 999
+            )
+            environment = {
+                "PATH": os.environ["PATH"],
+                "SOURCE_SHA": self.source,
+                "GITHUB_SHA": self.source,
+                "GITHUB_RUN_ID": "12345",
+            }
+            app = "accord"
+            for role in ("BACKEND", "WEB"):
+                environment[f"{app.upper()}_{role}_DIGEST"] = (
+                    "sha256:" + ("a" if role == "BACKEND" else "b") * 64
+                )
+            for role in ("BACKEND", "WEB", "DB"):
+                environment[f"{app.upper()}_{role}_IMAGE_BYTES"] = "1024"
+                environment[f"{app.upper()}_{role}_IMAGE_INODES"] = "1024"
+            if app == "accord":
+                environment["ACCORD_PREVIOUS_DEPLOYED_SHA"] = self.source
+            output = Path(temporary) / "output"
+            result = subprocess.run(
+                ["bash", "deploy/package-release.sh", str(output)],
+                cwd=repository,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            archive = next(output.glob("*sha-*.tar.gz"))
+            with tarfile.open(archive) as bundle:
+                self.assertEqual(
+                    bundle.extractfile("deploy/release-inputs.json").read(), original_declaration
+                )
+                self.assertEqual(
+                    bundle.extractfile("deploy/nginx/nginx.conf").read(), original_nginx
+                )
+                evidence = json.loads(bundle.extractfile("deploy/release-build-inputs.json").read())
+                self.assertEqual(evidence["source"], self.source)
+                self.assertFalse(evidence["activation_allowed"])
+
     def test_canonical_vendor_pin(self):
         vendor = ROOT / "scripts/recovery/vendor"
         pin = json.loads((vendor / "SOURCE.json").read_text())
         self.assertEqual(pin["repository"], "Ornament-AI/msidc-infra")
-        self.assertEqual(pin["commit"], "f08c8d70799b0f0d6c4535a2397496793ec082d0")
+        self.assertEqual(pin["commit"], "4fe908d73ff7a5cc3336c2f21812809260967c5c")
         for name, digest in pin["files"].items():
             self.assertEqual(hashlib.sha256((vendor / name).read_bytes()).hexdigest(), digest)
 
