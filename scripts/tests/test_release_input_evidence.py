@@ -51,6 +51,20 @@ OPERATOR_AUTH_MUTATIONS = {
     "backend/scripts/create_roles.sql": ("startup",),
 }
 
+BROWSER_AUTH_MUTATIONS = (
+    "frontend/src/contexts/AuthContext.tsx",
+    "frontend/src/lib/query-client.ts",
+    "frontend/src/lib/errors.ts",
+    "frontend/src/lib/capabilities.ts",
+    "frontend/src/lib/api/http.ts",
+    "frontend/src/route-components.tsx",
+    "frontend/src/router.tsx",
+    "frontend/src/App.tsx",
+    "frontend/src/pages/LoginPage.tsx",
+    "frontend/index.html",
+    "frontend/src/main.tsx",
+)
+
 AUTH_MUTATIONS = (
     *OPERATOR_AUTH_MUTATIONS,
     "backend/app/api/deps.py",
@@ -299,7 +313,9 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
             )
 
     def test_frontend_change_does_not_hide_backend_dependencies(self):
-        path = next(path for path in self.inventory if path.startswith("frontend/src/"))
+        path = next(
+            path for path in self.inventory if path.startswith("frontend/src/components/ui/")
+        )
         changed = self.changed(path)
         self.assertNotEqual(changed["components"]["web"], self.evidence["components"]["web"])
         for name in CONFIG["backend"]:
@@ -311,11 +327,11 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
         self.assertFalse(result["activation_allowed"])
 
     def test_auth_helpers_require_dedicated_infrastructure_plan(self):
-        for path in AUTH_MUTATIONS:
+        for path in AUTH_MUTATIONS + BROWSER_AUTH_MUTATIONS:
             with self.subTest(path=path):
                 changed = self.changed(path)
                 self.assertNotEqual(changed["roots"]["auth"], self.evidence["roots"]["auth"])
-                result = self.assessment(changed)
+                result = self.assessment(changed, frontend_review=True)
                 self.assertEqual(result["classification"], "infrastructure", result)
                 self.assertIn("dedicated_infrastructure_plan", result["required_controls"])
                 self.assertFalse(result["activation_allowed"])

@@ -120,7 +120,15 @@
       "backend/app/platform_setup.py",
       "scripts/provision_member.py",
       "scripts/provision_organization.py",
-      "backend/scripts/create_roles.sql"
+      "backend/scripts/create_roles.sql",
+      "frontend/src/contexts/",
+      "frontend/src/lib/",
+      "frontend/src/route-components.tsx",
+      "frontend/src/router.tsx",
+      "frontend/src/App.tsx",
+      "frontend/src/pages/LoginPage.tsx",
+      "frontend/index.html",
+      "frontend/src/main.tsx"
     ],
     "shared_dependencies": [
       "package.json",
