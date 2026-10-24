@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "repository": "Ornament-AI/accord",
+  "source_commit": "6ea00f6eb8674d5416189736b55b2f6b47c05889",
+  "source_path": "deploy/onprem-release-adapter.json",
+  "delivery": "compose",
+  "assessment": "offline",
+  "components": {
+    "api": "backend",
+    "migrations": "migration",
+    "minio": "infrastructure",
+    "minio-init": "infrastructure",
+    "postgres": "database",
+    "role-sync": "infrastructure",
+    "web": "web",
+    "worker": "worker"
+  },
+  "writers": [
+    "api",
+    "web",
+    "worker",
+    "migrations",
+    "minio",
+    "minio-init",
+    "role-sync",
+    "external"
+  ],
+  "recovery_format": {
+    "database": "pg18-custom",
+    "files": "object-store-snapshot"
+  },
+  "constraints": [
+    "matched-postgres-minio",
+    "worker-fencing",
+    "role-sync"
+  ]
+}

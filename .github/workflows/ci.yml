@@ -65,6 +65,12 @@ jobs:
             backend:
               - 'backend/**'
               - 'pyproject.toml'
+              - 'scripts/recovery/**'
+              - 'scripts/tests/test_release_input_evidence.py'
+              - 'scripts/provision_member.py'
+              - 'scripts/provision_organization.py'
+              - 'deploy/release-inputs.json'
+              - 'deploy/package-release.sh'
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
@@ -137,6 +143,8 @@ jobs:
         run: python -m ruff check backend/app backend/tests
       - name: ruff format --check
         run: python -m ruff format --check backend/app backend/tests
+      - name: Source input evidence
+        run: python scripts/tests/test_release_input_evidence.py
       - name: pytest
         run: python -m pytest backend/tests -q
 

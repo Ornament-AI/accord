@@ -1,0 +1,11 @@
+{
+  "repository": "Ornament-AI/msidc-infra",
+  "commit": "4fe908d73ff7a5cc3336c2f21812809260967c5c",
+  "directory": "onprem-release",
+  "files": {
+    "release_inputs.py": "6702c79d8e994f018c31800bc414bf86e2dfd116f13ea116a4b0c65e1cf1c6af",
+    "release_classification.py": "70fb2afe2f0b7c1553096339872c08b0f07a3c7d838f4c94ffbe72af89538ab9",
+    "release_profiles.py": "beff0e58b2bd68e9b8c229366ec2c654ced591ae9602451ffcb046eb97fe6c7a",
+    "profiles/accord.json": "0fdc41a0cb79226e73d6410cbda81e5ed863b21ad50cc23a16ea43706034f768"
+  }
+}
