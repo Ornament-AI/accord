@@ -126,7 +126,9 @@
       "frontend/src/route-components.tsx",
       "frontend/src/router.tsx",
       "frontend/src/App.tsx",
-      "frontend/src/pages/LoginPage.tsx"
+      "frontend/src/pages/LoginPage.tsx",
+      "frontend/index.html",
+      "frontend/src/main.tsx"
     ],
     "shared_dependencies": [
       "package.json",

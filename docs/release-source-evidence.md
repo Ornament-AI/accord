@@ -81,3 +81,5 @@ Application runtime and Node pins are independent of this publisher minimum.
 ## Browser authentication inputs
 
 The auth root also covers `frontend/src/contexts/` and `frontend/src/lib/`, plus `route-components.tsx`, `router.tsx`, `App.tsx` and `pages/LoginPage.tsx` under `frontend/src/`. These files implement or mount browser identity, role and login gates. Per-path mutations require a changed auth fingerprint, infrastructure classification and dedicated infrastructure controls; unrelated `components/ui/` changes retain frontend-only classification. Every assessment remains `activation_allowed=false`; authentication behavior and live services are unchanged.
+
+The browser bootstrap files `frontend/index.html` and `frontend/src/main.tsx` also belong to the auth root: together they select and mount the App/router/auth tree. Each file has an independent mutation regression; ordinary `components/ui/` changes retain their frontend-only positive control.

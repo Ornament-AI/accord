@@ -61,6 +61,8 @@ BROWSER_AUTH_MUTATIONS = (
     "frontend/src/router.tsx",
     "frontend/src/App.tsx",
     "frontend/src/pages/LoginPage.tsx",
+    "frontend/index.html",
+    "frontend/src/main.tsx",
 )
 
 AUTH_MUTATIONS = (
