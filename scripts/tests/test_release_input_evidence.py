@@ -52,6 +52,15 @@ OPERATOR_AUTH_MUTATIONS = {
 }
 
 AUTH_MUTATIONS = (
+    "frontend/src/contexts/AuthContext.tsx",
+    "frontend/src/lib/query-client.ts",
+    "frontend/src/lib/errors.ts",
+    "frontend/src/lib/capabilities.ts",
+    "frontend/src/lib/api/http.ts",
+    "frontend/src/route-components.tsx",
+    "frontend/src/router.tsx",
+    "frontend/src/App.tsx",
+    "frontend/src/pages/LoginPage.tsx",
     *OPERATOR_AUTH_MUTATIONS,
     "backend/app/api/deps.py",
     "backend/app/tenancy.py",
@@ -299,7 +308,9 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
             )
 
     def test_frontend_change_does_not_hide_backend_dependencies(self):
-        path = next(path for path in self.inventory if path.startswith("frontend/src/"))
+        path = next(
+            path for path in self.inventory if path.startswith("frontend/src/components/ui/")
+        )
         changed = self.changed(path)
         self.assertNotEqual(changed["components"]["web"], self.evidence["components"]["web"])
         for name in CONFIG["backend"]:
@@ -315,7 +326,7 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
             with self.subTest(path=path):
                 changed = self.changed(path)
                 self.assertNotEqual(changed["roots"]["auth"], self.evidence["roots"]["auth"])
-                result = self.assessment(changed)
+                result = self.assessment(changed, frontend_review=True)
                 self.assertEqual(result["classification"], "infrastructure", result)
                 self.assertIn("dedicated_infrastructure_plan", result["required_controls"])
                 self.assertFalse(result["activation_allowed"])

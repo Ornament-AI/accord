@@ -77,3 +77,7 @@ The publisher and canonical modules retain Python 3.12 compatibility for the
 existing runner's system interpreter. The helper has a per-file Ruff target;
 the regression suite parses all publisher/vendor Python with the 3.12 grammar.
 Application runtime and Node pins are independent of this publisher minimum.
+
+## Browser authentication inputs
+
+The auth root also covers `frontend/src/contexts/` and `frontend/src/lib/`, plus `route-components.tsx`, `router.tsx`, `App.tsx` and `pages/LoginPage.tsx` under `frontend/src/`. These files implement or mount browser identity, role and login gates. Per-path mutations require a changed auth fingerprint, infrastructure classification and dedicated infrastructure controls; unrelated `components/ui/` changes retain frontend-only classification. Every assessment remains `activation_allowed=false`; authentication behavior and live services are unchanged.
