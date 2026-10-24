@@ -51,7 +51,7 @@ OPERATOR_AUTH_MUTATIONS = {
     "backend/scripts/create_roles.sql": ("startup",),
 }
 
-AUTH_MUTATIONS = (
+BROWSER_AUTH_MUTATIONS = (
     "frontend/src/contexts/AuthContext.tsx",
     "frontend/src/lib/query-client.ts",
     "frontend/src/lib/errors.ts",
@@ -61,6 +61,9 @@ AUTH_MUTATIONS = (
     "frontend/src/router.tsx",
     "frontend/src/App.tsx",
     "frontend/src/pages/LoginPage.tsx",
+)
+
+AUTH_MUTATIONS = (
     *OPERATOR_AUTH_MUTATIONS,
     "backend/app/api/deps.py",
     "backend/app/tenancy.py",
@@ -322,7 +325,7 @@ class ReleaseInputEvidenceTests(unittest.TestCase):
         self.assertFalse(result["activation_allowed"])
 
     def test_auth_helpers_require_dedicated_infrastructure_plan(self):
-        for path in AUTH_MUTATIONS:
+        for path in AUTH_MUTATIONS + BROWSER_AUTH_MUTATIONS:
             with self.subTest(path=path):
                 changed = self.changed(path)
                 self.assertNotEqual(changed["roots"]["auth"], self.evidence["roots"]["auth"])
