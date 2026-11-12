@@ -57,7 +57,11 @@ CI (`.github/workflows/ci.yml`) runs backend/frontend equivalents plus
 migration and image-build jobs. The `backend`
 job runs ruff and pytest against a Postgres 18 service container. The
 `migrations` job runs `alembic upgrade head` plus `alembic check` on a fresh
-database. The `frontend` job runs lint and format checks over source plus tracked E2E TypeScript, typecheck, Playwright test discovery, Vitest, and the production build. The dedicated `api-type-drift` job regenerates `frontend/src/types/api.generated.ts` and fails on a diff. Two more jobs build the backend and web Docker images. On pull requests, lane-specific jobs are skipped when their lane did not change; API drift remains unconditional. The unconditional API-type job also checks shell syntax and report-catalog drift. Sanitized fixture validation runs separately on every CI invocation. The frontend job only discovers browser tests; execute Playwright against a prepared stack for actual browser evidence.
+database. The `frontend` job runs lint and format checks over source plus tracked E2E TypeScript, typecheck, Playwright test discovery, Vitest, and the production build. The dedicated `api-type-drift` job regenerates `frontend/src/types/api.generated.ts` and fails on a diff. Two more jobs build the backend and web Docker images on main pushes and manual CI dispatches. On pull requests, lane-specific jobs are skipped when their lane did not change; API drift runs when either lane changed. Shared scripts, deploy, fixtures, and workflow paths exercise both lanes; README, AGENTS, LICENSE and docs-only PRs skip both lanes. The API-type job also checks shell syntax and report-catalog drift. Sanitized fixture validation runs separately on every CI invocation. The frontend job only discovers browser tests; execute Playwright against a prepared stack for actual browser evidence.
+
+Only PR runs cancel superseded CI. Main always runs every lane before the signed
+release workflow. Fixture and supply-chain jobs use 2-vCPU runners; image builds
+retain 4 vCPU.
 
 ## Test pyramid
 

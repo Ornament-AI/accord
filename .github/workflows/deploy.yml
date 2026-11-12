@@ -16,6 +16,7 @@ jobs:
     name: Prove exact reviewed main SHA
     if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main')
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: read
@@ -57,6 +58,7 @@ jobs:
     name: Build and push backend image
     needs: release-gate
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
@@ -96,6 +98,7 @@ jobs:
     name: Build and push web image
     needs: release-gate
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
@@ -136,6 +139,7 @@ jobs:
     name: Rehearse deployed-schema upgrade
     needs: release-gate
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     environment: onprem-release
     services:
       postgres:
@@ -269,6 +273,7 @@ jobs:
     name: Publish standard release evidence
     needs: [release-gate, build-and-push-backend, build-and-push-web, migrations-release-upgrade]
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     environment: onprem-release
     permissions:
       actions: read
