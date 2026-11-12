@@ -9,12 +9,13 @@ name: CI
 on:
   push:
     branches: [main]
+  workflow_dispatch:
   pull_request:
     branches: [main, "codex/**"]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   ACCORD_BACKEND_IMAGE: ghcr.io/ornament-ai/accord/backend
@@ -30,7 +31,11 @@ jobs:
   # not-yet-landed lane reports "skipped" (satisfies required checks) rather
   # than leaving the check stuck "Pending".
   detect:
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     outputs:
       backend: ${{ steps.detect.outputs.backend }}
       frontend: ${{ steps.detect.outputs.frontend }}
@@ -63,6 +68,11 @@ jobs:
         with:
           filters: |
             backend:
+              - 'scripts/**'
+              - 'deploy/**'
+              - 'fixtures/**'
+              - 'shared/**'
+              - '.github/workflows/**'
               - 'backend/**'
               - 'pyproject.toml'
               - 'scripts/recovery/**'
@@ -73,6 +83,13 @@ jobs:
               - 'deploy/package-release.sh'
               - '.github/workflows/ci.yml'
             frontend:
+              - 'scripts/**'
+              - 'deploy/**'
+              - 'fixtures/**'
+              - 'shared/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/**'
               - 'frontend/**'
               - '**/*.js'
               - '**/*.jsx'
@@ -102,6 +119,7 @@ jobs:
       needs.detect.outputs.backend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true')
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 26
     services:
       postgres:
         image: postgres:18-alpine
@@ -160,6 +178,7 @@ jobs:
       needs.detect.outputs.backend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true')
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:18-alpine
@@ -209,8 +228,11 @@ jobs:
         run: python -m alembic check
 
   api-type-drift:
+    needs: detect
+    if: github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true' || needs.detect.outputs.frontend_changed == 'true'
     name: API type drift check
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -249,6 +271,7 @@ jobs:
       needs.detect.outputs.frontend == 'true' &&
       (github.event_name != 'pull_request' || needs.detect.outputs.frontend_changed == 'true')
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # pnpm/action-setup installs pnpm to a standalone location that survives
@@ -288,7 +311,8 @@ jobs:
     name: Supply-chain audit + SBOM
     needs: detect
     if: github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true' || needs.detect.outputs.frontend_changed == 'true'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -325,7 +349,8 @@ jobs:
   fixture-validation:
     name: Sanitized fixture validation
     needs: detect
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -337,10 +362,10 @@ jobs:
   docker-backend:
     name: Docker build (backend)
     needs: detect
-    if: >-
-      needs.detect.outputs.backend == 'true' &&
-      (github.event_name != 'pull_request' || needs.detect.outputs.backend_changed == 'true')
+    # Build coverage is mandatory on main; manual CI supports pre-merge checks.
+    if: github.event_name != 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -357,10 +382,10 @@ jobs:
   docker-web:
     name: Docker build (web)
     needs: detect
-    if: >-
-      needs.detect.outputs.frontend == 'true' &&
-      (github.event_name != 'pull_request' || needs.detect.outputs.frontend_changed == 'true')
+    # Build coverage is mandatory on main; manual CI supports pre-merge checks.
+    if: github.event_name != 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3

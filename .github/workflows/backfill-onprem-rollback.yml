@@ -12,6 +12,7 @@ jobs:
     name: Publish signed pre-contract rollback release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: onprem-release
     permissions:
       actions: read
