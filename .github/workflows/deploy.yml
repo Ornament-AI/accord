@@ -58,7 +58,7 @@ jobs:
     name: Build and push backend image
     needs: release-gate
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -98,7 +98,7 @@ jobs:
     name: Build and push web image
     needs: release-gate
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -139,7 +139,7 @@ jobs:
     name: Rehearse deployed-schema upgrade
     needs: release-gate
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 10
+    timeout-minutes: 20
     environment: onprem-release
     services:
       postgres:
