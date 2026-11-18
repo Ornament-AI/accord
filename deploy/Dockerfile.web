@@ -21,7 +21,7 @@ WORKDIR /app/frontend
 
 RUN pnpm build
 
-FROM nginx:1.30-alpine
+FROM nginx:1.30.7-alpine@sha256:b24de00298eb7fb23839442d46c780991be7bc7ddb081b6c0876ac777012e352
 
 COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
