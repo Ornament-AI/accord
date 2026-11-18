@@ -19,7 +19,7 @@ services:
 
 | Service | Role |
 |---|---|
-| `postgres` | Postgres 18 (`postgres:18.4-alpine`); volume `pgdata` mounted at `/var/lib/postgresql` |
+| `postgres` | Postgres 18 (`postgres:18.7-alpine`); volume `pgdata` mounted at `/var/lib/postgresql` |
 | `minio` + `minio-init` | S3-compatible object storage; bucket `accord-artifacts` |
 | `role-sync` | One-shot role-password sync (`deploy/object-storage/sync-role-passwords.sh`) |
 | `migrations` | One-shot `alembic upgrade head` (runs as the ADR migrator role) |
