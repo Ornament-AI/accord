@@ -57,19 +57,6 @@ ALLOWED_CLASSIFICATIONS: frozenset[str] = frozenset(
     }
 )
 
-# Documented ADR-0007 kind names (enforced by calculators.get, not construction).
-KNOWN_CALC_KINDS: frozenset[str] = frozenset(
-    {
-        "fixed_recurring_amount",
-        "direct_monthly_amount",
-        "percentage_of_component_bases",
-        "employer_employee_contribution",
-        "loan_installment_recovery",
-        "accommodation_charge",
-        "one_time_adjustment",
-    }
-)
-
 
 class InvalidComponentInputError(ValueError):
     """Raised when a ``ComponentInput`` fails structural validation."""
@@ -84,9 +71,8 @@ class ComponentInput:
     must supply a non-``ROUND_NONE`` rule (or ``UnroundedAmount.quantize`` will
     reject it).
 
-    ``calc_kind`` should be one of the seven ADR-0007 names in
-    ``KNOWN_CALC_KINDS``; unrecognized kinds fail at calculation time via
-    ``UnknownCalculatorKindError``.
+    ``calc_kind`` should be one of the ADR-0007 names in the calculator registry;
+    unrecognized kinds fail at calculation time via ``UnknownCalculatorKindError``.
     """
 
     component_code: str
